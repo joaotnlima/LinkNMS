@@ -1,0 +1,58 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git branch:--show-current)",
+      "Bash(git remote:-v)",
+      "Bash(git remote)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(readlink:*)",
+      "Bash(pwd:*)",
+      "Bash(which:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Read(.defract/**)",
+      "Edit(.defract/**)",
+      "Read(.defract-worktrees/**)",
+      "Edit(.defract-worktrees/**)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git fetch:*)",
+      "Bash(git checkout:-b*)",
+      "Bash(git checkout:*)",
+      "Bash(git worktree:add*)",
+      "Bash(git worktree:list*)",
+      "Bash(git worktree:prune)",
+      "Bash(git worktree:move*)",
+      "Bash(git worktree:remove:*)"
+    ],
+    "deny": [
+      "Bash(rm:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git reset:--hard*)",
+      "Bash(git push:--force*)",
+      "Bash(git push:-f*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(git branch:-D*)",
+      "Bash(git branch:--delete*)",
+      "Bash(git clean:-f*)",
+      "Bash(git clean:-d*)",
+      "Bash(git checkout:--force*)",
+      "Bash(git worktree:remove --force*)",
+      "Bash(sudo:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(brew:*)"
+    ]
+  },
+  "enabledPlugins": {
+    "brand-md@brand-md": true
+  }
+}

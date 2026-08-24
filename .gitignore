@@ -1,0 +1,58 @@
+# === Sistema operativo ===
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# === Editores / IDEs ===
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# === Obsidian (estado local do utilizador; o conteúdo das notas é versionado) ===
+**/.obsidian/workspace.json
+**/.obsidian/workspace-mobile.json
+**/.obsidian/cache
+**/.obsidian/plugins/**/data.json
+
+# === Claude Code (config local; settings.json partilhado fica versionado) ===
+.claude/settings.local.json
+.claude/*.local.json
+
+# === Output gerado pelo graphify (grafo de conhecimento; regenerável) ===
+graphify-out/
+
+# === Segredos / ambiente ===
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# === Node / build (para quando a web-app existir) ===
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+.cache/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# === Temporários ===
+*.tmp
+*.temp
+.parcel-cache/
+
+# Nota: os ficheiros .pen (design) são intencionalmente versionados.
