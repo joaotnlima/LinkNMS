@@ -1,6 +1,4 @@
-/* LinkNMS design tokens as CSS custom properties.
-   Mirrors tokens/tokens.json — when the design-system tooling (PR #1) is merged,
-   `npm run tokens` can emit straight into this file. Keep values in sync. */
+/* GENERATED from design-system/tokens.json by design-system/build-tokens.mjs — do not edit by hand. */
 :root {
   --owner: #2a78d6;
   --builder: #eb6834;
@@ -18,7 +16,7 @@
   --danger: #c0392b;
   --fade: #9a9a9a;
   --fade-dark: #8c8c8c;
-  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --sans: system-ui,-apple-system,"Segoe UI",sans-serif;
   --size-display: 28px;
   --size-heading: 20px;
   --size-subheading: 16px;

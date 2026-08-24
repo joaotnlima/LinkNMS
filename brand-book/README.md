@@ -21,10 +21,9 @@ npm run storybook          # dev server at http://localhost:6006
 npm run build-storybook    # static site → brand-book/storybook-static/
 ```
 
-Deploys automatically via `.github/workflows/storybook.yml` (GitHub Pages) on
-push to `main`. **Note:** Pages on a *private* repo needs a paid GitHub plan; on
-free, either make the repo public or download the `storybook-static` artifact
-from the workflow run. Chromatic (free tier) is an alternative host.
+Deployed on **Vercel** (repo stays private). Vercel builds this project on every
+push — Root Directory `brand-book`, build `npm run build-storybook`, output
+`storybook-static` (pinned in `vercel.json`). No GitHub Actions/Pages.
 
 ## Structure
 
@@ -33,7 +32,7 @@ brand-book/
 ├── .storybook/            Storybook config (main.js, preview.js)
 ├── src/
 │   ├── styles/
-│   │   ├── tokens.css      brand tokens as CSS variables (mirrors tokens/tokens.json)
+│   │   ├── tokens.css      brand tokens (generated from design-system/tokens.json)
 │   │   └── brand.css       component + specimen styles, token-driven
 │   ├── lib/mark.js         the "House Record" mark + lockups, one definition
 │   ├── Introduction.mdx    overview + the logo-is-the-mark principle
@@ -44,6 +43,6 @@ brand-book/
 
 ## Tokens
 
-`src/styles/tokens.css` mirrors `tokens/tokens.json` at the repo root. Once the
-design-system tooling (PR #1) is merged, `npm run tokens` can emit straight into
-this file so there is a single source — until then, keep the values in sync.
+`src/styles/tokens.css` is **generated** from `design-system/tokens.json` — run
+`npm run tokens` in [`../design-system`](../design-system) to regenerate it (and
+the static book's copy) from the single source. Don't edit it by hand.

@@ -101,6 +101,17 @@ serves, and what it must eventually do. It contains no implementation and
 no build plan — that is deliberate at this stage: the shape of the product
 gets settled before anything is built against it.
 
+## Repository layout
+
+```
+cowork/          Planner — the product definition (documentation, design notes, .pen canvas)
+brand-book/      Storybook brand book — the live identity site (deployed on Vercel)
+design-system/   Design tokens + logo asset pipeline (the single source for colour/type/icons)
+BRAND.md         Verbal & strategic identity (meaning, voice, governance)
+```
+
+New projects/services get their own top-level folder alongside these.
+
 ## Documentation
 
 [`cowork/documentation/00-index.md`](./cowork/documentation/00-index.md)
