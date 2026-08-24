@@ -28,6 +28,26 @@ contractors and owners mid-build — arrive on a phone, often from a WhatsApp
 link. The single-column phone layout is the primary target; wider screens add
 breathing room, not new content.
 
+## Logo & marks
+
+The logo is the **"House Record" mark** — a house whose roof is split at the
+ridge into Owner Blue and Builder Orange, over the paper record holding the
+planned (blue) and actual (orange) bars. The icon *is* the logo; the wordmark
+and slogan are added only where the surface needs them.
+
+- **Header** — the horizontal lockup: the mark (~24 px) + the `LinkNMS`
+  wordmark, exact casing. No slogan here; the header stays quiet.
+- **Footer** — the fuller lockup: the mark + `LinkNMS` with the **"Trust
+  built-in."** slogan beneath, set two-tone (**Trust** in Ink, *built-in.* in
+  the fade grey `#9a9a9a`), echoing the record's tonal fade.
+- **Assets, never redrawn** — SVG masters in [`../logos`](../logos), and
+  rasters/favicon/OG in [`../brand-kit`](../brand-kit). The page wires
+  `favicon.ico`, an SVG favicon, `apple-touch-icon` (180 px) and the social
+  `og-image`.
+- **Misuse** — never recolour or merge the two roof halves, never add shadow,
+  gradient or outline to the mark, and never bake the wordmark into the icon
+  asset. Full rules live in the brand-book (`../brand-book`).
+
 ## Colors
 
 The same four brand primitives, mirrored at exact values. The marketing
@@ -45,6 +65,7 @@ but still as marks and accents on Paper, never as full decorative fields.
 | `muted-foreground` | Ink | `#5b5b58` | Derived from Ink |
 | `primary-muted` | Owner Blue | `#e2edfb` | Derived from Owner Blue |
 | `secondary-muted` | Builder Orange | `#fce3d8` | Derived from Builder Orange |
+| `fade` | Ink | `#9a9a9a` | Derived — the slogan's "built-in." tone |
 
 The planned/actual encoding carries into any product illustration or diagram
 on the page: Owner Blue for the agreed/planned side, Builder Orange for the
@@ -115,9 +136,10 @@ Flat and paper-like, matching the brand. The page is mostly unshadowed.
 Mobile-first throughout — 44 × 44 px minimum touch target, nothing essential
 behind hover.
 
-- **Site header** — project name (LinkNMS, exact casing) left, a single
-  `primary` CTA right. Collapses to name + CTA + menu button at `base`;
-  becomes a slim sticky bar with the shadow token on scroll.
+- **Site header** — the horizontal logo lockup (House Record mark + `LinkNMS`
+  wordmark, exact casing) left, a single `primary` CTA right. Collapses to
+  lockup + CTA + menu button at `base`; becomes a slim sticky bar with the
+  shadow token on scroll.
 - **Hero** — `hero` headline carrying the promise, one `lede` line of
   support, a single primary CTA, and a restrained product illustration
   showing the planned/actual split. No carousel, no autoplay, no counters
@@ -139,8 +161,9 @@ behind hover.
 - **Lead form** — waitlist or contact. Label-above fields, 2–3 fields
   maximum, `primary` focus ring, honest button copy ("Join the waitlist",
   not "Get started" if nothing ships yet).
-- **Footer** — LinkNMS wordmark, navigation, and any legal/claims text in
-  `caption`. Draft or unsubstantiated claims never appear here as fact.
+- **Footer** — the fuller logo lockup (mark + `LinkNMS` + the *Trust built-in.*
+  slogan, two-tone), navigation, and any legal/claims text in `caption`. Draft
+  or unsubstantiated claims never appear here as fact.
 
 ## Do's and Don'ts
 
