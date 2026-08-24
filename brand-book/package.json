@@ -1,0 +1,18 @@
+{
+  "name": "linknms-brand-book",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LinkNMS brand book — logo, colour, typography, and interface components, in Storybook. Deployable online.",
+  "scripts": {
+    "storybook": "storybook dev -p 6006 --no-open",
+    "build-storybook": "storybook build -o storybook-static"
+  },
+  "devDependencies": {
+    "@storybook/addon-essentials": "^8.4.7",
+    "@storybook/blocks": "^8.4.7",
+    "@storybook/html": "^8.4.7",
+    "@storybook/html-vite": "^8.4.7",
+    "storybook": "^8.4.7",
+    "vite": "^5.4.11"
+  }
+}
