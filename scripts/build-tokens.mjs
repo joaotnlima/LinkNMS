@@ -17,8 +17,9 @@ const TARGETS = [
 
 const raw = JSON.parse(await fs.readFile(SRC, "utf8"));
 
-// Colours emit bare names (--owner); other groups are namespaced (--size-display).
-const bare = new Set(["color"]);
+// Colours and the font emit bare names (--owner, --sans); other groups are
+// namespaced (--size-display, --space-4, --radius-control).
+const bare = new Set(["color", "font"]);
 const flat = {};
 const lines = [];
 
