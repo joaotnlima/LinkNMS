@@ -1,0 +1,58 @@
+name: Brand book (Storybook)
+
+# Build the Storybook brand book and publish it to GitHub Pages.
+# Pages on a PRIVATE repo requires a paid plan; on free, the build still runs
+# and the static site is uploaded as an artifact you can download.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "brand-book/**"
+      - ".github/workflows/storybook.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: brand-book
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build Storybook
+        run: npm run build-storybook
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: storybook-static
+          path: brand-book/storybook-static
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: brand-book/storybook-static
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
