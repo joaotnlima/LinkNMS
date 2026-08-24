@@ -35,11 +35,10 @@ ridge into Owner Blue and Builder Orange, over the paper record holding the
 planned (blue) and actual (orange) bars. The icon *is* the logo; the wordmark
 and slogan are added only where the surface needs them.
 
-- **Header** — the horizontal lockup: the mark (~24 px) + the `LinkNMS`
-  wordmark, exact casing. No slogan here; the header stays quiet.
-- **Footer** — the fuller lockup: the mark + `LinkNMS` with the **"Trust
+- **The lockup** — the mark + `LinkNMS` (exact casing) with the **"Trust
   built-in."** slogan beneath, set two-tone (**Trust** in Ink, *built-in.* in
-  the fade grey `#9a9a9a`), echoing the record's tonal fade.
+  the fade grey `#9a9a9a`), echoing the record's tonal fade. Used consistently
+  in **both the header and the footer** — same lockup, same weight.
 - **Assets, never redrawn** — SVG masters in [`../logos`](../logos), and
   rasters/favicon/OG in [`../brand-kit`](../brand-kit). The page wires
   `favicon.ico`, an SVG favicon, `apple-touch-icon` (180 px) and the social
@@ -136,10 +135,9 @@ Flat and paper-like, matching the brand. The page is mostly unshadowed.
 Mobile-first throughout — 44 × 44 px minimum touch target, nothing essential
 behind hover.
 
-- **Site header** — the horizontal logo lockup (House Record mark + `LinkNMS`
-  wordmark, exact casing) left, a single `primary` CTA right. Collapses to
-  lockup + CTA + menu button at `base`; becomes a slim sticky bar with the
-  shadow token on scroll.
+- **Site header** — the logo lockup (mark + `LinkNMS` + the *Trust built-in.*
+  slogan) left, a single `primary` CTA right. Collapses to lockup + CTA + menu
+  button at `base`; becomes a slim sticky bar with the shadow token on scroll.
 - **Hero** — `hero` headline carrying the promise, one `lede` line of
   support, a single primary CTA, and a restrained product illustration
   showing the planned/actual split. No carousel, no autoplay, no counters
@@ -161,7 +159,7 @@ behind hover.
 - **Lead form** — waitlist or contact. Label-above fields, 2–3 fields
   maximum, `primary` focus ring, honest button copy ("Join the waitlist",
   not "Get started" if nothing ships yet).
-- **Footer** — the fuller logo lockup (mark + `LinkNMS` + the *Trust built-in.*
+- **Footer** — the same logo lockup (mark + `LinkNMS` + the *Trust built-in.*
   slogan, two-tone), navigation, and any legal/claims text in `caption`. Draft
   or unsubstantiated claims never appear here as fact.
 

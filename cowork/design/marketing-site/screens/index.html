@@ -62,11 +62,9 @@
     border-bottom: 1px solid var(--outline);
   }
   header.site .bar { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: var(--s12); }
-  .wordmark { font-weight: 700; font-size: 18px; letter-spacing: -0.01em; display: inline-flex; align-items: center; gap: var(--s8); color: var(--foreground); }
-  .wordmark .glyph { width: 24px; height: 24px; flex: none; display: block; }
   .header-right { display: flex; align-items: center; gap: var(--s12); }
 
-  /* Footer brand lockup (icon + name + slogan) */
+  /* Brand lockup (icon + name + slogan) — used in header and footer */
   .brandlock { display: inline-flex; align-items: center; gap: 11px; }
   .brandlock .glyph { width: 34px; height: 34px; flex: none; display: block; }
   .brandlock .txt { display: flex; flex-direction: column; line-height: 1.1; }
@@ -193,7 +191,10 @@
 <!-- ============ HEADER ============ -->
 <header class="site">
   <div class="wrap bar">
-    <span class="wordmark"><svg class="glyph" viewBox="0 0 64 64" aria-hidden="true"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>LinkNMS</span>
+    <span class="brandlock">
+      <svg class="glyph" viewBox="0 0 64 64" aria-hidden="true"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>
+      <span class="txt"><span class="nm">LinkNMS</span><span class="slogan"><b>Trust</b> built-in.</span></span>
+    </span>
     <div class="header-right">
       <div class="langtoggle" role="group" aria-label="Idioma / Language">
         <button class="langbtn" data-lang="pt" type="button">PT</button>
