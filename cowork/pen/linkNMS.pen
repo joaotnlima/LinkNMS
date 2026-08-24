@@ -3,19 +3,6 @@
   "children": [
     {
       "type": "frame",
-      "id": "MyRwy",
-      "x": 0,
-      "y": 1160,
-      "name": "Linknms / Symbol",
-      "reusable": true,
-      "width": 320,
-      "height": 320,
-      "layout": "vertical",
-      "justifyContent": "center",
-      "alignItems": "center"
-    },
-    {
-      "type": "frame",
       "id": "EI0Ad",
       "x": 0,
       "y": 3775,
