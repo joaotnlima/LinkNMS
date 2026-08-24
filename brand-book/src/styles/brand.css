@@ -1,0 +1,109 @@
+/* Brand-book component + specimen styles, token-driven. Layout chrome is
+   provided by Storybook; this is only the marks, specimens and components. */
+
+body{font-family:var(--sans);color:var(--ink);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums;font-weight:500}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.grid{display:grid;gap:16px}
+.muted{color:var(--muted)}
+code{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.86em;
+  background:var(--surface-sunken);border:1px solid var(--outline);border-radius:4px;padding:1px 5px}
+
+/* Marks & lockups */
+.mark{display:block}
+.lockup{display:inline-flex;align-items:center;gap:14px}
+.lockup.stack{flex-direction:column;gap:10px;text-align:center}
+.wm .name{font-weight:700;letter-spacing:-.6px;line-height:1}
+.wm .slogan{color:var(--fade);font-weight:500;letter-spacing:.2px;margin-top:4px}
+.wm .slogan b{color:var(--ink);font-weight:600}
+.stack .wm .slogan{margin-top:2px}
+
+/* Specimens */
+.specimens{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.specimen{display:flex;flex-direction:column;gap:6px}
+.specimen .stage{border:1px solid var(--outline);border-radius:6px;min-height:120px;
+  display:flex;align-items:center;justify-content:center;padding:20px;background:var(--paper)}
+.specimen .stage.dark{background:var(--ink)}
+.specimen .cap{font-size:12px;color:var(--muted)}
+.stage.dark .wm .name{color:var(--paper)} .stage.dark .wm .slogan b{color:var(--paper)}
+.stage.dark .wm .slogan{color:var(--fade-dark)}
+.clearspace{position:relative;display:inline-block;padding:24px;border:1px dashed var(--outline-strong);border-radius:8px}
+
+/* Colour swatches */
+.swatches{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+.swatch .chip{height:88px;border-radius:6px;border:1px solid var(--outline)}
+.swatch .meta{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px}
+.swatch .lbl{font-weight:600;font-size:14px}
+.swatch .val{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--muted)}
+.swatch .role{font-size:12px;color:var(--muted);margin-top:2px}
+
+/* Type scale */
+table.scale{border-collapse:collapse;width:100%;font-size:14px}
+table.scale th,table.scale td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--outline);vertical-align:baseline}
+table.scale th{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);font-weight:700}
+
+/* Do / Don't */
+.dd{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+@media(max-width:640px){.dd{grid-template-columns:1fr}}
+.card{border:1px solid var(--outline);border-radius:6px;background:var(--paper);padding:20px}
+.dd .card{border-top:3px solid var(--outline)}
+.dd .do{border-top-color:var(--success)} .dd .dont{border-top-color:var(--danger)}
+.dd h4{margin:0 0 8px;font-size:13px;letter-spacing:.4px;text-transform:uppercase}
+.dd .do h4{color:var(--success)} .dd .dont h4{color:var(--danger)}
+.dd ul{margin:0;padding-left:18px;color:var(--muted)} .dd li{margin:6px 0}
+
+/* Buttons */
+.btn{font:inherit;font-weight:600;border-radius:6px;border:1px solid transparent;
+  padding:0 18px;height:44px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.btn.lg{height:52px;padding:0 24px}
+.btn.primary{background:var(--owner);color:#fff}
+.btn.secondary{background:transparent;border-color:var(--outline-strong);color:var(--ink)}
+.btn.danger{background:var(--danger);color:#fff}
+.btn[disabled]{background:var(--surface-sunken);color:var(--muted);border-color:var(--outline);cursor:not-allowed}
+
+/* Form field */
+.field{max-width:320px}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600}
+.field input{width:100%;height:44px;border:1px solid var(--outline);border-radius:6px;
+  padding:0 12px;font:inherit;background:var(--surface-raised)}
+.field input:focus{outline:none;border-color:var(--owner);box-shadow:0 0 0 3px rgba(42,120,214,.25)}
+.field.err input{border-color:var(--danger)}
+.field .msg{color:var(--danger);font-size:12px;margin-top:6px}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  border-radius:999px;padding:3px 10px;border:1px solid}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%}
+.badge.ok{color:var(--success);border-color:#bfe0cd;background:#eaf5ef}.badge.ok::before{background:var(--success)}
+.badge.warn{color:var(--warning);border-color:#ebd9b3;background:#faf1de}.badge.warn::before{background:var(--warning)}
+.badge.bad{color:var(--danger);border-color:#eec3bd;background:#fbeae7}.badge.bad::before{background:var(--danger)}
+.badge.edit{color:var(--muted);border-color:var(--outline);background:var(--surface-sunken)}.badge.edit::before{background:var(--muted)}
+
+/* Party tag */
+.party{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  padding:2px 9px;border-radius:4px;border:1px solid}
+.party::before{content:"";width:8px;height:8px;border-radius:2px}
+.party.owner{color:var(--owner);border-color:#bcd6f5}.party.owner::before{background:var(--owner)}
+.party.builder{color:#b8501f;border-color:#f5c9b4}.party.builder::before{background:var(--builder)}
+
+/* Record components */
+.listrow{border:1px solid var(--outline);border-radius:6px;padding:14px 16px;display:flex;
+  justify-content:space-between;align-items:center;gap:12px;background:var(--paper)}
+.listrow .t{font-weight:600} .listrow .s{font-size:12px;color:var(--muted)}
+.tl{max-width:520px}
+.tl .r{display:grid;grid-template-columns:64px 1fr auto;gap:10px;align-items:center;margin:8px 0}
+.tl .r .lab{font-size:12px;color:var(--muted)}
+.tl .bar{height:14px;border-radius:2px}
+.tl .planned{background:var(--owner-muted);border:1px solid var(--owner)}
+.tl .actual{background:var(--builder-muted);border:1px solid var(--builder)}
+.tl .r .val{font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted)}
+.budget{border-collapse:collapse;width:100%;max-width:520px;font-size:14px}
+.budget th,.budget td{padding:8px 10px;border-bottom:1px solid var(--outline);text-align:right}
+.budget th:first-child,.budget td:first-child{text-align:left}
+.budget td{font-variant-numeric:tabular-nums}
+.delta.up{color:var(--danger)} .delta.down{color:var(--success)}
+.change{border:1px solid var(--outline);border-radius:6px;padding:14px 16px;max-width:520px}
+.change .who{font-weight:600} .change .when{font-size:12px;color:var(--muted)}
+.change .vals{margin-top:8px;font-variant-numeric:tabular-nums}
+.change .vals .old{color:var(--muted);text-decoration:line-through;margin-right:8px}
+.change .vals .arrow{color:var(--muted);margin:0 8px}
