@@ -1,0 +1,5192 @@
+{
+  "version": "2.17",
+  "children": [
+    {
+      "type": "frame",
+      "id": "MyRwy",
+      "x": 0,
+      "y": 1160,
+      "name": "Linknms / Symbol",
+      "reusable": true,
+      "width": 320,
+      "height": 320,
+      "layout": "vertical",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "uzPaL",
+          "name": "Symbol",
+          "width": 320,
+          "height": 320,
+          "layout": "none",
+          "children": [
+            {
+              "type": "path",
+              "id": "z7oyT",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Left",
+              "geometry": "M196 92l-86 90",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 320,
+              "height": 320,
+              "stroke": "#F79A1F",
+              "strokeWidth": 35.55555555555556,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "HwScp",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Cross",
+              "geometry": "M116 104l70 72",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 320,
+              "height": 320,
+              "stroke": "#FBBF3B",
+              "strokeWidth": 35.55555555555556,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "xLa8S",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Right",
+              "geometry": "M196 92l124 110",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 320,
+              "height": 320,
+              "stroke": "#2BC0A6",
+              "strokeWidth": 35.55555555555556,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "WYfgB",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Top",
+              "geometry": "M118 178l0 64",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 320,
+              "height": 320,
+              "stroke": "#F5901E",
+              "strokeWidth": 35.55555555555556,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "S7NDoz",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Btm",
+              "geometry": "M118 238l0 62",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 320,
+              "height": 320,
+              "stroke": "#EE2E7B",
+              "strokeWidth": 35.55555555555556,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "TRSW5",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Right",
+              "geometry": "M286 196l0 104",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 320,
+              "height": 320,
+              "stroke": "#8E2FC4",
+              "strokeWidth": 35.55555555555556,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "XtAZW",
+              "x": 0,
+              "y": 0,
+              "name": "Base",
+              "geometry": "M118 300l168 0",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 320,
+              "height": 320,
+              "stroke": "#EC2C7E",
+              "strokeWidth": 35.55555555555556,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 14.222222222222221,
+              "id": "GurgU",
+              "x": 104.29629629629629,
+              "y": 162.37037037037035,
+              "name": "Window",
+              "fill": "#2BB8A6",
+              "width": 80.59259259259258,
+              "height": 80.59259259259258
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "wCmrH",
+      "x": 440,
+      "y": 1160,
+      "name": "EXPORT / Logo Lockups",
+      "width": 1240,
+      "height": 620,
+      "fill": "#FFFFFF",
+      "children": [
+        {
+          "type": "frame",
+          "id": "q25la0",
+          "name": "Color on Light",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "#FFFFFF",
+          "layout": "vertical",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "GPujJ",
+              "name": "Color on Light",
+              "layout": "vertical",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "W37PZO",
+                  "name": "Symbol",
+                  "width": 180,
+                  "height": 180,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "path",
+                      "id": "mDgNd",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Left",
+                      "geometry": "M196 92l-86 90",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#F79A1F",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "mJygt",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Cross",
+                      "geometry": "M116 104l70 72",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#FBBF3B",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "Ukbjq",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Right",
+                      "geometry": "M196 92l124 110",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#2BC0A6",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "w6YBT",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Left Top",
+                      "geometry": "M118 178l0 64",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#F5901E",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "JRxZA",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Left Btm",
+                      "geometry": "M118 238l0 62",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#EE2E7B",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "AQQx1",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Right",
+                      "geometry": "M286 196l0 104",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#8E2FC4",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "h86xZK",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Base",
+                      "geometry": "M118 300l168 0",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#EC2C7E",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 8,
+                      "id": "a1QGa",
+                      "x": 58.666666666666664,
+                      "y": 91.33333333333333,
+                      "name": "Window",
+                      "fill": "#2BB8A6",
+                      "width": 45.33333333333333,
+                      "height": 45.33333333333333
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "SGfsO",
+                  "name": "Wordmark",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "w4kdtL",
+                      "name": "WM Link",
+                      "fill": "#1F1F1F",
+                      "content": "Link",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    },
+                    {
+                      "type": "text",
+                      "id": "fe13g",
+                      "name": "WM nm",
+                      "fill": "#9A9A9A",
+                      "content": "nm",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    },
+                    {
+                      "type": "text",
+                      "id": "gHC7f",
+                      "name": "WM s",
+                      "fill": "#1F1F1F",
+                      "content": "s",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "bZPaN",
+                  "name": "Tagline",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "E1z67h",
+                      "name": "TL Trust",
+                      "fill": "#1F1F1F",
+                      "content": "Trust ",
+                      "fontFamily": "Poppins",
+                      "fontSize": 27,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "xYDxh",
+                      "name": "TL Built",
+                      "fill": "#9A9A9A",
+                      "content": "Built-in",
+                      "fontFamily": "Poppins",
+                      "fontSize": 27,
+                      "fontWeight": "700"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "bNoZp",
+          "name": "Color on Dark",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "#1F1F1F",
+          "layout": "vertical",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "kNOXr",
+              "name": "Color on Dark",
+              "layout": "vertical",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "j0GAF",
+                  "name": "Symbol",
+                  "width": 180,
+                  "height": 180,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "path",
+                      "id": "NxvUr",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Left",
+                      "geometry": "M196 92l-86 90",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#F79A1F",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "OHB6T",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Cross",
+                      "geometry": "M116 104l70 72",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#FBBF3B",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "B8j9i",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Right",
+                      "geometry": "M196 92l124 110",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#2BC0A6",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "U4gZUY",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Left Top",
+                      "geometry": "M118 178l0 64",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#F5901E",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "IOAhQ",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Left Btm",
+                      "geometry": "M118 238l0 62",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#EE2E7B",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "NLEGL",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Right",
+                      "geometry": "M286 196l0 104",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#8E2FC4",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "MhMWt",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Base",
+                      "geometry": "M118 300l168 0",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#EC2C7E",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 8,
+                      "id": "E0TsqF",
+                      "x": 58.666666666666664,
+                      "y": 91.33333333333333,
+                      "name": "Window",
+                      "fill": "#2BB8A6",
+                      "width": 45.33333333333333,
+                      "height": 45.33333333333333
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "WVfkP",
+                  "name": "Wordmark",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "uyj2L",
+                      "name": "WM Link",
+                      "fill": "#FFFFFF",
+                      "content": "Link",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    },
+                    {
+                      "type": "text",
+                      "id": "Fv2zU",
+                      "name": "WM nm",
+                      "fill": "#8C8C8C",
+                      "content": "nm",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    },
+                    {
+                      "type": "text",
+                      "id": "RCRd4",
+                      "name": "WM s",
+                      "fill": "#FFFFFF",
+                      "content": "s",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "kAiGS",
+                  "name": "Tagline",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "o2cCV",
+                      "name": "TL Trust",
+                      "fill": "#FFFFFF",
+                      "content": "Trust ",
+                      "fontFamily": "Poppins",
+                      "fontSize": 27,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "uqzH7",
+                      "name": "TL Built",
+                      "fill": "#8C8C8C",
+                      "content": "Built-in",
+                      "fontFamily": "Poppins",
+                      "fontSize": 27,
+                      "fontWeight": "700"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Q7jG2",
+          "name": "Mono Black",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "#FFFFFF",
+          "layout": "vertical",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "JLOzs",
+              "name": "Mono Black",
+              "layout": "vertical",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "z6pmua",
+                  "name": "Symbol",
+                  "width": 180,
+                  "height": 180,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "path",
+                      "id": "I646N",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Left",
+                      "geometry": "M196 92l-86 90",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#1F1F1F",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "NdoKW",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Cross",
+                      "geometry": "M116 104l70 72",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#1F1F1F",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "L20Sno",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Right",
+                      "geometry": "M196 92l124 110",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#1F1F1F",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "MRewZ",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Left Top",
+                      "geometry": "M118 178l0 64",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#1F1F1F",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "w3lIH",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Left Btm",
+                      "geometry": "M118 238l0 62",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#1F1F1F",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "b69dRR",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Right",
+                      "geometry": "M286 196l0 104",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#1F1F1F",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "Ouccf",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Base",
+                      "geometry": "M118 300l168 0",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#1F1F1F",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 8,
+                      "id": "P0GmP1",
+                      "x": 58.666666666666664,
+                      "y": 91.33333333333333,
+                      "name": "Window",
+                      "fill": "#1F1F1F",
+                      "width": 45.33333333333333,
+                      "height": 45.33333333333333
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "NRh2W",
+                  "name": "Wordmark",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "xV74r",
+                      "name": "WM Link",
+                      "fill": "#1F1F1F",
+                      "content": "Link",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    },
+                    {
+                      "type": "text",
+                      "id": "dUyQJ",
+                      "name": "WM nm",
+                      "fill": "#8C8C8C",
+                      "content": "nm",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    },
+                    {
+                      "type": "text",
+                      "id": "JH6Wc",
+                      "name": "WM s",
+                      "fill": "#1F1F1F",
+                      "content": "s",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "WsUVr",
+                  "name": "Tagline",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "t5AON",
+                      "name": "TL Trust",
+                      "fill": "#1F1F1F",
+                      "content": "Trust ",
+                      "fontFamily": "Poppins",
+                      "fontSize": 27,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "HefNm",
+                      "name": "TL Built",
+                      "fill": "#8C8C8C",
+                      "content": "Built-in",
+                      "fontFamily": "Poppins",
+                      "fontSize": 27,
+                      "fontWeight": "700"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "dtveh",
+          "name": "Mono White",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "#1F1F1F",
+          "layout": "vertical",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "Hjqm6",
+              "name": "Mono White",
+              "layout": "vertical",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "riI9t",
+                  "name": "Symbol",
+                  "width": 180,
+                  "height": 180,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "path",
+                      "id": "axU60",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Left",
+                      "geometry": "M196 92l-86 90",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#FFFFFF",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "i9dxsc",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Cross",
+                      "geometry": "M116 104l70 72",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#FFFFFF",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "MLgBi",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Roof Right",
+                      "geometry": "M196 92l124 110",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#FFFFFF",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "IudXQ",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Left Top",
+                      "geometry": "M118 178l0 64",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#FFFFFF",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "O0T1Dt",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Left Btm",
+                      "geometry": "M118 238l0 62",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#FFFFFF",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "GIw9N",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Wall Right",
+                      "geometry": "M286 196l0 104",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#FFFFFF",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "path",
+                      "id": "yQhOo",
+                      "x": 0,
+                      "y": 0,
+                      "name": "Base",
+                      "geometry": "M118 300l168 0",
+                      "viewBox": [
+                        80,
+                        61,
+                        270,
+                        270
+                      ],
+                      "width": 180,
+                      "height": 180,
+                      "stroke": "#FFFFFF",
+                      "strokeWidth": 20,
+                      "strokeLinejoin": "round",
+                      "strokeLinecap": "round"
+                    },
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 8,
+                      "id": "Oazt6",
+                      "x": 58.666666666666664,
+                      "y": 91.33333333333333,
+                      "name": "Window",
+                      "fill": "#FFFFFF",
+                      "width": 45.33333333333333,
+                      "height": 45.33333333333333
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ivFNS",
+                  "name": "Wordmark",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "zzWdx",
+                      "name": "WM Link",
+                      "fill": "#FFFFFF",
+                      "content": "Link",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    },
+                    {
+                      "type": "text",
+                      "id": "plIzI",
+                      "name": "WM nm",
+                      "fill": "#8C8C8C",
+                      "content": "nm",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    },
+                    {
+                      "type": "text",
+                      "id": "hH3rE",
+                      "name": "WM s",
+                      "fill": "#FFFFFF",
+                      "content": "s",
+                      "fontFamily": "Poppins",
+                      "fontSize": 52,
+                      "fontWeight": "700",
+                      "letterSpacing": -1.04
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "O6DL3",
+                  "name": "Tagline",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "IJdIK",
+                      "name": "TL Trust",
+                      "fill": "#FFFFFF",
+                      "content": "Trust ",
+                      "fontFamily": "Poppins",
+                      "fontSize": 27,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "heTeT",
+                      "name": "TL Built",
+                      "fill": "#8C8C8C",
+                      "content": "Built-in",
+                      "fontFamily": "Poppins",
+                      "fontSize": 27,
+                      "fontWeight": "700"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "gPeR2",
+      "x": 440,
+      "y": 1940,
+      "name": "EXPORT / icon-512",
+      "width": 512,
+      "height": 512,
+      "fill": "#FFFFFF",
+      "layout": "vertical",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "j7R0q",
+          "name": "Symbol",
+          "width": 389,
+          "height": 389,
+          "layout": "none",
+          "children": [
+            {
+              "type": "path",
+              "id": "q1Tl3",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Left",
+              "geometry": "M196 92l-86 90",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 389,
+              "height": 389,
+              "stroke": "#F79A1F",
+              "strokeWidth": 43.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "DTe8M",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Cross",
+              "geometry": "M116 104l70 72",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 389,
+              "height": 389,
+              "stroke": "#FBBF3B",
+              "strokeWidth": 43.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "xeu8x",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Right",
+              "geometry": "M196 92l124 110",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 389,
+              "height": 389,
+              "stroke": "#2BC0A6",
+              "strokeWidth": 43.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "HVEOP",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Top",
+              "geometry": "M118 178l0 64",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 389,
+              "height": 389,
+              "stroke": "#F5901E",
+              "strokeWidth": 43.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "f7v0JX",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Btm",
+              "geometry": "M118 238l0 62",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 389,
+              "height": 389,
+              "stroke": "#EE2E7B",
+              "strokeWidth": 43.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "snm6f",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Right",
+              "geometry": "M286 196l0 104",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 389,
+              "height": 389,
+              "stroke": "#8E2FC4",
+              "strokeWidth": 43.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "Qlw0r",
+              "x": 0,
+              "y": 0,
+              "name": "Base",
+              "geometry": "M118 300l168 0",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 389,
+              "height": 389,
+              "stroke": "#EC2C7E",
+              "strokeWidth": 43.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 17.288888888888888,
+              "id": "x2Wq3y",
+              "x": 126.78518518518518,
+              "y": 197.38148148148147,
+              "name": "Window",
+              "fill": "#2BB8A6",
+              "width": 97.97037037037036,
+              "height": 97.97037037037036
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "eLqWB",
+      "x": 1012,
+      "y": 1940,
+      "name": "EXPORT / icon-192",
+      "width": 192,
+      "height": 192,
+      "fill": "#FFFFFF",
+      "layout": "vertical",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "x9kma",
+          "name": "Symbol",
+          "width": 146,
+          "height": 146,
+          "layout": "none",
+          "children": [
+            {
+              "type": "path",
+              "id": "gY7Eh",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Left",
+              "geometry": "M196 92l-86 90",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 146,
+              "height": 146,
+              "stroke": "#F79A1F",
+              "strokeWidth": 16.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "h1sfX6",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Cross",
+              "geometry": "M116 104l70 72",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 146,
+              "height": 146,
+              "stroke": "#FBBF3B",
+              "strokeWidth": 16.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "EHtbH",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Right",
+              "geometry": "M196 92l124 110",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 146,
+              "height": 146,
+              "stroke": "#2BC0A6",
+              "strokeWidth": 16.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "fWIT4",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Top",
+              "geometry": "M118 178l0 64",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 146,
+              "height": 146,
+              "stroke": "#F5901E",
+              "strokeWidth": 16.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "D6zkf",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Btm",
+              "geometry": "M118 238l0 62",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 146,
+              "height": 146,
+              "stroke": "#EE2E7B",
+              "strokeWidth": 16.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "TlBFp",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Right",
+              "geometry": "M286 196l0 104",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 146,
+              "height": 146,
+              "stroke": "#8E2FC4",
+              "strokeWidth": 16.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "NuV8v",
+              "x": 0,
+              "y": 0,
+              "name": "Base",
+              "geometry": "M118 300l168 0",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 146,
+              "height": 146,
+              "stroke": "#EC2C7E",
+              "strokeWidth": 16.22222222222222,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 6.488888888888889,
+              "id": "MZiVZ",
+              "x": 47.58518518518518,
+              "y": 74.08148148148148,
+              "name": "Window",
+              "fill": "#2BB8A6",
+              "width": 36.77037037037037,
+              "height": 36.77037037037037
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "ZjRgy",
+      "x": 1264,
+      "y": 1940,
+      "name": "EXPORT / apple-touch-icon-180",
+      "width": 180,
+      "height": 180,
+      "fill": "#FFFFFF",
+      "layout": "vertical",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "HqllT",
+          "name": "Symbol",
+          "width": 130,
+          "height": 130,
+          "layout": "none",
+          "children": [
+            {
+              "type": "path",
+              "id": "t2IaAu",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Left",
+              "geometry": "M196 92l-86 90",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 130,
+              "height": 130,
+              "stroke": "#F79A1F",
+              "strokeWidth": 14.444444444444443,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "dYD0X",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Cross",
+              "geometry": "M116 104l70 72",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 130,
+              "height": 130,
+              "stroke": "#FBBF3B",
+              "strokeWidth": 14.444444444444443,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "p0CokI",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Right",
+              "geometry": "M196 92l124 110",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 130,
+              "height": 130,
+              "stroke": "#2BC0A6",
+              "strokeWidth": 14.444444444444443,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "yiIMY",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Top",
+              "geometry": "M118 178l0 64",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 130,
+              "height": 130,
+              "stroke": "#F5901E",
+              "strokeWidth": 14.444444444444443,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "LxcK8",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Btm",
+              "geometry": "M118 238l0 62",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 130,
+              "height": 130,
+              "stroke": "#EE2E7B",
+              "strokeWidth": 14.444444444444443,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "tEFOR",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Right",
+              "geometry": "M286 196l0 104",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 130,
+              "height": 130,
+              "stroke": "#8E2FC4",
+              "strokeWidth": 14.444444444444443,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "o9U7qD",
+              "x": 0,
+              "y": 0,
+              "name": "Base",
+              "geometry": "M118 300l168 0",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 130,
+              "height": 130,
+              "stroke": "#EC2C7E",
+              "strokeWidth": 14.444444444444443,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 5.777777777777778,
+              "id": "Y8wkHR",
+              "x": 42.37037037037037,
+              "y": 65.96296296296296,
+              "name": "Window",
+              "fill": "#2BB8A6",
+              "width": 32.74074074074074,
+              "height": 32.74074074074074
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "vbmdS",
+      "x": 1504,
+      "y": 1940,
+      "name": "EXPORT / favicon-32",
+      "width": 32,
+      "height": 32,
+      "fill": "#FFFFFF",
+      "layout": "vertical",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "udzp2",
+          "name": "Symbol",
+          "width": 27,
+          "height": 27,
+          "layout": "none",
+          "children": [
+            {
+              "type": "path",
+              "id": "A4FeiA",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Left",
+              "geometry": "M196 92l-86 90",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 27,
+              "height": 27,
+              "stroke": "#F79A1F",
+              "strokeWidth": 3,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "mpwGl",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Cross",
+              "geometry": "M116 104l70 72",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 27,
+              "height": 27,
+              "stroke": "#FBBF3B",
+              "strokeWidth": 3,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "r3e43s",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Right",
+              "geometry": "M196 92l124 110",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 27,
+              "height": 27,
+              "stroke": "#2BC0A6",
+              "strokeWidth": 3,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "eTGqr",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Top",
+              "geometry": "M118 178l0 64",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 27,
+              "height": 27,
+              "stroke": "#F5901E",
+              "strokeWidth": 3,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "ywEBA",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Btm",
+              "geometry": "M118 238l0 62",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 27,
+              "height": 27,
+              "stroke": "#EE2E7B",
+              "strokeWidth": 3,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "jpmsJ",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Right",
+              "geometry": "M286 196l0 104",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 27,
+              "height": 27,
+              "stroke": "#8E2FC4",
+              "strokeWidth": 3,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "YyFZH",
+              "x": 0,
+              "y": 0,
+              "name": "Base",
+              "geometry": "M118 300l168 0",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 27,
+              "height": 27,
+              "stroke": "#EC2C7E",
+              "strokeWidth": 3,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 1.2000000000000002,
+              "id": "i11vx",
+              "x": 8.8,
+              "y": 13.700000000000001,
+              "name": "Window",
+              "fill": "#2BB8A6",
+              "width": 6.800000000000001,
+              "height": 6.800000000000001
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "dieM1",
+      "x": 1596,
+      "y": 1940,
+      "name": "EXPORT / icon-512-dark",
+      "width": 512,
+      "height": 512,
+      "fill": "#1F1F1F",
+      "cornerRadius": 112,
+      "layout": "vertical",
+      "justifyContent": "center",
+      "alignItems": "center",
+      "children": [
+        {
+          "type": "frame",
+          "id": "bs1ST",
+          "name": "Symbol",
+          "width": 348,
+          "height": 348,
+          "layout": "none",
+          "children": [
+            {
+              "type": "path",
+              "id": "IBxmF",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Left",
+              "geometry": "M196 92l-86 90",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 348,
+              "height": 348,
+              "stroke": "#FFFFFF",
+              "strokeWidth": 38.66666666666667,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "p68zEw",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Cross",
+              "geometry": "M116 104l70 72",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 348,
+              "height": 348,
+              "stroke": "#FFFFFF",
+              "strokeWidth": 38.66666666666667,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "BaJyq",
+              "x": 0,
+              "y": 0,
+              "name": "Roof Right",
+              "geometry": "M196 92l124 110",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 348,
+              "height": 348,
+              "stroke": "#FFFFFF",
+              "strokeWidth": 38.66666666666667,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "aJKZu",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Top",
+              "geometry": "M118 178l0 64",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 348,
+              "height": 348,
+              "stroke": "#FFFFFF",
+              "strokeWidth": 38.66666666666667,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "jNhsJ",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Left Btm",
+              "geometry": "M118 238l0 62",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 348,
+              "height": 348,
+              "stroke": "#FFFFFF",
+              "strokeWidth": 38.66666666666667,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "LKWIn",
+              "x": 0,
+              "y": 0,
+              "name": "Wall Right",
+              "geometry": "M286 196l0 104",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 348,
+              "height": 348,
+              "stroke": "#FFFFFF",
+              "strokeWidth": 38.66666666666667,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "M5NKkq",
+              "x": 0,
+              "y": 0,
+              "name": "Base",
+              "geometry": "M118 300l168 0",
+              "viewBox": [
+                80,
+                61,
+                270,
+                270
+              ],
+              "width": 348,
+              "height": 348,
+              "stroke": "#FFFFFF",
+              "strokeWidth": 38.66666666666667,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "rectangle",
+              "cornerRadius": 15.466666666666669,
+              "id": "VCx7L",
+              "x": 113.42222222222223,
+              "y": 176.57777777777778,
+              "name": "Window",
+              "fill": "#FFFFFF",
+              "width": 87.64444444444445,
+              "height": 87.64444444444445
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "hDGFX",
+      "x": 2268,
+      "y": 1160,
+      "name": "EXPORT / Brand Sheet",
+      "width": 1440,
+      "fill": "#FFFFFF",
+      "layout": "vertical",
+      "gap": 44,
+      "padding": [
+        64,
+        72
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "AhglH",
+          "name": "Masthead",
+          "width": "fill_container",
+          "gap": 28,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "IH35h",
+              "name": "Symbol",
+              "width": 104,
+              "height": 104,
+              "layout": "none",
+              "children": [
+                {
+                  "type": "path",
+                  "id": "SFx3O",
+                  "x": 0,
+                  "y": 0,
+                  "name": "Roof Left",
+                  "geometry": "M196 92l-86 90",
+                  "viewBox": [
+                    80,
+                    61,
+                    270,
+                    270
+                  ],
+                  "width": 104,
+                  "height": 104,
+                  "stroke": "#F79A1F",
+                  "strokeWidth": 11.555555555555555,
+                  "strokeLinejoin": "round",
+                  "strokeLinecap": "round"
+                },
+                {
+                  "type": "path",
+                  "id": "TMs6P",
+                  "x": 0,
+                  "y": 0,
+                  "name": "Roof Cross",
+                  "geometry": "M116 104l70 72",
+                  "viewBox": [
+                    80,
+                    61,
+                    270,
+                    270
+                  ],
+                  "width": 104,
+                  "height": 104,
+                  "stroke": "#FBBF3B",
+                  "strokeWidth": 11.555555555555555,
+                  "strokeLinejoin": "round",
+                  "strokeLinecap": "round"
+                },
+                {
+                  "type": "path",
+                  "id": "O0tGW",
+                  "x": 0,
+                  "y": 0,
+                  "name": "Roof Right",
+                  "geometry": "M196 92l124 110",
+                  "viewBox": [
+                    80,
+                    61,
+                    270,
+                    270
+                  ],
+                  "width": 104,
+                  "height": 104,
+                  "stroke": "#2BC0A6",
+                  "strokeWidth": 11.555555555555555,
+                  "strokeLinejoin": "round",
+                  "strokeLinecap": "round"
+                },
+                {
+                  "type": "path",
+                  "id": "ZYhzd",
+                  "x": 0,
+                  "y": 0,
+                  "name": "Wall Left Top",
+                  "geometry": "M118 178l0 64",
+                  "viewBox": [
+                    80,
+                    61,
+                    270,
+                    270
+                  ],
+                  "width": 104,
+                  "height": 104,
+                  "stroke": "#F5901E",
+                  "strokeWidth": 11.555555555555555,
+                  "strokeLinejoin": "round",
+                  "strokeLinecap": "round"
+                },
+                {
+                  "type": "path",
+                  "id": "MwZZr",
+                  "x": 0,
+                  "y": 0,
+                  "name": "Wall Left Btm",
+                  "geometry": "M118 238l0 62",
+                  "viewBox": [
+                    80,
+                    61,
+                    270,
+                    270
+                  ],
+                  "width": 104,
+                  "height": 104,
+                  "stroke": "#EE2E7B",
+                  "strokeWidth": 11.555555555555555,
+                  "strokeLinejoin": "round",
+                  "strokeLinecap": "round"
+                },
+                {
+                  "type": "path",
+                  "id": "y3q4sP",
+                  "x": 0,
+                  "y": 0,
+                  "name": "Wall Right",
+                  "geometry": "M286 196l0 104",
+                  "viewBox": [
+                    80,
+                    61,
+                    270,
+                    270
+                  ],
+                  "width": 104,
+                  "height": 104,
+                  "stroke": "#8E2FC4",
+                  "strokeWidth": 11.555555555555555,
+                  "strokeLinejoin": "round",
+                  "strokeLinecap": "round"
+                },
+                {
+                  "type": "path",
+                  "id": "tFcr7",
+                  "x": 0,
+                  "y": 0,
+                  "name": "Base",
+                  "geometry": "M118 300l168 0",
+                  "viewBox": [
+                    80,
+                    61,
+                    270,
+                    270
+                  ],
+                  "width": 104,
+                  "height": 104,
+                  "stroke": "#EC2C7E",
+                  "strokeWidth": 11.555555555555555,
+                  "strokeLinejoin": "round",
+                  "strokeLinecap": "round"
+                },
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 4.622222222222222,
+                  "id": "m0e0HW",
+                  "x": 33.8962962962963,
+                  "y": 52.77037037037037,
+                  "name": "Window",
+                  "fill": "#2BB8A6",
+                  "width": 26.192592592592593,
+                  "height": 26.192592592592593
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "g05BF",
+              "name": "Masthead Text",
+              "layout": "vertical",
+              "gap": 2,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "NI4Qv",
+                  "name": "Wordmark",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "F63EeC",
+                      "name": "WM Link",
+                      "fill": "#1F1F1F",
+                      "content": "Link",
+                      "fontFamily": "Poppins",
+                      "fontSize": 46,
+                      "fontWeight": "700",
+                      "letterSpacing": -1
+                    },
+                    {
+                      "type": "text",
+                      "id": "Y0DuA",
+                      "name": "WM nm",
+                      "fill": "#9A9A9A",
+                      "content": "nm",
+                      "fontFamily": "Poppins",
+                      "fontSize": 46,
+                      "fontWeight": "700",
+                      "letterSpacing": -1
+                    },
+                    {
+                      "type": "text",
+                      "id": "uCVjg",
+                      "name": "WM s",
+                      "fill": "#1F1F1F",
+                      "content": "s",
+                      "fontFamily": "Poppins",
+                      "fontSize": 46,
+                      "fontWeight": "700",
+                      "letterSpacing": -1
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "YmSPw",
+                  "name": "Tagline",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "moSAy",
+                      "name": "TL Trust",
+                      "fill": "#1F1F1F",
+                      "content": "Trust ",
+                      "fontFamily": "Poppins",
+                      "fontSize": 24,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "RgIDZ",
+                      "name": "TL Built",
+                      "fill": "#9A9A9A",
+                      "content": "Built-in",
+                      "fontFamily": "Poppins",
+                      "fontSize": 24,
+                      "fontWeight": "700"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "lUGQz",
+          "name": "Section: SYMBOL & CLEAR SPACE",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 18,
+          "children": [
+            {
+              "type": "text",
+              "id": "TrDpE",
+              "name": "SYMBOL & CLEAR SPACE",
+              "fill": "#6B6B6B",
+              "content": "SYMBOL & CLEAR SPACE",
+              "fontFamily": "Poppins",
+              "fontSize": 13,
+              "fontWeight": "600"
+            },
+            {
+              "type": "rectangle",
+              "id": "CDrkN",
+              "name": "Rule",
+              "fill": "#E6E6E6",
+              "width": "fill_container",
+              "height": 1
+            },
+            {
+              "type": "frame",
+              "id": "LhwY0",
+              "name": "Row",
+              "width": "fill_container",
+              "gap": 32,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "pGm3g",
+                  "name": "Clear Space",
+                  "width": 340,
+                  "height": 340,
+                  "fill": "#FAFAFA",
+                  "cornerRadius": 8,
+                  "stroke": "#E6E6E6",
+                  "strokeWidth": 1,
+                  "strokeAlignment": "inner",
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "g8aDCr",
+                      "name": "Guide",
+                      "width": 240,
+                      "height": 240,
+                      "stroke": "#D6D6D6",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "IHl4X",
+                          "name": "Symbol",
+                          "width": 196,
+                          "height": 196,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "path",
+                              "id": "DWyq8",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Left",
+                              "geometry": "M196 92l-86 90",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 196,
+                              "height": 196,
+                              "stroke": "#F79A1F",
+                              "strokeWidth": 21.77777777777778,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "u5UXgf",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Cross",
+                              "geometry": "M116 104l70 72",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 196,
+                              "height": 196,
+                              "stroke": "#FBBF3B",
+                              "strokeWidth": 21.77777777777778,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "RtDhr",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Right",
+                              "geometry": "M196 92l124 110",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 196,
+                              "height": 196,
+                              "stroke": "#2BC0A6",
+                              "strokeWidth": 21.77777777777778,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "m8wbII",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Top",
+                              "geometry": "M118 178l0 64",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 196,
+                              "height": 196,
+                              "stroke": "#F5901E",
+                              "strokeWidth": 21.77777777777778,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "b4HYv",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Btm",
+                              "geometry": "M118 238l0 62",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 196,
+                              "height": 196,
+                              "stroke": "#EE2E7B",
+                              "strokeWidth": 21.77777777777778,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "ilAtL",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Right",
+                              "geometry": "M286 196l0 104",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 196,
+                              "height": 196,
+                              "stroke": "#8E2FC4",
+                              "strokeWidth": 21.77777777777778,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "XDZXC",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Base",
+                              "geometry": "M118 300l168 0",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 196,
+                              "height": 196,
+                              "stroke": "#EC2C7E",
+                              "strokeWidth": 21.77777777777778,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 8.711111111111112,
+                              "id": "at28C",
+                              "x": 63.88148148148149,
+                              "y": 99.45185185185186,
+                              "name": "Window",
+                              "fill": "#2BB8A6",
+                              "width": 49.36296296296297,
+                              "height": 49.36296296296297
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "J6IR82",
+                  "name": "Notes",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "opIoG",
+                      "name": "Note",
+                      "fill": "#6B6B6B",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "— Clear space = 25% of the symbol height on every side.",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "rMJhR",
+                      "name": "Note",
+                      "fill": "#6B6B6B",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "— Minimum symbol size: 32 px (digital) · 10 mm (print).",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "k5hwZx",
+                      "name": "Note",
+                      "fill": "#6B6B6B",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "— Stroke weight is fixed at 12.5% of the symbol box — never restroke by hand.",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "ZwoaP",
+                      "name": "Note",
+                      "fill": "#6B6B6B",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "— Never rotate, skew, recolour segments or add effects to the symbol.",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "kHkit",
+          "name": "Section: COLOUR",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 18,
+          "children": [
+            {
+              "type": "text",
+              "id": "qctCh",
+              "name": "COLOUR",
+              "fill": "#6B6B6B",
+              "content": "COLOUR",
+              "fontFamily": "Poppins",
+              "fontSize": 13,
+              "fontWeight": "600"
+            },
+            {
+              "type": "rectangle",
+              "id": "GTEe0",
+              "name": "Rule",
+              "fill": "#E6E6E6",
+              "width": "fill_container",
+              "height": 1
+            },
+            {
+              "type": "frame",
+              "id": "rJMwI",
+              "name": "Swatches",
+              "width": "fill_container",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "P8W9Dy",
+                  "name": "Amber",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 8,
+                      "id": "xC9Lp",
+                      "name": "Chip",
+                      "fill": "#FBBF3B",
+                      "width": "fill_container",
+                      "height": 104
+                    },
+                    {
+                      "type": "text",
+                      "id": "C995J",
+                      "name": "Amber",
+                      "fill": "#1F1F1F",
+                      "content": "Amber",
+                      "fontFamily": "Poppins",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "gyL8Y",
+                      "name": "Hex",
+                      "fill": "#6B6B6B",
+                      "content": "#FBBF3B",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "D7LnB",
+                      "name": "Use",
+                      "fill": "#9A9A9A",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Roof accent",
+                      "lineHeight": 1.4,
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "LG6Eq",
+                  "name": "Orange",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 8,
+                      "id": "X2IcOL",
+                      "name": "Chip",
+                      "fill": "#F5901E",
+                      "width": "fill_container",
+                      "height": 104
+                    },
+                    {
+                      "type": "text",
+                      "id": "tbWoV",
+                      "name": "Orange",
+                      "fill": "#1F1F1F",
+                      "content": "Orange",
+                      "fontFamily": "Poppins",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "pV7ud",
+                      "name": "Hex",
+                      "fill": "#6B6B6B",
+                      "content": "#F5901E",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "joXxQ",
+                      "name": "Use",
+                      "fill": "#9A9A9A",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Primary · CTA",
+                      "lineHeight": 1.4,
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "qOuaJ",
+                  "name": "Teal",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 8,
+                      "id": "gaPNG",
+                      "name": "Chip",
+                      "fill": "#2BC0A6",
+                      "width": "fill_container",
+                      "height": 104
+                    },
+                    {
+                      "type": "text",
+                      "id": "MU5Pl",
+                      "name": "Teal",
+                      "fill": "#1F1F1F",
+                      "content": "Teal",
+                      "fontFamily": "Poppins",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "l7qSkM",
+                      "name": "Hex",
+                      "fill": "#6B6B6B",
+                      "content": "#2BC0A6",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "K74563",
+                      "name": "Use",
+                      "fill": "#9A9A9A",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Secondary · success",
+                      "lineHeight": 1.4,
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "J0hSO",
+                  "name": "Magenta",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 8,
+                      "id": "XB72T",
+                      "name": "Chip",
+                      "fill": "#EC2C7E",
+                      "width": "fill_container",
+                      "height": 104
+                    },
+                    {
+                      "type": "text",
+                      "id": "FlUgr",
+                      "name": "Magenta",
+                      "fill": "#1F1F1F",
+                      "content": "Magenta",
+                      "fontFamily": "Poppins",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "nYPs4",
+                      "name": "Hex",
+                      "fill": "#6B6B6B",
+                      "content": "#EC2C7E",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "KssH5",
+                      "name": "Use",
+                      "fill": "#9A9A9A",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Emphasis · alerts",
+                      "lineHeight": 1.4,
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Y6pMM",
+                  "name": "Violet",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 8,
+                      "id": "MN9FD",
+                      "name": "Chip",
+                      "fill": "#8E2FC4",
+                      "width": "fill_container",
+                      "height": 104
+                    },
+                    {
+                      "type": "text",
+                      "id": "YJCN9",
+                      "name": "Violet",
+                      "fill": "#1F1F1F",
+                      "content": "Violet",
+                      "fontFamily": "Poppins",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "kRdji",
+                      "name": "Hex",
+                      "fill": "#6B6B6B",
+                      "content": "#8E2FC4",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "pFlGj",
+                      "name": "Use",
+                      "fill": "#9A9A9A",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Accent · data",
+                      "lineHeight": 1.4,
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "vvEqC",
+                  "name": "Ink",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 8,
+                      "id": "qrrII",
+                      "name": "Chip",
+                      "fill": "#1F1F1F",
+                      "width": "fill_container",
+                      "height": 104
+                    },
+                    {
+                      "type": "text",
+                      "id": "OwvfG",
+                      "name": "Ink",
+                      "fill": "#1F1F1F",
+                      "content": "Ink",
+                      "fontFamily": "Poppins",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "qtmIf",
+                      "name": "Hex",
+                      "fill": "#6B6B6B",
+                      "content": "#1F1F1F",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "KVE9B",
+                      "name": "Use",
+                      "fill": "#9A9A9A",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Text · dark UI",
+                      "lineHeight": 1.4,
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Qo0xL",
+          "name": "Section: TYPOGRAPHY",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 18,
+          "children": [
+            {
+              "type": "text",
+              "id": "S3iohC",
+              "name": "TYPOGRAPHY",
+              "fill": "#6B6B6B",
+              "content": "TYPOGRAPHY",
+              "fontFamily": "Poppins",
+              "fontSize": 13,
+              "fontWeight": "600"
+            },
+            {
+              "type": "rectangle",
+              "id": "YhjRB",
+              "name": "Rule",
+              "fill": "#E6E6E6",
+              "width": "fill_container",
+              "height": 1
+            },
+            {
+              "type": "frame",
+              "id": "wATJw",
+              "name": "Type Row",
+              "width": "fill_container",
+              "gap": 48,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "K48Ucz",
+                  "name": "Brand Font",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "dVM45",
+                      "name": "Poppins",
+                      "fill": "#6B6B6B",
+                      "content": "Poppins",
+                      "fontFamily": "Poppins",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "NfThu",
+                      "name": "Linknms",
+                      "fill": "#1F1F1F",
+                      "content": "Linknms",
+                      "fontFamily": "Poppins",
+                      "fontSize": 56,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "d8klh",
+                      "name": "Desc",
+                      "fill": "#6B6B6B",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Brand font — wordmark, headlines, product titles. Weights 600 / 700.",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "HrMw9",
+                  "name": "UI Font",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "O9c5V2",
+                      "name": "Inter",
+                      "fill": "#6B6B6B",
+                      "content": "Inter",
+                      "fontFamily": "Poppins",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "RSII4",
+                      "name": "Sample",
+                      "fill": "#1F1F1F",
+                      "content": "Aa 0123",
+                      "fontFamily": "Inter",
+                      "fontSize": 48,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "jgy66",
+                      "name": "Desc",
+                      "fill": "#6B6B6B",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "UI font — body, tables, labels, numeric data. Weights 400 / 500 / 600.",
+                      "lineHeight": 1.6,
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "qheQy",
+              "name": "Scale",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "b6FJA",
+                  "name": "Display",
+                  "width": "fill_container",
+                  "gap": 24,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "S7obLH",
+                      "name": "Label",
+                      "fill": "#9A9A9A",
+                      "content": "Display · 34px",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "w0FivZ",
+                      "name": "Sample",
+                      "fill": "#1F1F1F",
+                      "content": "Trust built into every change.",
+                      "fontFamily": "Inter",
+                      "fontSize": 34,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "G9Eik",
+                  "name": "Heading",
+                  "width": "fill_container",
+                  "gap": 24,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "f9WWc",
+                      "name": "Label",
+                      "fill": "#9A9A9A",
+                      "content": "Heading · 24px",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "R22MS4",
+                      "name": "Sample",
+                      "fill": "#1F1F1F",
+                      "content": "Trust built into every change.",
+                      "fontFamily": "Inter",
+                      "fontSize": 24,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "PQrF5",
+                  "name": "Subhead",
+                  "width": "fill_container",
+                  "gap": 24,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Gk15V",
+                      "name": "Label",
+                      "fill": "#9A9A9A",
+                      "content": "Subhead · 18px",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "GlTSu",
+                      "name": "Sample",
+                      "fill": "#1F1F1F",
+                      "content": "Trust built into every change.",
+                      "fontFamily": "Inter",
+                      "fontSize": 18,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "VfdSf",
+                  "name": "Body",
+                  "width": "fill_container",
+                  "gap": 24,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "K8f8IT",
+                      "name": "Label",
+                      "fill": "#9A9A9A",
+                      "content": "Body · 15px",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "pYyXG",
+                      "name": "Sample",
+                      "fill": "#1F1F1F",
+                      "content": "Trust built into every change.",
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "uwuxL",
+                  "name": "Caption",
+                  "width": "fill_container",
+                  "gap": 24,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "BnrUe",
+                      "name": "Label",
+                      "fill": "#9A9A9A",
+                      "content": "Caption · 12px",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "cmt1k",
+                      "name": "Sample",
+                      "fill": "#1F1F1F",
+                      "content": "Trust built into every change.",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "i6WrTG",
+          "name": "Section: APP ICONS & FAVICON",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 18,
+          "children": [
+            {
+              "type": "text",
+              "id": "GXu08",
+              "name": "APP ICONS & FAVICON",
+              "fill": "#6B6B6B",
+              "content": "APP ICONS & FAVICON",
+              "fontFamily": "Poppins",
+              "fontSize": 13,
+              "fontWeight": "600"
+            },
+            {
+              "type": "rectangle",
+              "id": "a7lZQh",
+              "name": "Rule",
+              "fill": "#E6E6E6",
+              "width": "fill_container",
+              "height": 1
+            },
+            {
+              "type": "frame",
+              "id": "G3DuZf",
+              "name": "Icons",
+              "width": "fill_container",
+              "gap": 28,
+              "alignItems": "end",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "qY6Xm",
+                  "name": "512 px",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "l6LX6O",
+                      "name": "Tile",
+                      "width": 128,
+                      "height": 128,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 28.16,
+                      "stroke": "#E6E6E6",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "MXCDj",
+                          "name": "Symbol",
+                          "width": 92,
+                          "height": 92,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "path",
+                              "id": "dujkK",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Left",
+                              "geometry": "M196 92l-86 90",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#F79A1F",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "jYdGk",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Cross",
+                              "geometry": "M116 104l70 72",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#FBBF3B",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "wkRrE",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Right",
+                              "geometry": "M196 92l124 110",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#2BC0A6",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "R99Bea",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Top",
+                              "geometry": "M118 178l0 64",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#F5901E",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "NWSwM",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Btm",
+                              "geometry": "M118 238l0 62",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#EE2E7B",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "k5lhR",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Right",
+                              "geometry": "M286 196l0 104",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#8E2FC4",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "S1QM7F",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Base",
+                              "geometry": "M118 300l168 0",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#EC2C7E",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 4.088888888888889,
+                              "id": "IM37X",
+                              "x": 29.985185185185184,
+                              "y": 46.681481481481484,
+                              "name": "Window",
+                              "fill": "#2BB8A6",
+                              "width": 23.17037037037037,
+                              "height": 23.17037037037037
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "aAjVY",
+                      "name": "Label",
+                      "fill": "#9A9A9A",
+                      "content": "512 px",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "K6eAI",
+                  "name": "192 px",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "azChv",
+                      "name": "Tile",
+                      "width": 96,
+                      "height": 96,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 21.12,
+                      "stroke": "#E6E6E6",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "GSZjG",
+                          "name": "Symbol",
+                          "width": 69,
+                          "height": 69,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "path",
+                              "id": "VHbkL",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Left",
+                              "geometry": "M196 92l-86 90",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 69,
+                              "height": 69,
+                              "stroke": "#F79A1F",
+                              "strokeWidth": 7.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "xQdsv",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Cross",
+                              "geometry": "M116 104l70 72",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 69,
+                              "height": 69,
+                              "stroke": "#FBBF3B",
+                              "strokeWidth": 7.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "kNYu8",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Right",
+                              "geometry": "M196 92l124 110",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 69,
+                              "height": 69,
+                              "stroke": "#2BC0A6",
+                              "strokeWidth": 7.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "W0o3H",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Top",
+                              "geometry": "M118 178l0 64",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 69,
+                              "height": 69,
+                              "stroke": "#F5901E",
+                              "strokeWidth": 7.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "NDgQw",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Btm",
+                              "geometry": "M118 238l0 62",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 69,
+                              "height": 69,
+                              "stroke": "#EE2E7B",
+                              "strokeWidth": 7.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "H1DzkW",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Right",
+                              "geometry": "M286 196l0 104",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 69,
+                              "height": 69,
+                              "stroke": "#8E2FC4",
+                              "strokeWidth": 7.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "UyHMO",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Base",
+                              "geometry": "M118 300l168 0",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 69,
+                              "height": 69,
+                              "stroke": "#EC2C7E",
+                              "strokeWidth": 7.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 3.0666666666666664,
+                              "id": "VT2Lb",
+                              "x": 22.488888888888887,
+                              "y": 35.011111111111106,
+                              "name": "Window",
+                              "fill": "#2BB8A6",
+                              "width": 17.377777777777776,
+                              "height": 17.377777777777776
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "c8Wxl",
+                      "name": "Label",
+                      "fill": "#9A9A9A",
+                      "content": "192 px",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "LYUaN",
+                  "name": "180 px",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "dx3bF",
+                      "name": "Tile",
+                      "width": 80,
+                      "height": 80,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 17.6,
+                      "stroke": "#E6E6E6",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "OmtFt",
+                          "name": "Symbol",
+                          "width": 58,
+                          "height": 58,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "path",
+                              "id": "viffK",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Left",
+                              "geometry": "M196 92l-86 90",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 58,
+                              "height": 58,
+                              "stroke": "#F79A1F",
+                              "strokeWidth": 6.444444444444445,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "AE5Zw",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Cross",
+                              "geometry": "M116 104l70 72",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 58,
+                              "height": 58,
+                              "stroke": "#FBBF3B",
+                              "strokeWidth": 6.444444444444445,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "z6Mql",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Right",
+                              "geometry": "M196 92l124 110",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 58,
+                              "height": 58,
+                              "stroke": "#2BC0A6",
+                              "strokeWidth": 6.444444444444445,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "c7pgmy",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Top",
+                              "geometry": "M118 178l0 64",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 58,
+                              "height": 58,
+                              "stroke": "#F5901E",
+                              "strokeWidth": 6.444444444444445,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "o2pxcr",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Btm",
+                              "geometry": "M118 238l0 62",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 58,
+                              "height": 58,
+                              "stroke": "#EE2E7B",
+                              "strokeWidth": 6.444444444444445,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "t5XZnL",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Right",
+                              "geometry": "M286 196l0 104",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 58,
+                              "height": 58,
+                              "stroke": "#8E2FC4",
+                              "strokeWidth": 6.444444444444445,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "V9OEYW",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Base",
+                              "geometry": "M118 300l168 0",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 58,
+                              "height": 58,
+                              "stroke": "#EC2C7E",
+                              "strokeWidth": 6.444444444444445,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 2.577777777777778,
+                              "id": "PhGyb",
+                              "x": 18.903703703703705,
+                              "y": 29.42962962962963,
+                              "name": "Window",
+                              "fill": "#2BB8A6",
+                              "width": 14.607407407407408,
+                              "height": 14.607407407407408
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "l2csP",
+                      "name": "Label",
+                      "fill": "#9A9A9A",
+                      "content": "180 px",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "PcFyb",
+                  "name": "32 px",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "bdvDT",
+                      "name": "Tile",
+                      "width": 44,
+                      "height": 44,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 9.68,
+                      "stroke": "#E6E6E6",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "LfziD",
+                          "name": "Symbol",
+                          "width": 32,
+                          "height": 32,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "path",
+                              "id": "GxecH",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Left",
+                              "geometry": "M196 92l-86 90",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 32,
+                              "height": 32,
+                              "stroke": "#F79A1F",
+                              "strokeWidth": 3.555555555555556,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "wkbcp",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Cross",
+                              "geometry": "M116 104l70 72",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 32,
+                              "height": 32,
+                              "stroke": "#FBBF3B",
+                              "strokeWidth": 3.555555555555556,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "uq1Z5",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Right",
+                              "geometry": "M196 92l124 110",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 32,
+                              "height": 32,
+                              "stroke": "#2BC0A6",
+                              "strokeWidth": 3.555555555555556,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "gcsHE",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Top",
+                              "geometry": "M118 178l0 64",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 32,
+                              "height": 32,
+                              "stroke": "#F5901E",
+                              "strokeWidth": 3.555555555555556,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "hF3qW",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Btm",
+                              "geometry": "M118 238l0 62",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 32,
+                              "height": 32,
+                              "stroke": "#EE2E7B",
+                              "strokeWidth": 3.555555555555556,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "tV4N2",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Right",
+                              "geometry": "M286 196l0 104",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 32,
+                              "height": 32,
+                              "stroke": "#8E2FC4",
+                              "strokeWidth": 3.555555555555556,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "QeHAJ",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Base",
+                              "geometry": "M118 300l168 0",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 32,
+                              "height": 32,
+                              "stroke": "#EC2C7E",
+                              "strokeWidth": 3.555555555555556,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 1.4222222222222223,
+                              "id": "sUtgd",
+                              "x": 10.42962962962963,
+                              "y": 16.237037037037037,
+                              "name": "Window",
+                              "fill": "#2BB8A6",
+                              "width": 8.05925925925926,
+                              "height": 8.05925925925926
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "QxIAG",
+                      "name": "Label",
+                      "fill": "#9A9A9A",
+                      "content": "32 px",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "BxJbP",
+                  "name": "Dark Tile Col",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Y5Dx6w",
+                      "name": "Tile",
+                      "width": 128,
+                      "height": 128,
+                      "fill": "#1F1F1F",
+                      "cornerRadius": 28,
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "eEeiy",
+                          "name": "Symbol",
+                          "width": 88,
+                          "height": 88,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "path",
+                              "id": "GEGKy",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Left",
+                              "geometry": "M196 92l-86 90",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 88,
+                              "height": 88,
+                              "stroke": "#FFFFFF",
+                              "strokeWidth": 9.777777777777779,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "OWeOG",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Cross",
+                              "geometry": "M116 104l70 72",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 88,
+                              "height": 88,
+                              "stroke": "#FFFFFF",
+                              "strokeWidth": 9.777777777777779,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "hqgNf",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Right",
+                              "geometry": "M196 92l124 110",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 88,
+                              "height": 88,
+                              "stroke": "#FFFFFF",
+                              "strokeWidth": 9.777777777777779,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "L8o1D",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Top",
+                              "geometry": "M118 178l0 64",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 88,
+                              "height": 88,
+                              "stroke": "#FFFFFF",
+                              "strokeWidth": 9.777777777777779,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "qdMCo",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Btm",
+                              "geometry": "M118 238l0 62",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 88,
+                              "height": 88,
+                              "stroke": "#FFFFFF",
+                              "strokeWidth": 9.777777777777779,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "sEdnh",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Right",
+                              "geometry": "M286 196l0 104",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 88,
+                              "height": 88,
+                              "stroke": "#FFFFFF",
+                              "strokeWidth": 9.777777777777779,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "Q0dQO",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Base",
+                              "geometry": "M118 300l168 0",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 88,
+                              "height": 88,
+                              "stroke": "#FFFFFF",
+                              "strokeWidth": 9.777777777777779,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 3.9111111111111114,
+                              "id": "aeDQP",
+                              "x": 28.681481481481484,
+                              "y": 44.65185185185186,
+                              "name": "Window",
+                              "fill": "#FFFFFF",
+                              "width": 22.162962962962965,
+                              "height": 22.162962962962965
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "UjKHV",
+                      "name": "Label",
+                      "fill": "#9A9A9A",
+                      "content": "Dark · mono",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "kU4wY",
+          "name": "Section: DO NOT",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 18,
+          "children": [
+            {
+              "type": "text",
+              "id": "RjiKk",
+              "name": "DO NOT",
+              "fill": "#6B6B6B",
+              "content": "DO NOT",
+              "fontFamily": "Poppins",
+              "fontSize": 13,
+              "fontWeight": "600"
+            },
+            {
+              "type": "rectangle",
+              "id": "L6BEwJ",
+              "name": "Rule",
+              "fill": "#E6E6E6",
+              "width": "fill_container",
+              "height": 1
+            },
+            {
+              "type": "frame",
+              "id": "lisOu",
+              "name": "Misuse",
+              "width": "fill_container",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "qoRQr",
+                  "name": "Don't rotate",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "mxsyk",
+                      "name": "Tile",
+                      "width": "fill_container",
+                      "height": 150,
+                      "fill": "#FAFAFA",
+                      "cornerRadius": 8,
+                      "stroke": "#E6E6E6",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "cGMQJ",
+                          "name": "Symbol",
+                          "rotation": -14,
+                          "width": 92,
+                          "height": 92,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "path",
+                              "id": "y93WC",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Left",
+                              "geometry": "M196 92l-86 90",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 111.52402121256111,
+                              "height": 111.52402121256111,
+                              "stroke": "#F79A1F",
+                              "strokeWidth": 12.391557912506789,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "k2AaG",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Cross",
+                              "geometry": "M116 104l70 72",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 111.52402121256111,
+                              "height": 111.52402121256111,
+                              "stroke": "#FBBF3B",
+                              "strokeWidth": 12.391557912506789,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "nBzyg",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Right",
+                              "geometry": "M196 92l124 110",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 111.52402121256111,
+                              "height": 111.52402121256111,
+                              "stroke": "#2BC0A6",
+                              "strokeWidth": 12.391557912506789,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "U28K7u",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Top",
+                              "geometry": "M118 178l0 64",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 111.52402121256111,
+                              "height": 111.52402121256111,
+                              "stroke": "#F5901E",
+                              "strokeWidth": 12.391557912506789,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "B7uZYJ",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Btm",
+                              "geometry": "M118 238l0 62",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 111.52402121256111,
+                              "height": 111.52402121256111,
+                              "stroke": "#EE2E7B",
+                              "strokeWidth": 12.391557912506789,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "UOpIe",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Right",
+                              "geometry": "M286 196l0 104",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 111.52402121256111,
+                              "height": 111.52402121256111,
+                              "stroke": "#8E2FC4",
+                              "strokeWidth": 12.391557912506789,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "Ui6K5",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Base",
+                              "geometry": "M118 300l168 0",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 111.52402121256111,
+                              "height": 111.52402121256111,
+                              "stroke": "#EC2C7E",
+                              "strokeWidth": 12.391557912506789,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 4.956623165002716,
+                              "id": "zbed2",
+                              "x": 36.34856987668658,
+                              "y": 56.58811446711434,
+                              "name": "Window",
+                              "fill": "#2BB8A6",
+                              "width": 28.087531268348723,
+                              "height": 28.087531268348723
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "qikKY",
+                      "name": "Label",
+                      "fill": "#D93025",
+                      "content": "Don't rotate",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "OhVo6",
+                  "name": "Don't stretch",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "XjG9c",
+                      "name": "Tile",
+                      "width": "fill_container",
+                      "height": 150,
+                      "fill": "#FAFAFA",
+                      "cornerRadius": 8,
+                      "stroke": "#E6E6E6",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "l6yuKe",
+                          "name": "Symbol",
+                          "width": 140,
+                          "height": 78,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "path",
+                              "id": "z7cP3t",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Left",
+                              "geometry": "M196 92l-86 90",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 140,
+                              "height": 78,
+                              "stroke": "#F79A1F",
+                              "strokeWidth": 8.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "yb47V",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Cross",
+                              "geometry": "M116 104l70 72",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 140,
+                              "height": 78,
+                              "stroke": "#FBBF3B",
+                              "strokeWidth": 8.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "LJXO1",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Right",
+                              "geometry": "M196 92l124 110",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 140,
+                              "height": 78,
+                              "stroke": "#2BC0A6",
+                              "strokeWidth": 8.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "wgmBb",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Top",
+                              "geometry": "M118 178l0 64",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 140,
+                              "height": 78,
+                              "stroke": "#F5901E",
+                              "strokeWidth": 8.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "AoiYo",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Btm",
+                              "geometry": "M118 238l0 62",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 140,
+                              "height": 78,
+                              "stroke": "#EE2E7B",
+                              "strokeWidth": 8.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "a57Er",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Right",
+                              "geometry": "M286 196l0 104",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 140,
+                              "height": 78,
+                              "stroke": "#8E2FC4",
+                              "strokeWidth": 8.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "MFp5x",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Base",
+                              "geometry": "M118 300l168 0",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 140,
+                              "height": 78,
+                              "stroke": "#EC2C7E",
+                              "strokeWidth": 8.666666666666666,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 3.4666666666666663,
+                              "id": "yjgel",
+                              "x": 45.629629629629626,
+                              "y": 39.577777777777776,
+                              "name": "Window",
+                              "fill": "#2BB8A6",
+                              "width": 35.25925925925926,
+                              "height": 19.644444444444442
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "kHccQ",
+                      "name": "Label",
+                      "fill": "#D93025",
+                      "content": "Don't stretch",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "WtJgv",
+                  "name": "Don't recolour",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "TvAVn",
+                      "name": "Tile",
+                      "width": "fill_container",
+                      "height": 150,
+                      "fill": "#FAFAFA",
+                      "cornerRadius": 8,
+                      "stroke": "#E6E6E6",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "Lu0yP",
+                          "name": "Symbol",
+                          "width": 92,
+                          "height": 92,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "path",
+                              "id": "JcGeF",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Left",
+                              "geometry": "M196 92l-86 90",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#2F6BFF",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "crBgi",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Cross",
+                              "geometry": "M116 104l70 72",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#2F6BFF",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "UPMY7",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Right",
+                              "geometry": "M196 92l124 110",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#2F6BFF",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "Ajx4F",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Top",
+                              "geometry": "M118 178l0 64",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#2F6BFF",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "F75Kx8",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Btm",
+                              "geometry": "M118 238l0 62",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#2F6BFF",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "Jx8bY",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Right",
+                              "geometry": "M286 196l0 104",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#2F6BFF",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "y8XrAt",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Base",
+                              "geometry": "M118 300l168 0",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#2F6BFF",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 4.088888888888889,
+                              "id": "ParfW",
+                              "x": 29.985185185185184,
+                              "y": 46.681481481481484,
+                              "name": "Window",
+                              "fill": "#2F6BFF",
+                              "width": 23.17037037037037,
+                              "height": 23.17037037037037
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "egky3",
+                      "name": "Label",
+                      "fill": "#D93025",
+                      "content": "Don't recolour",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "NlX5W",
+                  "name": "Don't add shadow",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "HdLPR",
+                      "name": "Tile",
+                      "width": "fill_container",
+                      "height": 150,
+                      "fill": "#FAFAFA",
+                      "cornerRadius": 8,
+                      "stroke": "#E6E6E6",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "AM6BE",
+                          "name": "Symbol",
+                          "width": 92,
+                          "height": 92,
+                          "effect": {
+                            "type": "shadow",
+                            "shadowType": "outer",
+                            "color": "#00000059",
+                            "offset": {
+                              "x": 0,
+                              "y": 8
+                            },
+                            "blur": 10
+                          },
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "path",
+                              "id": "KqJiU",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Left",
+                              "geometry": "M196 92l-86 90",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#F79A1F",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "ssnr8",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Cross",
+                              "geometry": "M116 104l70 72",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#FBBF3B",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "Mdxjk",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Roof Right",
+                              "geometry": "M196 92l124 110",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#2BC0A6",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "yLey9",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Top",
+                              "geometry": "M118 178l0 64",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#F5901E",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "D9fq9",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Left Btm",
+                              "geometry": "M118 238l0 62",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#EE2E7B",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "Q6Io3a",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Wall Right",
+                              "geometry": "M286 196l0 104",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#8E2FC4",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "path",
+                              "id": "vBJxz",
+                              "x": 0,
+                              "y": 0,
+                              "name": "Base",
+                              "geometry": "M118 300l168 0",
+                              "viewBox": [
+                                80,
+                                61,
+                                270,
+                                270
+                              ],
+                              "width": 92,
+                              "height": 92,
+                              "stroke": "#EC2C7E",
+                              "strokeWidth": 10.222222222222221,
+                              "strokeLinejoin": "round",
+                              "strokeLinecap": "round"
+                            },
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 4.088888888888889,
+                              "id": "qQSPM",
+                              "x": 29.985185185185184,
+                              "y": 46.681481481481484,
+                              "name": "Window",
+                              "fill": "#2BB8A6",
+                              "width": 23.17037037037037,
+                              "height": 23.17037037037037
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "o7ZyCz",
+                      "name": "Label",
+                      "fill": "#D93025",
+                      "content": "Don't add shadow",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variables": {
+    "primary-orange": {
+      "type": "color",
+      "value": "#F5A623"
+    },
+    "primary-teal": {
+      "type": "color",
+      "value": "#26B5A0"
+    },
+    "primary-purple": {
+      "type": "color",
+      "value": "#7B3FF2"
+    },
+    "primary-pink": {
+      "type": "color",
+      "value": "#E94B8E"
+    },
+    "secondary-yellow": {
+      "type": "color",
+      "value": "#F9D73F"
+    },
+    "text-dark": {
+      "type": "color",
+      "value": "#1A1A1A"
+    },
+    "text-gray": {
+      "type": "color",
+      "value": "#666666"
+    },
+    "background-light": {
+      "type": "color",
+      "value": "#F9F9F9"
+    },
+    "white": {
+      "type": "color",
+      "value": "#FFFFFF"
+    },
+    "border-light": {
+      "type": "color",
+      "value": "#E8E8E8"
+    }
+  },
+  "imports": {
+    "h": "pencil:halo.lib.pen"
+  },
+  "fileToken": "5b0934d2-dcbb-42b4-87f4-3fa079af8ebb"
+}
