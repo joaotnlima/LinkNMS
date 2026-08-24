@@ -1,0 +1,18 @@
+{
+  "name": "linknms-design-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LinkNMS design tokens, logo asset pipeline, and brand-book build.",
+  "scripts": {
+    "tokens": "node scripts/build-tokens.mjs",
+    "icons": "node scripts/build-icons.mjs",
+    "build": "npm run tokens && npm run icons",
+    "book": "npx --yes serve cowork/design/brand-book"
+  },
+  "devDependencies": {
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.33.5",
+    "svgo": "^3.3.2"
+  }
+}

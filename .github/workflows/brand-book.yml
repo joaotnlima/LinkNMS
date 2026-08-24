@@ -1,0 +1,59 @@
+name: Brand book
+
+# Build the design tokens + logo assets, and publish the brand-book to GitHub Pages.
+# Pages on a PRIVATE repo requires a paid plan; on free, the build still runs and
+# the site is uploaded as an artifact you can download from the run.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tokens/**"
+      - "scripts/**"
+      - "cowork/design/logos/**"
+      - "cowork/design/brand-book/**"
+      - "package.json"
+      - ".github/workflows/brand-book.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: brand-book
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build tokens and icons
+        run: npm run build
+      - name: Upload brand-book as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: brand-book
+          path: cowork/design/brand-book
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: cowork/design/brand-book
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
