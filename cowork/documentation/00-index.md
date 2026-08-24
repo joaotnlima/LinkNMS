@@ -20,11 +20,14 @@ document, it is a link, not a copy.
 | 05 | [Functional scope](./05-functional-scope.md) | Everything the product must eventually do, organized by function, not by build order |
 | 06 | [Boundaries](./06-boundaries.md) | What LinkNMS is not, and the reasoning behind each refusal |
 | 07 | [Open questions](./07-open-questions.md) | What is undecided, and what would decide it |
+| 08 | [Brand](./08-brand.md) | The elected logo ("House Record") and the brand-kit — which asset to use where |
 | — | [Personas](./personas.md) | The eleven roles on a build and what each needs |
 | — | [Persona variants](./personas/00-methodology.md) | Variants within each role — four kinds of contractor, three kinds of owner |
 
 See also [`BRAND.md`](../../BRAND.md) at the repo root: positioning,
-voice, visual identity, and the claims LinkNMS is allowed to make.
+voice, visual identity, and the claims LinkNMS is allowed to make. The
+applied logo and asset kit are documented in [08 — Brand](./08-brand.md),
+with a browsable [brand-book](../design/brand-book/index.html).
 
 ## Reading order
 
