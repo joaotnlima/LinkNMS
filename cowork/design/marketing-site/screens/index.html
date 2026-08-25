@@ -5,535 +5,474 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LinkNMS — Um registo em que todas as partes confiam</title>
 <!--
-  Concrete screen built from cowork/design/marketing-site/DESIGN.md
-  Surface: LinkNMS marketing site · mobile-first · pre-launch (waitlist)
-  Bilingual PT-PT (default) / EN with a header language switch.
-  Tokens mirrored from BRAND.md via the marketing-site baseline.
-  Logo: the "House Record" mark from ../../logos + ../../brand-kit.
+  Marketing site — editorial full-viewport scroll concept (adapted from market-site)
+  rendered in the BRAND palette: Paper canvas, Ink type, Owner Blue / Builder Orange
+  as the two sides. System-sans, engineering-drawing calm. Bilingual PT-PT / EN.
+  Wordmark keeps exact casing "LinkNMS" per BRAND.md.
 -->
-<meta name="description" content="LinkNMS — the shared, verifiable record for a house build. Neutral ground where every side argues from the record, not from memory.">
+<meta name="description" content="LinkNMS — the shared, verifiable record for a house build. One record every side trusts. Trust built-in.">
 <link rel="icon" href="../../brand-kit/icon/favicon.ico" sizes="any">
 <link rel="icon" type="image/svg+xml" href="../../logos/icon.svg">
-<link rel="apple-touch-icon" href="../../brand-kit/icon/icon-180.png">
 <meta property="og:type" content="website">
 <meta property="og:title" content="LinkNMS — One record every side trusts">
 <meta property="og:description" content="The shared, verifiable record for a house build. Trust built-in.">
 <meta property="og:image" content="../../brand-kit/social/og-image.png">
-<meta name="twitter:card" content="summary_large_image">
 <style>
-  :root {
-    --primary: #2a78d6;
-    --secondary: #eb6834;
-    --foreground: #0b0b0b;
-    --surface: #fcfcfb;
-    --surface-sunken: #f4f3f0;
-    --outline: #dcdbd7;
-    --muted-foreground: #5b5b58;
-    --primary-muted: #e2edfb;
-    --secondary-muted: #fce3d8;
-    --fade: #9a9a9a;
+  :root{
+    --primary:#2a78d6; --secondary:#eb6834;
+    --ink:#0b0b0b; --paper:#fcfcfb; --sunken:#f4f3f0;
+    --outline:#dcdbd7; --outline-strong:#9b9a95; --muted:#5b5b58; --fade:#9a9a9a;
+    --primary-muted:#e2edfb; --secondary-muted:#fce3d8;
+    --font:system-ui,-apple-system,"Segoe UI",sans-serif;
+    --gut:18px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--paper);color:var(--ink);font-family:var(--font);
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;line-height:1.5}
+  ::selection{background:var(--primary);color:#fff}
+  .u{text-transform:uppercase;font-weight:600;letter-spacing:.04em}
+  .wrap{width:100%;padding-inline:clamp(20px,5vw,64px)}
+  a{color:var(--ink);text-decoration:none}
 
-    --s4: 4px;  --s8: 8px;  --s12: 12px; --s16: 16px;
-    --s24: 24px; --s32: 32px; --s48: 48px; --s64: 64px;
+  /* Eyebrow */
+  .eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:12px;font-weight:700;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .eyebrow .pip{width:8px;height:8px;border-radius:999px;background:var(--secondary)}
 
-    --shadow: 0 1px 2px rgba(11,11,11,0.06), 0 8px 24px rgba(11,11,11,0.08);
-    --gutter: 16px;
-    --reading: 680px;
+  /* ---------- Nav ---------- */
+  nav.top{position:fixed;inset:0 0 auto 0;z-index:40;display:flex;align-items:center;
+    justify-content:space-between;padding:16px clamp(20px,5vw,64px);
+    background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:saturate(1.1) blur(8px);
+    border-bottom:1px solid var(--outline)}
+  nav.top .brand{display:inline-flex;align-items:center;gap:9px;font-weight:700;font-size:16px;letter-spacing:-.01em}
+  nav.top .brand svg{width:22px;height:22px;display:block}
+  nav.top ul{list-style:none;display:flex;gap:clamp(14px,2.4vw,32px)}
+  nav.top a.item{font-size:12px;padding-bottom:5px;border-bottom:1px dashed transparent;color:var(--muted)}
+  nav.top a.item.active{color:var(--ink);border-bottom-color:var(--secondary)}
+  nav.top a.item:hover{color:var(--ink)}
+  .nav-cta{font-size:12px;border:1px solid var(--outline-strong);border-radius:22.5px;
+    padding:7px 16px;color:var(--ink)}
+  .nav-cta:hover{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  @media(max-width:720px){ nav.top ul{display:none} }
+
+  /* ---------- Serial label ---------- */
+  .serial{position:fixed;right:12px;top:50%;transform:translateY(-50%) rotate(180deg);
+    writing-mode:vertical-rl;font-size:10px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--muted);opacity:.7;z-index:35;pointer-events:none}
+  @media(max-width:960px){ .serial{display:none} }
+
+  /* ---------- Section shell ---------- */
+  section{min-height:100vh;display:flex;flex-direction:column;justify-content:center;
+    position:relative;padding-block:120px 72px}
+  .divider{border:0;border-top:1px dashed var(--outline)}
+  .idx{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--fade)}
+
+  /* Editorial type */
+  .display{font-size:clamp(40px,7.5vw,86px);line-height:.95;font-weight:700;
+    letter-spacing:-.01em;text-transform:uppercase}
+  .heading{font-size:clamp(28px,5vw,44px);line-height:.92;font-weight:700;
+    letter-spacing:-.01em;text-transform:uppercase}
+  .body{font-size:clamp(18px,2.2vw,24px);line-height:1.35;font-weight:400;color:var(--ink)}
+  .muted{color:var(--muted)}
+
+  /* ---------- Hero ---------- */
+  .hero{justify-content:flex-start;padding-bottom:200px}
+  .hero .eyebrow{margin-bottom:20px}
+  .hero .display{max-width:16ch;margin-bottom:28px}
+  .hero .lead{max-width:44ch;color:var(--muted)}
+  .hero .actions{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-top:36px}
+  .infocard{position:absolute;left:clamp(20px,5vw,64px);bottom:64px;max-width:360px;
+    border:1px solid var(--outline);border-radius:12px;padding:24px;background:var(--sunken)}
+  .infocard h4{font-size:15px;text-transform:uppercase;letter-spacing:.02em;margin-bottom:14px}
+  .infocard p{font-size:13px;line-height:1.5;color:var(--muted)}
+  .infocard .credit{margin-top:14px;font-size:13px;font-weight:500}
+  .infocard .credit b{font-weight:600;color:var(--ink)}
+  .infocard .credit .bi{color:var(--fade)}
+  @media(max-width:960px){ .infocard{position:static;margin-top:40px} }
+
+  /* ---------- Buttons ---------- */
+  .btn-pill{display:inline-flex;align-items:center;justify-content:center;background:var(--primary);
+    color:#fff;border:0;border-radius:36px;padding:14px 26px;font:inherit;font-weight:600;
+    font-size:15px;text-transform:uppercase;letter-spacing:.03em;cursor:pointer}
+  .btn-pill:hover{filter:brightness(.94)}
+  .link-u{font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;
+    border-bottom:1px solid var(--ink);padding-bottom:2px}
+  .link-u:hover{border-bottom-color:var(--secondary)}
+
+  /* ---------- Reveal (text / object / text) ---------- */
+  .reveal .grid{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+    gap:clamp(24px,6vw,110px)}
+  .reveal .heading{max-width:12ch}
+  .reveal .body{max-width:34ch}
+  .stage{position:relative;display:grid;place-items:center;width:clamp(180px,26vw,320px);aspect-ratio:1}
+  .stage::before{content:"";position:absolute;inset:6%;border-radius:50%;
+    background:radial-gradient(closest-side,var(--sunken),transparent 72%)}
+  .stage svg,.stage .bars{position:relative}
+  .stage svg{width:74%;height:auto}
+  .stage .label{position:absolute;top:0;left:0}
+  @media(max-width:960px){
+    .reveal .grid{grid-template-columns:1fr;justify-items:start;gap:28px}
+    .stage{order:-1;width:clamp(160px,42vw,240px)}
+    .reveal .heading,.reveal .body{max-width:100%}
   }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { -webkit-text-size-adjust: 100%; }
-  body {
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    color: var(--foreground); background: var(--surface);
-    font-size: 16px; line-height: 1.625; -webkit-font-smoothing: antialiased;
-  }
-  a { color: var(--primary); text-decoration: none; }
-  :focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(42,120,214,0.4); border-radius: 4px; }
+  /* Planned vs actual bars (brand two-sides) */
+  .bars{width:clamp(220px,30vw,340px)}
+  .bars .r{margin:16px 0}
+  .bars .r .lab{display:flex;justify-content:space-between;font-size:11px;font-weight:600;
+    letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px;color:var(--muted)}
+  .bars .r .lab .val{font-variant-numeric:tabular-nums;color:var(--ink)}
+  .bars .track{height:12px;background:var(--sunken);border:1px solid var(--outline);overflow:hidden}
+  .bars .fill{height:100%}
+  .bars .fill.p{background:var(--primary-muted);border-right:3px solid var(--primary)}
+  .bars .fill.a{background:var(--secondary-muted);border-right:3px solid var(--secondary)}
 
-  .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding-left: var(--gutter); padding-right: var(--gutter); }
-  .reading { max-width: var(--reading); margin: 0 auto; }
+  /* ---------- Is / Isn't ---------- */
+  .isnt .head{max-width:20ch;margin-bottom:40px}
+  .split{display:grid;grid-template-columns:1fr;gap:40px}
+  .col h3{display:flex;align-items:center;gap:10px;font-size:15px;text-transform:uppercase;
+    letter-spacing:.04em;margin-bottom:20px}
+  .col h3 .m{width:10px;height:10px;border-radius:999px;flex:none}
+  .col.is h3 .m{background:var(--primary)} .col.isnt-c h3 .m{background:var(--secondary)}
+  .col ul{list-style:none;display:flex;flex-direction:column;gap:16px}
+  .col li{padding-left:26px;position:relative;font-size:clamp(16px,1.9vw,19px);line-height:1.4}
+  .col li::before{position:absolute;left:0;top:0;font-weight:700}
+  .col.is li::before{content:"+";color:var(--primary)}
+  .col.isnt-c li::before{content:"–";color:var(--secondary)}
+  .col li b{font-weight:600} .col li span{color:var(--muted)}
+  @media(min-width:820px){ .split{grid-template-columns:1fr 1fr;gap:clamp(48px,7vw,96px)} }
 
-  /* Header */
-  header.site {
-    position: sticky; top: 0; z-index: 20;
-    background: color-mix(in srgb, var(--surface) 92%, transparent);
-    backdrop-filter: saturate(1.1) blur(6px);
-    border-bottom: 1px solid var(--outline);
-  }
-  header.site .bar { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: var(--s12); }
-  .header-right { display: flex; align-items: center; gap: var(--s12); }
+  /* ---------- FAQ ---------- */
+  .faq .head{margin-bottom:32px}
+  details{border-top:1px solid var(--outline);padding:22px 0}
+  details:last-of-type{border-bottom:1px solid var(--outline)}
+  summary{list-style:none;cursor:pointer;font-size:clamp(18px,2.4vw,22px);font-weight:600;
+    display:flex;justify-content:space-between;gap:16px;align-items:center}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";color:var(--muted);font-weight:400;font-size:26px;line-height:1}
+  details[open] summary::after{content:"–"}
+  details .a{margin-top:14px;color:var(--muted);font-size:clamp(15px,1.9vw,18px);line-height:1.5;max-width:70ch}
+  details .a b{color:var(--ink)}
 
-  /* Brand lockup (icon + name + slogan) — used in header and footer */
-  .brandlock { display: inline-flex; align-items: center; gap: 11px; }
-  .brandlock .glyph { width: 34px; height: 34px; flex: none; display: block; }
-  .brandlock .txt { display: flex; flex-direction: column; line-height: 1.1; }
-  .brandlock .nm { font-weight: 700; font-size: 18px; letter-spacing: -0.01em; color: var(--foreground); }
-  .brandlock .slogan { font-size: 12px; font-weight: 500; letter-spacing: 0.01em; margin-top: 3px; color: var(--fade); }
-  .brandlock .slogan b { color: var(--foreground); font-weight: 600; }
+  /* ---------- Contact ---------- */
+  .contact .heading{max-width:16ch;margin-bottom:24px}
+  .contact .lead{max-width:44ch;color:var(--muted);margin-bottom:40px}
+  .field{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;max-width:560px}
+  .field .inp{flex:1 1 240px}
+  .field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.1em;
+    color:var(--muted);margin-bottom:8px;font-weight:600}
+  .field input,.field select{width:100%;background:transparent;border:0;border-bottom:1px solid var(--ink);
+    color:var(--ink);font:inherit;font-size:18px;padding:6px 2px}
+  .field input:focus,.field select:focus{outline:none;border-bottom-color:var(--primary)}
+  .field input::placeholder{color:var(--fade)}
+  .note{font-size:12px;letter-spacing:.04em;color:var(--muted);margin-top:24px;text-transform:uppercase}
 
-  /* Language switch */
-  .langtoggle { display: inline-flex; border: 1px solid var(--outline); border-radius: 999px; overflow: hidden; background: #fff; }
-  .langbtn {
-    appearance: none; border: 0; background: transparent; cursor: pointer;
-    font: inherit; font-size: 13px; font-weight: 600; color: var(--muted-foreground);
-    padding: 6px 12px; min-height: 32px; line-height: 1;
-  }
-  .langbtn[aria-pressed="true"] { background: var(--primary); color: #fff; }
+  /* ---------- Footer ---------- */
+  footer{padding:40px clamp(20px,5vw,64px) 64px;border-top:1px dashed var(--outline);
+    display:flex;justify-content:space-between;flex-wrap:wrap;gap:24px;align-items:flex-end}
+  footer .lock{display:inline-flex;align-items:center;gap:11px}
+  footer .lock svg{width:34px;height:34px;display:block}
+  footer .lock .nm{font-weight:700;font-size:18px;letter-spacing:-.01em}
+  footer .lock .sl{font-size:12px;font-weight:500;margin-top:2px;color:var(--fade)}
+  footer .lock .sl b{color:var(--ink);font-weight:600}
+  footer nav{display:flex;flex-wrap:wrap;gap:16px}
+  footer nav a{font-size:14px;color:var(--muted)} footer nav a:hover{color:var(--ink)}
+  footer .fine{flex-basis:100%;font-size:11px;line-height:1.5;color:var(--fade);letter-spacing:.02em}
 
-  /* Buttons */
-  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 var(--s24); font-size: 16px; font-weight: 600; line-height: 1; border-radius: 999px; border: 1px solid transparent; cursor: pointer; transition: filter .12s ease; }
-  .btn-primary { background: var(--primary); color: #fff; }
-  .btn-primary:active { filter: brightness(0.92); }
-  .btn-sm { min-height: 40px; padding: 0 var(--s16); font-size: 15px; }
-  .btn-block { width: 100%; height: 48px; }
-  .link-cta { display: inline-flex; align-items: center; gap: var(--s8); font-weight: 600; min-height: 44px; }
-  .link-cta::after { content: "→"; }
-
-  /* Sections */
-  section { padding: var(--s48) 0; }
-  .band-sunken { background: var(--surface-sunken); }
-  .eyebrow { font-size: 13px; line-height: 18px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); margin-bottom: var(--s12); display: inline-flex; align-items: center; gap: var(--s8); }
-  .eyebrow .pip { width: 8px; height: 8px; border-radius: 999px; background: var(--secondary); }
-  h1 { font-size: 34px; line-height: 40px; font-weight: 700; letter-spacing: -0.02em; }
-  h2 { font-size: 26px; line-height: 32px; font-weight: 600; letter-spacing: -0.01em; }
-  h3 { font-size: 18px; line-height: 26px; font-weight: 600; }
-  .lede { font-size: 18px; line-height: 28px; color: var(--foreground); }
-  .muted { color: var(--muted-foreground); }
-
-  /* Hero */
-  .hero { padding-top: var(--s48); padding-bottom: var(--s48); }
-  .hero h1 { margin-bottom: var(--s16); }
-  .hero .lede { margin-bottom: var(--s24); max-width: 42ch; }
-  .hero-actions { display: flex; flex-direction: column; gap: var(--s12); }
-
-  .card { background: #fff; border: 1px solid var(--outline); border-radius: 8px; padding: var(--s16); margin-top: var(--s32); }
-  .card-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: var(--s16); gap: var(--s12); }
-  .card-head .ttl { font-weight: 600; font-size: 16px; }
-  .card-head .meta { font-size: 13px; line-height: 18px; color: var(--muted-foreground); text-align: right; }
-  .barrow { margin-bottom: var(--s12); }
-  .barrow .lab { display: flex; justify-content: space-between; font-size: 13px; line-height: 18px; margin-bottom: var(--s4); }
-  .barrow .lab .val { font-variant-numeric: tabular-nums; font-weight: 500; }
-  .track { height: 10px; border-radius: 2px; background: var(--surface-sunken); overflow: hidden; }
-  .fill { height: 100%; border-radius: 2px; }
-  .fill.planned { background: var(--primary-muted); border-right: 3px solid var(--primary); }
-  .fill.actual { background: var(--secondary-muted); border-right: 3px solid var(--secondary); }
-  .delta { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; color: var(--secondary); }
-  .changeline { margin-top: var(--s16); padding-top: var(--s12); border-top: 1px solid var(--outline); font-size: 13px; line-height: 18px; color: var(--muted-foreground); }
-  .changeline b { color: var(--foreground); font-weight: 600; }
-  .tag { display: inline-block; font-size: 12px; line-height: 16px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--outline); margin-bottom: 6px; }
-  .tag.edited { color: var(--secondary); border-color: var(--secondary-muted); background: var(--secondary-muted); }
-
-  /* Features */
-  .features { display: grid; grid-template-columns: 1fr; gap: var(--s24); margin-top: var(--s32); }
-  .feature .num { width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; color: var(--primary); background: var(--primary-muted); margin-bottom: var(--s12); }
-  .feature h3 { margin-bottom: var(--s8); }
-  .feature p { color: var(--muted-foreground); }
-
-  /* Is / isn't */
-  .split { display: grid; grid-template-columns: 1fr; gap: var(--s24); margin-top: var(--s32); }
-  .col h3 { display: flex; align-items: center; gap: var(--s8); margin-bottom: var(--s16); }
-  .col .mark { width: 10px; height: 10px; border-radius: 999px; flex: none; }
-  .col.is .mark { background: var(--primary); }
-  .col.isnt .mark { background: var(--secondary); }
-  .col ul { list-style: none; display: flex; flex-direction: column; gap: var(--s12); }
-  .col li { padding-left: var(--s24); position: relative; }
-  .col li::before { position: absolute; left: 0; top: 0; font-weight: 700; }
-  .col.is li::before { content: "+"; color: var(--primary); }
-  .col.isnt li::before { content: "–"; color: var(--secondary); }
-  .col li b { font-weight: 600; }
-  .col li span { color: var(--muted-foreground); }
-
-  /* FAQ */
-  .faq { margin-top: var(--s32); }
-  details { border-bottom: 1px solid var(--outline); padding: var(--s16) 0; }
-  details summary { list-style: none; cursor: pointer; font-weight: 600; font-size: 17px; display: flex; justify-content: space-between; align-items: center; gap: var(--s16); min-height: 28px; }
-  details summary::-webkit-details-marker { display: none; }
-  details summary::after { content: "+"; color: var(--muted-foreground); font-weight: 400; font-size: 22px; }
-  details[open] summary::after { content: "–"; }
-  details p { margin-top: var(--s12); color: var(--muted-foreground); }
-  details p b { color: var(--foreground); }
-
-  /* Lead form */
-  form { margin-top: var(--s24); display: flex; flex-direction: column; gap: var(--s12); }
-  label { font-size: 14px; font-weight: 600; margin-bottom: var(--s4); display: block; }
-  .field input, .field select { width: 100%; min-height: 48px; padding: 0 var(--s16); font-family: inherit; font-size: 16px; color: var(--foreground); background: #fff; border: 1px solid var(--outline); border-radius: 8px; }
-  .field input:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(42,120,214,0.4); }
-  .form-note { font-size: 13px; line-height: 18px; color: var(--muted-foreground); }
-
-  /* Footer */
-  footer.site { border-top: 1px solid var(--outline); padding: var(--s32) 0; background: var(--surface-sunken); }
-  footer.site .cols { display: flex; flex-direction: column; gap: var(--s24); }
-  footer nav { display: flex; flex-wrap: wrap; gap: var(--s16); }
-  footer nav a { color: var(--foreground); font-size: 15px; }
-  .fineprint { font-size: 13px; line-height: 18px; color: var(--muted-foreground); }
-
-  @media (min-width: 768px) {
-    .hero-actions { flex-direction: row; align-items: center; gap: var(--s16); }
-    .btn-block { width: auto; }
-    .features { grid-template-columns: repeat(3, 1fr); }
-    .split { grid-template-columns: 1fr 1fr; gap: var(--s48); }
-    footer.site .cols { flex-direction: row; justify-content: space-between; align-items: flex-start; }
-  }
-  @media (min-width: 1024px) {
-    section { padding: var(--s64) 0; }
-    .hero { padding-top: var(--s64); padding-bottom: var(--s64); }
-    h1 { font-size: 56px; line-height: 60px; }
-    h2 { font-size: 34px; line-height: 40px; }
-    h3 { font-size: 20px; line-height: 28px; }
-    .hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: var(--s64); align-items: center; }
-    .hero .card { margin-top: 0; }
-  }
+  /* Language toggle */
+  .langtoggle{display:inline-flex;border:1px solid var(--outline);border-radius:999px;overflow:hidden}
+  .langbtn{appearance:none;border:0;background:transparent;cursor:pointer;font:inherit;font-size:12px;
+    font-weight:600;color:var(--muted);padding:6px 11px}
+  .langbtn[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
 </style>
 </head>
 <body>
 
-<!-- ============ HEADER ============ -->
-<header class="site">
-  <div class="wrap bar">
-    <span class="brandlock">
-      <svg class="glyph" viewBox="0 0 64 64" aria-hidden="true"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>
-      <span class="txt"><span class="nm">LinkNMS</span><span class="slogan"><b>Trust</b> built-in.</span></span>
-    </span>
-    <div class="header-right">
-      <div class="langtoggle" role="group" aria-label="Idioma / Language">
-        <button class="langbtn" data-lang="pt" type="button">PT</button>
-        <button class="langbtn" data-lang="en" type="button">EN</button>
-      </div>
-      <a class="btn btn-primary btn-sm" href="#waitlist" data-i18n="nav.cta">Entrar na lista de espera</a>
+<nav class="top">
+  <a class="brand" href="#top">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>
+    LinkNMS
+  </a>
+  <ul>
+    <li><a class="item active u" href="#top" data-i18n="nav.intro">Intro</a></li>
+    <li><a class="item u" href="#features" data-i18n="nav.features">Funcionalidades</a></li>
+    <li><a class="item u" href="#product" data-i18n="nav.product">Produto</a></li>
+    <li><a class="item u" href="#contact" data-i18n="nav.contact">Contacto</a></li>
+  </ul>
+  <div style="display:flex;align-items:center;gap:12px">
+    <div class="langtoggle" role="group" aria-label="Idioma / Language">
+      <button class="langbtn" data-lang="pt" type="button">PT</button>
+      <button class="langbtn" data-lang="en" type="button">EN</button>
     </div>
+    <a class="nav-cta u" href="#contact" data-i18n="nav.cta">Lista de espera</a>
   </div>
-</header>
+</nav>
+
+<div class="serial" aria-hidden="true">LinkNMS · one record</div>
 
 <main>
-
   <!-- ============ HERO ============ -->
-  <section class="hero">
-    <div class="wrap hero-grid">
-      <div>
-        <span class="eyebrow"><span class="pip" aria-hidden="true"></span><span data-i18n="hero.eyebrow">Em desenvolvimento · entra na lista de espera</span></span>
-        <h1 data-i18n="hero.h1">Um registo em que todas as partes confiam.</h1>
-        <p class="lede" data-i18n="hero.lede">O LinkNMS é o registo partilhado e verificável de uma obra — o terreno neutro onde o dono da obra e todos os que nela trabalham discutem a partir do registo, não da memória.</p>
-        <div class="hero-actions">
-          <a class="btn btn-primary btn-block" href="#waitlist" data-i18n="hero.cta">Entrar na lista de espera</a>
-          <a class="link-cta" href="#how" data-i18n="hero.link">Ver como funciona</a>
-        </div>
-      </div>
+  <section class="hero wrap" id="top">
+    <span class="eyebrow"><span class="pip" aria-hidden="true"></span><span data-i18n="hero.eyebrow">Em desenvolvimento · entra na lista de espera</span></span>
+    <h1 class="display" data-i18n="hero.h1">Um registo em que todas as partes confiam.</h1>
+    <p class="lead body" data-i18n="hero.lede">O LinkNMS é o registo partilhado e verificável de uma obra — o terreno neutro onde o dono da obra e todos os que nela trabalham discutem a partir do registo, não da memória.</p>
+    <div class="actions">
+      <a class="btn-pill" href="#contact" data-i18n="hero.cta">Entrar na lista de espera</a>
+      <a class="link-u" href="#features" data-i18n="hero.link">Ver como funciona</a>
+    </div>
+    <aside class="infocard">
+      <h4 data-i18n="tamper.h">Revela adulterações. Não as impede.</h4>
+      <hr class="divider">
+      <p data-i18n="tamper.b">Mostra que um registo foi alterado depois — não impede a alteração. Nunca confundimos as duas coisas.</p>
+      <p class="credit">— <b>Trust</b> <span class="bi">built-in.</span></p>
+    </aside>
+  </section>
 
-      <!-- Product illustration -->
-      <div class="card" role="img" data-i18n-aria="card.aria"
-           aria-label="Orçamento da cozinha: previsto 12 000 euros, real 13 600 euros, mais 1 600 euros, devido a uma alteração aprovada.">
-        <div class="card-head">
-          <span class="ttl" data-i18n="card.ttl">Cozinha · orçamento</span>
-          <span class="meta" data-i18n="card.meta">Contrato de especialidade · Eletricista</span>
-        </div>
-        <div class="barrow">
-          <div class="lab"><span data-i18n="card.planned">Previsto</span><span class="val" data-i18n="card.plannedVal">12 000 €</span></div>
-          <div class="track"><div class="fill planned" style="width:74%"></div></div>
-        </div>
-        <div class="barrow">
-          <div class="lab"><span data-i18n="card.actual">Real</span><span class="val" data-i18n="card.actualVal">13 600 €</span></div>
-          <div class="track"><div class="fill actual" style="width:84%"></div></div>
-        </div>
-        <span class="delta" data-i18n="card.delta">▲ +1 600 € vs. previsto</span>
-        <div class="changeline">
-          <span class="tag edited" data-i18n="card.tag">editado no registo</span><br>
-          <span data-i18n-html="card.change"><b>Cliente pediu torneiras diferentes</b> · +800 € · aprovado por <b>dono</b> + <b>arquiteto</b> · 12 mar</span>
-        </div>
+  <hr class="divider">
+
+  <!-- ============ REVEAL 1 ============ -->
+  <section class="reveal wrap" id="features">
+    <div class="grid">
+      <div><span class="idx">01 / Record</span><h2 class="heading" data-i18n="feat.1.t">Um registo partilhado, à vista de todos</h2></div>
+      <div class="stage">
+        <span class="idx label">Model</span>
+        <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>
       </div>
+      <p class="body" data-i18n="feat.1.b">Cada parte vê as mesmas tarefas, o mesmo orçamento, o mesmo histórico. Sem uma segunda contabilidade privada.</p>
     </div>
   </section>
 
-  <!-- ============ FEATURES ============ -->
-  <section id="how" class="band-sunken">
-    <div class="wrap">
-      <span class="eyebrow"><span class="pip" aria-hidden="true"></span><span data-i18n="feat.eyebrow">O que faz</span></span>
-      <h2 data-i18n="feat.h2">Três coisas — e só funcionam juntas.</h2>
-      <div class="features">
-        <div class="feature">
-          <span class="num">1</span>
-          <h3 data-i18n="feat.1.t">Um registo partilhado, à vista de todos</h3>
-          <p data-i18n="feat.1.b">Cada parte vê as mesmas tarefas, o mesmo orçamento, o mesmo histórico. Sem uma segunda contabilidade privada.</p>
-        </div>
-        <div class="feature">
-          <span class="num">2</span>
-          <h3 data-i18n="feat.2.t">Cada alteração tem responsável</h3>
-          <p data-i18n="feat.2.b">Quem mudou o quê, quando e em quanto — guardado num histórico que revela qualquer edição feita depois.</p>
-        </div>
-        <div class="feature">
-          <span class="num">3</span>
-          <h3 data-i18n="feat.3.t">Honesto sobre o que prova</h3>
-          <p data-i18n="feat.3.b">Revela adulterações, não as impede. Dizemos exatamente o que o registo garante — e o que não garante.</p>
-        </div>
+  <hr class="divider">
+
+  <!-- ============ REVEAL 2 ============ -->
+  <section class="reveal wrap">
+    <div class="grid">
+      <div><span class="idx">02 / History</span><h2 class="heading" data-i18n="feat.2.t">Cada alteração tem responsável</h2></div>
+      <div class="stage">
+        <span class="idx label">Model</span>
+        <svg viewBox="0 0 64 64" aria-hidden="true" style="transform:scaleX(-1)"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#eb6834"/><path d="M32 6 L56 26 L32 26 Z" fill="#2a78d6"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#eb6834"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#2a78d6"/></svg>
       </div>
+      <p class="body" data-i18n="feat.2.b">Quem mudou o quê, quando e em quanto — guardado num histórico que revela qualquer edição feita depois.</p>
     </div>
   </section>
+
+  <hr class="divider">
+
+  <!-- ============ REVEAL 3 — PLANNED VS ACTUAL ============ -->
+  <section class="reveal wrap" id="product">
+    <div class="grid">
+      <div><span class="idx">03 / Two sides</span><h2 class="heading" data-i18n="rev.pva.h">Planeado versus real.</h2></div>
+      <div class="stage">
+        <div class="bars" role="img" data-i18n-aria="card.aria" aria-label="Orçamento: previsto 12 000 euros, real 13 600 euros.">
+          <div class="r"><div class="lab"><span data-i18n="card.planned">Previsto</span><span class="val" data-i18n="card.plannedVal">12 000 €</span></div><div class="track"><div class="fill p" style="width:74%"></div></div></div>
+          <div class="r"><div class="lab"><span data-i18n="card.actual">Real</span><span class="val" data-i18n="card.actualVal">13 600 €</span></div><div class="track"><div class="fill a" style="width:84%"></div></div></div>
+        </div>
+      </div>
+      <p class="body" data-i18n="rev.pva.b">Os dois lados de uma obra, lado a lado. O que foi acordado contra o que aconteceu em obra — legível num relance, com etiqueta para ler sem cor.</p>
+    </div>
+  </section>
+
+  <hr class="divider">
 
   <!-- ============ IS / ISN'T ============ -->
-  <section>
-    <div class="wrap">
-      <span class="eyebrow"><span class="pip" aria-hidden="true"></span><span data-i18n="edge.eyebrow">Onde estão os limites</span></span>
-      <h2 data-i18n="edge.h2">O que é — e o que não é.</h2>
-      <p class="lede muted" style="margin-top:12px; max-width:56ch;" data-i18n="edge.intro">Os limites fazem parte do produto, não são letra pequena. Aqui estão, à vista.</p>
-      <div class="split">
-        <div class="col is">
-          <h3><span class="mark" aria-hidden="true"></span><span data-i18n="edge.is.t">O que o LinkNMS é</span></h3>
-          <ul>
-            <li data-i18n-html="edge.is.1"><b>O registo partilhado e verificável</b> <span>de uma obra.</span></li>
-            <li data-i18n-html="edge.is.2"><b>Terreno neutro</b> <span>para dono, empreiteiro e cada especialidade.</span></li>
-            <li data-i18n-html="edge.is.3"><b>Tempo, dinheiro, âmbito e histórico</b> <span>num só lugar.</span></li>
-            <li data-i18n-html="edge.is.4"><b>Todas as tuas obras num só lugar</b> <span>— alterna entre elas, um painel de portfólio.</span></li>
-            <li data-i18n-html="edge.is.5"><b>Upload e pré-visualização de BIM</b> <span>— o modelo, anexado ao registo.</span></li>
-          </ul>
-        </div>
-        <div class="col isnt">
-          <h3><span class="mark" aria-hidden="true"></span><span data-i18n="edge.isnt.t">O que o LinkNMS não é</span></h3>
-          <ul>
-            <li data-i18n-html="edge.isnt.1"><b>Não é inviolável</b> <span>— revela as alterações, não as impede.</span></li>
-            <li data-i18n-html="edge.isnt.2"><b>Não é uma ferramenta de autoria ou análise BIM</b> <span>— não substitui o Revit nem o ArchiCAD.</span></li>
-            <li data-i18n-html="edge.isnt.3"><b>Não é uma integração de licenciamento</b> <span>— marca as fases, não comunica com as câmaras.</span></li>
-            <li data-i18n-html="edge.isnt.4"><b>Não é o teu back office</b> <span>— as tuas obras e o seu registo, não a contabilidade, salários ou CRM.</span></li>
-          </ul>
-        </div>
+  <section class="isnt wrap">
+    <span class="eyebrow"><span class="pip" aria-hidden="true"></span><span data-i18n="edge.eyebrow">Onde estão os limites</span></span>
+    <h2 class="heading head" style="margin-top:16px" data-i18n="edge.h2">O que é — e o que não é.</h2>
+    <div class="split">
+      <div class="col is">
+        <h3><span class="m" aria-hidden="true"></span><span data-i18n="edge.is.t">O que o LinkNMS é</span></h3>
+        <ul>
+          <li data-i18n-html="edge.is.1"><b>O registo partilhado e verificável</b> <span>de uma obra.</span></li>
+          <li data-i18n-html="edge.is.2"><b>Terreno neutro</b> <span>para dono, empreiteiro e cada especialidade.</span></li>
+          <li data-i18n-html="edge.is.3"><b>Tempo, dinheiro, âmbito e histórico</b> <span>num só lugar.</span></li>
+          <li data-i18n-html="edge.is.4"><b>Todas as tuas obras num só lugar</b> <span>— alterna entre elas, um painel de portfólio.</span></li>
+          <li data-i18n-html="edge.is.5"><b>Upload e pré-visualização de BIM</b> <span>— o modelo, anexado ao registo.</span></li>
+        </ul>
+      </div>
+      <div class="col isnt-c">
+        <h3><span class="m" aria-hidden="true"></span><span data-i18n="edge.isnt.t">O que o LinkNMS não é</span></h3>
+        <ul>
+          <li data-i18n-html="edge.isnt.1"><b>Não é inviolável</b> <span>— revela as alterações, não as impede.</span></li>
+          <li data-i18n-html="edge.isnt.2"><b>Não é uma ferramenta de autoria ou análise BIM</b> <span>— não substitui o Revit nem o ArchiCAD.</span></li>
+          <li data-i18n-html="edge.isnt.3"><b>Não é uma integração de licenciamento</b> <span>— marca as fases, não comunica com as câmaras.</span></li>
+          <li data-i18n-html="edge.isnt.4"><b>Não é o teu back office</b> <span>— as tuas obras e o seu registo, não a contabilidade, salários ou CRM.</span></li>
+        </ul>
       </div>
     </div>
   </section>
+
+  <hr class="divider">
 
   <!-- ============ FAQ ============ -->
-  <section class="band-sunken">
-    <div class="wrap reading">
-      <span class="eyebrow"><span class="pip" aria-hidden="true"></span><span data-i18n="faq.eyebrow">Respostas diretas</span></span>
-      <h2 data-i18n="faq.h2">Perguntas que vale a pena fazer primeiro.</h2>
-      <div class="faq">
-        <details open>
-          <summary data-i18n="faq.1.q">O meu registo é inviolável?</summary>
-          <p data-i18n-html="faq.1.a">Não — e não vamos dizer que é. O histórico de alterações <b>revela adulterações</b>: mostra que um registo foi alterado depois, mas não impede a alteração. O elo fraco nunca é o registo, são as pessoas que o usam — e dizemo-lo com clareza.</p>
-        </details>
-        <details>
-          <summary data-i18n="faq.2.q">De quem é a conta — do dono ou do empreiteiro?</summary>
-          <p data-i18n-html="faq.2.a">De quem tiver a subscrição — pode ser qualquer um dos lados. Mas pagar a conta nunca significa ser dono do registo <b>contra</b> o outro: a plataforma continua a ser o terreno neutro onde ambos trabalham.</p>
-        </details>
-        <details>
-          <summary data-i18n="faq.3.q">Tenho várias obras. Consigo geri-las todas aqui?</summary>
-          <p data-i18n-html="faq.3.a">Sim — o LinkNMS é multi-obra por design. Alternas entre as tuas obras e vês todas num painel de portfólio: saúde do orçamento, calendário e aprovações pendentes por obra. O que <b>não</b> é: o teu back office — sem contabilidade, salários ou CRM.</p>
-        </details>
-        <details>
-          <summary data-i18n="faq.4.q">Posso trazer o meu modelo BIM?</summary>
-          <p data-i18n-html="faq.4.a">Sim — o LinkNMS foi pensado para <b>carregar e pré-visualizar</b> o modelo do projeto e submetê-lo como o registo BIM da obra, anexado ao histórico. Não é uma ferramenta de modelação: não cria, não edita nem faz deteção de conflitos.</p>
-        </details>
-        <details>
-          <summary data-i18n="faq.5.q">Funciona no meu telemóvel?</summary>
-          <p data-i18n-html="faq.5.a">Foi construído primeiro para telemóvel. Quem regista e consulta está em obra, com o telemóvel na mão — por isso essa é a forma principal de o usar.</p>
-        </details>
+  <section class="faq wrap">
+    <span class="eyebrow"><span class="pip" aria-hidden="true"></span><span data-i18n="faq.eyebrow">Respostas diretas</span></span>
+    <h2 class="heading head" style="margin-top:16px" data-i18n="faq.h2">Perguntas que vale a pena fazer primeiro.</h2>
+    <div style="margin-top:8px">
+      <details open><summary data-i18n="faq.1.q">O meu registo é inviolável?</summary><p class="a" data-i18n-html="faq.1.a"></p></details>
+      <details><summary data-i18n="faq.2.q">De quem é a conta?</summary><p class="a" data-i18n-html="faq.2.a"></p></details>
+      <details><summary data-i18n="faq.3.q">Tenho várias obras. Consigo geri-las todas aqui?</summary><p class="a" data-i18n-html="faq.3.a"></p></details>
+      <details><summary data-i18n="faq.4.q">Posso trazer o meu modelo BIM?</summary><p class="a" data-i18n-html="faq.4.a"></p></details>
+      <details><summary data-i18n="faq.5.q">Funciona no meu telemóvel?</summary><p class="a" data-i18n-html="faq.5.a"></p></details>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ============ CONTACT / WAITLIST ============ -->
+  <section class="contact wrap" id="contact">
+    <span class="idx" style="display:block;margin-bottom:16px">04 / Waitlist</span>
+    <h2 class="heading" data-i18n="wl.h2">Fica no registo desde o início.</h2>
+    <p class="lead body" data-i18n="wl.lede">O LinkNMS está em desenvolvimento. Deixa os teus dados e avisamos-te assim que houver algo real para experimentar — nem antes.</p>
+    <form class="field" onsubmit="return false;">
+      <div class="inp"><label for="email" data-i18n="wl.email">Email</label><input id="email" type="email" data-i18n-ph="wl.emailPh" placeholder="tu@exemplo.com" required></div>
+      <div class="inp"><label for="role" data-i18n="wl.role">De que lado estás?</label>
+        <select id="role">
+          <option data-i18n="wl.r1">Dono de obra</option><option data-i18n="wl.r2">Empreiteiro / construtor</option>
+          <option data-i18n="wl.r3">Especialidade / subcontratado</option><option data-i18n="wl.r4">Arquiteto</option>
+          <option data-i18n="wl.r5">Diretor de obra</option><option data-i18n="wl.r6">Outro</option>
+        </select>
       </div>
-    </div>
+      <button class="btn-pill" type="submit" data-i18n="wl.submit">Entrar na lista de espera</button>
+    </form>
+    <p class="note" data-i18n="wl.note">Sem spam, sem promessas que não possamos cumprir. Um email, quando estiver pronto.</p>
   </section>
-
-  <!-- ============ WAITLIST ============ -->
-  <section id="waitlist">
-    <div class="wrap reading">
-      <span class="eyebrow"><span class="pip" aria-hidden="true"></span><span data-i18n="wl.eyebrow">Entrar na lista de espera</span></span>
-      <h2 data-i18n="wl.h2">Fica no registo desde o início.</h2>
-      <p class="lede muted" style="margin-top:12px;" data-i18n="wl.lede">O LinkNMS está em desenvolvimento. Deixa os teus dados e avisamos-te assim que houver algo real para experimentar — nem antes.</p>
-      <form onsubmit="return false;">
-        <div class="field">
-          <label for="email" data-i18n="wl.email">Email</label>
-          <input id="email" name="email" type="email" data-i18n-ph="wl.emailPh" placeholder="tu@exemplo.com" required>
-        </div>
-        <div class="field">
-          <label for="role" data-i18n="wl.role">De que lado estás?</label>
-          <select id="role" name="role">
-            <option data-i18n="wl.r1">Dono de obra</option>
-            <option data-i18n="wl.r2">Empreiteiro / construtor</option>
-            <option data-i18n="wl.r3">Especialidade / subcontratado</option>
-            <option data-i18n="wl.r4">Arquiteto</option>
-            <option data-i18n="wl.r5">Diretor de obra</option>
-            <option data-i18n="wl.r6">Outro</option>
-          </select>
-        </div>
-        <button class="btn btn-primary btn-block" type="submit" data-i18n="wl.submit">Entrar na lista de espera</button>
-        <p class="form-note" data-i18n="wl.note">Sem spam, sem promessas que não possamos cumprir. Um email, quando estiver pronto.</p>
-      </form>
-    </div>
-  </section>
-
 </main>
 
-<!-- ============ FOOTER ============ -->
-<footer class="site">
-  <div class="wrap cols">
-    <span class="brandlock">
-      <svg class="glyph" viewBox="0 0 64 64" aria-hidden="true"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>
-      <span class="txt"><span class="nm">LinkNMS</span><span class="slogan"><b>Trust</b> built-in.</span></span>
-    </span>
-    <nav aria-label="Footer">
-      <a href="#how" data-i18n="foot.how">Como funciona</a>
-      <a href="#waitlist" data-i18n="foot.wl">Lista de espera</a>
-      <a href="#" data-i18n="foot.privacy">Privacidade</a>
-      <a href="#" data-i18n="foot.contact">Contacto</a>
-    </nav>
-  </div>
-  <div class="wrap" style="margin-top:24px;">
-    <p class="fineprint" data-i18n="foot.fine">O LinkNMS é um produto em desenvolvimento. Nada nesta página é garantia de disponibilidade, adoção ou funcionalidade já lançada — o histórico de alterações revela adulterações, não é inviolável.</p>
-  </div>
+<footer>
+  <span class="lock">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>
+    <span><span class="nm">LinkNMS</span><br><span class="sl"><b>Trust</b> built-in.</span></span>
+  </span>
+  <nav aria-label="Footer">
+    <a href="#features" data-i18n="foot.how">Como funciona</a>
+    <a href="#contact" data-i18n="foot.wl">Lista de espera</a>
+    <a href="#" data-i18n="foot.privacy">Privacidade</a>
+    <a href="#" data-i18n="foot.contact">Contacto</a>
+  </nav>
+  <p class="fine" data-i18n="foot.fine">O LinkNMS é um produto em desenvolvimento. Nada nesta página é garantia de disponibilidade, adoção ou funcionalidade já lançada — o histórico de alterações revela adulterações, não é inviolável.</p>
 </footer>
 
 <script>
   const I18N = {
     pt: {
-      "title": "LinkNMS — Um registo em que todas as partes confiam",
-      "nav.cta": "Entrar na lista de espera",
-      "hero.eyebrow": "Em desenvolvimento · entra na lista de espera",
-      "hero.h1": "Um registo em que todas as partes confiam.",
-      "hero.lede": "O LinkNMS é o registo partilhado e verificável de uma obra — o terreno neutro onde o dono da obra e todos os que nela trabalham discutem a partir do registo, não da memória.",
-      "hero.cta": "Entrar na lista de espera",
-      "hero.link": "Ver como funciona",
-      "card.aria": "Orçamento da cozinha: previsto 12 000 euros, real 13 600 euros, mais 1 600 euros, devido a uma alteração aprovada.",
-      "card.ttl": "Cozinha · orçamento",
-      "card.meta": "Contrato de especialidade · Eletricista",
-      "card.planned": "Previsto", "card.plannedVal": "12 000 €",
-      "card.actual": "Real", "card.actualVal": "13 600 €",
-      "card.delta": "▲ +1 600 € vs. previsto",
-      "card.tag": "editado no registo",
-      "card.change": "<b>Cliente pediu torneiras diferentes</b> · +800 € · aprovado por <b>dono</b> + <b>arquiteto</b> · 12 mar",
-      "feat.eyebrow": "O que faz",
-      "feat.h2": "Três coisas — e só funcionam juntas.",
-      "feat.1.t": "Um registo partilhado, à vista de todos",
-      "feat.1.b": "Cada parte vê as mesmas tarefas, o mesmo orçamento, o mesmo histórico. Sem uma segunda contabilidade privada.",
-      "feat.2.t": "Cada alteração tem responsável",
-      "feat.2.b": "Quem mudou o quê, quando e em quanto — guardado num histórico que revela qualquer edição feita depois.",
-      "feat.3.t": "Honesto sobre o que prova",
-      "feat.3.b": "Revela adulterações, não as impede. Dizemos exatamente o que o registo garante — e o que não garante.",
-      "edge.eyebrow": "Onde estão os limites",
-      "edge.h2": "O que é — e o que não é.",
-      "edge.intro": "Os limites fazem parte do produto, não são letra pequena. Aqui estão, à vista.",
-      "edge.is.t": "O que o LinkNMS é",
-      "edge.is.1": "<b>O registo partilhado e verificável</b> <span>de uma obra.</span>",
-      "edge.is.2": "<b>Terreno neutro</b> <span>para dono, empreiteiro e cada especialidade.</span>",
-      "edge.is.3": "<b>Tempo, dinheiro, âmbito e histórico</b> <span>num só lugar.</span>",
-      "edge.is.4": "<b>Todas as tuas obras num só lugar</b> <span>— alterna entre elas, um painel de portfólio.</span>",
-      "edge.is.5": "<b>Upload e pré-visualização de BIM</b> <span>— o modelo, anexado ao registo.</span>",
-      "edge.isnt.t": "O que o LinkNMS não é",
-      "edge.isnt.1": "<b>Não é inviolável</b> <span>— revela as alterações, não as impede.</span>",
-      "edge.isnt.2": "<b>Não é uma ferramenta de autoria ou análise BIM</b> <span>— não substitui o Revit nem o ArchiCAD.</span>",
-      "edge.isnt.3": "<b>Não é uma integração de licenciamento</b> <span>— marca as fases, não comunica com as câmaras.</span>",
-      "edge.isnt.4": "<b>Não é o teu back office</b> <span>— as tuas obras e o seu registo, não a contabilidade, salários ou CRM.</span>",
-      "faq.eyebrow": "Respostas diretas",
-      "faq.h2": "Perguntas que vale a pena fazer primeiro.",
-      "faq.1.q": "O meu registo é inviolável?",
-      "faq.1.a": "Não — e não vamos dizer que é. O histórico de alterações <b>revela adulterações</b>: mostra que um registo foi alterado depois, mas não impede a alteração. O elo fraco nunca é o registo, são as pessoas que o usam — e dizemo-lo com clareza.",
-      "faq.2.q": "De quem é a conta — do dono ou do empreiteiro?",
-      "faq.2.a": "De quem tiver a subscrição — pode ser qualquer um dos lados. Mas pagar a conta nunca significa ser dono do registo <b>contra</b> o outro: a plataforma continua a ser o terreno neutro onde ambos trabalham.",
-      "faq.3.q": "Tenho várias obras. Consigo geri-las todas aqui?",
-      "faq.3.a": "Sim — o LinkNMS é multi-obra por design. Alternas entre as tuas obras e vês todas num painel de portfólio: saúde do orçamento, calendário e aprovações pendentes por obra. O que <b>não</b> é: o teu back office — sem contabilidade, salários ou CRM.",
-      "faq.4.q": "Posso trazer o meu modelo BIM?",
-      "faq.4.a": "Sim — o LinkNMS foi pensado para <b>carregar e pré-visualizar</b> o modelo do projeto e submetê-lo como o registo BIM da obra, anexado ao histórico. Não é uma ferramenta de modelação: não cria, não edita nem faz deteção de conflitos.",
-      "faq.5.q": "Funciona no meu telemóvel?",
-      "faq.5.a": "Foi construído primeiro para telemóvel. Quem regista e consulta está em obra, com o telemóvel na mão — por isso essa é a forma principal de o usar.",
-      "wl.eyebrow": "Entrar na lista de espera",
-      "wl.h2": "Fica no registo desde o início.",
-      "wl.lede": "O LinkNMS está em desenvolvimento. Deixa os teus dados e avisamos-te assim que houver algo real para experimentar — nem antes.",
-      "wl.email": "Email", "wl.emailPh": "tu@exemplo.com",
-      "wl.role": "De que lado estás?",
-      "wl.r1": "Dono de obra", "wl.r2": "Empreiteiro / construtor", "wl.r3": "Especialidade / subcontratado",
-      "wl.r4": "Arquiteto", "wl.r5": "Diretor de obra", "wl.r6": "Outro",
-      "wl.submit": "Entrar na lista de espera",
-      "wl.note": "Sem spam, sem promessas que não possamos cumprir. Um email, quando estiver pronto.",
-      "foot.how": "Como funciona", "foot.wl": "Lista de espera", "foot.privacy": "Privacidade", "foot.contact": "Contacto",
-      "foot.fine": "O LinkNMS é um produto em desenvolvimento. Nada nesta página é garantia de disponibilidade, adoção ou funcionalidade já lançada — o histórico de alterações revela adulterações, não é inviolável."
+      "title":"LinkNMS — Um registo em que todas as partes confiam",
+      "nav.intro":"Intro","nav.features":"Funcionalidades","nav.product":"Produto","nav.contact":"Contacto","nav.cta":"Lista de espera",
+      "hero.eyebrow":"Em desenvolvimento · entra na lista de espera",
+      "hero.h1":"Um registo em que todas as partes confiam.",
+      "hero.lede":"O LinkNMS é o registo partilhado e verificável de uma obra — o terreno neutro onde o dono da obra e todos os que nela trabalham discutem a partir do registo, não da memória.",
+      "hero.cta":"Entrar na lista de espera","hero.link":"Ver como funciona",
+      "tamper.h":"Revela adulterações. Não as impede.",
+      "tamper.b":"Mostra que um registo foi alterado depois — não impede a alteração. Nunca confundimos as duas coisas.",
+      "card.aria":"Orçamento: previsto 12 000 euros, real 13 600 euros.",
+      "card.planned":"Previsto","card.plannedVal":"12 000 €","card.actual":"Real","card.actualVal":"13 600 €",
+      "feat.1.t":"Um registo partilhado, à vista de todos",
+      "feat.1.b":"Cada parte vê as mesmas tarefas, o mesmo orçamento, o mesmo histórico. Sem uma segunda contabilidade privada.",
+      "feat.2.t":"Cada alteração tem responsável",
+      "feat.2.b":"Quem mudou o quê, quando e em quanto — guardado num histórico que revela qualquer edição feita depois.",
+      "rev.pva.h":"Planeado versus real.",
+      "rev.pva.b":"Os dois lados de uma obra, lado a lado. O que foi acordado contra o que aconteceu em obra — legível num relance, com etiqueta para ler sem cor.",
+      "edge.eyebrow":"Onde estão os limites","edge.h2":"O que é — e o que não é.",
+      "edge.is.t":"O que o LinkNMS é",
+      "edge.is.1":"<b>O registo partilhado e verificável</b> <span>de uma obra.</span>",
+      "edge.is.2":"<b>Terreno neutro</b> <span>para dono, empreiteiro e cada especialidade.</span>",
+      "edge.is.3":"<b>Tempo, dinheiro, âmbito e histórico</b> <span>num só lugar.</span>",
+      "edge.is.4":"<b>Todas as tuas obras num só lugar</b> <span>— alterna entre elas, um painel de portfólio.</span>",
+      "edge.is.5":"<b>Upload e pré-visualização de BIM</b> <span>— o modelo, anexado ao registo.</span>",
+      "edge.isnt.t":"O que o LinkNMS não é",
+      "edge.isnt.1":"<b>Não é inviolável</b> <span>— revela as alterações, não as impede.</span>",
+      "edge.isnt.2":"<b>Não é uma ferramenta de autoria ou análise BIM</b> <span>— não substitui o Revit nem o ArchiCAD.</span>",
+      "edge.isnt.3":"<b>Não é uma integração de licenciamento</b> <span>— marca as fases, não comunica com as câmaras.</span>",
+      "edge.isnt.4":"<b>Não é o teu back office</b> <span>— as tuas obras e o seu registo, não a contabilidade, salários ou CRM.</span>",
+      "faq.eyebrow":"Respostas diretas","faq.h2":"Perguntas que vale a pena fazer primeiro.",
+      "faq.1.q":"O meu registo é inviolável?",
+      "faq.1.a":"Não — e não vamos dizer que é. O histórico de alterações <b>revela adulterações</b>: mostra que um registo foi alterado depois, mas não impede a alteração. O elo fraco nunca é o registo, são as pessoas que o usam — e dizemo-lo com clareza.",
+      "faq.2.q":"De quem é a conta — do dono ou do empreiteiro?",
+      "faq.2.a":"De quem tiver a subscrição — pode ser qualquer um dos lados. Mas pagar a conta nunca significa ser dono do registo <b>contra</b> o outro: a plataforma continua a ser o terreno neutro onde ambos trabalham.",
+      "faq.3.q":"Tenho várias obras. Consigo geri-las todas aqui?",
+      "faq.3.a":"Sim — o LinkNMS é multi-obra por design. Alternas entre as tuas obras e vês todas num painel de portfólio: saúde do orçamento, calendário e aprovações pendentes por obra. O que <b>não</b> é: o teu back office — sem contabilidade, salários ou CRM.",
+      "faq.4.q":"Posso trazer o meu modelo BIM?",
+      "faq.4.a":"Sim — o LinkNMS foi pensado para <b>carregar e pré-visualizar</b> o modelo do projeto e submetê-lo como o registo BIM da obra, anexado ao histórico. Não é uma ferramenta de modelação: não cria, não edita nem faz deteção de conflitos.",
+      "faq.5.q":"Funciona no meu telemóvel?",
+      "faq.5.a":"Foi construído primeiro para telemóvel. Quem regista e consulta está em obra, com o telemóvel na mão — por isso essa é a forma principal de o usar.",
+      "wl.h2":"Fica no registo desde o início.",
+      "wl.lede":"O LinkNMS está em desenvolvimento. Deixa os teus dados e avisamos-te assim que houver algo real para experimentar — nem antes.",
+      "wl.email":"Email","wl.emailPh":"tu@exemplo.com","wl.role":"De que lado estás?",
+      "wl.r1":"Dono de obra","wl.r2":"Empreiteiro / construtor","wl.r3":"Especialidade / subcontratado","wl.r4":"Arquiteto","wl.r5":"Diretor de obra","wl.r6":"Outro",
+      "wl.submit":"Entrar na lista de espera","wl.note":"Sem spam, sem promessas que não possamos cumprir. Um email, quando estiver pronto.",
+      "foot.how":"Como funciona","foot.wl":"Lista de espera","foot.privacy":"Privacidade","foot.contact":"Contacto",
+      "foot.fine":"O LinkNMS é um produto em desenvolvimento. Nada nesta página é garantia de disponibilidade, adoção ou funcionalidade já lançada — o histórico de alterações revela adulterações, não é inviolável."
     },
     en: {
-      "title": "LinkNMS — One record every side trusts",
-      "nav.cta": "Join the waitlist",
-      "hero.eyebrow": "In development · join the waitlist",
-      "hero.h1": "One record every side trusts.",
-      "hero.lede": "LinkNMS is the shared, verifiable record for a house build — the neutral ground where the homeowner and everyone doing the work argue from the record, not from memory.",
-      "hero.cta": "Join the waitlist",
-      "hero.link": "See how it works",
-      "card.aria": "Kitchen budget: planned 12,000 euros, actual 13,600 euros, up 1,600 euros, driven by an approved change.",
-      "card.ttl": "Kitchen · budget",
-      "card.meta": "Trade contract · Electrician",
-      "card.planned": "Planned", "card.plannedVal": "€12,000",
-      "card.actual": "Actual", "card.actualVal": "€13,600",
-      "card.delta": "▲ +€1,600 vs planned",
-      "card.tag": "edited on record",
-      "card.change": "<b>Client requested different taps</b> · +€800 · approved by <b>owner</b> + <b>architect</b> · 12 Mar",
-      "feat.eyebrow": "What it does",
-      "feat.h2": "Three things, and they only work together.",
-      "feat.1.t": "One shared record, in the open",
-      "feat.1.b": "Every party sees the same tasks, the same budget, the same history. No private second set of books.",
-      "feat.2.t": "Every change is accountable",
-      "feat.2.b": "Who changed what, when, and by how much — captured in a history that reveals any after-the-fact edit.",
-      "feat.3.t": "Honest about what it proves",
-      "feat.3.b": "Tamper-evident, not tamper-proof. We tell you exactly what the record guarantees — and what it doesn't.",
-      "edge.eyebrow": "Where the edges are",
-      "edge.h2": "What it is — and what it isn't.",
-      "edge.intro": "The limits are part of the product, not fine print. Here they are in plain sight.",
-      "edge.is.t": "What LinkNMS is",
-      "edge.is.1": "<b>The shared, verifiable record</b> <span>for one house build.</span>",
-      "edge.is.2": "<b>Neutral ground</b> <span>for owner, contractor and every specialty.</span>",
-      "edge.is.3": "<b>Time, money, scope and history</b> <span>in one place.</span>",
-      "edge.is.4": "<b>All your builds in one place</b> <span>— switch between them, one portfolio dashboard.</span>",
-      "edge.is.5": "<b>BIM upload and preview</b> <span>— the model, attached to the record.</span>",
-      "edge.isnt.t": "What LinkNMS is not",
-      "edge.isnt.1": "<b>Not tamper-proof</b> <span>— tamper-evident: it reveals edits, it doesn't prevent them.</span>",
-      "edge.isnt.2": "<b>Not a BIM authoring or analysis suite</b> <span>— no Revit or ArchiCAD replacement.</span>",
-      "edge.isnt.3": "<b>Not a permitting integration</b> <span>— it marks phases, it doesn't talk to city systems.</span>",
-      "edge.isnt.4": "<b>Not your back office</b> <span>— your builds and their record, not accounting, payroll or CRM.</span>",
-      "faq.eyebrow": "Straight answers",
-      "faq.h2": "Questions worth asking first.",
-      "faq.1.q": "Is my record tamper-proof?",
-      "faq.1.a": "No — and we won't say it is. The change history is <b>tamper-evident</b>: it reveals that a record was altered after the fact; it does not prevent alteration. The weak link is never the record, it's the people using it — and we say so plainly.",
-      "faq.2.q": "Who owns the account — the owner or the builder?",
-      "faq.2.a": "Whoever holds the subscription — it can be either side. But paying for the account never means owning the record <b>against</b> the other: the platform stays the neutral ground both work from.",
-      "faq.3.q": "I run several builds. Can I manage them all here?",
-      "faq.3.a": "Yes — LinkNMS is multi-build by design. You switch between your builds and see them all in one portfolio dashboard: budget health, schedule and pending approvals per build. What it is <b>not</b> is your back office — no accounting, payroll or CRM.",
-      "faq.4.q": "Can I bring in my BIM model?",
-      "faq.4.a": "Yes — LinkNMS is designed to let you <b>upload and preview</b> the project's model and submit it as the build's BIM record, attached to the history. It is not a modelling tool: it doesn't author, edit, or run clash detection.",
-      "faq.5.q": "Does it work on my phone?",
-      "faq.5.a": "It's built phone-first. The people entering and checking the record are on site, with a phone in hand — so that's the primary way to use it.",
-      "wl.eyebrow": "Join the waitlist",
-      "wl.h2": "Be on the record from the start.",
-      "wl.lede": "LinkNMS is in development. Leave your details and we'll tell you the moment there's something real to try — no earlier.",
-      "wl.email": "Email", "wl.emailPh": "you@example.com",
-      "wl.role": "Which side are you on?",
-      "wl.r1": "Homeowner running a build", "wl.r2": "Contractor / builder", "wl.r3": "Specialty / subcontractor",
-      "wl.r4": "Architect", "wl.r5": "Site manager", "wl.r6": "Other",
-      "wl.submit": "Join the waitlist",
-      "wl.note": "No spam, no adoption claims we can't back up. One email, when it's ready.",
-      "foot.how": "How it works", "foot.wl": "Waitlist", "foot.privacy": "Privacy", "foot.contact": "Contact",
-      "foot.fine": "LinkNMS is a product in development. Nothing on this page is a guarantee of uptime, adoption, or a shipped feature — the change history is tamper-evident, not tamper-proof."
+      "title":"LinkNMS — One record every side trusts",
+      "nav.intro":"Intro","nav.features":"Features","nav.product":"Product","nav.contact":"Contact","nav.cta":"Waitlist",
+      "hero.eyebrow":"In development · join the waitlist",
+      "hero.h1":"One record every side trusts.",
+      "hero.lede":"LinkNMS is the shared, verifiable record for a house build — the neutral ground where the homeowner and everyone doing the work argue from the record, not from memory.",
+      "hero.cta":"Join the waitlist","hero.link":"See how it works",
+      "tamper.h":"It reveals edits. It doesn't prevent them.",
+      "tamper.b":"It shows that a record was altered after the fact — it does not prevent the alteration. We never blur the two.",
+      "card.aria":"Budget: planned 12,000 euros, actual 13,600 euros.",
+      "card.planned":"Planned","card.plannedVal":"€12,000","card.actual":"Actual","card.actualVal":"€13,600",
+      "feat.1.t":"One shared record, in the open",
+      "feat.1.b":"Every party sees the same tasks, the same budget, the same history. No private second set of books.",
+      "feat.2.t":"Every change is accountable",
+      "feat.2.b":"Who changed what, when, and by how much — captured in a history that reveals any after-the-fact edit.",
+      "rev.pva.h":"Planned versus actual.",
+      "rev.pva.b":"The two sides of a build, side by side. What was agreed against what happened on site — legible at a glance, labelled so it reads without colour.",
+      "edge.eyebrow":"Where the edges are","edge.h2":"What it is — and what it isn't.",
+      "edge.is.t":"What LinkNMS is",
+      "edge.is.1":"<b>The shared, verifiable record</b> <span>for one house build.</span>",
+      "edge.is.2":"<b>Neutral ground</b> <span>for owner, contractor and every specialty.</span>",
+      "edge.is.3":"<b>Time, money, scope and history</b> <span>in one place.</span>",
+      "edge.is.4":"<b>All your builds in one place</b> <span>— switch between them, one portfolio dashboard.</span>",
+      "edge.is.5":"<b>BIM upload and preview</b> <span>— the model, attached to the record.</span>",
+      "edge.isnt.t":"What LinkNMS is not",
+      "edge.isnt.1":"<b>Not tamper-proof</b> <span>— tamper-evident: it reveals edits, it doesn't prevent them.</span>",
+      "edge.isnt.2":"<b>Not a BIM authoring or analysis suite</b> <span>— no Revit or ArchiCAD replacement.</span>",
+      "edge.isnt.3":"<b>Not a permitting integration</b> <span>— it marks phases, it doesn't talk to city systems.</span>",
+      "edge.isnt.4":"<b>Not your back office</b> <span>— your builds and their record, not accounting, payroll or CRM.</span>",
+      "faq.eyebrow":"Straight answers","faq.h2":"Questions worth asking first.",
+      "faq.1.q":"Is my record tamper-proof?",
+      "faq.1.a":"No — and we won't say it is. The change history is <b>tamper-evident</b>: it reveals that a record was altered after the fact; it does not prevent alteration. The weak link is never the record, it's the people using it — and we say so plainly.",
+      "faq.2.q":"Who owns the account — the owner or the builder?",
+      "faq.2.a":"Whoever holds the subscription — it can be either side. But paying for the account never means owning the record <b>against</b> the other: the platform stays the neutral ground both work from.",
+      "faq.3.q":"I run several builds. Can I manage them all here?",
+      "faq.3.a":"Yes — LinkNMS is multi-build by design. You switch between your builds and see them all in one portfolio dashboard: budget health, schedule and pending approvals per build. What it is <b>not</b> is your back office — no accounting, payroll or CRM.",
+      "faq.4.q":"Can I bring in my BIM model?",
+      "faq.4.a":"Yes — LinkNMS is designed to let you <b>upload and preview</b> the project's model and submit it as the build's BIM record, attached to the history. It is not a modelling tool: it doesn't author, edit, or run clash detection.",
+      "faq.5.q":"Does it work on my phone?",
+      "faq.5.a":"It's built phone-first. The people entering and checking the record are on site, with a phone in hand — so that's the primary way to use it.",
+      "wl.h2":"Be on the record from the start.",
+      "wl.lede":"LinkNMS is in development. Leave your details and we'll tell you the moment there's something real to try — no earlier.",
+      "wl.email":"Email","wl.emailPh":"you@example.com","wl.role":"Which side are you on?",
+      "wl.r1":"Homeowner running a build","wl.r2":"Contractor / builder","wl.r3":"Specialty / subcontractor","wl.r4":"Architect","wl.r5":"Site manager","wl.r6":"Other",
+      "wl.submit":"Join the waitlist","wl.note":"No spam, no adoption claims we can't back up. One email, when it's ready.",
+      "foot.how":"How it works","foot.wl":"Waitlist","foot.privacy":"Privacy","foot.contact":"Contact",
+      "foot.fine":"LinkNMS is a product in development. Nothing on this page is a guarantee of uptime, adoption, or a shipped feature — the change history is tamper-evident, not tamper-proof."
     }
   };
 
-  function setLang(lang) {
-    const dict = I18N[lang] || I18N.pt;
+  function setLang(lang){
+    const d = I18N[lang] || I18N.pt;
     document.documentElement.lang = lang;
-    document.querySelectorAll('[data-i18n]').forEach(el => {
-      const v = dict[el.getAttribute('data-i18n')]; if (v != null) el.textContent = v;
-    });
-    document.querySelectorAll('[data-i18n-html]').forEach(el => {
-      const v = dict[el.getAttribute('data-i18n-html')]; if (v != null) el.innerHTML = v;
-    });
-    document.querySelectorAll('[data-i18n-ph]').forEach(el => {
-      const v = dict[el.getAttribute('data-i18n-ph')]; if (v != null) el.setAttribute('placeholder', v);
-    });
-    document.querySelectorAll('[data-i18n-aria]').forEach(el => {
-      const v = dict[el.getAttribute('data-i18n-aria')]; if (v != null) el.setAttribute('aria-label', v);
-    });
-    if (dict.title) document.title = dict.title;
-    document.querySelectorAll('.langbtn').forEach(b =>
-      b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
-    try { localStorage.setItem('linknms-lang', lang); } catch (e) {}
+    document.querySelectorAll('[data-i18n]').forEach(el=>{const v=d[el.getAttribute('data-i18n')];if(v!=null)el.textContent=v;});
+    document.querySelectorAll('[data-i18n-html]').forEach(el=>{const v=d[el.getAttribute('data-i18n-html')];if(v!=null)el.innerHTML=v;});
+    document.querySelectorAll('[data-i18n-ph]').forEach(el=>{const v=d[el.getAttribute('data-i18n-ph')];if(v!=null)el.setAttribute('placeholder',v);});
+    document.querySelectorAll('[data-i18n-aria]').forEach(el=>{const v=d[el.getAttribute('data-i18n-aria')];if(v!=null)el.setAttribute('aria-label',v);});
+    if(d.title)document.title=d.title;
+    document.querySelectorAll('.langbtn').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.lang===lang)));
+    try{localStorage.setItem('linknms-lang',lang);}catch(e){}
   }
-
-  document.querySelectorAll('.langbtn').forEach(b =>
-    b.addEventListener('click', () => setLang(b.dataset.lang)));
-
-  let initial = 'pt';
-  try { initial = localStorage.getItem('linknms-lang') || 'pt'; } catch (e) {}
+  document.querySelectorAll('.langbtn').forEach(b=>b.addEventListener('click',()=>setLang(b.dataset.lang)));
+  let initial='pt'; try{initial=localStorage.getItem('linknms-lang')||'pt';}catch(e){}
   setLang(initial);
-</script>
 
+  // Scrollspy — dashed underline follows the section in view
+  const links=[...document.querySelectorAll('nav.top a.item')];
+  const map=new Map(links.map(a=>[a.getAttribute('href').slice(1),a]));
+  const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){const id=e.target.id||'top';links.forEach(a=>a.classList.remove('active'));(map.get(id)||map.get('top'))?.classList.add('active');}});},{rootMargin:'-45% 0px -45% 0px'});
+  ['top','features','product','contact'].forEach(id=>{const el=document.getElementById(id);if(el)io.observe(el);});
+</script>
 </body>
 </html>

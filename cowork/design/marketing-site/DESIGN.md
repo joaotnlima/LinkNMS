@@ -23,6 +23,14 @@ but opens it up: more whitespace, larger type, and the two-sides motif
 page. It persuades by showing the record, not by hyping it. No fear-selling:
 the dispute is named soberly, never dramatised.
 
+**The scroll is editorial and full-viewport.** Each section is a single
+statement on a full paper canvas: a giant display headline in the hero, then
+"reveal" screens where the House Record mark (and the planned-vs-actual bars)
+float as the object, flanked by an uppercase heading and mixed-case body,
+separated only by hairline dashed dividers — the museum-artifact treatment,
+rendered in Paper/Ink with Owner Blue and Builder Orange rather than in a dark
+theme.
+
 **Mobile-first, like the product.** The people who most need LinkNMS —
 contractors and owners mid-build — arrive on a phone, often from a WhatsApp
 link. The single-column phone layout is the primary target; wider screens add
@@ -96,20 +104,27 @@ surface too.
 
 ## Layout
 
-Mobile-first, single-column by default. Breakpoints match the app: `base`
-(< 640 px, primary), `md` (≥ 768 px), `lg` (≥ 1024 px).
+**Full-viewport editorial scroll.** Every section is full-bleed (100 vw) and at
+least 100 vh — one statement per screen, on a single Paper canvas throughout.
+The concept is desktop-editorial and stacks gracefully to one column on phones.
+Breakpoints: `base` (< 640 px), `md` (≥ 768 px), `lg` (≥ 1024 px).
 
-- 4 px base unit; the same spacing steps `4, 8, 12, 16, 24, 32, 48, 64`, plus
-  section rhythm `96` / `128` for vertical gaps between sections at `lg`.
-- One reading column, max-width `680 px` for prose; full-width bands for the
-  hero, the "what it is / what it isn't" split, and the footer. Content sits
-  within a 16 px gutter at `base`.
-- Sections alternate `surface` and `surface-sunken` bands to segment the page
-  without boxes or heavy dividers — the same quiet, ruled-paper logic as the
-  app.
-- The signature layout device is a **two-column split** (owner side / builder
-  side, or planned / actual) that stacks to one column at `base`, each side
-  labelled, never distinguished by colour alone.
+- **Hero** — a giant display headline (uppercase, `line-height 0.9`, the
+  sculptural stacking), a lede, one primary CTA, and a lower-left info-card that
+  states the tamper-evident boundary with the *Trust built-in.* slogan.
+- **Reveal sections** — a three-column grid (heading / object / body): the
+  House Record mark floats centred as the "object" (or the planned-vs-actual
+  bars), a left-aligned uppercase heading and a right-aligned mixed-case body at
+  generous gutters. Stacks to one column at `base`, object first.
+- **Dividers** — 1 px dashed `outline` hairlines are the only breaks between
+  sections; no alternating bands, no boxes.
+- **Furniture** — a fixed, paper-tinted nav (logo lockup + four items, a dashed
+  underline following the active section via scrollspy) and a vertical serial
+  label down the right edge ("LinkNMS · one record").
+- 4 px base unit; spacing steps `4, 8, 12, 16, 24, 32, 48, 64`. Generous quiet
+  space is the point — each screen breathes.
+- The two-sides motif still governs the object: Owner Blue for planned/agreed,
+  Builder Orange for actual/on-site, always labelled so it reads without colour.
 
 ## Elevation & Depth
 
