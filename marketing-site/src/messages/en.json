@@ -1,0 +1,170 @@
+{
+  "meta": {
+    "title": "LinkNMS — One record every side trusts",
+    "description": "The shared, verifiable record for a house build. One record every side trusts. Trust built-in.",
+    "ogTitle": "LinkNMS — One record every side trusts",
+    "ogDescription": "The shared, verifiable record for a house build. Trust built-in."
+  },
+  "nav": {
+    "intro": "Intro",
+    "features": "Features",
+    "product": "Product",
+    "pricing": "Pricing",
+    "contact": "Contact",
+    "cta": "Waitlist",
+    "langLabel": "Language"
+  },
+  "serial": "LinkNMS · one record",
+  "hero": {
+    "eyebrow": "In development · join the waitlist",
+    "headlines": [
+      "One record every side trusts.",
+      "Argue from the record, not from memory.",
+      "The same record, for everyone on site.",
+      "Planned against actual, in one place."
+    ],
+    "personas": ["Homeowner", "Contractor", "Specialty", "Architect"],
+    "lede": "LinkNMS is the shared, verifiable record for a house build — the neutral ground where the homeowner and everyone doing the work argue from the record, not from memory.",
+    "cta": "Join the waitlist",
+    "link": "See how it works"
+  },
+  "tamper": {
+    "h": "It reveals edits. It doesn't prevent them.",
+    "b": "It shows that a record was altered after the fact — it does not prevent the alteration. We never blur the two.",
+    "slogan": { "a": "Trust", "b": "built-in." }
+  },
+  "audience": {
+    "eyebrow": "Same record, both sides",
+    "h2": "Built for everyone on the build.",
+    "cards": [
+      { "t": "Homeowner", "b": "See the budget, the schedule and every decision — without a private second set of books." },
+      { "t": "Contractor / builder", "b": "Every change you log is on the record: who agreed it, when, and by how much." },
+      { "t": "Specialty / subcontractor", "b": "The same tasks and scope everyone else sees — no version drift, no crossed wires." },
+      { "t": "Architect", "b": "The model attached to the record, planned against what actually happened on site." }
+    ]
+  },
+  "how": {
+    "eyebrow": "How it works",
+    "h2": "Three steps, one record.",
+    "steps": [
+      { "n": "01", "t": "Open the record", "b": "Create the build. Invite the owner, the builder and each specialty to the same shared record." },
+      { "n": "02", "t": "Log every change", "b": "Tasks, budget and scope change as the build moves. Each edit captures who, when and how much." },
+      { "n": "03", "t": "Read planned vs. actual", "b": "See what was agreed against what happened on site — legible at a glance, labelled so it reads without colour." }
+    ]
+  },
+  "feat": {
+    "1": {
+      "idx": "01 / Record",
+      "t": "One shared record, in the open",
+      "b": "Every party sees the same tasks, the same budget, the same history. No private second set of books."
+    },
+    "2": {
+      "idx": "02 / History",
+      "t": "Every change is accountable",
+      "b": "Who changed what, when, and by how much — captured in a history that reveals any after-the-fact edit."
+    }
+  },
+  "pva": {
+    "idx": "03 / Two sides",
+    "h": "Planned versus actual.",
+    "b": "The two sides of a build, side by side. What was agreed against what happened on site — legible at a glance, labelled so it reads without colour.",
+    "aria": "Budget: planned 12,000 euros, actual 13,600 euros.",
+    "planned": "Planned",
+    "plannedVal": "€12,000",
+    "actual": "Actual",
+    "actualVal": "€13,600"
+  },
+  "edge": {
+    "eyebrow": "Where the edges are",
+    "h2": "What it is — and what it isn't.",
+    "is": {
+      "t": "What LinkNMS is",
+      "items": [
+        { "b": "The shared, verifiable record", "s": "for one house build." },
+        { "b": "Neutral ground", "s": "for owner, contractor and every specialty." },
+        { "b": "Time, money, scope and history", "s": "in one place." },
+        { "b": "All your builds in one place", "s": "— switch between them, one portfolio dashboard." },
+        { "b": "BIM upload and preview", "s": "— the model, attached to the record." }
+      ]
+    },
+    "isnt": {
+      "t": "What LinkNMS is not",
+      "items": [
+        { "b": "Not tamper-proof", "s": "— tamper-evident: it reveals edits, it doesn't prevent them." },
+        { "b": "Not a BIM authoring or analysis suite", "s": "— no Revit or ArchiCAD replacement." },
+        { "b": "Not a permitting integration", "s": "— it marks phases, it doesn't talk to city systems." },
+        { "b": "Not your back office", "s": "— your builds and their record, not accounting, payroll or CRM." }
+      ]
+    }
+  },
+  "pricing": {
+    "eyebrow": "Pricing direction",
+    "h2": "Priced for the whole build, not per seat.",
+    "note": "Direction, not final numbers. Pricing lands with the product.",
+    "columns": [
+      { "t": "Solo build", "b": "One owner running one house build with their contractor. The core record, free while we're in development." },
+      { "t": "Working build", "b": "The active build with every specialty on the same record — planned vs. actual, approvals, BIM preview." },
+      { "t": "Portfolio", "b": "Several builds at once in one portfolio dashboard, for contractors and owners running more than one." }
+    ]
+  },
+  "faq": {
+    "eyebrow": "Straight answers",
+    "h2": "Questions worth asking first.",
+    "items": [
+      {
+        "q": "Is my record tamper-proof?",
+        "a": "No — and we won't say it is. The change history is <b>tamper-evident</b>: it reveals that a record was altered after the fact; it does not prevent alteration. The weak link is never the record, it's the people using it — and we say so plainly."
+      },
+      {
+        "q": "Who owns the account — the owner or the builder?",
+        "a": "Whoever holds the subscription — it can be either side. But paying for the account never means owning the record <b>against</b> the other: the platform stays the neutral ground both work from."
+      },
+      {
+        "q": "I run several builds. Can I manage them all here?",
+        "a": "Yes — LinkNMS is multi-build by design. You switch between your builds and see them all in one portfolio dashboard: budget health, schedule and pending approvals per build. What it is <b>not</b> is your back office — no accounting, payroll or CRM."
+      },
+      {
+        "q": "Can I bring in my BIM model?",
+        "a": "Yes — LinkNMS is designed to let you <b>upload and preview</b> the project's model and submit it as the build's BIM record, attached to the history. It is not a modelling tool: it doesn't author, edit, or run clash detection."
+      },
+      {
+        "q": "Does it work on my phone?",
+        "a": "It's built phone-first. The people entering and checking the record are on site, with a phone in hand — so that's the primary way to use it."
+      }
+    ]
+  },
+  "waitlist": {
+    "idx": "04 / Waitlist",
+    "h2": "Be on the record from the start.",
+    "lede": "LinkNMS is in development. Leave your details and we'll tell you the moment there's something real to try — no earlier.",
+    "email": "Email",
+    "emailPh": "you@example.com",
+    "role": "Which side are you on?",
+    "roleOptions": [
+      "Homeowner running a build",
+      "Contractor / builder",
+      "Specialty / subcontractor",
+      "Architect",
+      "Site manager",
+      "Other"
+    ],
+    "submit": "Join the waitlist",
+    "submitting": "Joining…",
+    "note": "No spam, no adoption claims we can't back up. One email, when it's ready.",
+    "successTitle": "Almost there — check your inbox.",
+    "successBody": "We've sent a confirmation link to your email. Click it to lock in your place on the waitlist.",
+    "errorDup": "You're already on the list — check your inbox for the confirmation link.",
+    "errorGeneric": "Something went wrong. Please try again in a moment.",
+    "confirmedTitle": "You're on the record.",
+    "confirmedBody": "Your place on the LinkNMS waitlist is confirmed. We'll be in touch the moment there's something real to try.",
+    "confirmInvalidTitle": "That link didn't work.",
+    "confirmInvalidBody": "The confirmation link is invalid or has expired. Join the waitlist again and we'll send a fresh one."
+  },
+  "footer": {
+    "how": "How it works",
+    "wl": "Waitlist",
+    "privacy": "Privacy",
+    "contact": "Contact",
+    "fine": "LinkNMS is a product in development. Nothing on this page is a guarantee of uptime, adoption, or a shipped feature — the change history is tamper-evident, not tamper-proof."
+  }
+}

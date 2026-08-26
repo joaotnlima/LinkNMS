@@ -1,0 +1,170 @@
+{
+  "meta": {
+    "title": "LinkNMS — Um registo em que todas as partes confiam",
+    "description": "O registo partilhado e verificável de uma obra. Um registo em que todas as partes confiam. Trust built-in.",
+    "ogTitle": "LinkNMS — Um registo em que todas as partes confiam",
+    "ogDescription": "O registo partilhado e verificável de uma obra. Trust built-in."
+  },
+  "nav": {
+    "intro": "Intro",
+    "features": "Funcionalidades",
+    "product": "Produto",
+    "pricing": "Preços",
+    "contact": "Contacto",
+    "cta": "Lista de espera",
+    "langLabel": "Idioma"
+  },
+  "serial": "LinkNMS · one record",
+  "hero": {
+    "eyebrow": "Em desenvolvimento · entra na lista de espera",
+    "headlines": [
+      "Um registo em que todas as partes confiam.",
+      "Discute a partir do registo, não da memória.",
+      "O mesmo registo, para todos em obra.",
+      "Previsto contra real, num só lugar."
+    ],
+    "personas": ["Dono de obra", "Empreiteiro", "Especialidade", "Arquiteto"],
+    "lede": "O LinkNMS é o registo partilhado e verificável de uma obra — o terreno neutro onde o dono da obra e todos os que nela trabalham discutem a partir do registo, não da memória.",
+    "cta": "Entrar na lista de espera",
+    "link": "Ver como funciona"
+  },
+  "tamper": {
+    "h": "Revela adulterações. Não as impede.",
+    "b": "Mostra que um registo foi alterado depois — não impede a alteração. Nunca confundimos as duas coisas.",
+    "slogan": { "a": "Trust", "b": "built-in." }
+  },
+  "audience": {
+    "eyebrow": "O mesmo registo, os dois lados",
+    "h2": "Feito para todos na obra.",
+    "cards": [
+      { "t": "Dono de obra", "b": "Vê o orçamento, o calendário e cada decisão — sem uma segunda contabilidade privada." },
+      { "t": "Empreiteiro / construtor", "b": "Cada alteração que registas fica no registo: quem a acordou, quando e em quanto." },
+      { "t": "Especialidade / subcontratado", "b": "As mesmas tarefas e âmbito que todos veem — sem versões divergentes, sem fios trocados." },
+      { "t": "Arquiteto", "b": "O modelo anexado ao registo, o previsto contra o que aconteceu em obra." }
+    ]
+  },
+  "how": {
+    "eyebrow": "Como funciona",
+    "h2": "Três passos, um registo.",
+    "steps": [
+      { "n": "01", "t": "Abre o registo", "b": "Cria a obra. Convida o dono, o empreiteiro e cada especialidade para o mesmo registo partilhado." },
+      { "n": "02", "t": "Regista cada alteração", "b": "Tarefas, orçamento e âmbito mudam à medida que a obra avança. Cada edição guarda quem, quando e em quanto." },
+      { "n": "03", "t": "Lê previsto vs. real", "b": "Vê o que foi acordado contra o que aconteceu em obra — legível num relance, com etiqueta para ler sem cor." }
+    ]
+  },
+  "feat": {
+    "1": {
+      "idx": "01 / Registo",
+      "t": "Um registo partilhado, à vista de todos",
+      "b": "Cada parte vê as mesmas tarefas, o mesmo orçamento, o mesmo histórico. Sem uma segunda contabilidade privada."
+    },
+    "2": {
+      "idx": "02 / Histórico",
+      "t": "Cada alteração tem responsável",
+      "b": "Quem mudou o quê, quando e em quanto — guardado num histórico que revela qualquer edição feita depois."
+    }
+  },
+  "pva": {
+    "idx": "03 / Dois lados",
+    "h": "Planeado versus real.",
+    "b": "Os dois lados de uma obra, lado a lado. O que foi acordado contra o que aconteceu em obra — legível num relance, com etiqueta para ler sem cor.",
+    "aria": "Orçamento: previsto 12 000 euros, real 13 600 euros.",
+    "planned": "Previsto",
+    "plannedVal": "12 000 €",
+    "actual": "Real",
+    "actualVal": "13 600 €"
+  },
+  "edge": {
+    "eyebrow": "Onde estão os limites",
+    "h2": "O que é — e o que não é.",
+    "is": {
+      "t": "O que o LinkNMS é",
+      "items": [
+        { "b": "O registo partilhado e verificável", "s": "de uma obra." },
+        { "b": "Terreno neutro", "s": "para dono, empreiteiro e cada especialidade." },
+        { "b": "Tempo, dinheiro, âmbito e histórico", "s": "num só lugar." },
+        { "b": "Todas as tuas obras num só lugar", "s": "— alterna entre elas, um painel de portfólio." },
+        { "b": "Upload e pré-visualização de BIM", "s": "— o modelo, anexado ao registo." }
+      ]
+    },
+    "isnt": {
+      "t": "O que o LinkNMS não é",
+      "items": [
+        { "b": "Não é inviolável", "s": "— revela as alterações, não as impede." },
+        { "b": "Não é uma ferramenta de autoria ou análise BIM", "s": "— não substitui o Revit nem o ArchiCAD." },
+        { "b": "Não é uma integração de licenciamento", "s": "— marca as fases, não comunica com as câmaras." },
+        { "b": "Não é o teu back office", "s": "— as tuas obras e o seu registo, não a contabilidade, salários ou CRM." }
+      ]
+    }
+  },
+  "pricing": {
+    "eyebrow": "Direção de preços",
+    "h2": "Preço para a obra toda, não por utilizador.",
+    "note": "Direção, não números finais. O preço chega com o produto.",
+    "columns": [
+      { "t": "Obra individual", "b": "Um dono a gerir uma obra com o seu empreiteiro. O registo essencial, gratuito enquanto estamos em desenvolvimento." },
+      { "t": "Obra ativa", "b": "A obra a decorrer com cada especialidade no mesmo registo — previsto vs. real, aprovações, pré-visualização BIM." },
+      { "t": "Portfólio", "b": "Várias obras ao mesmo tempo num painel de portfólio, para empreiteiros e donos com mais do que uma." }
+    ]
+  },
+  "faq": {
+    "eyebrow": "Respostas diretas",
+    "h2": "Perguntas que vale a pena fazer primeiro.",
+    "items": [
+      {
+        "q": "O meu registo é inviolável?",
+        "a": "Não — e não vamos dizer que é. O histórico de alterações <b>revela adulterações</b>: mostra que um registo foi alterado depois, mas não impede a alteração. O elo fraco nunca é o registo, são as pessoas que o usam — e dizemo-lo com clareza."
+      },
+      {
+        "q": "De quem é a conta — do dono ou do empreiteiro?",
+        "a": "De quem tiver a subscrição — pode ser qualquer um dos lados. Mas pagar a conta nunca significa ser dono do registo <b>contra</b> o outro: a plataforma continua a ser o terreno neutro onde ambos trabalham."
+      },
+      {
+        "q": "Tenho várias obras. Consigo geri-las todas aqui?",
+        "a": "Sim — o LinkNMS é multi-obra por design. Alternas entre as tuas obras e vês todas num painel de portfólio: saúde do orçamento, calendário e aprovações pendentes por obra. O que <b>não</b> é: o teu back office — sem contabilidade, salários ou CRM."
+      },
+      {
+        "q": "Posso trazer o meu modelo BIM?",
+        "a": "Sim — o LinkNMS foi pensado para <b>carregar e pré-visualizar</b> o modelo do projeto e submetê-lo como o registo BIM da obra, anexado ao histórico. Não é uma ferramenta de modelação: não cria, não edita nem faz deteção de conflitos."
+      },
+      {
+        "q": "Funciona no meu telemóvel?",
+        "a": "Foi construído primeiro para telemóvel. Quem regista e consulta está em obra, com o telemóvel na mão — por isso essa é a forma principal de o usar."
+      }
+    ]
+  },
+  "waitlist": {
+    "idx": "04 / Lista de espera",
+    "h2": "Fica no registo desde o início.",
+    "lede": "O LinkNMS está em desenvolvimento. Deixa os teus dados e avisamos-te assim que houver algo real para experimentar — nem antes.",
+    "email": "Email",
+    "emailPh": "tu@exemplo.com",
+    "role": "De que lado estás?",
+    "roleOptions": [
+      "Dono de obra",
+      "Empreiteiro / construtor",
+      "Especialidade / subcontratado",
+      "Arquiteto",
+      "Diretor de obra",
+      "Outro"
+    ],
+    "submit": "Entrar na lista de espera",
+    "submitting": "A entrar…",
+    "note": "Sem spam, sem promessas que não possamos cumprir. Um email, quando estiver pronto.",
+    "successTitle": "Quase lá — vê o teu email.",
+    "successBody": "Enviámos um link de confirmação para o teu email. Clica nele para garantir o teu lugar na lista de espera.",
+    "errorDup": "Já estás na lista — vê o teu email para o link de confirmação.",
+    "errorGeneric": "Algo correu mal. Tenta novamente dentro de momentos.",
+    "confirmedTitle": "Estás no registo.",
+    "confirmedBody": "O teu lugar na lista de espera do LinkNMS está confirmado. Falamos assim que houver algo real para experimentar.",
+    "confirmInvalidTitle": "Esse link não funcionou.",
+    "confirmInvalidBody": "O link de confirmação é inválido ou expirou. Entra novamente na lista de espera e enviamos um novo."
+  },
+  "footer": {
+    "how": "Como funciona",
+    "wl": "Lista de espera",
+    "privacy": "Privacidade",
+    "contact": "Contacto",
+    "fine": "O LinkNMS é um produto em desenvolvimento. Nada nesta página é garantia de disponibilidade, adoção ou funcionalidade já lançada — o histórico de alterações revela adulterações, não é inviolável."
+  }
+}
