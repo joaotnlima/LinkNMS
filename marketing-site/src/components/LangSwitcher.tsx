@@ -1,6 +1,7 @@
 'use client';
 
 import { useLocale } from 'next-intl';
+import posthog from 'posthog-js';
 import { usePathname, useRouter } from '@/i18n/navigation';
 import { routing } from '@/i18n/routing';
 
@@ -21,7 +22,12 @@ export function LangSwitcher({ label }: { label: string }) {
           type="button"
           className="langbtn"
           aria-pressed={l === locale}
-          onClick={() => router.replace(pathname, { locale: l })}
+          onClick={() => {
+            if (l !== locale) {
+              posthog.capture('language_selected', { locale: l });
+            }
+            router.replace(pathname, { locale: l });
+          }}
         >
           {LABELS[l] ?? l.toUpperCase()}
         </button>

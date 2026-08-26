@@ -4,7 +4,9 @@
   "private": true,
   "description": "LinkNMS marketing site + waitlist (pt-PT / EN / es-ES). Next.js 15 App Router + next-intl on Vercel. LINA-34.",
   "type": "module",
-  "engines": { "node": ">=20.11.0" },
+  "engines": {
+    "node": ">=20.11.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -15,21 +17,23 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.1",
+    "drizzle-orm": "^0.44.2",
     "next": "^15.5.4",
     "next-intl": "^4.3.4",
+    "posthog-js": "^1.420.0",
+    "posthog-node": "^5.51.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "drizzle-orm": "^0.44.2",
-    "@neondatabase/serverless": "^1.0.1",
     "resend": "^4.5.1"
   },
   "devDependencies": {
-    "typescript": "^5.7.3",
     "@types/node": "^22.10.7",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "drizzle-kit": "^0.31.1",
     "eslint": "^9.18.0",
-    "eslint-config-next": "^15.5.4"
+    "eslint-config-next": "^15.5.4",
+    "typescript": "^5.7.3"
   }
 }

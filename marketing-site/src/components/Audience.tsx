@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import posthog from 'posthog-js';
 
 type Card = { t: string; b: string };
 
@@ -11,6 +12,7 @@ export function Audience() {
   const cards = t.raw('cards') as Card[];
 
   const lock = (i: number) => {
+    posthog.capture('audience_selected', { audience_index: i });
     window.dispatchEvent(new CustomEvent<number>('lock-hero', { detail: i }));
     document.getElementById('top')?.scrollIntoView({ behavior: 'smooth' });
   };

@@ -56,3 +56,10 @@ pnpm-debug.log*
 .parcel-cache/
 
 # Nota: os ficheiros .pen (design) são intencionalmente versionados.
+
+# Ruflo local secrets and runtime data
+.env.local
+.env.*.local
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/
