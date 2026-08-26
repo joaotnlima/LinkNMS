@@ -46,11 +46,32 @@ function loadTurnstile(): Promise<void> {
 // and sends a tokenized confirmation email. Honeypot + Turnstile token are posted
 // for the server-side spam checks. The Turnstile widget injects a hidden
 // `cf-turnstile-response` input into the form, which we forward as turnstileToken.
+// Read the true acquisition context in the browser: a utm_source query param
+// wins, otherwise an external referring host, otherwise the server-provided
+// default. The raw referrer is sent alongside so the DB records where the
+// visitor actually came from (e.g. linknms.com) instead of a hardcoded guess.
+function acquisition(fallbackSource: string): { source: string; referrer: string } {
+  if (typeof window === 'undefined') return { source: fallbackSource, referrer: '' };
+  const referrer = document.referrer || '';
+  const utmSource = new URLSearchParams(window.location.search).get('utm_source');
+  let refHost = '';
+  try {
+    refHost = referrer ? new URL(referrer).hostname : '';
+  } catch {
+    /* malformed referrer — ignore */
+  }
+  const external = refHost && refHost !== window.location.hostname ? refHost : '';
+  const source = utmSource || external || fallbackSource;
+  return { source: source.slice(0, 120), referrer };
+}
+
 export function WaitlistForm({ source }: { source: string }) {
   const t = useTranslations('waitlist');
   const locale = useLocale();
   const [state, setState] = useState<State>('idle');
-  const roleOptions = t.raw('roleOptions') as string[];
+  // `roleOptions` is an ordered { key: label } map — value is the stable enum key
+  // (shared with the server), the label is the localized display text.
+  const roleOptions = Object.entries(t.raw('roleOptions') as Record<string, string>);
 
   // Site key is public and inlined at build time. When unset (local dev) the
   // widget is skipped and the server, lacking a secret, skips verification too.
@@ -91,17 +112,22 @@ export function WaitlistForm({ source }: { source: string }) {
     const form = e.currentTarget;
     const data = new FormData(form);
     setState('submitting');
+    const { source: effectiveSource, referrer } = acquisition(source);
+    const honeypot = String(data.get('company') || '').trim();
     try {
       const res = await fetch('/api/waitlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: String(data.get('email') || ''),
-          role: String(data.get('role') || ''),
-          company: String(data.get('company') || ''), // honeypot
+          role: String(data.get('role') || ''), // stable enum key
+          // Honeypot: only sent when actually filled (i.e. by a bot). Real
+          // submissions omit it entirely rather than posting an empty field.
+          ...(honeypot ? { company: honeypot } : {}),
           turnstileToken: String(data.get('cf-turnstile-response') || ''),
           locale,
-          source
+          source: effectiveSource,
+          referrer
         })
       });
       if (res.status === 409) {
@@ -145,9 +171,9 @@ export function WaitlistForm({ source }: { source: string }) {
         <div className="inp">
           <label htmlFor="role">{t('role')}</label>
           <select id="role" name="role">
-            {roleOptions.map((r, i) => (
-              <option key={i} value={r}>
-                {r}
+            {roleOptions.map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
               </option>
             ))}
           </select>
