@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { NextIntlClientProvider, hasLocale } from 'next-intl';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { routing } from '@/i18n/routing';
+import { PostHogProvider } from '@/components/PostHogProvider';
 import '../globals.css';
 
 export function generateStaticParams() {
@@ -47,7 +48,9 @@ export default async function LocaleLayout({
   return (
     <html lang={locale}>
       <body>
-        <NextIntlClientProvider>{children}</NextIntlClientProvider>
+        <NextIntlClientProvider>
+          <PostHogProvider>{children}</PostHogProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

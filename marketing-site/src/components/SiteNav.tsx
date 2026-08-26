@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { HouseMark } from './HouseMark';
 import { LangSwitcher } from './LangSwitcher';
+import { CtaLink } from './CtaLink';
 
 const SECTIONS = [
   { id: 'top', key: 'intro' },
@@ -61,9 +62,9 @@ export function SiteNav() {
       </ul>
       <div className="nav-right">
         <LangSwitcher label={t('langLabel')} />
-        <a className="nav-cta u" href="#contact">
+        <CtaLink location="header" className="nav-cta u" href="#contact">
           {t('cta')}
-        </a>
+        </CtaLink>
       </div>
     </nav>
   );
