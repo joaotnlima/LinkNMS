@@ -1,18 +1,90 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 
 type State = 'idle' | 'submitting' | 'success' | 'dup' | 'error';
 
+// Cloudflare Turnstile explicit-render API. Loaded once and shared across every
+// WaitlistForm instance on the page (header, hero, final CTA).
+const TURNSTILE_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+      reset: (id?: string) => void;
+      remove: (id?: string) => void;
+    };
+  }
+}
+
+let turnstileReady: Promise<void> | null = null;
+function loadTurnstile(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve();
+  if (window.turnstile) return Promise.resolve();
+  if (turnstileReady) return turnstileReady;
+  turnstileReady = new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${TURNSTILE_SRC}"]`);
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => reject(new Error('turnstile load failed')));
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = TURNSTILE_SRC;
+    s.async = true;
+    s.defer = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('turnstile load failed'));
+    document.head.appendChild(s);
+  });
+  return turnstileReady;
+}
+
 // Waitlist capture with double opt-in: POST /api/waitlist inserts 'unconfirmed'
-// and sends a tokenized confirmation email. Honeypot + optional Turnstile token
-// are posted for the server-side spam checks.
+// and sends a tokenized confirmation email. Honeypot + Turnstile token are posted
+// for the server-side spam checks. The Turnstile widget injects a hidden
+// `cf-turnstile-response` input into the form, which we forward as turnstileToken.
 export function WaitlistForm({ source }: { source: string }) {
   const t = useTranslations('waitlist');
   const locale = useLocale();
   const [state, setState] = useState<State>('idle');
   const roleOptions = t.raw('roleOptions') as string[];
+
+  // Site key is public and inlined at build time. When unset (local dev) the
+  // widget is skipped and the server, lacking a secret, skips verification too.
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!siteKey) return;
+    let cancelled = false;
+    loadTurnstile()
+      .then(() => {
+        if (cancelled || !widgetRef.current || !window.turnstile) return;
+        if (widgetIdRef.current !== null) return; // already rendered
+        widgetIdRef.current = window.turnstile.render(widgetRef.current, {
+          sitekey: siteKey,
+          action: 'waitlist'
+        });
+      })
+      .catch(() => {
+        /* network/adblock — server still enforces; leave token empty */
+      });
+    return () => {
+      cancelled = true;
+      if (widgetIdRef.current !== null && window.turnstile) {
+        try {
+          window.turnstile.remove(widgetIdRef.current);
+        } catch {
+          /* noop */
+        }
+        widgetIdRef.current = null;
+      }
+    };
+  }, [siteKey]);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -42,6 +114,15 @@ export function WaitlistForm({ source }: { source: string }) {
       }
     } catch {
       setState('error');
+    } finally {
+      // Turnstile tokens are single-use — reset so a retry gets a fresh one.
+      if (widgetIdRef.current !== null && window.turnstile) {
+        try {
+          window.turnstile.reset(widgetIdRef.current);
+        } catch {
+          /* noop */
+        }
+      }
     }
   }
 
@@ -76,6 +157,7 @@ export function WaitlistForm({ source }: { source: string }) {
           <label htmlFor="company">Company</label>
           <input id="company" name="company" type="text" tabIndex={-1} autoComplete="off" />
         </div>
+        {siteKey && <div ref={widgetRef} className="cf-turnstile-widget" />}
         <button className="btn-pill" type="submit" disabled={state === 'submitting'}>
           {state === 'submitting' ? t('submitting') : t('submit')}
         </button>
