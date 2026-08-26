@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, isDbConfigured, signups } from '@/lib/db';
 import { sendConfirmationEmail } from '@/lib/email';
 import { capture } from '@/lib/analytics';
+import { normalizeRole } from '@/lib/roles';
 import {
   isValidEmail,
   normalizeEmail,
@@ -15,11 +16,12 @@ export const runtime = 'nodejs';
 
 type Body = {
   email?: string;
-  role?: string;
-  company?: string; // honeypot
+  role?: string; // stable enum key (see @/lib/roles), never a localized label
+  company?: string; // honeypot — omitted by real clients, filled only by bots
   turnstileToken?: string;
   locale?: string;
   source?: string;
+  referrer?: string;
 };
 
 const LOCALES = new Set(['pt', 'en', 'es']);
@@ -57,11 +59,13 @@ export async function POST(req: Request) {
 
   const locale = LOCALES.has(body.locale || '') ? (body.locale as string) : 'pt';
   const source = (body.source || 'organic').slice(0, 120);
-  const role = body.role ? body.role.slice(0, 120) : null;
+  const referrer = body.referrer ? body.referrer.slice(0, 500) : null;
+  // Store the stable enum key, not the localized label the user saw.
+  const role = normalizeRole(body.role);
   const emailNorm = normalizeEmail(email);
   const token = newToken();
 
-  await capture('waitlist_submitted', emailNorm, { locale, source, role });
+  await capture('waitlist_submitted', emailNorm, { locale, source, referrer, role });
 
   // Dev / preview without a database: succeed so the funnel is testable, and log
   // the confirmation link the email would have carried.
@@ -90,6 +94,7 @@ export async function POST(req: Request) {
     role,
     locale,
     source,
+    referrer,
     status: 'unconfirmed',
     confirmToken: token
   });

@@ -140,14 +140,14 @@
     "email": "Email",
     "emailPh": "tu@exemplo.com",
     "role": "De que lado estás?",
-    "roleOptions": [
-      "Dono de obra",
-      "Empreiteiro / construtor",
-      "Especialidade / subcontratado",
-      "Arquiteto",
-      "Diretor de obra",
-      "Outro"
-    ],
+    "roleOptions": {
+      "homeowner": "Dono de obra",
+      "contractor": "Empreiteiro / construtor",
+      "subcontractor": "Especialidade / subcontratado",
+      "architect": "Arquiteto",
+      "site_manager": "Diretor de obra",
+      "other": "Outro"
+    },
     "submit": "Entrar na lista de espera",
     "submitting": "A entrar…",
     "note": "Sem spam, sem promessas que não possamos cumprir. Um email, quando estiver pronto.",

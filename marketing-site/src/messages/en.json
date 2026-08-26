@@ -140,14 +140,14 @@
     "email": "Email",
     "emailPh": "you@example.com",
     "role": "Which side are you on?",
-    "roleOptions": [
-      "Homeowner running a build",
-      "Contractor / builder",
-      "Specialty / subcontractor",
-      "Architect",
-      "Site manager",
-      "Other"
-    ],
+    "roleOptions": {
+      "homeowner": "Homeowner running a build",
+      "contractor": "Contractor / builder",
+      "subcontractor": "Specialty / subcontractor",
+      "architect": "Architect",
+      "site_manager": "Site manager",
+      "other": "Other"
+    },
     "submit": "Join the waitlist",
     "submitting": "Joining…",
     "note": "No spam, no adoption claims we can't back up. One email, when it's ready.",
