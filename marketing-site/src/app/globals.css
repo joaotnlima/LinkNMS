@@ -235,3 +235,5 @@ footer .fine { flex-basis: 100%; font-size: 11px; line-height: 1.5; color: var(-
   html { scroll-behavior: auto; }
   .hero-headline { transition: none; }
 }
+
+.cf-turnstile-widget { margin: 4px 0; min-height: 65px; }
