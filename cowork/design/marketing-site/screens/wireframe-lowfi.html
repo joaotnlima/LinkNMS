@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LinkNMS Marketing Site — Low-fi Wireframe (LINA-32 §5)</title>
+<style>
+  :root{
+    --ink:#0b0b0b; --paper:#fcfcfb; --sunken:#f4f3f0; --outline:#dcdbd7;
+    --muted:#5b5b58; --fade:#9a9a9a; --owner:#2a78d6; --builder:#eb6834;
+    --cta:#0b0b0b;               /* dedicated CTA = Ink (recommended). Signal Green option: #0b6b47 */
+    --font:system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--sunken);color:var(--ink);font-family:var(--font);line-height:1.5}
+  .doc{max-width:1100px;margin:0 auto;padding:32px 20px 80px}
+  .doc > h1{font-size:22px;margin:0 0 4px}
+  .doc > p.sub{color:var(--muted);margin:0 0 8px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);border:1px dashed var(--outline);background:var(--paper);padding:10px 14px;border-radius:8px;margin:12px 0 28px}
+  .legend b{color:var(--ink)}
+  .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .chip.cta{background:var(--cta);color:#fff}
+  .chip.own{background:#e2edfb;color:var(--owner)}
+  .chip.bld{background:#fce3d8;color:#a23c17}
+
+  /* device frames */
+  .row{display:grid;grid-template-columns:300px 1fr;gap:24px;align-items:start;margin:0 0 40px}
+  @media(max-width:760px){.row{grid-template-columns:1fr}}
+  .caption{grid-column:1 / -1;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--fade);border-bottom:1px dashed var(--outline);padding-bottom:6px;margin:8px 0 4px}
+  .device{background:var(--paper);border:1px solid var(--outline);border-radius:12px;overflow:hidden}
+  .device.phone{max-width:300px}
+  .device .bar{height:22px;background:var(--sunken);border-bottom:1px solid var(--outline)}
+  .device .screen{padding:14px}
+  .lbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fade);margin:0 0 6px}
+  .box{border:1px dashed var(--outline);border-radius:8px;padding:10px;margin:8px 0;background:#fff}
+  .box.solid{border-style:solid}
+  .ph{background:repeating-linear-gradient(135deg,#efefec,#efefec 6px,#f7f7f5 6px,#f7f7f5 12px);border-radius:6px}
+  .line{height:10px;border-radius:3px;background:#e7e7e3;margin:5px 0}
+  .line.sm{width:55%} .line.md{width:75%} .line.lg{width:92%}
+  .h{font-weight:700;line-height:1.05;letter-spacing:-.01em}
+  .h.big{font-size:26px;text-transform:uppercase}
+  .h.mid{font-size:16px;text-transform:uppercase}
+  .btn{display:block;text-align:center;background:var(--cta);color:#fff;border-radius:999px;padding:11px;font-weight:700;font-size:13px;margin-top:8px}
+  .btn.wide{width:100%}
+  .input{border:1px solid var(--outline);border-radius:8px;padding:11px;color:var(--fade);font-size:13px;background:#fff}
+  .field{display:flex;flex-direction:column;gap:8px}
+  .hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:1px solid var(--outline);border-radius:8px;background:#fff;margin-bottom:10px}
+  .mark{width:16px;height:16px;border-radius:3px;background:linear-gradient(135deg,var(--owner) 0 50%,var(--builder) 50% 100%);display:inline-block;vertical-align:-2px;margin-right:6px}
+  .lang{font-size:11px;border:1px solid var(--outline);border-radius:6px;padding:3px 7px;color:var(--muted);white-space:nowrap}
+  .cards{display:grid;grid-template-columns:1fr;gap:8px}
+  .cards.four{grid-template-columns:repeat(4,1fr)}
+  .cards.three{grid-template-columns:repeat(3,1fr)}
+  .cards.two{grid-template-columns:1fr 1fr}
+  .card{border:1px dashed var(--outline);border-radius:8px;padding:9px;background:#fff}
+  .card .t{font-weight:600;font-size:12px;margin-bottom:4px}
+  .card .d{font-size:11px;color:var(--muted)}
+  .bar-row{display:flex;align-items:center;gap:8px;font-size:11px;margin:4px 0}
+  .bar-row .k{width:56px;color:var(--muted)}
+  .bar{height:12px;border-radius:3px}
+  .bar.own{background:var(--owner)} .bar.bld{background:var(--builder)}
+  .steps{display:flex;gap:8px}
+  .step{flex:1;border-top:2px solid var(--ink);padding-top:6px;font-size:11px}
+  .step .n{font-weight:700;font-size:14px}
+  .divider{border:0;border-top:1px dashed var(--outline);margin:12px 0}
+  .note{font-size:11px;color:var(--muted);margin-top:6px}
+  .foot{font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;border-top:1px solid var(--outline);padding-top:10px}
+  ul.tick{margin:4px 0;padding-left:16px;font-size:12px;color:var(--muted)}
+  .desk .screen{min-height:120px}
+</style>
+</head>
+<body>
+<div class="doc">
+  <h1>LinkNMS Marketing Site — Low-fi Wireframe</h1>
+  <p class="sub">LINA-32 §5 · single scrolling landing page · mobile-first · one dedicated CTA colour</p>
+  <div class="legend">
+    <span><span class="chip cta">CTA</span> = the single conversion action (Ink pill, recommended)</span>
+    <span><span class="chip own">Owner Blue</span> planned/owner — semantic only</span>
+    <span><span class="chip bld">Builder Orange</span> actual/builder — semantic only</span>
+    <span><b>Never</b> a party colour on the CTA.</span>
+  </div>
+
+  <!-- HEADER -->
+  <div class="row">
+    <div class="caption">Sticky header — language switcher always visible</div>
+    <div class="device phone">
+      <div class="bar"></div>
+      <div class="screen">
+        <div class="hdr"><span><span class="mark"></span><b style="font-size:13px">LinkNMS</b></span>
+          <span style="display:flex;gap:6px;align-items:center"><span class="lang">🌐 PT ▾</span><span style="font-size:16px">≡</span></span></div>
+        <div class="note">Trust built-in. · shadow appears on scroll · ≡ opens nav + full-width Join</div>
+      </div>
+    </div>
+    <div class="device desk">
+      <div class="bar"></div>
+      <div class="screen">
+        <div class="hdr">
+          <span><span class="mark"></span><b style="font-size:13px">LinkNMS</b> &nbsp;<span class="note">Intro · How · Capabilities · Pricing · FAQ</span></span>
+          <span style="display:flex;gap:8px;align-items:center"><span class="lang">🌐 PT ▾</span><span class="chip cta">Join the waitlist</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <div class="row">
+    <div class="caption">1 · Hero — email capture above the fold</div>
+    <div class="device phone"><div class="bar"></div><div class="screen">
+      <div class="lbl">Building now · early access</div>
+      <div class="h big">One record<br>every side<br>trusts.</div>
+      <div class="line lg" style="margin-top:10px"></div><div class="line md"></div>
+      <div class="field" style="margin-top:10px">
+        <div class="input">you@email.com</div>
+        <div class="btn wide">Join the waitlist</div>
+      </div>
+      <div class="note">No spam · launch updates only · See how it works ›</div>
+      <div class="box" style="margin-top:10px"><b style="font-size:12px">Trust built-in.</b>
+        <div class="note">Reveals an after-the-fact edit. Tamper-evident, not tamper-proof.</div></div>
+    </div></div>
+    <div class="device desk"><div class="bar"></div><div class="screen">
+      <div class="lbl">Building now · early access</div>
+      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:14px;align-items:center">
+        <div>
+          <div class="h big">One record<br>every side trusts.</div>
+          <div class="line lg" style="margin-top:8px"></div>
+          <div style="display:flex;gap:8px;margin-top:10px"><div class="input" style="flex:1">you@email.com</div><div class="btn" style="margin:0;padding:11px 18px">Join the waitlist</div></div>
+          <div class="note">No spam · launch updates only</div>
+        </div>
+        <div class="box solid">
+          <div class="lbl">Planned vs actual</div>
+          <div class="bar-row"><span class="k">Planned</span><span class="bar own" style="width:60%"></span><span>€12k</span></div>
+          <div class="bar-row"><span class="k">Actual</span><span class="bar bld" style="width:66%"></span><span>€13k</span></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- AUDIENCE -->
+  <div class="row">
+    <div class="caption">2 · Audience selector — visitor self-selects</div>
+    <div class="device phone"><div class="bar"></div><div class="screen">
+      <div class="h mid">Who are you on the build?</div>
+      <div class="cards" style="margin-top:8px">
+        <div class="card"><div class="t">🏠 Homeowner →</div><div class="d">Know where your money went & who approved it</div></div>
+        <div class="card"><div class="t">👷 General contractor →</div><div class="d">Fewer disputes, faster sign-offs</div></div>
+        <div class="card"><div class="t">🔧 Subcontractor →</div><div class="d">Get it in writing, get paid for changes</div></div>
+        <div class="card"><div class="t">📐 Architect / Inspector →</div><div class="d">One shared source of truth</div></div>
+      </div>
+    </div></div>
+    <div class="device desk"><div class="bar"></div><div class="screen">
+      <div class="h mid">Who are you on the build?</div>
+      <div class="cards four" style="margin-top:8px">
+        <div class="card"><div class="t">🏠 Homeowner</div><div class="d">Where the money went</div></div>
+        <div class="card"><div class="t">👷 GC</div><div class="d">Fewer disputes</div></div>
+        <div class="card"><div class="t">🔧 Sub</div><div class="d">In writing, get paid</div></div>
+        <div class="card"><div class="t">📐 Arch/Insp</div><div class="d">Shared truth</div></div>
+      </div>
+      <div class="note">Tapping a card scrolls to Capabilities with that angle emphasised (no reload).</div>
+    </div></div>
+  </div>
+
+  <!-- PROBLEM -->
+  <div class="row">
+    <div class="caption">3 · The problem — sober, not alarmist</div>
+    <div class="device phone"><div class="bar"></div><div class="screen">
+      <div class="h mid">When the build goes sideways</div>
+      <div class="box"><div class="note">WhatsApp · emails · printouts · memory &nbsp;→&nbsp; <b>"who decided this?"</b></div></div>
+      <div class="line lg"></div><div class="line md"></div>
+      <div class="note">Nobody agrees who decided what, when, or how much it moved the budget.</div>
+    </div></div>
+    <div class="device desk"><div class="bar"></div><div class="screen">
+      <div style="display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:12px;align-items:center">
+        <div class="h mid">When the build goes sideways</div>
+        <div class="box ph" style="height:70px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">scattered sources → one record</div>
+        <div><div class="line lg"></div><div class="line md"></div><div class="note">who / when / how much?</div></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- HOW -->
+  <div class="row">
+    <div class="caption">4 · How it works — 3 steps</div>
+    <div class="device phone"><div class="bar"></div><div class="screen">
+      <div class="h mid">How it works</div>
+      <div class="box"><b style="font-size:12px">① Connect everyone</b><div class="note">Owner + GC + subs + architect + inspector</div></div>
+      <div class="box"><b style="font-size:12px">② Log decisions & changes</b><div class="note">Each entry attributed & dated</div></div>
+      <div class="box"><b style="font-size:12px">③ Look up the truth</b><div class="note">Disputes become a lookup</div></div>
+    </div></div>
+    <div class="device desk"><div class="bar"></div><div class="screen">
+      <div class="h mid">How it works</div>
+      <div class="steps" style="margin-top:10px">
+        <div class="step"><span class="n">1</span><div>Connect everyone</div></div>
+        <div class="step"><span class="n">2</span><div>Log decisions & changes</div></div>
+        <div class="step"><span class="n">3</span><div>Look up the truth</div></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- CAPABILITIES -->
+  <div class="row">
+    <div class="caption">5 · Capabilities — the record as proof (labels, not colour alone)</div>
+    <div class="device phone"><div class="bar"></div><div class="screen">
+      <div class="h mid">What's on the record</div>
+      <div class="cards" style="margin-top:8px">
+        <div class="card"><div class="t">Decision log</div></div>
+        <div class="card"><div class="t">Change orders</div></div>
+        <div class="card"><div class="t">Shared budget</div></div>
+        <div class="card"><div class="t">Roles & permissions</div></div>
+        <div class="card"><div class="t">Audit timeline</div></div>
+      </div>
+    </div></div>
+    <div class="device desk"><div class="bar"></div><div class="screen">
+      <div class="box solid">
+        <div class="lbl">Planned vs actual — change #14</div>
+        <div class="bar-row"><span class="k">Planned</span><span class="bar own" style="width:55%"></span><span>€12,000</span></div>
+        <div class="bar-row"><span class="k">Actual</span><span class="bar bld" style="width:61%"></span><span>€13,200</span></div>
+        <div class="note">+€1,200 · approved 12 Aug</div>
+      </div>
+      <div class="cards four" style="margin-top:8px">
+        <div class="card"><div class="t">Decision log</div></div>
+        <div class="card"><div class="t">Change orders</div></div>
+        <div class="card"><div class="t">Shared budget</div></div>
+        <div class="card"><div class="t">Roles & perms</div></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- IS / ISN'T -->
+  <div class="row">
+    <div class="caption">6 · What it is / what it isn't — honesty, equal weight</div>
+    <div class="device phone"><div class="bar"></div><div class="screen">
+      <div class="h mid">What it is — and isn't</div>
+      <div class="box"><b style="font-size:12px">It is</b>
+        <ul class="tick"><li>One shared record</li><li>Neutral ground</li><li>Time, budget, scope</li><li>All parties equal</li></ul></div>
+      <div class="box"><b style="font-size:12px">It isn't</b>
+        <ul class="tick"><li>Not tamper-proof</li><li>Not a BIM suite</li><li>Not permitting</li><li>Not an ERP</li></ul></div>
+    </div></div>
+    <div class="device desk"><div class="bar"></div><div class="screen">
+      <div class="h mid">What it is — and what it isn't</div>
+      <div class="cards two" style="margin-top:8px">
+        <div class="card"><b style="font-size:12px">It is</b><ul class="tick"><li>Shared record</li><li>Neutral ground</li><li>Every party equal</li><li>BIM upload/preview</li></ul></div>
+        <div class="card"><b style="font-size:12px">It isn't</b><ul class="tick"><li>Not tamper-proof</li><li>Not a BIM suite</li><li>Not permitting</li><li>Not an ERP</li></ul></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- PRICING -->
+  <div class="row">
+    <div class="caption">7 · Pricing direction — "help us shape it"</div>
+    <div class="device phone"><div class="bar"></div><div class="screen">
+      <div class="h mid">Early pricing — help us shape it</div>
+      <div class="box"><b style="font-size:12px">Homeowner</b><div class="note">Free or low flat fee / project</div></div>
+      <div class="box"><b style="font-size:12px">Pro (GC / trades)</b><div class="note">Per-seat or per-project · core</div></div>
+      <div class="box"><b style="font-size:12px">Team / Firm</b><div class="note">More projects & roles</div></div>
+      <div class="btn wide">Join for founding pricing</div>
+    </div></div>
+    <div class="device desk"><div class="bar"></div><div class="screen">
+      <div class="h mid">Early pricing — help us shape it</div>
+      <div class="cards three" style="margin-top:8px">
+        <div class="card"><b style="font-size:12px">Homeowner</b><div class="d">Free / low flat</div></div>
+        <div class="card"><b style="font-size:12px">Pro (GC/trades)</b><div class="d">Per-seat/project</div></div>
+        <div class="card"><b style="font-size:12px">Team / Firm</b><div class="d">More projects & roles</div></div>
+      </div>
+      <div class="btn" style="max-width:230px">Join for founding pricing</div>
+    </div></div>
+  </div>
+
+  <!-- FAQ -->
+  <div class="row">
+    <div class="caption">8 · FAQ — tamper-evident boundary stated in full</div>
+    <div class="device phone"><div class="bar"></div><div class="screen">
+      <div class="h mid">Questions worth asking</div>
+      <div class="box">▸ Is it tamper-proof?</div>
+      <div class="box">▸ Who pays / who owns it?</div>
+      <div class="box">▸ Do I need to be techy?</div>
+      <div class="box">▸ Can I upload BIM?</div>
+      <div class="box">▸ Does it work on mobile?</div>
+    </div></div>
+    <div class="device desk"><div class="bar"></div><div class="screen">
+      <div class="h mid">Questions worth asking</div>
+      <div class="box"><b style="font-size:12px">▾ Is it tamper-proof?</b><div class="note">No — it reveals an after-the-fact edit; it does not prevent it. Tamper-evident, not tamper-proof.</div></div>
+      <div class="box">▸ Who pays / who owns it?</div>
+      <div class="box">▸ Do I need to be techy?</div>
+    </div></div>
+  </div>
+
+  <!-- FINAL CTA -->
+  <div class="row">
+    <div class="caption">9 · Final CTA — capture #2 (+ optional role, live counter)</div>
+    <div class="device phone"><div class="bar"></div><div class="screen">
+      <div class="h mid">Stay on the record from the start.</div>
+      <div class="note">Be a founding member — shape the roadmap.</div>
+      <div class="field" style="margin-top:8px">
+        <div class="input">you@email.com</div>
+        <div class="input">Role (optional) ▾</div>
+        <div class="btn wide">Join the waitlist</div>
+      </div>
+      <div class="note">No spam · launch updates only · unsubscribe anytime</div>
+      <div class="note">▸ 63 / 150 founding spots (live · LINA-33)</div>
+    </div></div>
+    <div class="device desk"><div class="bar"></div><div class="screen" style="text-align:center">
+      <div class="h mid">Stay on the record from the start.</div>
+      <div class="note">Be a founding member — shape the roadmap.</div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
+        <div class="input" style="width:220px">you@email.com</div>
+        <div class="input" style="width:150px">Role (optional) ▾</div>
+        <div class="btn" style="margin:0;padding:11px 20px">Join the waitlist</div>
+      </div>
+      <div class="note">No spam · launch updates only · unsubscribe anytime · 63 / 150 founding spots</div>
+    </div></div>
+  </div>
+
+  <!-- FORM STATES -->
+  <div class="row">
+    <div class="caption">Form states — email-first, honest feedback, double opt-in</div>
+    <div style="grid-column:1 / -1;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+      <div class="box solid"><div class="lbl">Default</div><div class="input">you@email.com</div><div class="btn wide">Join the waitlist</div><div class="note">No spam. Launch updates only.</div></div>
+      <div class="box solid"><div class="lbl">Invalid</div><div class="input" style="border-color:#c0392b;color:#c0392b">joe@</div><div class="note" style="color:#c0392b">That doesn't look like an email — check and try again.</div></div>
+      <div class="box solid"><div class="lbl">Submitting</div><div class="input">you@email.com</div><div class="btn wide" style="opacity:.6">Joining…</div></div>
+      <div class="box solid"><div class="lbl">Success (double opt-in)</div><div style="font-size:22px">✓</div><div class="note">Almost there — check your inbox and confirm to lock your founding spot.</div></div>
+      <div class="box solid"><div class="lbl">Already on list</div><div class="note">You're already on the list — we'll be in touch.</div></div>
+      <div class="box solid"><div class="lbl">Network error</div><div class="input">you@email.com</div><div class="note">Couldn't reach us just now. Try again in a moment.</div></div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="row">
+    <div class="caption">Footer</div>
+    <div class="device desk" style="grid-column:1 / -1"><div class="bar"></div><div class="screen">
+      <div class="foot"><span><span class="mark"></span><b>LinkNMS</b> Trust built-in.</span><span class="lang">🌐 PT ▾</span><span>How it works</span><span>Waitlist</span><span>Privacy</span><span>Contact</span></div>
+    </div></div>
+  </div>
+
+  <p class="note" style="margin-top:20px">Low-fi wireframe for LINA-32 §5. Copy is placeholder (final localized copy = LINA-30). Hi-fi reference: <b>index.html</b> in this folder — note it currently fills the CTA with Owner Blue, which §0 of the spec changes to Ink.</p>
+</div>
+</body>
+</html>

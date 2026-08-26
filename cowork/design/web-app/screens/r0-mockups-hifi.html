@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinkNMS — R0 shared-record MVP · build-ready mockups (light + dark, mobile + desktop)</title>
+<!--
+  LINA-27 · High-fidelity, build-ready visual mockups for the R0 shared-record MVP.
+  Parent LINA-26 (build) · elevates LINA-20 Rev 2 wireframes to a real visual target.
+  Four connected surfaces: (1) Four-pillar status panel · (2) Decision log + Add
+  decision · (3) Change order (raise + Approve/Reject detail) · (4) Budget-impact trail.
+  Rendered in LIGHT + DARK and MOBILE (375) + DESKTOP (lg workspace).
+  Tokens mirror design-system/tokens.json; components follow cowork/design/web-app/DESIGN.md.
+  Colour is NEVER the only signal — every RAG state pairs colour + label + icon.
+-->
+<style>
+  /* ============================ TOKENS ============================ */
+  :root{
+    /* brand primitives (mirrored) */
+    --owner:#2a78d6; --builder:#eb6834;
+    --fg:#0b0b0b; --paper:#fcfcfb; --sunken:#f4f3f0; --raised:#ffffff;
+    --outline:#dcdbd7; --outline-strong:#9b9a95; --muted:#5b5b58;
+    --owner-muted:#e2edfb; --owner-ink:#1a5296;
+    --builder-muted:#fce3d8; --builder-ink:#a8451c;
+    --success:#2e7d54; --warning:#b7791f; --danger:#c0392b;
+    /* semantic chip tints */
+    --ok-fg:#2e7d54; --ok-bg:#e8f3ec; --ok-bd:#b7d8c4;
+    --warn-fg:#8a5a12; --warn-bg:#fbf3e2; --warn-bd:#e6cfa0;
+    --bad-fg:#a5271b; --bad-bg:#f7e7e5; --bad-bd:#e2b4ae;
+    /* elevation */
+    --shadow:0 1px 2px rgba(11,11,11,.06), 0 4px 12px rgba(11,11,11,.08);
+    --shadow-lg:0 8px 24px rgba(11,11,11,.14);
+    /* scale */
+    --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s6:24px;--s8:32px;--s12:48px;
+    --r-ctrl:6px;--r-overlay:10px;
+    --font:system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  [data-theme="dark"]{
+    --owner:#6aa6ef; --builder:#f38b53;
+    --fg:#f3f2ec; --paper:#17170f; --sunken:#100f0a; --raised:#211f19;
+    --outline:#34322b; --outline-strong:#57554c; --muted:#a7a59c;
+    --owner-muted:#1c2a3a; --owner-ink:#a9cbf5;
+    --builder-muted:#34241b; --builder-ink:#f3b58f;
+    --success:#4bb47e; --warning:#dca63a; --danger:#e46b5c;
+    --ok-fg:#63c491; --ok-bg:#16281f; --ok-bd:#2c5f43;
+    --warn-fg:#e2b455; --warn-bg:#2c2413; --warn-bd:#5c4a1e;
+    --bad-fg:#ef8375; --bad-bg:#2e1a17; --bad-bd:#5f3029;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 6px 18px rgba(0,0,0,.55);
+    --shadow-lg:0 10px 30px rgba(0,0,0,.6);
+  }
+
+  /* ============================ BASE ============================ */
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);color:#1a1a17;background:#e9e8e3;line-height:1.45;
+       -webkit-font-smoothing:antialiased;padding:var(--s8) var(--s6) var(--s12)}
+  .num,.data{font-variant-numeric:tabular-nums}
+  svg{display:block}
+
+  /* board chrome */
+  .board-head{max-width:1600px;margin:0 auto var(--s8)}
+  .board-head h1{font-size:24px;font-weight:650;letter-spacing:-.4px}
+  .board-head .sub{color:#55554e;font-size:14px;margin-top:6px;max-width:70ch}
+  .board-head .meta{color:#6b6a63;font-size:12px;margin-top:var(--s3)}
+  .logo{height:40px;margin-bottom:var(--s3)}
+  .legend{display:flex;flex-wrap:wrap;gap:var(--s4);align-items:center;background:#fff;
+          border:1px solid #d9d8d3;border-radius:8px;padding:10px var(--s4);margin-top:var(--s4);
+          font-size:12px;color:#55554e}
+  .legend b{color:#1a1a17}
+  .sw{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .sw .dot{width:12px;height:12px;border-radius:3px;border:1px solid rgba(0,0,0,.15)}
+
+  .section-cap{max-width:1600px;margin:var(--s12) auto var(--s4);display:flex;align-items:baseline;gap:12px}
+  .section-cap .n{font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+                  color:#8a8a82;background:#fff;border:1px solid #d9d8d3;border-radius:20px;padding:3px 10px}
+  .section-cap h2{font-size:17px;font-weight:650}
+  .section-cap span{color:#6b6a63;font-size:13px}
+
+  .rail{display:flex;align-items:flex-start;gap:var(--s2);max-width:1600px;margin:0 auto;
+        overflow-x:auto;padding-bottom:var(--s6)}
+  .rail.dark-strip{background:#111;border-radius:16px;padding:var(--s6);gap:var(--s2)}
+  .step{flex:0 0 auto;display:flex;flex-direction:column;gap:10px}
+  .step .cap{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8a8a82}
+  .step .cap.on-dark{color:#8f8f88}
+  .step .cap b{display:block;font-size:14px;font-weight:600;letter-spacing:0;text-transform:none;
+               color:#1a1a17;margin-top:2px}
+  .step .cap.on-dark b{color:#efeee9}
+  .arrow{flex:0 0 auto;align-self:center;color:#b9b8b2;font-size:24px;padding:0 4px;margin-top:180px}
+  .arrow.on-dark{color:#4a4a44}
+
+  /* ===================== DEVICE FRAMES ===================== */
+  .phone{width:360px;background:var(--paper);color:var(--fg);border:10px solid #101010;
+         border-radius:38px;overflow:hidden;box-shadow:var(--shadow-lg)}
+  [data-theme="dark"].phone{border-color:#000}
+  .statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;
+             padding:0 20px;font-size:13px;font-weight:600;color:var(--fg);background:var(--paper)}
+  .statusbar .sig{display:flex;gap:5px;align-items:center}
+  .topbar{display:flex;align-items:center;gap:var(--s2);padding:10px var(--s4);
+          border-bottom:1px solid var(--outline);background:var(--raised)}
+  .brand{display:flex;align-items:center;gap:7px;font-weight:650;font-size:14px;color:var(--fg)}
+  .brand .mk{width:20px;height:20px}
+  .switcher{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;
+            color:var(--fg);border:1px solid var(--outline);border-radius:var(--r-ctrl);
+            padding:5px 9px;background:var(--paper)}
+  .health{width:8px;height:8px;border-radius:50%}
+  .back{display:flex;align-items:center;gap:4px;font-size:14px;color:var(--owner);font-weight:600}
+  .title-c{margin:0 auto;font-weight:650;font-size:15px;color:var(--fg)}
+  .kebab{color:var(--muted);font-size:20px;line-height:1;font-weight:700}
+
+  .screen{padding:var(--s4);display:flex;flex-direction:column;gap:var(--s3);min-height:600px;
+          background:var(--paper)}
+  h2.scr{font-size:20px;font-weight:650;letter-spacing:-.3px;color:var(--fg)}
+  h3.grp{font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+  .cap{font-size:12px;color:var(--muted)}
+  .lede{font-size:13px;color:var(--muted)}
+
+  /* bottom nav */
+  .botnav{display:flex;border-top:1px solid var(--outline);background:var(--raised);padding-bottom:6px}
+  .botnav a{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+            padding:9px 0 4px;font-size:11px;font-weight:500;color:var(--muted)}
+  .botnav a svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8}
+  .botnav a.active{color:var(--owner);font-weight:650}
+
+  /* ===================== PRIMITIVES ===================== */
+  .card{background:var(--raised);border:1px solid var(--outline);border-radius:var(--r-ctrl);padding:var(--s3)}
+  .card.flat{background:var(--paper)}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:var(--s2)}
+  .col{display:flex;flex-direction:column}
+  .divider{height:1px;background:var(--outline)}
+  .stack{display:flex;flex-direction:column;gap:var(--s3)}
+  .spacer{margin-top:auto}
+
+  .btn{display:flex;align-items:center;justify-content:center;gap:7px;height:44px;width:100%;
+       border-radius:var(--r-ctrl);font-size:14px;font-weight:650;border:1px solid var(--outline-strong);
+       background:var(--raised);color:var(--fg)}
+  .btn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2}
+  .btn.primary{background:var(--owner);border-color:var(--owner);color:#fff}
+  [data-theme="dark"] .btn.primary{color:#0b1626}
+  .btn.danger{background:transparent;border-color:var(--danger);color:var(--danger)}
+  .btn.lg{height:52px;font-size:15px}
+  .btn.disabled{background:var(--sunken);border-color:var(--outline);color:var(--outline-strong)}
+  .btn-row{display:flex;gap:var(--s2)}
+
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:12px;font-weight:650;color:var(--fg)}
+  .field .hint{font-weight:400;color:var(--muted)}
+  .input{min-height:44px;border:1px solid var(--outline);border-radius:var(--r-ctrl);background:var(--raised);
+         display:flex;align-items:center;padding:0 12px;font-size:14px;color:var(--fg)}
+  .input.ph{color:var(--muted)}
+  .input.area{min-height:64px;align-items:flex-start;padding:11px 12px}
+  .input.focus{border-color:var(--owner);box-shadow:0 0 0 3px color-mix(in srgb,var(--owner) 30%,transparent)}
+  .seg{display:flex;border:1px solid var(--outline);border-radius:var(--r-ctrl);overflow:hidden}
+  .seg button{flex:1;height:40px;border:0;background:var(--raised);color:var(--muted);font-size:13px;font-weight:600}
+  .seg button.on{background:var(--owner);color:#fff}
+  [data-theme="dark"] .seg button.on{color:#0b1626}
+
+  /* party tag — colour + label + fixed position */
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;border-radius:20px;
+       padding:3px 9px;white-space:nowrap}
+  .tag .pd{width:8px;height:8px;border-radius:50%}
+  .tag.owner{background:var(--owner-muted);color:var(--owner-ink)} .tag.owner .pd{background:var(--owner)}
+  .tag.builder{background:var(--builder-muted);color:var(--builder-ink)} .tag.builder .pd{background:var(--builder)}
+
+  /* status badge — colour + icon + label */
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;border-radius:var(--r-ctrl);
+         padding:3px 9px;border:1px solid}
+  .badge svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2}
+  .badge.proposed{color:var(--warn-fg);border-color:var(--warn-bd);background:var(--warn-bg)}
+  .badge.approved,.badge.ok{color:var(--ok-fg);border-color:var(--ok-bd);background:var(--ok-bg)}
+  .badge.rejected{color:var(--bad-fg);border-color:var(--bad-bd);background:var(--bad-bg)}
+
+  /* four-pillar status tiles */
+  .pillars{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2)}
+  .pillar{border:1px solid var(--outline);border-radius:var(--r-ctrl);padding:11px 12px;
+          background:var(--raised);display:flex;flex-direction:column;gap:5px;border-left-width:3px}
+  .pillar.g{border-left-color:var(--success)} .pillar.a{border-left-color:var(--warning)} .pillar.r{border-left-color:var(--danger)}
+  .pillar .p-top{display:flex;align-items:center;gap:6px}
+  .pillar .p-ic{width:16px;height:16px;stroke-width:2;fill:none}
+  .pillar.g .p-ic{stroke:var(--success)} .pillar.a .p-ic{stroke:var(--warning)} .pillar.r .p-ic{stroke:var(--danger)}
+  .pillar .p-name{font-size:12px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
+  .pillar .p-state{font-size:14px;font-weight:650;display:flex;align-items:center;gap:5px;color:var(--fg)}
+  .pillar.g .p-state .rag{color:var(--success)} .pillar.a .p-state .rag{color:var(--warning)} .pillar.r .p-state .rag{color:var(--danger)}
+  .pillar .p-sub{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* metric hero */
+  .metric-lbl{font-size:12px;color:var(--muted)}
+  .metric-val{font-size:28px;font-weight:650;letter-spacing:-.6px;font-variant-numeric:tabular-nums;color:var(--fg)}
+  .delta{font-variant-numeric:tabular-nums;font-weight:650}
+  .delta.up{color:var(--danger)} .delta.down{color:var(--success)}
+
+  /* budget bar */
+  .bar{height:12px;border-radius:3px;background:var(--sunken);position:relative;overflow:hidden;border:1px solid var(--outline)}
+  .bar>i{position:absolute;top:0;bottom:0;left:0;display:block}
+  .bar .base{background:var(--owner)} .bar .base.soft{background:var(--owner-muted)}
+  .bar .over{background:var(--builder)}
+
+  /* list rows */
+  .listcard{background:var(--raised);border:1px solid var(--outline);border-radius:var(--r-ctrl);overflow:hidden}
+  .lrow{padding:12px;border-bottom:1px solid var(--outline);display:flex;flex-direction:column;gap:6px}
+  .lrow:last-child{border-bottom:0}
+  .lrow .lt{font-weight:650;font-size:14px;color:var(--fg);display:flex;align-items:center;gap:7px}
+  .edited{font-size:11px;font-weight:650;color:var(--warning);display:inline-flex;align-items:center;gap:3px}
+  .edited svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2}
+
+  /* ledger */
+  .ledger{border:1px solid var(--outline);border-radius:var(--r-ctrl);overflow:hidden}
+  .ledger .g{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:11px 12px;
+             border-bottom:1px solid var(--outline);background:var(--raised)}
+  .ledger .g:last-child{border-bottom:0}
+  .ledger .g.base,.ledger .g.total{background:var(--sunken)}
+  .ledger .g.total .m{font-weight:700}
+  .ledger .m{font-size:13px;font-weight:600;color:var(--fg)}
+  .ledger .s{grid-column:1;font-size:11px;color:var(--muted)}
+  .ledger .amt{grid-row:1;font-variant-numeric:tabular-nums;font-weight:700;font-size:14px;text-align:right;color:var(--fg)}
+  .ledger .amt.up{color:var(--danger)} .ledger .amt.down{color:var(--success)}
+
+  .callout{border:1px solid var(--warn-bd);background:var(--warn-bg);border-left:3px solid var(--warning);
+           border-radius:var(--r-ctrl);padding:10px 12px;font-size:12px;color:var(--warn-fg);line-height:1.5}
+  .callout b{color:var(--warn-fg)}
+  .stamp{border:1px solid var(--ok-bd);background:var(--ok-bg);border-radius:var(--r-ctrl);
+         padding:10px 12px;font-size:12px;color:var(--ok-fg);display:flex;gap:7px;align-items:flex-start}
+  .stamp svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;flex:0 0 auto;margin-top:1px}
+
+  /* designer note (board only, not part of the UI) */
+  .note{width:360px;background:#fff;border:1px solid #ddd;border-left:3px solid var(--owner);
+        border-radius:8px;padding:11px 13px;font-size:12px;color:#44443e;line-height:1.55}
+  .note.on-dark{background:#1c1c1c;border-color:#333;color:#c9c8c2}
+  .note b{color:#1a1a17} .note.on-dark b{color:#efeee9}
+  .note .ac{font-weight:700;color:var(--owner)}
+
+  /* ===================== DESKTOP (lg) WORKSPACE ===================== */
+  .desk{width:1180px;background:var(--paper);color:var(--fg);border:1px solid #cfcec8;border-radius:14px;
+        overflow:hidden;box-shadow:var(--shadow-lg)}
+  [data-theme="dark"].desk{border-color:#000}
+  .desk-top{display:flex;align-items:center;gap:var(--s4);padding:12px var(--s6);
+            border-bottom:1px solid var(--outline);background:var(--raised)}
+  .desk-body{display:grid;grid-template-columns:236px 1fr 344px;min-height:660px}
+  .rail-l{border-right:1px solid var(--outline);background:var(--paper);padding:var(--s4) var(--s3);
+          display:flex;flex-direction:column;gap:6px}
+  .rail-l .r-switch{border:1px solid var(--outline);border-radius:var(--r-ctrl);padding:10px;margin-bottom:8px;
+                    background:var(--raised)}
+  .rail-l .r-switch .rs-name{font-weight:650;font-size:14px;display:flex;align-items:center;gap:7px}
+  .navlink{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r-ctrl);
+           font-size:14px;font-weight:550;color:var(--fg)}
+  .navlink svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8}
+  .navlink .ct{margin-left:auto;font-size:12px;color:var(--muted)}
+  .navlink.active{background:var(--owner-muted);color:var(--owner-ink);font-weight:650}
+  .navlink.active svg{stroke:var(--owner)}
+  .rail-l .portfolio{margin-top:auto;border-top:1px solid var(--outline);padding-top:10px}
+  .main{padding:var(--s6);display:flex;flex-direction:column;gap:var(--s4);overflow:hidden}
+  .main .pillars{grid-template-columns:repeat(4,1fr)}
+  .drawer{border-left:1px solid var(--outline);background:var(--raised);padding:var(--s4);
+          display:flex;flex-direction:column;gap:var(--s3);box-shadow:var(--shadow)}
+  .drawer .d-head{display:flex;align-items:center;justify-content:space-between}
+  .foot{max-width:1600px;margin:var(--s8) auto 0;font-size:11px;color:#6b6a63;line-height:1.7}
+  .specbox{max-width:1600px;margin:var(--s6) auto 0;background:#fff;border:1px solid #d9d8d3;border-radius:10px;padding:var(--s6)}
+  .specbox h3{font-size:15px;margin-bottom:8px} .specbox h3:not(:first-child){margin-top:var(--s4)}
+  .specbox ul{margin:0 0 0 18px;font-size:13px;color:#3a3a34} .specbox li{margin-bottom:5px}
+  .specbox code{background:#f2f1ec;border:1px solid #e3e2dd;border-radius:4px;padding:1px 5px;font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="board-head">
+  <img class="logo" alt="LinkNMS — Trust built-in." src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 120'><g transform='translate(8,28)'><rect x='12' y='26' width='40' height='30' rx='2' fill='%23fcfcfb' stroke='%230b0b0b' stroke-width='2'/><path d='M32 6 L8 26 L32 26 Z' fill='%232a78d6'/><path d='M32 6 L56 26 L32 26 Z' fill='%23eb6834'/><rect x='18' y='34' width='28' height='6' rx='3' fill='%232a78d6'/><rect x='18' y='44' width='17' height='6' rx='3' fill='%23eb6834'/></g><text x='92' y='56' font-family='system-ui,sans-serif' font-size='40' font-weight='700' letter-spacing='-1.5' fill='%230b0b0b'>LinkNMS</text><text x='93' y='80' font-family='system-ui,sans-serif' font-size='15' font-weight='500' fill='%230b0b0b'>Trust</text><text x='138' y='80' font-family='system-ui,sans-serif' font-size='15' font-weight='500' fill='%239a9a9a'>built-in.</text></svg>">
+  <h1>R0 shared-record MVP — build-ready mockups</h1>
+  <div class="sub"><b>LINA-27</b> · the thinnest loop that answers <b>“who decided this, when, and how much did it move the budget?”</b> — homeowner + one GC, responsive web. Four connected surfaces, shown in <b>light + dark</b> and <b>mobile + desktop</b>. This is the visual target for the LINA-26 build.</div>
+  <div class="meta">Scenario: <b>Maple Street Renovation</b> · owner <b>Dana Okafor</b> · GC <b>Ridgeline Builders</b> · baseline budget $240,000 · current $240,950 (2 approved changes) · 1 pending change order.</div>
+
+  <div class="legend">
+    <span class="sw"><b>Encoding:</b></span>
+    <span class="sw"><span class="dot" style="background:#2a78d6"></span> Owner Blue — <b>owner · approves &amp; pays</b></span>
+    <span class="sw"><span class="dot" style="background:#eb6834"></span> Builder Orange — <b>GC · proposes &amp; bills</b></span>
+    <span class="sw"><span class="dot" style="background:#e8f3ec;border-color:#b7d8c4"></span> Green / on&nbsp;track</span>
+    <span class="sw"><span class="dot" style="background:#fbf3e2;border-color:#e6cfa0"></span> Amber / attention</span>
+    <span class="sw"><span class="dot" style="background:#f7e7e5;border-color:#e2b4ae"></span> Red / over</span>
+    <span class="sw">· Party &amp; status shown by <b>label + icon + position</b> first — colour is never the only signal.</span>
+  </div>
+</div>
+
+<!-- ================================================================= -->
+<!-- ===================== MOBILE · LIGHT ============================ -->
+<!-- ================================================================= -->
+<div class="section-cap">
+  <span class="n">A · Mobile</span><h2>Light theme — the connected on-site flow</h2>
+  <span>375&nbsp;px phone · one-handed · bottom-anchored actions</span>
+</div>
+<div class="rail" id="mobile-light">
+
+  <!-- ---------- 1 · STATUS PANEL ---------- -->
+  <div class="step">
+   <div class="cap">Surface 1<b>Four-pillar status panel</b></div>
+   <div class="phone">
+     <div class="statusbar"><span>9:41</span><span class="sig">●●● &nbsp;5G&nbsp; <svg width="22" height="12" viewBox="0 0 26 12"><rect x="0" y="0" width="22" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="2" width="15" height="8" rx="1.5" fill="currentColor"/><rect x="23" y="4" width="2" height="4" rx="1" fill="currentColor"/></svg></span></div>
+     <div class="topbar">
+       <span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="var(--paper)" stroke="currentColor" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/></svg>LinkNMS</span>
+       <span class="switcher"><span class="health" style="background:var(--warning)"></span> Maple Street ▾</span>
+     </div>
+     <div class="screen">
+       <div class="col" style="gap:2px">
+         <h2 class="scr">Maple Street Renovation</h2>
+         <div class="cap">You are <span class="tag owner"><span class="pd"></span>Owner · Dana</span></div>
+       </div>
+
+       <h3 class="grp">Project status</h3>
+       <div class="pillars">
+         <!-- SCOPE -->
+         <div class="pillar a">
+           <div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg><span class="p-name">Scope</span></div>
+           <div class="p-state"><span class="rag">Attention</span></div>
+           <div class="p-sub">1 change pending review</div>
+         </div>
+         <!-- TIME -->
+         <div class="pillar g">
+           <div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2" stroke-linecap="round"/></svg><span class="p-name">Time</span></div>
+           <div class="p-state"><span class="rag">On&nbsp;track</span></div>
+           <div class="p-sub">Changes added 0 days</div>
+         </div>
+         <!-- COST -->
+         <div class="pillar g">
+           <div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="p-name">Cost</span></div>
+           <div class="p-state"><span class="rag">On&nbsp;budget</span></div>
+           <div class="p-sub">$240,950 vs $240,000 · +0.4%</div>
+         </div>
+         <!-- QUALITY -->
+         <div class="pillar g">
+           <div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M12 3l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 15.9 6.8 18l1.2-5.6L3.8 8.6 9.4 8z" stroke-linejoin="round"/></svg><span class="p-name">Quality</span></div>
+           <div class="p-state"><span class="rag">On&nbsp;track</span></div>
+           <div class="p-sub">No issues flagged</div>
+         </div>
+       </div>
+
+       <div class="card" style="display:flex;flex-direction:column;gap:9px">
+         <div class="row"><span class="metric-lbl">Current budget</span><span class="badge ok"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>On budget</span></div>
+         <div class="metric-val">$240,950</div>
+         <div class="row"><span class="cap">Baseline <span class="data">$240,000</span></span><span class="delta up">▲ +$950</span></div>
+         <div class="bar"><i class="base soft" style="width:82%"></i><i class="over" style="left:82%;width:6%"></i></div>
+       </div>
+
+       <div class="listcard">
+         <a class="row" style="padding:13px 12px;border-bottom:1px solid var(--outline)"><span style="display:flex;gap:9px;align-items:center;font-weight:600">📄 Decision log</span><span class="cap">7 →</span></a>
+         <a class="row" style="padding:13px 12px;border-bottom:1px solid var(--outline)"><span style="display:flex;gap:9px;align-items:center;font-weight:600">🔁 Change orders</span><span class="cap" style="color:var(--warning);font-weight:650">1 open →</span></a>
+         <a class="row" style="padding:13px 12px"><span style="display:flex;gap:9px;align-items:center;font-weight:600">💰 Budget-impact trail</span><span class="cap">→</span></a>
+       </div>
+
+       <div class="spacer"></div>
+       <button class="btn primary lg"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>Log a decision</button>
+     </div>
+     <div class="botnav">
+       <a class="active"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Home</a>
+       <a><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decisions</a>
+       <a><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget</a>
+     </div>
+   </div>
+   <div class="note"><b>Trust cue — status before detail.</b> Four pillars a stressed owner reads in one glance: <b>Scope · Time · Cost · Quality</b>. Each is a RAG state carried by <b>colour + label + icon</b>, never colour alone. <b>Time</b> reads “changes added N&nbsp;days” (green at zero) — never an on-track-vs-baseline claim; the pending oak CO’s +5&nbsp;days stays out until approved. <span class="ac">AC&nbsp;1 · 6</span></div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ---------- 2 · DECISION LOG ---------- -->
+  <div class="step">
+   <div class="cap">Surface 2<b>Decision log + Add decision</b></div>
+   <div class="phone">
+     <div class="statusbar"><span>9:42</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar"><span class="back">‹ Home</span><span class="title-c">Decision log</span><span class="switcher">Filter ▾</span></div>
+     <div class="screen">
+       <div class="lede">Append-only. Every entry keeps its author, time and revisions.</div>
+
+       <div class="listcard">
+         <div class="lrow">
+           <div class="row"><span class="lt">Engineered oak flooring upgrade</span><span class="badge proposed"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5" stroke-linecap="round"/><circle cx="12" cy="16.5" r=".3" fill="currentColor"/></svg>Change order</span></div>
+           <div class="row"><span class="tag builder"><span class="pd"></span>Proposed · Ridgeline (GC)</span><span class="cap data">+$4,200</span></div>
+           <div class="cap data">Aug 24, 2026 · 09:14</div>
+         </div>
+         <div class="lrow">
+           <div class="row"><span class="lt">Relocate electrical panel to garage</span><span class="badge approved"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Approved</span></div>
+           <div class="row"><span class="tag builder"><span class="pd"></span>Proposed · Ridgeline (GC)</span><span class="cap data">+$1,850</span></div>
+           <div class="cap data">Aug 22, 2026 · 14:02</div>
+         </div>
+         <div class="lrow">
+           <div class="row"><span class="lt">Confirm north elevation window sizes <span class="edited"><svg viewBox="0 0 24 24"><path d="M4 20h4L18 10l-4-4L4 16z" stroke-linejoin="round"/></svg>edited · rev 2</span></span></div>
+           <div class="row"><span class="tag owner"><span class="pd"></span>Logged · Dana (Owner)</span><span class="cap">Decision</span></div>
+           <div class="cap data">Aug 20, 2026 · 08:30 · no budget impact</div>
+         </div>
+       </div>
+
+       <div class="card" style="border-color:var(--owner)">
+         <div class="row" style="margin-bottom:10px"><span style="font-weight:700;font-size:13px">Add decision <span class="cap" style="font-weight:400">· quick form</span></span></div>
+         <div class="field" style="margin-bottom:10px"><label>What was decided?</label><div class="input focus">Move kitchen window 300&nbsp;mm left</div></div>
+         <div class="field" style="margin-bottom:10px"><label>Does it change the cost? <span class="hint">(optional)</span></label><div class="input ph">+ / − amount → raises a change order</div></div>
+         <div class="cap" style="margin-bottom:10px">Recorded as <span class="tag owner"><span class="pd"></span>Dana (Owner)</span> · just now</div>
+         <button class="btn primary">Log decision</button>
+       </div>
+     </div>
+   </div>
+   <div class="note"><b>Trust cue — the record, made literal.</b> Author + timestamp on every row; an amended entry shows a visible <b>✎ edited · rev 2</b> marker (tamper-<i>evident</i>, never hidden). Adding a cost turns a decision into a change order in one step. <span class="ac">AC&nbsp;2 · 8</span></div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ---------- 3 · CHANGE ORDER DETAIL ---------- -->
+  <div class="step">
+   <div class="cap">Surface 3<b>Change order — Approve / Reject</b></div>
+   <div class="phone">
+     <div class="statusbar"><span>9:43</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar"><span class="back">‹ Changes</span><span class="title-c">CO-014</span><span class="kebab">⋯</span></div>
+     <div class="screen">
+       <div class="col" style="gap:8px">
+         <h2 class="scr">Engineered oak flooring upgrade</h2>
+         <span class="badge proposed" style="align-self:flex-start"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5" stroke-linecap="round"/></svg>Proposed — awaiting owner</span>
+       </div>
+
+       <div class="card stack" style="gap:11px">
+         <div class="row"><span class="metric-lbl">Cost impact</span><span class="delta up" style="font-size:20px">+$4,200</span></div>
+         <div class="divider"></div>
+         <div class="row"><span class="cap">Proposed by</span><span class="tag builder"><span class="pd"></span>Ridgeline · GC</span></div>
+         <div class="row"><span class="cap">Raised</span><span class="cap data">Aug 24, 2026 · 09:14</span></div>
+         <div class="row"><span class="cap">Budget if approved</span><span class="cap data">$240,950 → <b>$245,150</b></span></div>
+         <div class="row"><span class="cap">Schedule impact</span><span class="cap data" style="color:var(--warning);font-weight:650">+~5 days</span></div>
+         <div class="row"><span class="cap">Quality flag</span><span class="badge ok" style="padding:2px 7px"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round"/></svg>None</span></div>
+       </div>
+
+       <div class="card flat">
+         <div class="cap" style="margin-bottom:4px">Scope note</div>
+         <div style="font-size:13px">Owner selected engineered oak over the specified laminate in kitchen &amp; hall (38&nbsp;m²). Cost is the material + labour difference. Adds ~5&nbsp;days to interior finishes.</div>
+       </div>
+
+       <div class="callout"><b>Who can approve.</b> You are <span class="tag owner" style="padding:1px 7px"><span class="pd"></span>Dana · Owner</span> and did not propose this — so you can decide it.</div>
+
+       <div class="spacer"></div>
+       <div class="btn-row">
+         <button class="btn danger"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>Reject</button>
+         <button class="btn primary"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Approve</button>
+       </div>
+       <div class="cap" style="text-align:center">Your name &amp; the time are stamped on the record when you decide.</div>
+     </div>
+   </div>
+   <div class="note"><b>Trust cue &amp; rule.</b> A CO can be decided only by a party <i>other than</i> its proposer (or the owner). The GC who raised this sees the same screen with Approve/Reject replaced by a locked <b>“Waiting for the owner — you can’t approve your own change.”</b> Approval stamps who + when, immutably. Detail carries <b>cost + schedule + scope + quality</b> impact. <span class="ac">AC&nbsp;3 · 4</span></div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ---------- 4 · BUDGET TRAIL ---------- -->
+  <div class="step">
+   <div class="cap">Surface 4<b>Budget-impact trail</b></div>
+   <div class="phone">
+     <div class="statusbar"><span>9:44</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar"><span class="back">‹ Home</span><span class="title-c">Budget trail</span><span class="switcher">Export ▾</span></div>
+     <div class="screen">
+       <div class="card stack" style="gap:6px">
+         <span class="metric-lbl">Current budget</span>
+         <span class="metric-val">$240,950</span>
+         <span class="cap">baseline $240,000 + approved changes</span>
+       </div>
+       <div class="lede">Running ledger — each approved change: who decided it, when, and how much it moved the budget.</div>
+
+       <div class="ledger">
+         <div class="g base"><span class="m">Baseline budget</span><span class="amt">$240,000</span><span class="s">Set by Dana (Owner) · Aug 12</span></div>
+         <div class="g"><span class="m">CO-011 · Reduce tile scope</span><span class="amt down">−$900</span><span class="s">Approved by Ridgeline (GC) · Aug 18 · 11:20</span></div>
+         <div class="g"><span class="m">CO-012 · Relocate electrical panel</span><span class="amt up">+$1,850</span><span class="s">Approved by Dana (Owner) · Aug 22 · 14:02</span></div>
+         <div class="g total"><span class="m">Current total</span><span class="amt">$240,950</span><span class="s">2 approved changes</span></div>
+       </div>
+
+       <div class="card" style="border-style:dashed;border-color:var(--warning)">
+         <div class="row"><span style="font-size:13px;font-weight:700">Pending — not in total</span><span class="badge proposed"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5" stroke-linecap="round"/></svg>Awaiting owner</span></div>
+         <div class="row" style="margin-top:8px"><span class="cap">CO-014 · Oak flooring</span><span class="delta up data">+$4,200</span></div>
+       </div>
+
+       <div class="card" style="opacity:.7">
+         <div class="row"><span style="font-size:13px;font-weight:700">Rejected — no effect</span><span class="badge rejected"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>Rejected</span></div>
+         <div class="row" style="margin-top:8px"><span class="cap">CO-013 · Skylight add</span><span class="cap data" style="text-decoration:line-through">+$3,100</span></div>
+       </div>
+     </div>
+     <div class="botnav">
+       <a><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Home</a>
+       <a><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decisions</a>
+       <a class="active"><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget</a>
+     </div>
+   </div>
+   <div class="note"><b>Trust cue — the answer on one screen.</b> <b>Baseline → each approved delta → current total</b>, every line attributed and timestamped. Pending &amp; rejected COs are shown but visibly excluded from the total, so the number always reconciles. <span class="ac">AC&nbsp;5 · 6 · 7</span></div>
+  </div>
+
+</div>
+
+<!-- ================================================================= -->
+<!-- ===================== MOBILE · DARK ============================= -->
+<!-- ================================================================= -->
+<div class="section-cap">
+  <span class="n">B · Mobile</span><h2>Dark theme — same record, low-light &amp; on-site glare</h2>
+  <span>derived dark tokens · brand hues preserved, RAG re-tuned for contrast</span>
+</div>
+<div class="rail dark-strip" id="mobile-dark">
+
+  <!-- 1 · STATUS (dark) -->
+  <div class="step">
+   <div class="cap on-dark">Surface 1<b>Four-pillar status panel</b></div>
+   <div class="phone" data-theme="dark">
+     <div class="statusbar"><span>9:41</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar">
+       <span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="var(--paper)" stroke="currentColor" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#6aa6ef"/><path d="M32 6 L56 26 L32 26 Z" fill="#f38b53"/></svg>LinkNMS</span>
+       <span class="switcher"><span class="health" style="background:var(--warning)"></span> Maple Street ▾</span>
+     </div>
+     <div class="screen">
+       <div class="col" style="gap:2px"><h2 class="scr">Maple Street Renovation</h2><div class="cap">You are <span class="tag owner"><span class="pd"></span>Owner · Dana</span></div></div>
+       <h3 class="grp">Project status</h3>
+       <div class="pillars">
+         <div class="pillar a"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg><span class="p-name">Scope</span></div><div class="p-state"><span class="rag">Attention</span></div><div class="p-sub">1 change pending review</div></div>
+         <div class="pillar g"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2" stroke-linecap="round"/></svg><span class="p-name">Time</span></div><div class="p-state"><span class="rag">On&nbsp;track</span></div><div class="p-sub">Changes added 0 days</div></div>
+         <div class="pillar g"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="p-name">Cost</span></div><div class="p-state"><span class="rag">On&nbsp;budget</span></div><div class="p-sub">$240,950 vs $240,000 · +0.4%</div></div>
+         <div class="pillar g"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M12 3l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 15.9 6.8 18l1.2-5.6L3.8 8.6 9.4 8z" stroke-linejoin="round"/></svg><span class="p-name">Quality</span></div><div class="p-state"><span class="rag">On&nbsp;track</span></div><div class="p-sub">No issues flagged</div></div>
+       </div>
+       <div class="card" style="display:flex;flex-direction:column;gap:9px">
+         <div class="row"><span class="metric-lbl">Current budget</span><span class="badge ok"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>On budget</span></div>
+         <div class="metric-val">$240,950</div>
+         <div class="row"><span class="cap">Baseline <span class="data">$240,000</span></span><span class="delta up">▲ +$950</span></div>
+         <div class="bar"><i class="base soft" style="width:82%"></i><i class="over" style="left:82%;width:6%"></i></div>
+       </div>
+       <div class="listcard">
+         <a class="row" style="padding:13px 12px;border-bottom:1px solid var(--outline)"><span style="font-weight:600">📄 Decision log</span><span class="cap">7 →</span></a>
+         <a class="row" style="padding:13px 12px;border-bottom:1px solid var(--outline)"><span style="font-weight:600">🔁 Change orders</span><span class="cap" style="color:var(--warning);font-weight:650">1 open →</span></a>
+         <a class="row" style="padding:13px 12px"><span style="font-weight:600">💰 Budget-impact trail</span><span class="cap">→</span></a>
+       </div>
+       <div class="spacer"></div>
+       <button class="btn primary lg"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>Log a decision</button>
+     </div>
+     <div class="botnav">
+       <a class="active"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Home</a>
+       <a><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decisions</a>
+       <a><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget</a>
+     </div>
+   </div>
+  </div>
+
+  <div class="arrow on-dark">→</div>
+
+  <!-- 2 · DECISION LOG (dark) -->
+  <div class="step">
+   <div class="cap on-dark">Surface 2<b>Decision log + Add decision</b></div>
+   <div class="phone" data-theme="dark">
+     <div class="statusbar"><span>9:42</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar"><span class="back">‹ Home</span><span class="title-c">Decision log</span><span class="switcher">Filter ▾</span></div>
+     <div class="screen">
+       <div class="lede">Append-only. Every entry keeps its author, time and revisions.</div>
+       <div class="listcard">
+         <div class="lrow"><div class="row"><span class="lt">Engineered oak flooring upgrade</span><span class="badge proposed"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5" stroke-linecap="round"/></svg>Change order</span></div><div class="row"><span class="tag builder"><span class="pd"></span>Proposed · Ridgeline (GC)</span><span class="cap data">+$4,200</span></div><div class="cap data">Aug 24, 2026 · 09:14</div></div>
+         <div class="lrow"><div class="row"><span class="lt">Relocate electrical panel to garage</span><span class="badge approved"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Approved</span></div><div class="row"><span class="tag builder"><span class="pd"></span>Proposed · Ridgeline (GC)</span><span class="cap data">+$1,850</span></div><div class="cap data">Aug 22, 2026 · 14:02</div></div>
+         <div class="lrow"><div class="row"><span class="lt">Confirm north elevation window sizes <span class="edited"><svg viewBox="0 0 24 24"><path d="M4 20h4L18 10l-4-4L4 16z" stroke-linejoin="round"/></svg>edited · rev 2</span></span></div><div class="row"><span class="tag owner"><span class="pd"></span>Logged · Dana (Owner)</span><span class="cap">Decision</span></div><div class="cap data">Aug 20, 2026 · 08:30 · no budget impact</div></div>
+       </div>
+       <div class="card" style="border-color:var(--owner)">
+         <div class="row" style="margin-bottom:10px"><span style="font-weight:700;font-size:13px">Add decision <span class="cap" style="font-weight:400">· quick form</span></span></div>
+         <div class="field" style="margin-bottom:10px"><label>What was decided?</label><div class="input focus">Move kitchen window 300&nbsp;mm left</div></div>
+         <div class="field" style="margin-bottom:10px"><label>Does it change the cost? <span class="hint">(optional)</span></label><div class="input ph">+ / − amount → raises a change order</div></div>
+         <div class="cap" style="margin-bottom:10px">Recorded as <span class="tag owner"><span class="pd"></span>Dana (Owner)</span> · just now</div>
+         <button class="btn primary">Log decision</button>
+       </div>
+     </div>
+   </div>
+  </div>
+
+  <div class="arrow on-dark">→</div>
+
+  <!-- 3 · CO RAISE FORM (dark) — the "raise" half of Surface 3 -->
+  <div class="step">
+   <div class="cap on-dark">Surface 3<b>Raise a change order</b></div>
+   <div class="phone" data-theme="dark">
+     <div class="statusbar"><span>9:43</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar"><span class="back">‹ Cancel</span><span class="title-c">New change order</span><span></span></div>
+     <div class="screen">
+       <div class="field"><label>What is changing?</label><div class="input">Engineered oak flooring upgrade</div></div>
+       <div class="field"><label>Cost impact</label><div class="input focus data" style="justify-content:space-between"><span>+ $4,200</span><span class="cap">increase ▾</span></div></div>
+       <div class="field"><label>Scope note</label><div class="input area ph">Oak over laminate, kitchen &amp; hall (38 m²)…</div></div>
+       <div class="field"><label>Schedule impact <span class="hint">(days + note)</span></label>
+         <div class="btn-row"><div class="input data" style="flex:0 0 96px">+5 days</div><div class="input ph" style="flex:1">Adds to finishes</div></div>
+       </div>
+       <div class="field"><label>Quality flag</label>
+         <div class="seg"><button class="on">No concern</button><button>Flag issue</button></div>
+       </div>
+       <div class="cap">Raised as <span class="tag builder"><span class="pd"></span>Ridgeline (GC)</span> · goes to the owner to approve.</div>
+       <div class="spacer"></div>
+       <button class="btn primary lg"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>Send to owner</button>
+     </div>
+   </div>
+  </div>
+
+  <div class="arrow on-dark">→</div>
+
+  <!-- 4 · CO DETAIL — PROPOSER-LOCKED (dark) — shows the rule -->
+  <div class="step">
+   <div class="cap on-dark">Surface 3<b>Same CO — seen by the proposer</b></div>
+   <div class="phone" data-theme="dark">
+     <div class="statusbar"><span>9:44</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar"><span class="back">‹ Changes</span><span class="title-c">CO-014</span><span class="kebab">⋯</span></div>
+     <div class="screen">
+       <div class="col" style="gap:8px"><h2 class="scr">Engineered oak flooring upgrade</h2><span class="badge proposed" style="align-self:flex-start"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5" stroke-linecap="round"/></svg>Proposed — awaiting owner</span></div>
+       <div class="card stack" style="gap:11px">
+         <div class="row"><span class="metric-lbl">Cost impact</span><span class="delta up" style="font-size:20px">+$4,200</span></div>
+         <div class="divider"></div>
+         <div class="row"><span class="cap">Proposed by</span><span class="tag builder"><span class="pd"></span>Ridgeline · GC <span style="font-weight:700">(you)</span></span></div>
+         <div class="row"><span class="cap">Raised</span><span class="cap data">Aug 24, 2026 · 09:14</span></div>
+         <div class="row"><span class="cap">Schedule impact</span><span class="cap data" style="color:var(--warning);font-weight:650">+~5 days</span></div>
+       </div>
+       <div class="card flat"><div class="cap" style="margin-bottom:4px">Scope note</div><div style="font-size:13px">Oak over the specified laminate in kitchen &amp; hall (38&nbsp;m²). Material + labour difference.</div></div>
+       <div class="spacer"></div>
+       <div class="callout"><b>You raised this change.</b> Only a party other than the proposer can approve it. <b>Waiting for the owner — you can’t approve your own change.</b></div>
+       <button class="btn disabled" style="height:52px"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" style="width:17px;height:17px"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke-linecap="round"/></svg>Awaiting owner decision</button>
+     </div>
+   </div>
+  </div>
+
+</div>
+
+<!-- ================================================================= -->
+<!-- ===================== DESKTOP · LIGHT =========================== -->
+<!-- ================================================================= -->
+<div class="section-cap">
+  <span class="n">C · Desktop (lg)</span><h2>Light — the workspace: left rail · main pane · detail drawer</h2>
+  <span>progressive enhancement of the same four surfaces, side-by-side</span>
+</div>
+<div style="max-width:1600px;margin:0 auto;overflow-x:auto">
+  <div class="desk">
+    <div class="desk-top">
+      <span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="var(--paper)" stroke="currentColor" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/></svg>LinkNMS</span>
+      <span class="switcher"><span class="health" style="background:var(--warning)"></span> Maple Street Renovation ▾</span>
+      <span style="margin-left:auto" class="cap">You are <span class="tag owner"><span class="pd"></span>Owner · Dana Okafor</span></span>
+    </div>
+    <div class="desk-body">
+      <!-- left rail -->
+      <nav class="rail-l">
+        <div class="r-switch"><div class="rs-name"><span class="health" style="background:var(--warning)"></span>Maple Street ▾</div><div class="cap" style="margin-top:3px">1 of your 3 builds</div></div>
+        <a class="navlink active"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Status</a>
+        <a class="navlink"><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decision log<span class="ct">7</span></a>
+        <a class="navlink"><svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3M20 16H7l3 3" stroke-linecap="round" stroke-linejoin="round"/></svg>Change orders<span class="ct" style="color:var(--warning);font-weight:700">1</span></a>
+        <a class="navlink"><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget trail</a>
+        <div class="portfolio"><a class="navlink"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>All builds</a></div>
+      </nav>
+
+      <!-- main pane: status + budget trail -->
+      <main class="main">
+        <div class="row"><h2 class="scr">Project status</h2><span class="cap data">Updated just now · Aug 25, 2026</span></div>
+        <div class="pillars">
+          <div class="pillar a"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg><span class="p-name">Scope</span></div><div class="p-state"><span class="rag">Attention</span></div><div class="p-sub">1 change pending review</div></div>
+          <div class="pillar g"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2" stroke-linecap="round"/></svg><span class="p-name">Time</span></div><div class="p-state"><span class="rag">On&nbsp;track</span></div><div class="p-sub">Changes added 0 days</div></div>
+          <div class="pillar g"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="p-name">Cost</span></div><div class="p-state"><span class="rag">On&nbsp;budget</span></div><div class="p-sub">$240,950 vs $240,000 · +0.4%</div></div>
+          <div class="pillar g"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M12 3l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 15.9 6.8 18l1.2-5.6L3.8 8.6 9.4 8z" stroke-linejoin="round"/></svg><span class="p-name">Quality</span></div><div class="p-state"><span class="rag">On&nbsp;track</span></div><div class="p-sub">No issues flagged</div></div>
+        </div>
+
+        <div class="row" style="margin-top:6px"><h3 class="grp">Budget-impact trail</h3><span class="cap">baseline → approved deltas → current total</span></div>
+        <div class="ledger">
+          <div class="g base"><span class="m">Baseline budget</span><span class="amt">$240,000</span><span class="s">Set by Dana (Owner) · Aug 12, 2026</span></div>
+          <div class="g"><span class="m">CO-011 · Reduce tile scope</span><span class="amt down">−$900</span><span class="s">Approved by Ridgeline (GC) · Aug 18 · 11:20</span></div>
+          <div class="g"><span class="m">CO-012 · Relocate electrical panel</span><span class="amt up">+$1,850</span><span class="s">Approved by Dana (Owner) · Aug 22 · 14:02</span></div>
+          <div class="g total"><span class="m">Current total</span><span class="amt">$240,950</span><span class="s">2 approved changes · +$950 (+0.4%) vs baseline</span></div>
+        </div>
+        <div class="card" style="border-style:dashed;border-color:var(--warning)">
+          <div class="row"><span style="font-weight:700;font-size:13px">Pending — excluded from total</span><span class="badge proposed"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5" stroke-linecap="round"/></svg>Awaiting owner</span></div>
+          <div class="row" style="margin-top:8px"><span class="cap">CO-014 · Engineered oak flooring · +~5 days schedule</span><span class="delta up data">+$4,200</span></div>
+        </div>
+      </main>
+
+      <!-- right drawer: CO-014 detail -->
+      <aside class="drawer">
+        <div class="d-head"><h3 class="grp" style="color:var(--fg);font-size:14px;text-transform:none">Change order · CO-014</h3><span class="kebab">✕</span></div>
+        <h2 class="scr" style="font-size:18px">Engineered oak flooring upgrade</h2>
+        <span class="badge proposed" style="align-self:flex-start"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5" stroke-linecap="round"/></svg>Proposed — awaiting owner</span>
+        <div class="card stack" style="gap:10px">
+          <div class="row"><span class="metric-lbl">Cost impact</span><span class="delta up" style="font-size:18px">+$4,200</span></div>
+          <div class="divider"></div>
+          <div class="row"><span class="cap">Proposed by</span><span class="tag builder"><span class="pd"></span>Ridgeline · GC</span></div>
+          <div class="row"><span class="cap">Raised</span><span class="cap data">Aug 24 · 09:14</span></div>
+          <div class="row"><span class="cap">Budget if approved</span><span class="cap data">$240,950 → <b>$245,150</b></span></div>
+          <div class="row"><span class="cap">Schedule impact</span><span class="cap data" style="color:var(--warning);font-weight:650">+~5 days</span></div>
+          <div class="row"><span class="cap">Quality flag</span><span class="badge ok" style="padding:2px 7px"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round"/></svg>None</span></div>
+        </div>
+        <div class="card flat"><div class="cap" style="margin-bottom:4px">Scope note</div><div style="font-size:13px">Oak over specified laminate, kitchen &amp; hall (38 m²). Material + labour difference.</div></div>
+        <div class="stamp"><svg viewBox="0 0 24 24"><path d="M12 3l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 15.9 6.8 18l1.2-5.6L3.8 8.6 9.4 8z" stroke-linejoin="round"/></svg><span>You are <b>Dana · Owner</b> and did not propose this — you can decide it. Your name &amp; time are stamped on approval.</span></div>
+        <div class="spacer"></div>
+        <div class="btn-row"><button class="btn danger"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>Reject</button><button class="btn primary"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Approve</button></div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================= -->
+<!-- ===================== DESKTOP · DARK ============================ -->
+<!-- ================================================================= -->
+<div class="section-cap">
+  <span class="n">D · Desktop (lg)</span><h2>Dark — the same workspace, low-light</h2>
+  <span>identical layout &amp; data, dark tokens</span>
+</div>
+<div style="max-width:1600px;margin:0 auto;overflow-x:auto">
+  <div class="desk" data-theme="dark">
+    <div class="desk-top">
+      <span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="var(--paper)" stroke="currentColor" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#6aa6ef"/><path d="M32 6 L56 26 L32 26 Z" fill="#f38b53"/></svg>LinkNMS</span>
+      <span class="switcher"><span class="health" style="background:var(--warning)"></span> Maple Street Renovation ▾</span>
+      <span style="margin-left:auto" class="cap">You are <span class="tag owner"><span class="pd"></span>Owner · Dana Okafor</span></span>
+    </div>
+    <div class="desk-body">
+      <nav class="rail-l">
+        <div class="r-switch"><div class="rs-name"><span class="health" style="background:var(--warning)"></span>Maple Street ▾</div><div class="cap" style="margin-top:3px">1 of your 3 builds</div></div>
+        <a class="navlink active"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Status</a>
+        <a class="navlink"><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decision log<span class="ct">7</span></a>
+        <a class="navlink"><svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3M20 16H7l3 3" stroke-linecap="round" stroke-linejoin="round"/></svg>Change orders<span class="ct" style="color:var(--warning);font-weight:700">1</span></a>
+        <a class="navlink"><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget trail</a>
+        <div class="portfolio"><a class="navlink"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>All builds</a></div>
+      </nav>
+      <main class="main">
+        <div class="row"><h2 class="scr">Project status</h2><span class="cap data">Updated just now · Aug 25, 2026</span></div>
+        <div class="pillars">
+          <div class="pillar a"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg><span class="p-name">Scope</span></div><div class="p-state"><span class="rag">Attention</span></div><div class="p-sub">1 change pending review</div></div>
+          <div class="pillar g"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2" stroke-linecap="round"/></svg><span class="p-name">Time</span></div><div class="p-state"><span class="rag">On&nbsp;track</span></div><div class="p-sub">Changes added 0 days</div></div>
+          <div class="pillar g"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="p-name">Cost</span></div><div class="p-state"><span class="rag">On&nbsp;budget</span></div><div class="p-sub">$240,950 vs $240,000 · +0.4%</div></div>
+          <div class="pillar g"><div class="p-top"><svg class="p-ic" viewBox="0 0 24 24"><path d="M12 3l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 15.9 6.8 18l1.2-5.6L3.8 8.6 9.4 8z" stroke-linejoin="round"/></svg><span class="p-name">Quality</span></div><div class="p-state"><span class="rag">On&nbsp;track</span></div><div class="p-sub">No issues flagged</div></div>
+        </div>
+        <div class="row" style="margin-top:6px"><h3 class="grp">Budget-impact trail</h3><span class="cap">baseline → approved deltas → current total</span></div>
+        <div class="ledger">
+          <div class="g base"><span class="m">Baseline budget</span><span class="amt">$240,000</span><span class="s">Set by Dana (Owner) · Aug 12, 2026</span></div>
+          <div class="g"><span class="m">CO-011 · Reduce tile scope</span><span class="amt down">−$900</span><span class="s">Approved by Ridgeline (GC) · Aug 18 · 11:20</span></div>
+          <div class="g"><span class="m">CO-012 · Relocate electrical panel</span><span class="amt up">+$1,850</span><span class="s">Approved by Dana (Owner) · Aug 22 · 14:02</span></div>
+          <div class="g total"><span class="m">Current total</span><span class="amt">$240,950</span><span class="s">2 approved changes · +$950 (+0.4%) vs baseline</span></div>
+        </div>
+        <div class="card" style="border-style:dashed;border-color:var(--warning)">
+          <div class="row"><span style="font-weight:700;font-size:13px">Pending — excluded from total</span><span class="badge proposed"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5" stroke-linecap="round"/></svg>Awaiting owner</span></div>
+          <div class="row" style="margin-top:8px"><span class="cap">CO-014 · Engineered oak flooring · +~5 days schedule</span><span class="delta up data">+$4,200</span></div>
+        </div>
+      </main>
+      <aside class="drawer">
+        <div class="d-head"><h3 class="grp" style="color:var(--fg);font-size:14px;text-transform:none">Change order · CO-014</h3><span class="kebab">✕</span></div>
+        <h2 class="scr" style="font-size:18px">Engineered oak flooring upgrade</h2>
+        <span class="badge proposed" style="align-self:flex-start"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5" stroke-linecap="round"/></svg>Proposed — awaiting owner</span>
+        <div class="card stack" style="gap:10px">
+          <div class="row"><span class="metric-lbl">Cost impact</span><span class="delta up" style="font-size:18px">+$4,200</span></div>
+          <div class="divider"></div>
+          <div class="row"><span class="cap">Proposed by</span><span class="tag builder"><span class="pd"></span>Ridgeline · GC</span></div>
+          <div class="row"><span class="cap">Raised</span><span class="cap data">Aug 24 · 09:14</span></div>
+          <div class="row"><span class="cap">Budget if approved</span><span class="cap data">$240,950 → <b>$245,150</b></span></div>
+          <div class="row"><span class="cap">Schedule impact</span><span class="cap data" style="color:var(--warning);font-weight:650">+~5 days</span></div>
+          <div class="row"><span class="cap">Quality flag</span><span class="badge ok" style="padding:2px 7px"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round"/></svg>None</span></div>
+        </div>
+        <div class="card flat"><div class="cap" style="margin-bottom:4px">Scope note</div><div style="font-size:13px">Oak over specified laminate, kitchen &amp; hall (38 m²). Material + labour difference.</div></div>
+        <div class="stamp"><svg viewBox="0 0 24 24"><path d="M12 3l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 15.9 6.8 18l1.2-5.6L3.8 8.6 9.4 8z" stroke-linejoin="round"/></svg><span>You are <b>Dana · Owner</b> and did not propose this — you can decide it. Your name &amp; time are stamped on approval.</span></div>
+        <div class="spacer"></div>
+        <div class="btn-row"><button class="btn danger"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>Reject</button><button class="btn primary"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>Approve</button></div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== BUILD SPEC APPENDIX ===================== -->
+<div class="specbox">
+  <h3>Build notes — what changed from LINA-20 wireframes</h3>
+  <ul>
+    <li><b>Surface 1 is now the four-pillar status panel</b> (Scope · Time · Cost · Quality), per PM spec — replacing the single-budget dashboard. Each pillar is a RAG state carried by <b>colour + label + icon</b>. <b>Time</b> reads “changes added N days” and is <b>green at zero</b>; it never claims on-track-vs-baseline. Cost = current vs baseline. Scope/Quality are qualitative.</li>
+    <li><b>Change-order form</b> captures cost impact, a <b>scope-impact note</b>, <b>schedule impact (days + note)</b>, and a <b>quality flag + note</b> — all surfaced again in the CO detail.</li>
+    <li><b>Proposer-vs-approver is explicit:</b> the approver sees Approve/Reject; the proposer sees the same record with a <b>locked “can’t approve your own change”</b> state (see Mobile · Dark, Surface 3 pair).</li>
+  </ul>
+  <h3>Tokens &amp; theming</h3>
+  <ul>
+    <li>Light tokens mirror <code>design-system/tokens.json</code>. Dark is a derived theme: brand Owner Blue / Builder Orange preserved (brightened for contrast), semantic RAG re-tuned, Paper→ warm-dark surfaces. Switch via <code>[data-theme="dark"]</code> on the app root; every component reads CSS custom properties only.</li>
+    <li>Type scale, spacing (4px base), radii (6px control / 10px overlay), and the single elevation token follow <code>cowork/design/web-app/DESIGN.md</code>. Monetary/quantitative values use tabular figures.</li>
+  </ul>
+  <h3>Responsive contract</h3>
+  <ul>
+    <li><b>Mobile-first (base &lt; 640px):</b> single column, bottom tab nav (Home / Decisions / Budget), bottom-anchored primary action ≥ 52px, all targets ≥ 44px. This is the on-site primary target.</li>
+    <li><b>Desktop (lg ≥ 1024px):</b> the four surfaces become a persistent left rail + main pane + right detail drawer — the CO opens in-place beside the record instead of full-screen. Reading pane caps ~1200px.</li>
+  </ul>
+  <h3>Accessibility &amp; voice (mandatory)</h3>
+  <ul>
+    <li>Colour is never the sole signal — party by label + position, status by label + icon. RAG chips pair hue with text + glyph. Contrast holds in both themes.</li>
+    <li>Copy uses <b>tamper-evident</b> (never “tamper-proof”); no unbuilt capability in the present tense.</li>
+    <li>Neutral referee: no owner-first or builder-first weighting; planned/actual and owner/builder stay on the blue/orange axis, health stays on green/amber/red — the two never collide.</li>
+  </ul>
+</div>
+
+<div class="foot">LinkNMS · Product Design · LINA-27 build-ready mockups for the R0 shared-record MVP (parent LINA-26). Light + dark, mobile + desktop. Hand-off target for the Founding Engineer; next step is Storybook stories against the live component library once the build architecture is approved.</div>
+
+</body>
+</html>

@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinkNMS — R0 shared-record MVP flow (wireframes)</title>
+<!--
+  LINA-20 · Low-fidelity wireframes for the R0 (MVP) shared-record core.
+  Designed against LINA-12 roadmap §4 (homeowner + GC, responsive web).
+  Four connected surfaces: Dashboard · Decision log · Change order · Budget trail.
+  Mobile-first phone frames (375px). Tokens mirrored from design-system/tokens.json.
+  Fidelity is deliberately low — layout, hierarchy and trust cues, not final polish.
+-->
+<style>
+  :root{
+    --owner:#2a78d6; --builder:#eb6834;
+    --ink:#0b0b0b; --paper:#fcfcfb; --sunken:#f4f3f0; --raised:#ffffff;
+    --outline:#dcdbd7; --outline-strong:#9b9a95; --muted:#5b5b58;
+    --owner-muted:#e2edfb; --builder-muted:#fce3d8;
+    --success:#2e7d54; --warning:#b7791f; --danger:#c0392b; --fade:#9a9a9a;
+    --s4:4px;--s8:8px;--s12:12px;--s16:16px;--s24:24px;--s32:32px;--s48:48px;
+    --r-ctrl:6px; --r-overlay:10px;
+    --data:"system-ui",-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    color:var(--ink); background:#e7e6e2;
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+    padding:var(--s32);
+  }
+  .num{font-variant-numeric:tabular-nums;font-weight:500}
+
+  /* ---- Board chrome ---- */
+  .board-head{max-width:1760px;margin:0 auto var(--s24)}
+  .board-head h1{font-size:22px;font-weight:600;letter-spacing:-.3px}
+  .board-head .sub{color:var(--muted);font-size:14px;margin-top:2px}
+  .board-head .meta{color:var(--muted);font-size:12px;margin-top:var(--s8)}
+  .logo{height:44px;display:block;margin-bottom:var(--s12)}
+
+  .legend{
+    display:flex;flex-wrap:wrap;gap:var(--s16);align-items:center;
+    background:var(--paper);border:1px solid var(--outline);border-radius:var(--r-ctrl);
+    padding:var(--s12) var(--s16);margin-top:var(--s16);font-size:12px;color:var(--muted)
+  }
+  .legend b{color:var(--ink)}
+  .swatch{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .dot{width:12px;height:12px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.15)}
+
+  /* ---- Flow rail ---- */
+  .rail{
+    display:flex;align-items:flex-start;gap:0;max-width:1760px;margin:0 auto;
+    overflow-x:auto;padding-bottom:var(--s16)
+  }
+  .step{flex:0 0 auto;display:flex;align-items:flex-start}
+  .arrow{
+    flex:0 0 auto;align-self:center;color:var(--outline-strong);
+    font-size:26px;padding:0 var(--s12);user-select:none
+  }
+  .col{width:360px;display:flex;flex-direction:column;gap:var(--s12)}
+  .col-cap{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .col-cap b{display:block;color:var(--ink);font-size:15px;text-transform:none;letter-spacing:0;font-weight:600;margin-top:2px}
+
+  /* ---- Phone frame ---- */
+  .phone{
+    width:360px;background:var(--paper);border:2px solid var(--ink);
+    border-radius:22px;overflow:hidden;box-shadow:0 8px 24px rgba(11,11,11,.10)
+  }
+  .status-bar{height:22px;background:var(--ink);opacity:.9}
+  .topbar{
+    display:flex;align-items:center;gap:var(--s8);padding:10px var(--s16);
+    border-bottom:1px solid var(--outline);background:var(--raised)
+  }
+  .topbar .brand{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px}
+  .topbar .brand .mk{width:16px;height:16px}
+  .switcher{
+    margin-left:auto;font-size:12px;color:var(--muted);border:1px solid var(--outline);
+    border-radius:var(--r-ctrl);padding:4px 8px;display:flex;gap:6px;align-items:center
+  }
+  .health{width:8px;height:8px;border-radius:50%;background:var(--success)}
+  .back{font-size:13px;color:var(--owner);font-weight:500}
+
+  .screen{padding:var(--s16);display:flex;flex-direction:column;gap:var(--s12);min-height:520px}
+  .screen.pad0{padding:0}
+  h2.scr{font-size:18px;font-weight:600}
+  .caption{font-size:12px;color:var(--muted)}
+  .data{font-variant-numeric:tabular-nums}
+
+  /* generic blocks */
+  .card{background:var(--raised);border:1px solid var(--outline);border-radius:var(--r-ctrl);padding:var(--s12)}
+  .rowline{display:flex;align-items:center;justify-content:space-between;gap:var(--s8)}
+  .divider{height:1px;background:var(--outline);margin:2px 0}
+
+  /* party tag */
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+       border-radius:20px;padding:2px 8px;border:1px solid transparent;white-space:nowrap}
+  .tag .pd{width:8px;height:8px;border-radius:50%}
+  .tag.owner{background:var(--owner-muted);color:#1a5296}
+  .tag.owner .pd{background:var(--owner)}
+  .tag.builder{background:var(--builder-muted);color:#a8451c}
+  .tag.builder .pd{background:var(--builder)}
+
+  /* status badge */
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+         border-radius:var(--r-ctrl);padding:2px 8px;border:1px solid}
+  .badge.proposed{color:var(--warning);border-color:#e6cfa0;background:#fbf3e2}
+  .badge.approved{color:var(--success);border-color:#b7d8c4;background:#e8f3ec}
+  .badge.rejected{color:var(--danger);border-color:#e2b4ae;background:#f7e7e5}
+  .badge.onbudget{color:var(--success);border-color:#b7d8c4;background:#e8f3ec}
+
+  /* buttons */
+  .btn{display:flex;align-items:center;justify-content:center;gap:6px;height:44px;border-radius:var(--r-ctrl);
+       font-size:14px;font-weight:600;border:1px solid var(--outline-strong);background:var(--raised);color:var(--ink);width:100%}
+  .btn.primary{background:var(--owner);border-color:var(--owner);color:#fff}
+  .btn.danger{background:var(--raised);border-color:var(--danger);color:var(--danger)}
+  .btn.lg{height:52px;font-size:15px}
+  .btn.disabled{background:var(--sunken);border-color:var(--outline);color:var(--outline-strong)}
+  .btn-row{display:flex;gap:var(--s8)}
+
+  /* form field */
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:12px;font-weight:600}
+  .field .input{height:44px;border:1px solid var(--outline);border-radius:var(--r-ctrl);
+                background:var(--raised);display:flex;align-items:center;padding:0 12px;font-size:14px;color:var(--muted)}
+  .field .input.focus{border-color:var(--owner);box-shadow:0 0 0 3px rgba(42,120,214,.18)}
+  .field .input.area{height:66px;align-items:flex-start;padding-top:10px}
+
+  /* metric */
+  .metric-lbl{font-size:12px;color:var(--muted)}
+  .metric-val{font-size:26px;font-weight:600;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+  .delta{font-variant-numeric:tabular-nums;font-weight:600}
+  .delta.pos{color:var(--success)} .delta.neg{color:var(--success)} /* under-baseline shown as good; sign carries meaning */
+  .up{color:var(--danger)} /* increase to budget */
+
+  /* budget bar */
+  .bar{height:12px;border-radius:2px;background:var(--sunken);position:relative;overflow:hidden;border:1px solid var(--outline)}
+  .bar > i{position:absolute;top:0;bottom:0;left:0;display:block}
+  .bar .base{background:var(--owner-muted)}
+  .bar .over{background:var(--builder-muted)}
+
+  /* ledger */
+  .ledger{border:1px solid var(--outline);border-radius:var(--r-ctrl);overflow:hidden}
+  .ledger .lrow{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 12px;border-bottom:1px solid var(--outline);background:var(--raised)}
+  .ledger .lrow:last-child{border-bottom:0}
+  .ledger .lrow.base{background:var(--sunken)}
+  .ledger .lrow.total{background:var(--sunken);font-weight:600}
+  .ledger .l-main{font-size:13px;font-weight:500}
+  .ledger .l-sub{grid-column:1;font-size:11px;color:var(--muted)}
+  .ledger .l-amt{grid-row:1;font-variant-numeric:tabular-nums;font-weight:600;font-size:14px;text-align:right}
+  .l-amt.up{color:var(--danger)} .l-amt.down{color:var(--success)}
+
+  /* bottom nav */
+  .botnav{display:flex;border-top:1px solid var(--outline);background:var(--raised)}
+  .botnav a{flex:1;text-align:center;padding:8px 0 10px;font-size:11px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px}
+  .botnav a .ic{width:20px;height:20px;border:1.6px solid currentColor;border-radius:4px}
+  .botnav a.active{color:var(--owner);font-weight:600}
+
+  /* annotation callout */
+  .note{
+    width:360px;background:#fff8e9;border:1px solid #e6cfa0;border-left:3px solid var(--warning);
+    border-radius:var(--r-ctrl);padding:10px 12px;font-size:12px;color:#6b5417
+  }
+  .note b{color:#4d3d10}
+  .note .ac{display:inline-block;font-weight:600;color:var(--warning)}
+
+  /* ---- Surface 5 · Progress & forecast (landscape) ---- */
+  .wide{max-width:1760px;margin:var(--s32) auto 0}
+  .wide-cap{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:var(--s8)}
+  .wide-cap b{color:var(--ink);font-size:15px;text-transform:none;letter-spacing:0;font-weight:600}
+  .frame{background:var(--paper);border:2px solid var(--ink);border-radius:14px;overflow:hidden;box-shadow:0 8px 24px rgba(11,11,11,.10)}
+  .frame .topbar{padding:12px var(--s24)}
+  .frame .brandwide{display:flex;align-items:center;gap:6px;font-weight:600;font-size:14px}
+  .frame .brandwide .mk{width:18px;height:18px}
+  .fbody{padding:var(--s24);display:flex;flex-direction:column;gap:var(--s24)}
+  .heros{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s16)}
+  .hero{background:var(--raised);border:1px solid var(--outline);border-radius:var(--r-ctrl);padding:var(--s16);display:flex;flex-direction:column;gap:6px}
+  .hero .metric-val{font-size:30px}
+  .hero.accent{border-left:3px solid var(--owner)}
+  /* gantt */
+  .gantt{position:relative;border:1px solid var(--outline);border-radius:var(--r-ctrl);overflow:hidden;background:var(--raised)}
+  .g-scale{position:relative;height:26px;border-bottom:1px solid var(--outline);background:var(--sunken)}
+  .g-scale .tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--outline);padding:5px 0 0 5px;font-size:10px;color:var(--muted);white-space:nowrap}
+  .grow{position:relative;display:grid;grid-template-columns:200px 1fr;border-bottom:1px solid var(--outline)}
+  .grow:last-child{border-bottom:0}
+  .g-name{padding:10px 12px;font-size:12px;font-weight:600;border-right:1px solid var(--outline);display:flex;flex-direction:column;gap:2px}
+  .g-name .g-sub{font-weight:400;color:var(--muted);font-size:11px}
+  .g-track{position:relative;height:44px}
+  .g-bar{position:absolute;top:11px;height:22px;border-radius:4px;background:var(--sunken);border:1px solid var(--outline-strong);overflow:hidden}
+  .g-bar > i{position:absolute;top:0;bottom:0;left:0;background:var(--owner);opacity:.85;display:block}
+  .g-bar.notstarted{border-style:dashed;background:repeating-linear-gradient(45deg,#f4f3f0,#f4f3f0 6px,#eeede9 6px,#eeede9 12px)}
+  .g-bar .g-pct{position:relative;z-index:1;font-size:10px;font-weight:600;color:#fff;padding:3px 6px;white-space:nowrap;mix-blend-mode:normal}
+  .g-bar.notstarted .g-pct{color:var(--muted)}
+  .g-atrisk{position:absolute;top:11px;height:22px;border-radius:4px;border:1px dashed var(--warning);background:rgba(183,121,31,.10)}
+  .g-today{position:absolute;top:0;bottom:0;width:2px;background:var(--danger);z-index:3}
+  .g-today .g-flag{position:absolute;top:-1px;left:3px;font-size:10px;font-weight:700;color:var(--danger);white-space:nowrap;background:var(--paper);padding:1px 4px;border-radius:3px}
+  .g-plan{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed var(--muted);z-index:2}
+  .g-plan .g-flag{position:absolute;bottom:2px;left:4px;font-size:9px;color:var(--muted);white-space:nowrap}
+  /* forecast table */
+  .ftable{width:100%;border-collapse:collapse;border:1px solid var(--outline);border-radius:var(--r-ctrl);overflow:hidden;font-size:13px;background:var(--raised)}
+  .ftable th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:8px 12px;border-bottom:1px solid var(--outline);background:var(--sunken);font-weight:600}
+  .ftable td{padding:9px 12px;border-bottom:1px solid var(--outline);vertical-align:top}
+  .ftable tr:last-child td{border-bottom:0}
+  .ftable td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+  .ftable tr.total td{background:var(--sunken);font-weight:600}
+  .mini{display:inline-block;width:70px;height:7px;border-radius:2px;background:var(--sunken);border:1px solid var(--outline);position:relative;vertical-align:middle;margin-right:6px}
+  .mini > i{position:absolute;top:0;bottom:0;left:0;background:var(--owner);opacity:.85;border-radius:2px}
+  .slip{color:var(--warning);font-weight:600}
+  .ontime{color:var(--success);font-weight:600}
+
+  .sub-appendix{max-width:1760px;margin:var(--s32) auto 0;background:var(--paper);border:1px solid var(--outline);border-radius:var(--r-ctrl);padding:var(--s24)}
+  .sub-appendix h3{font-size:15px;margin-bottom:var(--s8)}
+  .sub-appendix ul{margin:0 0 var(--s16) 18px;font-size:13px;color:#333}
+  .sub-appendix li{margin-bottom:4px}
+  .foot{max-width:1760px;margin:var(--s24) auto 0;font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div class="board-head">
+  <img class="logo" alt="LinkNMS — Trust built-in." src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 120'><g transform='translate(8,28)'><rect x='12' y='26' width='40' height='30' rx='2' fill='%23fcfcfb' stroke='%230b0b0b' stroke-width='2'/><path d='M32 6 L8 26 L32 26 Z' fill='%232a78d6'/><path d='M32 6 L56 26 L32 26 Z' fill='%23eb6834'/><rect x='18' y='34' width='28' height='6' rx='3' fill='%232a78d6'/><rect x='18' y='44' width='17' height='6' rx='3' fill='%23eb6834'/></g><text x='92' y='56' font-family='system-ui,sans-serif' font-size='40' font-weight='700' letter-spacing='-1.5' fill='%230b0b0b'>LinkNMS</text><text x='93' y='80' font-family='system-ui,sans-serif' font-size='15' font-weight='500' fill='%230b0b0b'>Trust</text><text x='138' y='80' font-family='system-ui,sans-serif' font-size='15' font-weight='500' fill='%239a9a9a'>built-in.</text></svg>">
+  <h1>R0 shared-record MVP — end-to-end flow (low-fidelity wireframes)</h1>
+  <div class="sub" style="margin-top:2px">Rev 2 · adds <b>Surface 5 — Progress &amp; forecast</b> (Gantt/table of done work, cost &amp; predicted finish) per CEO/PM request.</div>
+  <div class="sub">The thinnest loop that answers <b>“who decided this, when, and how much did it move the budget?”</b> — homeowner + one GC, phone-first.</div>
+  <div class="meta">LINA-20 · designed against LINA-12 roadmap §4 · scenario: <b>Maple Street Renovation</b> · owner <b>Dana Okafor</b> · GC <b>Ridgeline Builders</b> · baseline budget $240,000</div>
+
+  <div class="legend">
+    <span class="swatch"><b>Two-sided encoding:</b></span>
+    <span class="swatch"><span class="dot" style="background:#2a78d6"></span> Owner Blue — <b>owner / who approves &amp; pays</b></span>
+    <span class="swatch"><span class="dot" style="background:#eb6834"></span> Builder Orange — <b>GC / who proposes &amp; bills</b></span>
+    <span class="swatch"><span class="dot" style="background:#fbf3e2;border-color:#e6cfa0"></span> Proposed</span>
+    <span class="swatch"><span class="dot" style="background:#e8f3ec;border-color:#b7d8c4"></span> Approved</span>
+    <span class="swatch"><span class="dot" style="background:#f7e7e5;border-color:#e2b4ae"></span> Rejected</span>
+    <span class="swatch">· Party &amp; status are always shown by <b>label + position first</b>, colour second (colour is never the only signal).</span>
+  </div>
+</div>
+
+<div class="rail">
+
+  <!-- ===================== 1 · DASHBOARD ===================== -->
+  <div class="step">
+   <div class="col">
+    <div class="col-cap">Surface 1<b>Project dashboard</b></div>
+    <div class="phone">
+      <div class="status-bar"></div>
+      <div class="topbar">
+        <span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/></svg>LinkNMS</span>
+        <span class="switcher"><span class="health"></span> Maple Street ▾</span>
+      </div>
+      <div class="screen">
+        <div class="rowline">
+          <h2 class="scr">Maple Street Renovation</h2>
+        </div>
+        <div class="caption">You are <span class="tag owner"><span class="pd"></span>Owner · Dana</span></div>
+
+        <div class="card" style="display:flex;flex-direction:column;gap:8px">
+          <div class="metric-lbl">Current budget</div>
+          <div class="metric-val">$240,950</div>
+          <div class="rowline">
+            <span class="caption">Baseline <span class="data">$240,000</span></span>
+            <span class="delta up">▲ +$950</span>
+          </div>
+          <div class="bar"><i class="base" style="width:82%"></i><i class="over" style="left:82%;width:6%"></i></div>
+          <span class="badge onbudget">● On budget · +0.4%</span>
+        </div>
+
+        <div class="btn-row">
+          <div class="card" style="flex:1;text-align:center">
+            <div class="metric-val" style="font-size:22px;color:var(--warning)">1</div>
+            <div class="caption">Open change order</div>
+          </div>
+          <div class="card" style="flex:1;text-align:center">
+            <div class="metric-val" style="font-size:22px">7</div>
+            <div class="caption">Decisions logged</div>
+          </div>
+        </div>
+
+        <div class="card" style="padding:0">
+          <a class="rowline" style="padding:12px;border-bottom:1px solid var(--outline)"><span>📄 Decision log</span><span class="caption">7 →</span></a>
+          <a class="rowline" style="padding:12px;border-bottom:1px solid var(--outline)"><span>🔁 Change orders</span><span class="caption">1 open →</span></a>
+          <a class="rowline" style="padding:12px"><span>💰 Budget-impact trail</span><span class="caption">→</span></a>
+        </div>
+
+        <div style="margin-top:auto"></div>
+        <button class="btn primary lg">+ Log a decision</button>
+      </div>
+      <div class="botnav">
+        <a class="active"><span class="ic"></span>Home</a>
+        <a><span class="ic"></span>Decisions</a>
+        <a><span class="ic"></span>Budget</a>
+      </div>
+    </div>
+    <div class="note"><b>Trust cue.</b> The one number a stressed owner wants — current vs. baseline — is the hero, with the direction of movement (▲ +$950) and one open item to act on. <span class="ac">AC&nbsp;6</span></div>
+   </div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ===================== 2 · DECISION LOG ===================== -->
+  <div class="step">
+   <div class="col">
+    <div class="col-cap">Surface 2<b>Decision log + Add decision</b></div>
+    <div class="phone">
+      <div class="status-bar"></div>
+      <div class="topbar">
+        <span class="back">‹ Home</span>
+        <span class="brand" style="margin:0 auto">Decision log</span>
+        <span class="switcher">Filter ▾</span>
+      </div>
+      <div class="screen">
+        <div class="caption">Append-only — every entry keeps its author, time and revisions.</div>
+
+        <div class="card">
+          <div class="rowline"><span style="font-weight:600;font-size:14px">Engineered oak flooring upgrade</span></div>
+          <div class="rowline" style="margin-top:4px">
+            <span class="tag builder"><span class="pd"></span>Proposed · Ridgeline (GC)</span>
+            <span class="badge proposed">● Change order</span>
+          </div>
+          <div class="caption data" style="margin-top:6px">Aug 24, 2026 · 09:14 · +$4,200</div>
+        </div>
+
+        <div class="card">
+          <div class="rowline"><span style="font-weight:600;font-size:14px">Relocate electrical panel to garage</span></div>
+          <div class="rowline" style="margin-top:4px">
+            <span class="tag builder"><span class="pd"></span>Proposed · Ridgeline (GC)</span>
+            <span class="badge approved">● Approved</span>
+          </div>
+          <div class="caption data" style="margin-top:6px">Aug 22, 2026 · 14:02 · +$1,850</div>
+        </div>
+
+        <div class="card">
+          <div class="rowline"><span style="font-weight:600;font-size:14px">Confirm north elevation window sizes</span>
+            <span class="caption" style="color:var(--warning)">✎ edited</span></div>
+          <div class="rowline" style="margin-top:4px">
+            <span class="tag owner"><span class="pd"></span>Logged · Dana (Owner)</span>
+            <span class="caption">Decision · rev 2</span>
+          </div>
+          <div class="caption data" style="margin-top:6px">Aug 20, 2026 · 08:30 · no budget impact</div>
+        </div>
+
+        <!-- inline quick form -->
+        <div class="card" style="border-color:var(--owner);border-width:1px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:8px">Add decision <span class="caption" style="font-weight:400">· quick form</span></div>
+          <div class="field" style="margin-bottom:8px"><label>What was decided?</label><div class="input focus">Move kitchen window 300mm left</div></div>
+          <div class="field" style="margin-bottom:8px"><label>Does it change the cost? <span class="caption" style="font-weight:400">(optional)</span></label><div class="input"><span class="caption">+ / − amount → raises a change order</span></div></div>
+          <div class="caption" style="margin-bottom:8px">Recorded as <span class="tag owner"><span class="pd"></span>Dana (Owner)</span> · just now</div>
+          <button class="btn primary">Log decision</button>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>Trust cue.</b> Author + timestamp on every row; an amended entry shows a visible <b>✎ edited / rev 2</b> marker (tamper-<i>evident</i>, never hidden). Adding a cost turns a decision into a change order in one step. <span class="ac">AC&nbsp;2 · 8</span></div>
+   </div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ===================== 3 · CHANGE ORDER DETAIL ===================== -->
+  <div class="step">
+   <div class="col">
+    <div class="col-cap">Surface 3<b>Change-order detail — Approve / Reject</b></div>
+    <div class="phone">
+      <div class="status-bar"></div>
+      <div class="topbar">
+        <span class="back">‹ Change orders</span>
+        <span class="brand" style="margin:0 auto">CO-014</span>
+        <span class="switcher">⋯</span>
+      </div>
+      <div class="screen">
+        <div class="rowline">
+          <h2 class="scr">Engineered oak flooring upgrade</h2>
+        </div>
+        <span class="badge proposed" style="align-self:flex-start">● Proposed — awaiting owner</span>
+
+        <div class="card" style="display:flex;flex-direction:column;gap:10px">
+          <div class="rowline">
+            <span class="metric-lbl">Cost delta</span>
+            <span class="delta up" style="font-size:20px">+$4,200</span>
+          </div>
+          <div class="divider"></div>
+          <div class="rowline">
+            <span class="caption">Proposed by</span>
+            <span class="tag builder"><span class="pd"></span>Ridgeline Builders · GC</span>
+          </div>
+          <div class="rowline">
+            <span class="caption">Raised</span>
+            <span class="caption data">Aug 24, 2026 · 09:14</span>
+          </div>
+          <div class="rowline">
+            <span class="caption">Budget if approved</span>
+            <span class="caption data">$240,950 → <b>$245,150</b></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="caption" style="margin-bottom:4px">Reason</div>
+          <div style="font-size:13px">Owner selected engineered oak over the specified laminate in the kitchen &amp; hall (38 m²). Price is material + labour difference.</div>
+        </div>
+
+        <div class="note" style="width:auto;margin:0">
+          <b>Who can approve.</b> You are <span class="tag owner" style="border:0"><span class="pd"></span>Dana · Owner</span> and did not propose this — so you can decide it.
+        </div>
+
+        <div style="margin-top:auto"></div>
+        <div class="btn-row">
+          <button class="btn danger">✕ Reject</button>
+          <button class="btn primary">✓ Approve</button>
+        </div>
+        <div class="caption" style="text-align:center">Your name &amp; the time are stamped on the record when you decide.</div>
+      </div>
+    </div>
+    <div class="note"><b>Trust cue &amp; rule.</b> A CO can only be decided by a party <i>other than</i> its proposer (or the owner). The GC who raised this sees the <b>same screen with Approve/Reject replaced by “Waiting for the owner — you can’t approve your own change.”</b> Approval stamps who + when, immutably. <span class="ac">AC&nbsp;3 · 4</span></div>
+   </div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ===================== 4 · BUDGET-IMPACT TRAIL ===================== -->
+  <div class="step">
+   <div class="col">
+    <div class="col-cap">Surface 4<b>Budget-impact trail</b></div>
+    <div class="phone">
+      <div class="status-bar"></div>
+      <div class="topbar">
+        <span class="back">‹ Home</span>
+        <span class="brand" style="margin:0 auto">Budget-impact trail</span>
+        <span class="switcher">Export ▾</span>
+      </div>
+      <div class="screen">
+        <div class="card" style="display:flex;flex-direction:column;gap:6px">
+          <div class="metric-lbl">Current budget</div>
+          <div class="metric-val">$240,950</div>
+          <div class="caption">baseline $240,000 + approved changes</div>
+        </div>
+
+        <div class="caption">Running ledger — each approved change, who decided it, when, and how much it moved the budget.</div>
+
+        <div class="ledger">
+          <div class="lrow base">
+            <span class="l-main">Baseline budget</span>
+            <span class="l-amt">$240,000</span>
+            <span class="l-sub">Set by Dana (Owner) · Aug 12</span>
+          </div>
+          <div class="lrow">
+            <span class="l-main">CO-011 · Reduce tile scope</span>
+            <span class="l-amt down">−$900</span>
+            <span class="l-sub">Approved by Ridgeline (GC) · Aug 18 · 11:20</span>
+          </div>
+          <div class="lrow">
+            <span class="l-main">CO-012 · Relocate electrical panel</span>
+            <span class="l-amt up">+$1,850</span>
+            <span class="l-sub">Approved by Dana (Owner) · Aug 22 · 14:02</span>
+          </div>
+          <div class="lrow total">
+            <span class="l-main">Current total</span>
+            <span class="l-amt">$240,950</span>
+            <span class="l-sub">2 approved changes</span>
+          </div>
+        </div>
+
+        <div class="card" style="border-style:dashed;border-color:var(--warning)">
+          <div class="rowline">
+            <span style="font-size:13px;font-weight:600">Pending — not in total</span>
+            <span class="badge proposed">● Awaiting owner</span>
+          </div>
+          <div class="rowline" style="margin-top:6px">
+            <span class="caption">CO-014 · Oak flooring</span>
+            <span class="delta up data">+$4,200</span>
+          </div>
+        </div>
+
+        <div class="card" style="opacity:.75">
+          <div class="rowline">
+            <span style="font-size:13px;font-weight:600">Rejected — no effect</span>
+            <span class="badge rejected">● Rejected</span>
+          </div>
+          <div class="rowline" style="margin-top:6px">
+            <span class="caption">CO-013 · Skylight add</span>
+            <span class="caption data" style="text-decoration:line-through">+$3,100</span>
+          </div>
+        </div>
+      </div>
+      <div class="botnav">
+        <a><span class="ic"></span>Home</a>
+        <a><span class="ic"></span>Decisions</a>
+        <a class="active"><span class="ic"></span>Budget</a>
+      </div>
+    </div>
+    <div class="note"><b>Trust cue.</b> One screen: <b>baseline → each approved delta → current total</b>, every line attributed and timestamped. Proposed &amp; rejected COs are shown but visibly excluded from the total. <span class="ac">AC&nbsp;5 · 6 · 7</span></div>
+   </div>
+  </div>
+
+</div>
+
+<!-- ===================== 5 · PROGRESS & FORECAST ===================== -->
+<div class="wide">
+  <div class="wide-cap">Surface 5 <b>· Progress &amp; forecast — done work, cost &amp; predicted finish on one screen</b></div>
+  <div class="frame">
+    <div class="status-bar" style="height:8px"></div>
+    <div class="topbar">
+      <span class="brandwide"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/></svg>LinkNMS · Maple Street Renovation</span>
+      <span class="switcher" style="margin-left:auto"><span class="health"></span> Gantt ▾</span>
+      <span class="switcher">Export ▾</span>
+    </div>
+    <div class="fbody">
+
+      <!-- three hero numbers the CEO asked for -->
+      <div class="heros">
+        <div class="hero">
+          <div class="metric-lbl">Work complete</div>
+          <div class="metric-val">31%</div>
+          <div class="bar"><i class="base" style="width:31%;background:var(--owner)"></i></div>
+          <span class="caption">2 of 6 phases done · framing under way</span>
+        </div>
+        <div class="hero">
+          <div class="metric-lbl">Cost to date</div>
+          <div class="metric-val">$92,400</div>
+          <div class="rowline"><span class="caption">of $240,950 current budget</span><span class="delta" style="color:var(--muted)">38% spent</span></div>
+          <div class="bar"><i class="base" style="width:38%;background:var(--builder)"></i></div>
+        </div>
+        <div class="hero accent">
+          <div class="metric-lbl">Predicted completion</div>
+          <div class="metric-val">Nov 2, 2026</div>
+          <div class="rowline">
+            <span class="caption">plan was Oct 28</span>
+            <span class="badge proposed">▲ +5 days</span>
+          </div>
+          <span class="caption">forecast from logged progress + approved changes</span>
+        </div>
+      </div>
+
+      <!-- GANTT -->
+      <div>
+        <div class="rowline" style="margin-bottom:8px">
+          <span class="caption"><b style="color:var(--ink)">Schedule</b> — each bar filled to its logged progress. Predicted finish moves with the record, never by hand.</span>
+          <span class="caption">
+            <span style="display:inline-block;width:20px;height:8px;background:var(--owner);opacity:.85;border-radius:2px;vertical-align:middle"></span> done ·
+            <span style="display:inline-block;width:20px;height:8px;border:1px dashed var(--outline-strong);border-radius:2px;vertical-align:middle"></span> planned ·
+            <span style="display:inline-block;width:20px;height:8px;border:1px dashed var(--warning);background:rgba(183,121,31,.1);border-radius:2px;vertical-align:middle"></span> at risk (pending CO)
+          </span>
+        </div>
+        <div class="gantt">
+          <div class="g-scale">
+            <span class="tick" style="left:0%">Aug 12</span>
+            <span class="tick" style="left:25%">Sep</span>
+            <span class="tick" style="left:47%">mid-Sep</span>
+            <span class="tick" style="left:61%">Oct</span>
+            <span class="tick" style="left:90%">late Oct</span>
+          </div>
+
+          <div class="grow">
+            <div class="g-name">Site prep &amp; foundation<span class="g-sub">Aug 12 – Aug 22</span></div>
+            <div class="g-track">
+              <div class="g-bar" style="left:0%;width:12%"><i style="width:100%"></i><span class="g-pct">100%</span></div>
+            </div>
+          </div>
+          <div class="grow">
+            <div class="g-name">Framing<span class="g-sub">Aug 20 – Sep 5</span></div>
+            <div class="g-track">
+              <div class="g-bar" style="left:10%;width:19%"><i style="width:40%"></i><span class="g-pct">40%</span></div>
+            </div>
+          </div>
+          <div class="grow">
+            <div class="g-name">Roofing &amp; exterior<span class="g-sub">Sep 5 – Sep 20</span></div>
+            <div class="g-track">
+              <div class="g-bar notstarted" style="left:29%;width:18%"><span class="g-pct">0%</span></div>
+            </div>
+          </div>
+          <div class="grow">
+            <div class="g-name">MEP rough-in<span class="g-sub">Sep 15 – Oct 5</span></div>
+            <div class="g-track">
+              <div class="g-bar notstarted" style="left:41%;width:24%"><span class="g-pct">0%</span></div>
+            </div>
+          </div>
+          <div class="grow">
+            <div class="g-name">Interior &amp; finishes<span class="g-sub">Oct 1 – Oct 25</span></div>
+            <div class="g-track">
+              <div class="g-bar notstarted" style="left:61%;width:29%"><span class="g-pct">0%</span></div>
+              <!-- at-risk extension driven by pending oak-flooring CO -->
+              <div class="g-atrisk" style="left:90%;width:6%"></div>
+            </div>
+          </div>
+          <div class="grow">
+            <div class="g-name">Punch list &amp; handover<span class="g-sub">Oct 25 – Nov 2</span></div>
+            <div class="g-track">
+              <div class="g-bar notstarted" style="left:90%;width:10%"><span class="g-pct">0%</span></div>
+              <!-- markers only on the last row so they don't repeat -->
+              <div class="g-plan" style="left:94%"><span class="g-flag">plan Oct 28</span></div>
+            </div>
+          </div>
+
+          <!-- today line spans the whole grid -->
+          <div class="g-today" style="left:calc(200px + (100% - 200px) * 0.16)"><span class="g-flag">Today · Aug 25</span></div>
+        </div>
+      </div>
+
+      <!-- TABLE (same data, for anyone who prefers a list) -->
+      <div>
+        <div class="caption" style="margin-bottom:8px"><b style="color:var(--ink)">Same data as a table</b> — toggle between Gantt and table; both read from the one shared record.</div>
+        <table class="ftable">
+          <thead>
+            <tr>
+              <th>Phase</th><th>Status</th><th style="width:150px">Work done</th>
+              <th class="num">Cost to date</th><th class="num">Budgeted</th>
+              <th class="num">Ends (plan → forecast)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Site prep &amp; foundation</td><td><span class="badge approved">● Done</span></td>
+              <td><span class="mini"><i style="width:100%"></i></span>100%</td>
+              <td class="num">$48,000</td><td class="num">$48,000</td>
+              <td class="num"><span class="ontime">Aug 22 ✓</span></td>
+            </tr>
+            <tr>
+              <td>Framing</td><td><span class="badge proposed">● In progress</span></td>
+              <td><span class="mini"><i style="width:40%"></i></span>40%</td>
+              <td class="num">$44,400</td><td class="num">$62,000</td>
+              <td class="num">Sep 5 → <span class="ontime">Sep 5</span></td>
+            </tr>
+            <tr>
+              <td>Roofing &amp; exterior</td><td><span class="caption">Not started</span></td>
+              <td><span class="mini"><i style="width:0%"></i></span>0%</td>
+              <td class="num">—</td><td class="num">$34,000</td>
+              <td class="num">Sep 20 → <span class="ontime">Sep 20</span></td>
+            </tr>
+            <tr>
+              <td>MEP rough-in</td><td><span class="caption">Not started</span></td>
+              <td><span class="mini"><i style="width:0%"></i></span>0%</td>
+              <td class="num">—</td><td class="num">$41,000</td>
+              <td class="num">Oct 5 → <span class="ontime">Oct 5</span></td>
+            </tr>
+            <tr>
+              <td>Interior &amp; finishes</td><td><span class="caption">Not started</span></td>
+              <td><span class="mini"><i style="width:0%"></i></span>0%</td>
+              <td class="num">—</td><td class="num">$45,950</td>
+              <td class="num">Oct 25 → <span class="slip">Oct 30 ▲</span></td>
+            </tr>
+            <tr>
+              <td>Punch list &amp; handover</td><td><span class="caption">Not started</span></td>
+              <td><span class="mini"><i style="width:0%"></i></span>0%</td>
+              <td class="num">—</td><td class="num">$10,000</td>
+              <td class="num">Oct 28 → <span class="slip">Nov 2 ▲</span></td>
+            </tr>
+            <tr class="total">
+              <td>Whole project</td><td><span class="caption">31% complete</span></td>
+              <td><span class="mini"><i style="width:31%"></i></span>31%</td>
+              <td class="num">$92,400</td><td class="num">$240,950</td>
+              <td class="num"><span class="slip">Nov 2 · +5 days</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+  <div class="note" style="width:auto;max-width:none;margin-top:var(--s16)">
+    <b>Trust cue — the forecast is a lookup, not a guess.</b> The predicted finish (Nov 2) is derived from logged phase progress plus approved change orders, so it answers the same question in time that the budget trail answers in money: <b>who moved the date, when, and by how much</b>. The <span style="color:var(--warning);font-weight:600">+5-day slip</span> traces to the pending <b>CO-014 oak flooring</b> — shown as an <b>at-risk</b> band, excluded from the committed line until someone other than the proposer approves it. Toggle <b>Gantt ⇄ Table</b> reads the same record. <span class="ac">AC&nbsp;5 · 6 · 9 (new: schedule forecast)</span>
+  </div>
+</div>
+
+<!-- ===================== APPENDIX ===================== -->
+<div class="sub-appendix">
+  <h3>How the flow maps to roadmap §4.3 acceptance criteria</h3>
+  <ul>
+    <li><b>AC 2</b> — Decision log stamps author + timestamp on every entry; edits show a visible “edited / rev” marker (append-only, revision-preserving). <em>Surface 2.</em></li>
+    <li><b>AC 3</b> — Any party can raise a change order with a cost delta; it opens as <span class="badge proposed">● Proposed</span>. <em>Surfaces 2 &amp; 3.</em></li>
+    <li><b>AC 4</b> — Approve/Reject is available only to a party other than the proposer (or the owner); the proposer sees a disabled “waiting” state. The action stamps who + when. <em>Surface 3.</em></li>
+    <li><b>AC 5</b> — Current budget = baseline + Σ approved deltas, each contribution individually visible. <em>Surface 4.</em></li>
+    <li><b>AC 6</b> — “Who decided, when, how much” is answerable in one screen. <em>Surfaces 1 &amp; 4.</em></li>
+    <li><b>AC 7</b> — Proposed &amp; rejected COs are shown but excluded from the total. <em>Surface 4.</em></li>
+    <li><b>AC 8</b> — History reads in chronological order with full attribution. <em>Surfaces 2 &amp; 4.</em></li>
+    <li><b>AC 9 (added per CEO/PM request)</b> — Progress &amp; forecast on one screen: total work done, cost to date vs. budget, and a <b>predicted completion date</b>, shown as a Gantt <i>or</i> a table (toggle). The forecast is derived from logged progress + approved change orders — a schedule sibling of the budget trail. <em>Surface 5.</em></li>
+  </ul>
+  <h3>Non-technical / on-site requirements addressed</h3>
+  <ul>
+    <li><b>One-handed, large targets</b> — primary action is bottom-anchored (52px), all controls ≥ 44px, bottom tab nav within thumb reach.</li>
+    <li><b>Plain language</b> — “Log a decision”, “Does it change the cost?”, “who decided it, when, and how much it moved the budget” — no jargon.</li>
+    <li><b>Two-sided clarity</b> — proposer vs. approver is shown by <b>label + position first</b>, Owner-Blue / Builder-Orange second; never colour alone.</li>
+    <li><b>Record, not chat</b> — approvals render as stamped ledger lines; immutability is tamper-<i>evident</i> (visible edit markers), per the copy guardrails.</li>
+    <li><b>Brand</b> — House Record mark + “Trust built-in.” lockup, Paper surface, drawing-like rules and tokens from the design system.</li>
+  </ul>
+  <h3>Notes for build (Founding Engineer)</h3>
+  <ul>
+    <li>These are the four §4.2 UI surfaces at low fidelity — layout, hierarchy and states, not final spacing/pixels.</li>
+    <li>Colour/type/spacing come straight from <code>design-system/tokens.json</code>; component behaviours follow <code>cowork/design/web-app/DESIGN.md</code>.</li>
+    <li>Desktop (<code>lg</code>) is a progressive enhancement: the four surfaces become a left rail + main pane + right detail drawer. R0 validates the phone flow first.</li>
+    <li>Next step after CEO direction sign-off: promote these into Storybook stories against the live component library.</li>
+  </ul>
+</div>
+
+<div class="foot">LinkNMS · Product Design · Low-fidelity wireframes for CEO direction approval (LINA-20 → LINA-12). Fidelity intentionally low; polish follows approval.</div>
+
+</body>
+</html>
