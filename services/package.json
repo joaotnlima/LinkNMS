@@ -1,0 +1,15 @@
+{
+  "name": "@linknms/services",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "R0 backend services (Identity, Decision, Change Order, Ledger & Budget, Schedule). One Postgres schema per service (ADR-0006).",
+  "scripts": {
+    "migrate": "node ../db/migrate.mjs",
+    "test": "node --test **/*.test.mjs",
+    "test:ledger": "node --test ledger/hash-chain.test.mjs ledger/pg-ledger.test.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}
