@@ -236,4 +236,57 @@ describe('Postgres Change Order store + ledger wiring', { skip: DB ? false : 'se
     assert.deepEqual(list.map((c) => c.title), ['First', 'Second', 'Third']);
     assert.deepEqual(list.map((c) => c.id), [first.id, second.id, third.id]);
   });
+
+  // ── Grant-matrix regression guard (Architect, LINA-51 review) ───────────────
+  // 0004 opens a budget seam for change_order_app. These assert the seam stays a
+  // seam. They read the privilege catalog rather than attempting the writes,
+  // because app roles are NOLOGIN/passwordless by design (db/roles.sql) — so this
+  // guard runs anywhere DATABASE_URL points, with no role bootstrapping.
+  //
+  // The property: change_order_app may write a budget_event ONCE and link it to
+  // its audit event, and may never afterwards change what that row says. If a
+  // future migration widens this to a table-wide UPDATE, the budget becomes
+  // mutable with no audit event behind it — the one thing this ledger exists to
+  // prevent — and this test fails.
+  test('change_order_app UPDATE on ledger.budget_event is column-scoped to the back-link', async () => {
+    const { rows } = await pool.query(
+      `select column_name from information_schema.column_privileges
+        where grantee = 'change_order_app' and table_schema = 'ledger'
+          and table_name = 'budget_event' and privilege_type = 'UPDATE'
+        order by column_name`,
+    );
+    assert.deepEqual(rows.map((r) => r.column_name), ['audit_event_id'],
+      'change_order_app must be able to update ONLY audit_event_id — never delta_cents/project_id/change_order_id');
+  });
+
+  test('change_order_app holds no DELETE on budget_event and no write at all on audit_event', async () => {
+    const { rows } = await pool.query(
+      `select table_name, privilege_type from information_schema.table_privileges
+        where grantee = 'change_order_app' and table_schema = 'ledger'
+          and table_name in ('budget_event', 'audit_event')
+        order by table_name, privilege_type`,
+    );
+    const granted = (t) => rows.filter((r) => r.table_name === t).map((r) => r.privilege_type);
+    // budget_event: insert + read only. UPDATE is column-level, so it correctly
+    // does NOT appear in table_privileges.
+    assert.deepEqual(granted('budget_event').sort(), ['INSERT', 'SELECT']);
+    // audit_event stays write-locked: the only writer is ledger.append_event.
+    assert.deepEqual(
+      granted('audit_event').filter((p) => p !== 'SELECT'), [],
+      'audit_event must remain append-only via ledger.append_event (ADR-0002 §4)',
+    );
+  });
+
+  // The grant matrix is only meaningful if the role cannot inherit its way past
+  // it (see the neon_superuser finding on LINA-35).
+  test('change_order_app inherits no superuser role', async () => {
+    const { rows } = await pool.query(
+      `select r.rolname from pg_auth_members m
+         join pg_roles r on r.oid = m.roleid
+        where m.member = 'change_order_app'::regrole
+          and r.rolname in ('neon_superuser', 'postgres', 'cloud_admin')`,
+    );
+    assert.deepEqual(rows.map((r) => r.rolname), [],
+      'a superuser-inheriting app role bypasses every GRANT above');
+  });
 });
