@@ -16,6 +16,8 @@
 //   2. Author and timestamp are server-authoritative on every write — taken from
 //      the authenticated party and the server clock, never from the request body.
 
+import { createNoopAnalytics } from '../analytics/analytics.mjs';
+
 export class DecisionError extends Error {
   // status: HTTP status; code: stable machine code for the { error: {code,message} } envelope.
   constructor(status, code, message) {
@@ -102,7 +104,7 @@ function toView(decision, revisions) {
 //   authz  — Identity & Membership port. can(actorPartyId, action, projectId) -> boolean.
 //   clock  — now() -> ISO-8601 string (server-authoritative timestamp).
 //   ids    — () -> uuid string.
-export function createDecisionLog({ store, ledger, authz, clock, ids }) {
+export function createDecisionLog({ store, ledger, authz, clock, ids, analytics = createNoopAnalytics() }) {
   if (!store || !ledger || !authz) throw new Error('createDecisionLog requires store, ledger, authz ports');
   const now = clock?.now ?? (() => new Date().toISOString());
   const newId = ids ?? (() => cryptoRandomId());
@@ -132,6 +134,10 @@ export function createDecisionLog({ store, ledger, authz, clock, ids }) {
         revisedByPartyId: actorPartyId, revisedAt: occurredAt, auditEventId: event.id,
       });
     });
+    // decision_logged — after commit, exactly one event per recorded decision.
+    // No title/body content: only the id, a presence flag, and the body length
+    // (§3 PII guard). actor_role is set as a PostHog person property on identify.
+    analytics.decisionLogged({ projectId, actorPartyId, decisionId, body });
     return view(projectId, decisionId);
   }
 
@@ -145,11 +151,13 @@ export function createDecisionLog({ store, ledger, authz, clock, ids }) {
     const title = requireTitle(input?.title);
     const body = normalizeBody(input?.body);
 
+    let appendedRev;
     await store.transaction(async (tx) => {
       const locked = await tx.getDecisionForUpdate(decisionId);
       if (!locked) throw new DecisionError(404, 'not_found', 'decision not found');
       const occurredAt = now();
       const rev = (await tx.maxRev(decisionId)) + 1; // append past the current head
+      appendedRev = rev;
       const event = await ledger.append(tx, {
         projectId: locked.projectId,
         type: EVENT_REVISED,
@@ -163,6 +171,9 @@ export function createDecisionLog({ store, ledger, authz, clock, ids }) {
       });
       await tx.setCurrentRev(decisionId, rev); // pointer only — the prior rows stay
     });
+    // decision_amended — confirms the append-only immutability promise is being
+    // exercised (§1c amend-not-overwrite). Carries the new rev number, no content.
+    analytics.decisionAmended({ projectId: existing.projectId, actorPartyId, decisionId, rev: appendedRev });
     return view(existing.projectId, decisionId);
   }
 

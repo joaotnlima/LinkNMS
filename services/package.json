@@ -7,7 +7,8 @@
   "scripts": {
     "migrate": "node ../db/migrate.mjs",
     "test": "node --test **/*.test.mjs",
-    "test:ledger": "node --test ledger/hash-chain.test.mjs ledger/pg-ledger.test.mjs"
+    "test:ledger": "node --test ledger/hash-chain.test.mjs ledger/pg-ledger.test.mjs",
+    "test:analytics": "node --test analytics/analytics.test.mjs composition.test.mjs"
   },
   "dependencies": {
     "pg": "^8.13.1"
