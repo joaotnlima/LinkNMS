@@ -1,0 +1,13 @@
+-- SUPERSEDED — intentionally a no-op. Do not add statements here.
+--
+-- An earlier draft of this file defined the ledger grant matrix using a
+-- `linknms_ledger` role scheme and a `ledger.project_audit` view. The canonical
+-- Slice-0 grant matrix now lives in `0002_ledger_roles.sql` (role `ledger_app`,
+-- authored with the trust-anchor). Two grant conventions in one schema is a
+-- footgun, so this file was reconciled down to nothing rather than deleted
+-- (the runner had already recorded the filename).
+--
+-- Open review item for the Founding Engineer (trust-anchor owner): the issue
+-- asks for "SELECT on a per-project audit VIEW", whereas 0002_ledger_roles grants
+-- SELECT directly on `ledger.audit_event`. If a view is preferred as the read
+-- surface, add it as a NEW forward migration (0003_*) — never edit an applied one.
