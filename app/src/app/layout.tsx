@@ -1,14 +1,17 @@
 import type { Metadata } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'LinkNMS',
-  description: 'Shared construction record — R0',
+  title: 'LinkNMS — shared construction record',
+  description: 'One shared record of what was agreed, what changed, and what it cost.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <div className="shell">{children}</div>
+      </body>
     </html>
   );
 }
