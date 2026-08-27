@@ -18,10 +18,11 @@
 
 import { randomUUID } from 'node:crypto';
 import { DomainError, LedgerBudgetConflict } from './ports.mjs';
+import { createNoopAnalytics } from '../analytics/analytics.mjs';
 
 const now = () => new Date().toISOString();
 
-export function createChangeOrderService({ store, ledger, identity }) {
+export function createChangeOrderService({ store, ledger, identity, analytics = createNoopAnalytics() }) {
   if (!store || !ledger || !identity) {
     throw new Error('createChangeOrderService requires { store, ledger, identity } ports');
   }
@@ -29,7 +30,7 @@ export function createChangeOrderService({ store, ledger, identity }) {
   // ---- propose (opens *proposed*) — FR3, FR8 ------------------------------
   // POST /projects/:id/change-orders
   function propose(projectId, actorPartyId, input) {
-    identity.requireMember(actorPartyId, projectId); // any member may propose (ADR-0004)
+    const membership = identity.requireMember(actorPartyId, projectId); // any member may propose (ADR-0004)
 
     const { title, costDeltaCents } = input ?? {};
     if (!title || typeof title !== 'string') {
@@ -63,7 +64,7 @@ export function createChangeOrderService({ store, ledger, identity }) {
       decision_idempotency_key: null,
     };
 
-    return store.transaction((tx) => {
+    const result = store.transaction((tx) => {
       store.insert(tx, row);
       // The proposal is a ledgered event; proposing never moves the budget.
       ledger.append(tx, {
@@ -85,6 +86,22 @@ export function createChangeOrderService({ store, ledger, identity }) {
       });
       return view(id);
     });
+
+    // change_order_raised — after commit. Only flags/ids/cents, never the title
+    // or scope/quality note text (§3): has_scope_note, not the note itself.
+    analytics.changeOrderRaised({
+      projectId,
+      actorPartyId,
+      actorRole: membership?.role ?? null,
+      changeOrderId: id,
+      costDeltaCents,
+      linkedToDecision: row.decision_id != null,
+      scheduleImpactDays: row.schedule_impact_days,
+      hasScopeNote: row.scope_impact_note != null,
+      qualityFlag: row.quality_flag,
+    });
+
+    return result;
   }
 
   // ---- decide (approve | reject) — FR4, FR5 -------------------------------
@@ -100,7 +117,7 @@ export function createChangeOrderService({ store, ledger, identity }) {
     const existing = store.get(changeOrderId);
     if (!existing) throw new DomainError(404, 'not_found', 'change order not found');
 
-    identity.requireMember(actorPartyId, existing.project_id); // member of THIS project
+    const membership = identity.requireMember(actorPartyId, existing.project_id); // member of THIS project
 
     // FR4 — a proposer can never decide their own CO. Checked before we touch
     // the DB so the caller gets a clean 403; the CHECK is the backstop.
@@ -124,7 +141,12 @@ export function createChangeOrderService({ store, ledger, identity }) {
     const status = decision === 'approve' ? 'approved' : 'rejected';
     const decidedAt = now();
 
-    return store.transaction((tx) => {
+    // Set inside the unit of work, read after it commits. Analytics must describe
+    // what actually landed, so a lost race or an idempotent replay emits nothing.
+    let decisionApplied = false;
+    let budgetMoved = false;
+
+    const decided = store.transaction((tx) => {
       const result = store.decide(tx, {
         id: changeOrderId,
         status,
@@ -143,6 +165,8 @@ export function createChangeOrderService({ store, ledger, identity }) {
         throw new DomainError(409, 'already_decided',
           `change order is already ${fresh?.status ?? 'decided'} and cannot be changed`);
       }
+
+      decisionApplied = true;
 
       ledger.append(tx, {
         projectId: existing.project_id,
@@ -168,6 +192,7 @@ export function createChangeOrderService({ store, ledger, identity }) {
             actorPartyId,
             occurredAt: decidedAt,
           });
+          budgetMoved = true;
         } catch (err) {
           if (!(err instanceof LedgerBudgetConflict)) throw err;
           // A budget_event already exists for this CO → the move already
@@ -177,6 +202,40 @@ export function createChangeOrderService({ store, ledger, identity }) {
 
       return view(changeOrderId);
     });
+
+    if (decisionApplied) {
+      // change_order_decided — the A3 gate event. is_self_approval is computed
+      // HERE, server-side, from the stored proposer vs the authenticated actor:
+      // the client actor-switcher cannot reach this value. It is always 0 while
+      // the FR4 gate above holds, which is exactly why we send it — a 1 in the
+      // data means the gate regressed (§2.4).
+      analytics.changeOrderDecided({
+        projectId: existing.project_id,
+        actorPartyId,
+        decidedByRole: membership?.role ?? null,
+        changeOrderId,
+        decision: status, // 'approved' | 'rejected'
+        costDeltaCents: existing.cost_delta_cents,
+        isSelfApproval: actorPartyId === existing.proposed_by_party_id,
+        raisedAt: existing.created_at,
+        decidedAt,
+      });
+
+      // budget_event_written — only when THIS call actually moved the budget, so
+      // the event count matches the ledger's budget_event rows exactly once.
+      if (budgetMoved) {
+        analytics.budgetEventWritten({
+          projectId: existing.project_id,
+          actorPartyId,
+          actorRole: membership?.role ?? null,
+          changeOrderId,
+          deltaCents: existing.cost_delta_cents,
+          newCurrentCents: ledger.currentBudget(existing.project_id).currentCents,
+        });
+      }
+    }
+
+    return decided;
   }
 
   // ---- the one-screen answer — FR6 ----------------------------------------
