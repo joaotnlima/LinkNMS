@@ -14,6 +14,11 @@ CREATE SCHEMA IF NOT EXISTS change_order;
 
 CREATE TABLE change_order.change_order (
   id                     uuid PRIMARY KEY,
+  -- Monotonic insertion order within the whole table. `created_at` alone is not a
+  -- total order — two COs can share a microsecond timestamp — so chronological
+  -- listing (FR7, design §353 "ordered by created_at/seq") tie-breaks on this
+  -- gap-free identity counter, never on the random `id`. Assigned by the DB.
+  seq                    bigint GENERATED ALWAYS AS IDENTITY,
   project_id             uuid NOT NULL,
   -- Optional link to the decision this change order sources from (FR3). FK is
   -- cross-schema in R0's single instance; enforced by the Decision Log service
@@ -65,8 +70,10 @@ CREATE UNIQUE INDEX change_order_decision_idempotency_key_uq
   ON change_order.change_order (decision_idempotency_key)
   WHERE decision_idempotency_key IS NOT NULL;
 
+-- Chronological listing per project (FR7): order by wall-clock, break ties on the
+-- monotonic `seq` for a deterministic total order regardless of clock resolution.
 CREATE INDEX change_order_project_created_idx
-  ON change_order.change_order (project_id, created_at, id);
+  ON change_order.change_order (project_id, created_at, seq);
 
 -- NOTE for Slice 1 (Ledger & Budget): `ledger.budget_event` carries
 -- `UNIQUE(change_order_id)` so an approved CO moves the budget exactly once,

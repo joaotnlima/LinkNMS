@@ -124,6 +124,7 @@ export function createInMemoryIdentity({ memberships = [] } = {}) {
 export function createInMemoryStore() {
   const rows = new Map(); // id -> row
   const idempotencyKeys = new Set();
+  let seqCounter = 0; // mirrors `seq bigint GENERATED ALWAYS AS IDENTITY`
 
   function transaction(fn) {
     // Single-threaded in tests; the real adapter opens a Postgres tx here and
@@ -132,7 +133,9 @@ export function createInMemoryStore() {
   }
 
   function insert(_tx, row) {
-    rows.set(row.id, { ...row });
+    // The DB assigns `seq` (GENERATED ALWAYS AS IDENTITY); do the same here so
+    // chronological ordering is a deterministic total order, never id-tiebroken.
+    rows.set(row.id, { ...row, seq: ++seqCounter });
     return { ...rows.get(row.id) };
   }
 
@@ -142,9 +145,12 @@ export function createInMemoryStore() {
   }
 
   function listByProject(projectId) {
+    // ORDER BY created_at, seq — the same total order as the SQL index
+    // change_order_project_created_idx (project_id, created_at, seq). `seq` is the
+    // deterministic tiebreak, so equal timestamps still list in insertion order.
     return [...rows.values()]
       .filter((r) => r.project_id === projectId)
-      .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : (a.id < b.id ? -1 : 1)))
+      .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.seq - b.seq))
       .map((r) => ({ ...r }));
   }
 
