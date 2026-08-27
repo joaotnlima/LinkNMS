@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale } from 'next-intl';
-import posthog from 'posthog-js';
+import { track } from '@/lib/analytics-client';
 import { usePathname, useRouter } from '@/i18n/navigation';
 import { routing } from '@/i18n/routing';
 
@@ -24,7 +24,7 @@ export function LangSwitcher({ label }: { label: string }) {
           aria-pressed={l === locale}
           onClick={() => {
             if (l !== locale) {
-              posthog.capture('language_selected', { locale: l });
+              track('language_switch', { from: locale, to: l });
             }
             router.replace(pathname, { locale: l });
           }}

@@ -1,24 +1,29 @@
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
 import {
-  pgTable,
+  pgSchema,
   uuid,
   text,
   timestamp,
   index
 } from 'drizzle-orm/pg-core';
 
+// Everything for this landing page lives in its own `landing` schema — the
+// `public` schema is intentionally left empty (LINA-34).
+export const landing = pgSchema('landing');
+
 // Waitlist signups — source of truth for the {verified}/150 count.
 // email_norm is unique so dedupe is enforced at the database.
-export const signups = pgTable(
+export const signups = landing.table(
   'signups',
   {
     id: uuid('id').defaultRandom().primaryKey(),
     email: text('email').notNull(), // as entered
     emailNorm: text('email_norm').notNull().unique(), // dedupe key
-    role: text('role'), // optional
+    role: text('role'), // stable enum key (see ROLE_KEYS in WaitlistForm), not a display label
     locale: text('locale').notNull().default('pt'),
-    source: text('source').notNull().default('organic'),
+    source: text('source').notNull().default('organic'), // utm_source / referring host / 'direct'
+    referrer: text('referrer'), // raw document.referrer captured on submit
     status: text('status').notNull().default('unconfirmed'), // unconfirmed | confirmed
     confirmToken: text('confirm_token'), // random, single-use
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

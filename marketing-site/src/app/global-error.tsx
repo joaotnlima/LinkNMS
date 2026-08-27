@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import posthog from 'posthog-js';
+import { initPostHog, isAnalyticsEnabled } from '@/lib/analytics-client';
 
 export default function GlobalError({
   error,
@@ -11,6 +12,10 @@ export default function GlobalError({
   reset: () => void;
 }>) {
   useEffect(() => {
+    // This boundary replaces the root layout, so PostHogProvider is unmounted —
+    // initialize on demand (no-op without the key) before capturing.
+    if (!isAnalyticsEnabled()) return;
+    initPostHog();
     posthog.captureException(error);
   }, [error]);
 

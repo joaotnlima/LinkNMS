@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { track } from '@/lib/analytics-client';
+import { CtaLink } from './CtaLink';
 
 // Rotating hero: cycles the 4 persona headlines (~3.5s, ~0.5s fade), homeowner
 // first. Pauses on pointer/focus interaction, honours reduced-motion, and locks
@@ -13,6 +15,25 @@ export function Hero() {
   const [fading, setFading] = useState(false);
   const pausedRef = useRef(false);
   const lockedRef = useRef(false);
+  const sectionRef = useRef<HTMLElement>(null);
+
+  // hero_view — fire once when the hero scrolls into view (immediate on load
+  // since it's above the fold). Marks the top of the waitlist funnel.
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          track('hero_view');
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.4 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const reduce =
@@ -57,6 +78,7 @@ export function Hero() {
 
   return (
     <section
+      ref={sectionRef}
       className="hero wrap"
       id="top"
       onMouseEnter={pause}
@@ -72,9 +94,9 @@ export function Hero() {
       </h1>
       <p className="lead body">{t('lede')}</p>
       <div className="actions">
-        <a className="btn-pill" href="#contact">
+        <CtaLink location="hero" className="btn-pill" href="#contact">
           {t('cta')}
-        </a>
+        </CtaLink>
         <a className="link-u" href="#features">
           {t('link')}
         </a>

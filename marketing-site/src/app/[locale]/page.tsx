@@ -4,6 +4,7 @@ import { Hero } from '@/components/Hero';
 import { Audience } from '@/components/Audience';
 import { WaitlistForm } from '@/components/WaitlistForm';
 import { HouseMark } from '@/components/HouseMark';
+import { CtaLink } from '@/components/CtaLink';
 
 type Item = { b: string; s: string };
 type Step = { n: string; t: string; b: string };
@@ -257,7 +258,9 @@ export default async function Home({
         </span>
         <nav aria-label="Footer">
           <a href="#features">{t('footer.how')}</a>
-          <a href="#contact">{t('footer.wl')}</a>
+          <CtaLink location="final" href="#contact">
+            {t('footer.wl')}
+          </CtaLink>
           <a href="#">{t('footer.privacy')}</a>
           <a href="#">{t('footer.contact')}</a>
         </nav>
