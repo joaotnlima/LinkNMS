@@ -23,7 +23,7 @@
       "El mismo registro, para todos en la obra.",
       "Previsto contra real, en un solo lugar."
     ],
-    "personas": ["Propietario", "Contratista", "Especialidad", "Arquitecto"],
+    "personas": ["Propietario", "Contratista", "Gremio", "Arquitecto"],
     "lede": "LinkNMS es el registro compartido y verificable de una obra — el terreno neutral donde el propietario y todos los que trabajan en ella discuten desde el registro, no desde la memoria.",
     "cta": "Únete a la lista de espera",
     "link": "Ver cómo funciona"
@@ -39,7 +39,7 @@
     "cards": [
       { "t": "Propietario", "b": "Ve el presupuesto, el calendario y cada decisión — sin una segunda contabilidad privada." },
       { "t": "Contratista / constructor", "b": "Cada cambio que registras queda en el registro: quién lo acordó, cuándo y por cuánto." },
-      { "t": "Especialidad / subcontratista", "b": "Las mismas tareas y alcance que ven los demás — sin versiones divergentes, sin líneas cruzadas." },
+      { "t": "Gremio / subcontratista", "b": "Las mismas tareas y alcance que ven los demás — sin versiones divergentes, sin malentendidos." },
       { "t": "Arquitecto", "b": "El modelo adjunto al registro, lo previsto contra lo que ocurrió en obra." }
     ]
   },
@@ -83,7 +83,7 @@
         { "b": "El registro compartido y verificable", "s": "de una obra." },
         { "b": "Terreno neutral", "s": "para propietario, contratista y cada especialidad." },
         { "b": "Tiempo, dinero, alcance e historial", "s": "en un solo lugar." },
-        { "b": "Todas tus obras en un solo lugar", "s": "— alterna entre ellas, un panel de portafolio." },
+        { "b": "Todas tus obras en un solo lugar", "s": "— alterna entre ellas, un panel de cartera." },
         { "b": "Carga y previsualización de BIM", "s": "— el modelo, adjunto al registro." }
       ]
     },
@@ -104,7 +104,7 @@
     "columns": [
       { "t": "Obra individual", "b": "Un propietario gestionando una obra con su contratista. El registro esencial, gratis mientras estamos en desarrollo." },
       { "t": "Obra activa", "b": "La obra en curso con cada especialidad en el mismo registro — previsto vs. real, aprobaciones, previsualización BIM." },
-      { "t": "Portafolio", "b": "Varias obras a la vez en un panel de portafolio, para contratistas y propietarios con más de una." }
+      { "t": "Cartera", "b": "Varias obras a la vez en un panel de cartera, para contratistas y propietarios con más de una." }
     ]
   },
   "faq": {
@@ -121,11 +121,11 @@
       },
       {
         "q": "Tengo varias obras. ¿Puedo gestionarlas todas aquí?",
-        "a": "Sí — LinkNMS es multiobra por diseño. Alternas entre tus obras y las ves todas en un panel de portafolio: salud del presupuesto, calendario y aprobaciones pendientes por obra. Lo que <b>no</b> es: tu back office — sin contabilidad, nóminas ni CRM."
+        "a": "Sí — LinkNMS es multiobra por diseño. Alternas entre tus obras y las ves todas en un panel de cartera: salud del presupuesto, calendario y aprobaciones pendientes por obra. Lo que <b>no</b> es: tu back office — sin contabilidad, nóminas ni CRM."
       },
       {
         "q": "¿Puedo traer mi modelo BIM?",
-        "a": "Sí — LinkNMS está pensado para <b>cargar y previsualizar</b> el modelo del proyecto y enviarlo como el registro BIM de la obra, adjunto al historial. No es una herramienta de modelado: no crea, no edita ni hace detección de conflictos."
+        "a": "Sí — LinkNMS está pensado para <b>cargar y previsualizar</b> el modelo del proyecto y enviarlo como el registro BIM de la obra, adjunto al historial. No es una herramienta de modelado: no crea, no edita ni hace detección de interferencias."
       },
       {
         "q": "¿Funciona en mi móvil?",
@@ -143,7 +143,7 @@
     "roleOptions": {
       "homeowner": "Propietario de una obra",
       "contractor": "Contratista / constructor",
-      "subcontractor": "Especialidad / subcontratista",
+      "subcontractor": "Gremio / subcontratista",
       "architect": "Arquitecto",
       "site_manager": "Jefe de obra",
       "other": "Otro"
