@@ -85,6 +85,31 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
         run: npm run test:ledger
 
+  analytics-tests:
+    name: Analytics — event contract + composition root
+    runs-on: ubuntu-latest
+
+    # No database and no network: the suites run the real Identity / Decision /
+    # Change Order services over in-memory ports and assert against a memory
+    # sink. They are the Product Analytics Lead's LINA-28 acceptance gate
+    # (8 Group-A events, project group, distinct_id == party_id, is_self_approval,
+    # the no-PII guard) plus the LINA-58 composition root — analytics injected
+    # into every service, and a flush before every response returns.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: services
+        run: npm install --ignore-scripts
+
+      - name: Run analytics + composition tests
+        working-directory: services
+        run: npm run test:analytics
+
   app-typecheck:
     name: App — typecheck
     runs-on: ubuntu-latest
