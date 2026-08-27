@@ -86,13 +86,10 @@ GRANT SELECT, INSERT, UPDATE ON TABLE identity.invitation TO identity_app;
 -- The project projection write and this append commit in ONE cross-schema
 -- transaction on identity_app's connection.
 --
--- NOTE for the trust-anchor owner (Founding Engineer): 0002_ledger_roles.sql
--- enumerated EXECUTE for ledger_app/decision_app/change_order_app but omitted
--- identity_app, which also produces events. This grant closes that gap from the
--- consuming service's own migration (the migrator owns the function, so the GRANT
--- is valid here). If you'd rather centralise the seam in the ledger's grant
--- matrix, add a forward 0003_ledger_*.sql and drop this block — never edit an
--- applied file.
-GRANT USAGE ON SCHEMA ledger TO identity_app;
-GRANT EXECUTE ON FUNCTION
-  ledger.append_event(uuid, text, uuid, timestamptz, jsonb, text) TO identity_app;
+-- The USAGE + EXECUTE grants that wire identity_app to ledger.append_event live
+-- in services/ledger/migrations/0003_ledger_identity_grant.sql. They MUST NOT be
+-- here: the migration runner applies services alphabetically, so `identity` runs
+-- before `ledger` — a grant referencing ledger.append_event from this file fails
+-- the forward pass with "function does not exist". Centralising the seam in the
+-- ledger's own grant matrix (0003) keeps the forward pass ordered and the trust
+-- anchor's grants in one place (ADR-0006 §1).
