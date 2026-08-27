@@ -1,9 +1,13 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import posthog from 'posthog-js';
+import { track } from '@/lib/analytics-client';
 
 type Card = { t: string; b: string };
+
+// Card order is fixed across all locales (homeowner, contractor, sub, architect);
+// map the index to the stable persona slug the LINA-33 spec expects.
+const PERSONAS = ['homeowner', 'gc', 'sub', 'architect'] as const;
 
 // Audience selector: 4 cards. Selecting one locks the rotating hero on the
 // matching persona headline via the `lock-hero` event.
@@ -12,7 +16,7 @@ export function Audience() {
   const cards = t.raw('cards') as Card[];
 
   const lock = (i: number) => {
-    posthog.capture('audience_selected', { audience_index: i });
+    track('audience_card_click', { persona: PERSONAS[i] ?? String(i) });
     window.dispatchEvent(new CustomEvent<number>('lock-hero', { detail: i }));
     document.getElementById('top')?.scrollIntoView({ behavior: 'smooth' });
   };

@@ -26,21 +26,8 @@ export function isValidEmail(email: string): boolean {
   return EMAIL_RE.test(email) && email.length <= 254;
 }
 
-// Normalize for dedupe: lowercase + trim, and for Gmail strip dots and the
-// +tag from the local part (all route to the same inbox).
-export function normalizeEmail(email: string): string {
-  const trimmed = email.trim().toLowerCase();
-  const at = trimmed.lastIndexOf('@');
-  if (at < 0) return trimmed;
-  let local = trimmed.slice(0, at);
-  const domain = trimmed.slice(at + 1);
-  if (domain === 'gmail.com' || domain === 'googlemail.com') {
-    local = local.split('+')[0].replace(/\./g, '');
-    return `${local}@gmail.com`;
-  }
-  local = local.split('+')[0];
-  return `${local}@${domain}`;
-}
+// Normalize for dedupe: shared with the client so analytics distinct_ids match.
+export { normalizeEmail } from './email-normalize';
 
 export function isDisposable(email: string): boolean {
   const domain = email.slice(email.lastIndexOf('@') + 1);

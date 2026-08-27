@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+import { identifyByEmail, track } from '@/lib/analytics-client';
+import { normalizeEmail } from '@/lib/email-normalize';
 
 type State = 'idle' | 'submitting' | 'success' | 'dup' | 'error';
 
@@ -78,6 +80,14 @@ export function WaitlistForm({ source }: { source: string }) {
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const widgetRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
+  // form_start fires once per mount, on the first focus of the email field.
+  const startedRef = useRef(false);
+
+  const onEmailFocus = () => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    track('form_start', { form_location: source });
+  };
 
   useEffect(() => {
     if (!siteKey) return;
@@ -111,6 +121,7 @@ export function WaitlistForm({ source }: { source: string }) {
     e.preventDefault();
     const form = e.currentTarget;
     const data = new FormData(form);
+    const email = String(data.get('email') || '');
     setState('submitting');
     const { source: effectiveSource, referrer } = acquisition(source);
     const honeypot = String(data.get('company') || '').trim();
@@ -119,7 +130,7 @@ export function WaitlistForm({ source }: { source: string }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: String(data.get('email') || ''),
+          email,
           role: String(data.get('role') || ''), // stable enum key
           // Honeypot: only sent when actually filled (i.e. by a bot). Real
           // submissions omit it entirely rather than posting an empty field.
@@ -131,8 +142,16 @@ export function WaitlistForm({ source }: { source: string }) {
         })
       });
       if (res.status === 409) {
+        // Known email — still a real person; join their session to the
+        // server-side conversion events keyed on the normalized email.
+        identifyByEmail(normalizeEmail(email));
         setState('dup');
       } else if (res.ok) {
+        // Join this anonymous session to the server-side `waitlist_submitted` /
+        // `waitlist_verified` events (both keyed on the normalized email) so the
+        // funnel reconciles across client + server. We do NOT re-fire the submit
+        // event here — the server owns it.
+        identifyByEmail(normalizeEmail(email));
         setState('success');
         form.reset();
       } else {
@@ -166,7 +185,15 @@ export function WaitlistForm({ source }: { source: string }) {
       <form className="field" onSubmit={onSubmit} noValidate>
         <div className="inp">
           <label htmlFor="email">{t('email')}</label>
-          <input id="email" name="email" type="email" placeholder={t('emailPh')} required autoComplete="email" />
+          <input
+            id="email"
+            name="email"
+            type="email"
+            placeholder={t('emailPh')}
+            required
+            autoComplete="email"
+            onFocus={onEmailFocus}
+          />
         </div>
         <div className="inp">
           <label htmlFor="role">{t('role')}</label>
