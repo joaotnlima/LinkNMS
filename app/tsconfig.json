@@ -24,6 +24,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@services/*": [
+        "../services/*"
       ]
     },
     "target": "ES2017"
@@ -32,7 +35,8 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    "../services/**/*.mjs"
   ],
   "exclude": [
     "node_modules"
