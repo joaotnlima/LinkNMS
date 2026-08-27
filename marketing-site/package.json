@@ -19,7 +19,7 @@
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1",
     "drizzle-orm": "^0.44.2",
-    "next": "^15.5.4",
+    "next": "15.5.9",
     "next-intl": "^4.3.4",
     "posthog-js": "^1.420.0",
     "posthog-node": "^5.51.2",
