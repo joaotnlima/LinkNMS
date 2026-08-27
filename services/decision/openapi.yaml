@@ -1,0 +1,276 @@
+openapi: 3.1.0
+info:
+  title: LinkNMS — Decision Log API
+  version: 0.1.0-r0
+  description: >-
+    Record and revise decisions for the R0 shared record (LINA-38 / design §4.1,
+    §6, §12 Slice 3; ADR-0002/0003/0004; FR2, FR7). A decision is recorded as
+    revision 1. Revising it **appends** revision 2..n — rev 1 is never overwritten
+    and no past revision is ever mutated (append-only at the service AND at the
+    `decision_revision` GRANT level). Every write is one transaction: the
+    projection upsert plus a `ledger.append_event(decision_recorded |
+    decision_revised)`, so the immutable, hash-chained fact and the readable
+    projection commit together.
+
+    Author and timestamp are **server-authoritative** on every revision — taken
+    from the authenticated session and the server clock, never from the request
+    body (ADR-0004). `GET /projects/{projectId}/decisions` returns the full
+    history in chronological order (FR7); each decision carries its complete
+    revision list so "who changed this, and when?" is a lookup.
+servers:
+  - url: /api
+    description: R0 single-instance gateway (services share one Postgres, one schema each)
+
+tags:
+  - name: decisions
+    description: Record, revise, and list decisions (append-only over the ledger).
+
+paths:
+  /projects/{projectId}/decisions:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [decisions]
+      operationId: listDecisions
+      summary: List a project's decisions, chronological (FR7)
+      description: >-
+        All decisions for the project, oldest first (ordered by `created_at` then
+        the monotonic `seq` for a deterministic total order). Each decision
+        includes its full revision history. Caller must be a member.
+      responses:
+        '200':
+          description: Decisions, oldest first, each with its full revision history.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [decisions]
+                properties:
+                  decisions:
+                    type: array
+                    items: { $ref: '#/components/schemas/Decision' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [decisions]
+      operationId: recordDecision
+      summary: Record a decision — creates revision 1 (FR2)
+      description: >-
+        Records a new decision as revision 1. Author and timestamp are set
+        server-side. Ledgers a `decision_recorded` event and writes the rev-1
+        projection row in the SAME transaction. Any project member may record.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecisionWriteRequest' }
+      responses:
+        '201':
+          description: The newly recorded decision (currentRev = 1, edited = false).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Decision' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /decisions/{decisionId}:
+    parameters:
+      - $ref: '#/components/parameters/DecisionId'
+    patch:
+      tags: [decisions]
+      operationId: reviseDecision
+      summary: Revise a decision — appends the next revision (FR2)
+      description: >-
+        Appends revision `max + 1` with its own author + server timestamp. Rev 1
+        is never touched and no prior revision is mutated. Ledgers a
+        `decision_revised` event and inserts the new revision row in the SAME
+        transaction, then advances the decision's `currentRev` pointer. Any
+        project member may revise.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecisionWriteRequest' }
+      responses:
+        '200':
+          description: >-
+            The decision after the revision — `currentRev` advanced, `edited` true,
+            and the appended revision at the end of `revisions`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Decision' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      description: Project (UUID).
+      schema: { type: string, format: uuid }
+    DecisionId:
+      name: decisionId
+      in: path
+      required: true
+      description: Decision (UUID).
+      schema: { type: string, format: uuid }
+
+  responses:
+    ValidationError:
+      description: >-
+        `validation_error` — a required field is missing or malformed: title
+        absent / empty / over 200 chars, or body not a string / over 20000 chars.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthenticated:
+      description: '`unauthorized` — no acting party on the request.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: '`forbidden` — the acting party may not perform this action in this project.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: '`not_found` — no decision with that id.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    DecisionWriteRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        The body for both record (POST) and revise (PATCH). Only the decision
+        content is accepted; author and timestamp are ALWAYS derived server-side
+        and any such fields in the body are ignored (ADR-0004).
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Short human title for the decision. Trimmed; must be non-empty.
+        body:
+          type: [string, 'null']
+          maxLength: 20000
+          description: >-
+            Optional detail. Absent/null is normalized to an empty string in the
+            projection, so every revision has a definite body.
+
+    Decision:
+      type: object
+      additionalProperties: false
+      description: >-
+        A decision aggregate: genesis metadata, the current (latest-revision)
+        title/body, and the full append-only revision history (FR2, FR7). This is
+        the record, revise, and list-item response body.
+      required:
+        - id
+        - projectId
+        - createdByPartyId
+        - createdAt
+        - currentRev
+        - edited
+        - title
+        - body
+        - original
+        - revisions
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        createdByPartyId:
+          type: string
+          format: uuid
+          description: Party that recorded revision 1.
+        createdAt:
+          type: string
+          format: date-time
+          description: When revision 1 was recorded (server clock).
+        currentRev:
+          type: integer
+          minimum: 1
+          description: The live revision number (= number of revisions).
+        edited:
+          type: boolean
+          description: True once at least one revision has been appended (currentRev > 1).
+        title:
+          type: string
+          description: Title of the current (latest) revision.
+        body:
+          type: string
+          description: Body of the current (latest) revision.
+        original:
+          $ref: '#/components/schemas/DecisionOriginal'
+        revisions:
+          type: array
+          description: Full revision history in ascending `rev` order; rev 1 is always first.
+          items: { $ref: '#/components/schemas/DecisionRevision' }
+
+    DecisionOriginal:
+      type: object
+      additionalProperties: false
+      description: The immutable revision 1 — the decision as first recorded.
+      required: [rev, title, body, authorPartyId, at]
+      properties:
+        rev:
+          type: integer
+          const: 1
+        title: { type: string }
+        body: { type: string }
+        authorPartyId:
+          type: string
+          format: uuid
+          description: Party that recorded revision 1.
+        at:
+          type: string
+          format: date-time
+          description: When revision 1 was recorded.
+
+    DecisionRevision:
+      type: object
+      additionalProperties: false
+      description: One version in the append-only history, with its own author + timestamp.
+      required: [rev, title, body, authorPartyId, at, auditEventId]
+      properties:
+        rev:
+          type: integer
+          minimum: 1
+          description: Revision number. rev 1 is the original; amendments are 2..n.
+        title: { type: string }
+        body: { type: string }
+        authorPartyId:
+          type: string
+          format: uuid
+          description: Party that authored THIS revision (server-derived).
+        at:
+          type: string
+          format: date-time
+          description: When THIS revision was written (server clock).
+        auditEventId:
+          type: string
+          description: The ledger audit event this revision was chained into (same transaction).
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: >-
+            Stable machine code, one of: validation_error, unauthorized,
+            forbidden, not_found.
+        message:
+          type: string
+          description: Human-readable explanation.

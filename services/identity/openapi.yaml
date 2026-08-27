@@ -1,0 +1,320 @@
+openapi: '3.1.0'
+info:
+  title: 'LinkNMS Identity & Membership'
+  version: '0.1.0'
+  description: 'Projects, memberships, invitations, and the sole authorizer (ADR-0004). The acting party is always derived server-side from the session, never the body.'
+servers:
+  - url: /api/v1
+paths:
+  '/projects':
+    post:
+      operationId: createProject
+      summary: Start a shared record; the creator becomes its owner (FR1).
+      requestBody:
+        required: true
+        content:
+          'application/json':
+            schema:
+              '$ref': '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Project'
+        '400':
+          description: Invalid name or baseline
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '401':
+          description: No acting party in session
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+  '/projects/{id}':
+    get:
+      operationId: getProject
+      summary: Project + memberships + budget summary. Members only.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project view
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Project'
+        '401':
+          description: No acting party in session
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '403':
+          description: Not a member of this project
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '404':
+          description: Project not found
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+  '/projects/{id}/invitations':
+    post:
+      operationId: inviteCounterparty
+      summary: Invite the one GC (counterparty). Owner only (FR1).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          'application/json':
+            schema:
+              '$ref': '#/components/schemas/InviteRequest'
+      responses:
+        '201':
+          description: Invitation minted; raw token returned once
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/InvitationCreated'
+        '400':
+          description: Unsupported role
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '401':
+          description: No acting party in session
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '403':
+          description: Only the owner may invite
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '404':
+          description: Project not found
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '409':
+          description: A counterparty or pending invite already exists
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+  '/invitations/{token}/accept':
+    post:
+      operationId: acceptInvitation
+      summary: The invited GC accepts and joins as counterparty.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Joined; membership created
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/MembershipCreated'
+        '400':
+          description: Missing token
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '401':
+          description: No acting party in session
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '404':
+          description: Invitation not found
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '409':
+          description: 'Invitation already accepted, or already a member'
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+components:
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - unauthenticated
+                - forbidden
+                - not_found
+                - conflict
+                - bad_request
+            message:
+              type: string
+    Member:
+      type: object
+      required:
+        - partyId
+        - role
+        - joinedAt
+      properties:
+        partyId:
+          type: string
+        role:
+          type: string
+          enum:
+            - owner
+            - counterparty
+        joinedAt:
+          type: string
+    Project:
+      type: object
+      required:
+        - id
+        - name
+        - ownerPartyId
+        - baselineBudgetCents
+        - currentBudgetCents
+        - actingRole
+        - createdAt
+        - members
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        ownerPartyId:
+          type: string
+        baselineBudgetCents:
+          type: integer
+        currentBudgetCents:
+          type: integer
+        actingRole:
+          type: string
+          enum:
+            - owner
+            - counterparty
+        createdAt:
+          type: string
+        members:
+          type: array
+          items:
+            '$ref': '#/components/schemas/Member'
+    Membership:
+      type: object
+      required:
+        - id
+        - projectId
+        - partyId
+        - role
+        - joinedAt
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        partyId:
+          type: string
+        role:
+          type: string
+          enum:
+            - owner
+            - counterparty
+        joinedAt:
+          type: string
+    Invitation:
+      type: object
+      required:
+        - id
+        - projectId
+        - role
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        role:
+          type: string
+          enum:
+            - owner
+            - counterparty
+        status:
+          type: string
+          enum:
+            - pending
+            - accepted
+        createdAt:
+          type: string
+    InvitationCreated:
+      type: object
+      required:
+        - invitation
+        - token
+      properties:
+        invitation:
+          '$ref': '#/components/schemas/Invitation'
+        token:
+          type: string
+    MembershipCreated:
+      type: object
+      required:
+        - membership
+      properties:
+        membership:
+          '$ref': '#/components/schemas/Membership'
+    CreateProjectRequest:
+      type: object
+      required:
+        - name
+        - baselineBudgetCents
+      properties:
+        name:
+          type: string
+        baselineBudgetCents:
+          type: integer
+          minimum: 0
+    InviteRequest:
+      type: object
+      properties:
+        role:
+          type: string
+          enum:
+            - counterparty

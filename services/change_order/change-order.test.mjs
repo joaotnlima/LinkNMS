@@ -311,3 +311,38 @@ test('multiple approved change orders sum into the budget, each contribution iso
   assert.equal(viewB.budget.afterCents - viewB.budget.beforeCents, 250_000);
   assert.equal(viewB.budget.currentCents, BASELINE + 350_000);
 });
+
+// ---- published spec ⇄ code contract ---------------------------------------
+// The header of this file promises: "a drift between code and the spec fails the
+// build". The services layer is zero-dep (no YAML parser), so we extract each
+// schema's `required:` block from openapi.yaml directly and assert it is exactly
+// the field set the code returns. Add/remove a field in either place → this fails.
+
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+// Returns the `- name` bullets under the first `required:` that follows the given
+// top-level `SchemaName:` line in the spec, until the block's indentation ends.
+function specRequired(yaml, schemaName) {
+  const lines = yaml.split('\n');
+  const start = lines.findIndex((l) => l.trimEnd() === `    ${schemaName}:`);
+  assert.ok(start >= 0, `openapi.yaml must define schema ${schemaName}`);
+  const reqIdx = lines.findIndex((l, i) => i > start && /^\s{6}required:\s*$/.test(l));
+  assert.ok(reqIdx >= 0 && reqIdx < start + 60, `${schemaName} must have a required: block`);
+  const out = [];
+  for (let i = reqIdx + 1; i < lines.length; i++) {
+    const m = lines[i].match(/^\s{8}-\s+(\S+)\s*$/);
+    if (!m) break;
+    out.push(m[1]);
+  }
+  return out;
+}
+
+test('openapi.yaml ChangeOrder / ChangeOrderBudget required fields match the code contract', () => {
+  const specPath = fileURLToPath(new URL('./openapi.yaml', import.meta.url));
+  const yaml = readFileSync(specPath, 'utf8');
+  assert.deepEqual(specRequired(yaml, 'ChangeOrder').sort(), [...CO_VIEW_FIELDS].sort(),
+    'openapi ChangeOrder.required must equal the CO view field set');
+  assert.deepEqual(specRequired(yaml, 'ChangeOrderBudget').sort(), [...CO_BUDGET_FIELDS].sort(),
+    'openapi ChangeOrderBudget.required must equal the CO budget field set');
+});

@@ -1,0 +1,358 @@
+openapi: 3.1.0
+info:
+  title: LinkNMS — Change Order & Budget API
+  version: 0.1.0-r0
+  description: >-
+    Change Order lifecycle for the R0 shared record (LINA-39 / design §4.2, §6,
+    §12 Slice 4; ADR-0004; FR3–FR8). A change order opens *proposed* capturing a
+    cost delta plus scope / schedule / quality impact. It is decided (approve or
+    reject) **only by a member who is not the proposer** — enforced in the service
+    (403 `self_decision`) AND by the DB CHECK `decided_by <> proposed_by`. Only an
+    approval moves the budget, exactly once, via the Ledger service
+    (`budget_event UNIQUE(change_order_id)`); proposing or rejecting never moves
+    it. `GET /change-orders/{id}` is the "one screen" answer: who decided, when,
+    the cost delta, and the budget before→after.
+
+    The acting party is **server-derived** from the authenticated session
+    (ADR-0004); it is never accepted in a request body. Money is always signed
+    integer cents (a credit / de-scope is negative).
+servers:
+  - url: /api
+    description: R0 single-instance gateway (services share one Postgres, one schema each)
+
+tags:
+  - name: change-orders
+    description: Raise, list, decide, and view change orders.
+
+paths:
+  /projects/{projectId}/change-orders:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [change-orders]
+      operationId: listChangeOrders
+      summary: List a project's change orders, chronological (FR7)
+      description: >-
+        All change orders for the project, ordered by `created_at` then the
+        monotonic `seq` for a deterministic total order. Caller must be a member.
+      responses:
+        '200':
+          description: Change orders, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [changeOrders]
+                properties:
+                  changeOrders:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChangeOrder' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [change-orders]
+      operationId: proposeChangeOrder
+      summary: Raise a change order — opens *proposed* (FR3, FR8)
+      description: >-
+        Opens a change order in status `proposed`. Captures the cost delta and,
+        for transparency, the scope / schedule / quality impact — none of which
+        move the budget (FR5, FR8). Any project member may propose. Ledgers a
+        `change_order_proposed` audit event; writes no `budget_event`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProposeChangeOrderRequest' }
+      responses:
+        '201':
+          description: The newly opened (proposed) change order — the one-screen view.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeOrder' }
+        '400':
+          description: >-
+            Invalid input — `invalid_title` (missing/non-string title),
+            `invalid_cost` (costDeltaCents not an integer), or
+            `invalid_schedule_days` (scheduleImpactDays not an integer).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /change-orders/{changeOrderId}:
+    parameters:
+      - $ref: '#/components/parameters/ChangeOrderId'
+    get:
+      tags: [change-orders]
+      operationId: getChangeOrder
+      summary: The "one screen" answer (FR6)
+      description: >-
+        Who decided, when, the cost delta, and the budget before→after for this
+        change order, plus the captured scope / schedule / quality impact.
+      responses:
+        '200':
+          description: The one-screen change order view.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeOrder' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /change-orders/{changeOrderId}/decision:
+    parameters:
+      - $ref: '#/components/parameters/ChangeOrderId'
+    post:
+      tags: [change-orders]
+      operationId: decideChangeOrder
+      summary: Approve or reject — only by a non-proposer (FR4, FR5)
+      description: >-
+        Decides a *proposed* change order. The acting party must be a member and
+        must **not** be the proposer (403 `self_decision`; also a DB CHECK). On
+        `approve` the budget moves exactly once via the Ledger service; `reject`
+        never moves it. Supply `idempotencyKey` so a serverless retry replays to
+        the same result instead of double-applying or 409-ing a legitimate retry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecideChangeOrderRequest' }
+      responses:
+        '200':
+          description: >-
+            The decided change order — the one-screen view, now `approved` or
+            `rejected` with `decidedBy`, `decidedAt`, and the moved budget.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeOrder' }
+        '400':
+          description: '`invalid_decision` — decision must be "approve" or "reject".'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: >-
+            `not_a_member` (not a member of this project) or `self_decision`
+            (the proposer cannot decide their own change order — FR4).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: >-
+            `already_decided` (the CO is no longer *proposed* and cannot be
+            re-decided) or `idempotency_key_reused` (the key was already spent on
+            a different change order).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+components:
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      description: Project (UUID).
+      schema: { type: string, format: uuid }
+    ChangeOrderId:
+      name: changeOrderId
+      in: path
+      required: true
+      description: Change order (UUID).
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthenticated:
+      description: '`unauthenticated` — no acting party on the request.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: '`not_a_member` — the acting party is not a member of this project.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: '`not_found` — no change order with that id.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    ProposeChangeOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [title, costDeltaCents]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          description: Short human title for the change.
+        costDeltaCents:
+          type: integer
+          format: int64
+          description: >-
+            Signed budget impact in integer cents. Positive adds cost; negative is
+            a credit / de-scope. This is the ONLY field that ever reaches the budget.
+        decisionId:
+          type: [string, 'null']
+          format: uuid
+          description: Optional decision this change order sources from (FR3).
+        scopeImpactNote:
+          type: [string, 'null']
+          description: Scope impact, captured for transparency — never enters the budget (FR8).
+        scheduleImpactDays:
+          type: [integer, 'null']
+          description: Schedule impact in days — captured, never enters the budget (FR8).
+        scheduleImpactNote:
+          type: [string, 'null']
+          description: Free-text schedule note (FR8).
+        qualityFlag:
+          type: boolean
+          default: false
+          description: Whether this change carries a quality impact (FR8).
+        qualityNote:
+          type: [string, 'null']
+          description: Free-text quality note (FR8).
+
+    DecideChangeOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approve, reject]
+          description: The verdict. Only `approve` moves the budget (FR5).
+        idempotencyKey:
+          type: [string, 'null']
+          description: >-
+            Optional caller-supplied key making a retried decision safe: the same
+            key on a decided CO replays the first result; a key already spent on a
+            different CO is a 409 `idempotency_key_reused`. Spent exactly once
+            (DB UNIQUE).
+
+    ChangeOrder:
+      type: object
+      additionalProperties: false
+      description: The one-screen change order view (FR6) — also the propose/decide response body.
+      required:
+        - id
+        - projectId
+        - decisionId
+        - title
+        - costDeltaCents
+        - status
+        - proposedBy
+        - decidedBy
+        - createdAt
+        - decidedAt
+        - scopeImpactNote
+        - scheduleImpactDays
+        - scheduleImpactNote
+        - qualityFlag
+        - qualityNote
+        - budget
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        decisionId:
+          type: [string, 'null']
+          format: uuid
+        title: { type: string }
+        costDeltaCents:
+          type: integer
+          format: int64
+          description: Signed cost delta in cents.
+        status:
+          type: string
+          enum: [proposed, approved, rejected]
+        proposedBy:
+          type: string
+          format: uuid
+          description: Party that opened the change order.
+        decidedBy:
+          type: [string, 'null']
+          format: uuid
+          description: Party that decided it — always different from `proposedBy` (FR4). Null while proposed.
+        createdAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: [string, 'null']
+          format: date-time
+          description: When it was decided; null while proposed.
+        scopeImpactNote: { type: [string, 'null'] }
+        scheduleImpactDays: { type: [integer, 'null'] }
+        scheduleImpactNote: { type: [string, 'null'] }
+        qualityFlag: { type: boolean }
+        qualityNote: { type: [string, 'null'] }
+        budget: { $ref: '#/components/schemas/ChangeOrderBudget' }
+
+    ChangeOrderBudget:
+      type: object
+      additionalProperties: false
+      description: >-
+        The budget impact of THIS change order against the project total. All
+        integer cents. Derived on the Ledger side; the change order service never
+        sums budget rows itself.
+      required:
+        - baselineCents
+        - currentCents
+        - beforeCents
+        - afterCents
+        - movedCents
+        - projectedIfApprovedCents
+      properties:
+        baselineCents:
+          type: integer
+          format: int64
+          description: The project's baseline budget (from the genesis event).
+        currentCents:
+          type: integer
+          format: int64
+          description: The project's current budget = baseline + Σ approved deltas.
+        beforeCents:
+          type: integer
+          format: int64
+          description: >-
+            The project total immediately before this CO's contribution. For an
+            approved CO, `currentCents − movedCents`; otherwise equals `currentCents`.
+        afterCents:
+          type: integer
+          format: int64
+          description: >-
+            The project total including this CO's contribution. For an approved CO
+            equals `currentCents`; for a proposed/rejected CO also `currentCents`
+            (it moved nothing).
+        movedCents:
+          type: integer
+          format: int64
+          description: How much this CO moved the budget — its cost delta if approved, else 0 (FR5).
+        projectedIfApprovedCents:
+          type: [integer, 'null']
+          format: int64
+          description: >-
+            For a *proposed* CO, what the project total would become if approved
+            (`currentCents + costDeltaCents`) — the "how much does this move it?"
+            preview. Null once the CO is decided.
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: >-
+            Stable machine code, one of: invalid_title, invalid_cost,
+            invalid_schedule_days, invalid_decision, unauthenticated,
+            not_a_member, self_decision, not_found, already_decided,
+            idempotency_key_reused.
+        message:
+          type: string
+          description: Human-readable explanation.

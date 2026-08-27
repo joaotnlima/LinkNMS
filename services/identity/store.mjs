@@ -1,32 +1,38 @@
 // Identity persistence port + an in-memory reference implementation.
 //
 // The Identity service is written against this PORT, not against Postgres. The
-// Postgres implementation (migrations/001_identity.sql defines the schema) wraps
-// exactly these methods with schema-qualified `identity.*` SQL and the same
+// Postgres adapter (./pg-store.mjs, schema in migrations/000{1,2}_identity.sql)
+// wraps exactly these methods with schema-qualified `identity.*` SQL and the same
 // invariants; it re-implements storage, never the service logic — the same
 // discipline the ledger core follows (services/README.md). This in-memory store
 // lets the service run and be adversarially tested with zero dependencies, and
-// the uniqueness guards below mirror the DB constraints one-for-one so a test
+// the uniqueness guards below mirror the DB constraints one-for-one, so a test
 // that passes here is testing the real invariant.
 //
-// PORT (every method a Postgres store must also provide):
-//   getParty(id) -> party | null
-//   upsertParty({ id, displayName }) -> party
-//   createProject(row) -> project              // row: {id,name,ownerPartyId,baselineBudgetCents,createdAt}
-//   getProject(id) -> project | null
-//   getMembership(projectId, partyId) -> membership | null
-//   listMemberships(projectId) -> membership[]
-//   createMembership(row) -> membership        // enforces UNIQUE(project,role) & UNIQUE(project,party)
-//   createInvitation(row) -> invitation
-//   getInvitationByTokenHash(tokenHash) -> invitation | null
-//   markInvitationAccepted(id) -> invitation
+// UNIT OF WORK (design §6, ADR-0006 §1): every identity mutation is a projection
+// write PLUS a hash-chained ledger append that must commit together. So mutations
+// run inside `transaction(fn)`, and the ledger append is part of that same unit
+// (`tx.appendEvent`). In memory this is single-threaded (like the change_order
+// reference store); the pg adapter opens a real Postgres transaction and calls
+// `ledger.append(client, …)` on the same connection. Validation runs before any
+// write so a rejected mutation leaves no partial state even without rollback.
+//
+// PORT — reads (no tx):
+//   getParty(id) · upsertParty({id,displayName})
+//   getProject(id) · getMembership(projectId, partyId) · listMemberships(projectId)
+//   getInvitationByTokenHash(hash) · listPendingInvitations(projectId)
+// PORT — transaction(fn) → fn(tx), where tx provides:
+//   insertProject(row) · insertMembership(row) · insertInvitation(row)
+//   markInvitationAccepted(id) · appendEvent(event) -> {seq, entryHash}
 //
 // All rows are returned as fresh shallow copies so callers cannot mutate stored
 // state by holding a reference (the DB gives you copies too).
 
 import { conflict, notFound } from './errors.mjs';
 
-export function createMemoryStore() {
+export function createMemoryStore({ ledger } = {}) {
+  if (!ledger) throw new Error('createMemoryStore requires a ledger port');
+
   /** @type {Map<string, any>} */ const parties = new Map();
   /** @type {Map<string, any>} */ const projects = new Map();
   /** @type {Map<string, any>} */ const memberships = new Map(); // by membership id
@@ -35,43 +41,42 @@ export function createMemoryStore() {
 
   const copy = (row) => (row ? { ...row } : null);
 
-  return {
-    getParty(id) {
-      return copy(parties.get(id));
-    },
+  // ── Reads ───────────────────────────────────────────────────────────────────
+  function getProject(id) {
+    return copy(projects.get(id));
+  }
+  function getMembership(projectId, partyId) {
+    for (const m of memberships.values()) {
+      if (m.projectId === projectId && m.partyId === partyId) return copy(m);
+    }
+    return null;
+  }
+  function listMemberships(projectId) {
+    return [...memberships.values()]
+      .filter((m) => m.projectId === projectId)
+      // owner before counterparty, then stable by joinedAt/id
+      .sort((a, b) => (a.role < b.role ? -1 : a.role > b.role ? 1 : 0))
+      .map(copy);
+  }
+  function getInvitationByTokenHash(tokenHash) {
+    const id = invitationByToken.get(tokenHash);
+    return id ? copy(invitations.get(id)) : null;
+  }
+  function listPendingInvitations(projectId) {
+    return [...invitations.values()]
+      .filter((i) => i.projectId === projectId && i.status === 'pending')
+      .map(copy);
+  }
 
-    upsertParty({ id, displayName }) {
-      const existing = parties.get(id);
-      const row = { id, displayName: displayName ?? existing?.displayName ?? null };
-      parties.set(id, row);
-      return copy(row);
-    },
-
-    createProject(row) {
+  // ── Mutations (only reachable through transaction(fn)) ───────────────────────
+  const tx = {
+    insertProject(row) {
       if (projects.has(row.id)) throw conflict('project id already exists');
       projects.set(row.id, { ...row });
       return copy(projects.get(row.id));
     },
 
-    getProject(id) {
-      return copy(projects.get(id));
-    },
-
-    getMembership(projectId, partyId) {
-      for (const m of memberships.values()) {
-        if (m.projectId === projectId && m.partyId === partyId) return copy(m);
-      }
-      return null;
-    },
-
-    listMemberships(projectId) {
-      return [...memberships.values()]
-        .filter((m) => m.projectId === projectId)
-        .sort((a, b) => (a.role < b.role ? -1 : a.role > b.role ? 1 : 0))
-        .map(copy);
-    },
-
-    createMembership(row) {
+    insertMembership(row) {
       // Mirror the DB's two unique constraints (design §3 integrity rules):
       //   UNIQUE(project_id, role)   — exactly one owner, one counterparty in R0
       //   UNIQUE(project_id, party)  — a party joins a project at most once
@@ -87,32 +92,57 @@ export function createMemoryStore() {
       return copy(memberships.get(row.id));
     },
 
-    createInvitation(row) {
+    insertInvitation(row) {
       if (invitationByToken.has(row.tokenHash)) throw conflict('invitation token collision');
+      // One pending invitation per project (the DB's partial UNIQUE index).
+      for (const i of invitations.values()) {
+        if (i.projectId === row.projectId && i.status === 'pending') {
+          throw conflict('project already has a pending invitation');
+        }
+      }
       invitations.set(row.id, { ...row });
       invitationByToken.set(row.tokenHash, row.id);
       return copy(invitations.get(row.id));
     },
 
-    getInvitationByTokenHash(tokenHash) {
-      const id = invitationByToken.get(tokenHash);
-      return id ? copy(invitations.get(id)) : null;
-    },
-
-    // Only pending invitations for this project (used to stop a second pending
-    // counterparty invite before one is accepted — the DB backs this with the
-    // membership UNIQUE, but rejecting early gives a cleaner 409).
-    listPendingInvitations(projectId) {
-      return [...invitations.values()]
-        .filter((i) => i.projectId === projectId && i.status === 'pending')
-        .map(copy);
-    },
-
-    markInvitationAccepted(id) {
+    markInvitationAccepted(id, acceptedAt) {
       const inv = invitations.get(id);
       if (!inv) throw notFound('invitation');
+      if (inv.status !== 'pending') throw conflict('invitation is not pending');
       inv.status = 'accepted';
+      inv.acceptedAt = acceptedAt ?? inv.acceptedAt ?? null;
       return copy(inv);
     },
+
+    // Read-within-tx: accept must re-read the invite under the same unit so a
+    // concurrent accept cannot double-spend it (the pg adapter uses SELECT … FOR
+    // UPDATE / the status guard on markInvitationAccepted).
+    getInvitationByTokenHash,
+
+    appendEvent(event) {
+      return ledger.appendEvent(event);
+    },
+  };
+
+  function transaction(fn) {
+    return fn(tx);
+  }
+
+  return {
+    // reads
+    getParty: (id) => copy(parties.get(id)),
+    upsertParty({ id, displayName }) {
+      const existing = parties.get(id);
+      const row = { id, displayName: displayName ?? existing?.displayName ?? null };
+      parties.set(id, row);
+      return copy(row);
+    },
+    getProject,
+    getMembership,
+    listMemberships,
+    getInvitationByTokenHash,
+    listPendingInvitations,
+    // unit of work
+    transaction,
   };
 }
