@@ -18,6 +18,7 @@
 import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import { can, ACTION } from './authz.mjs';
 import { badRequest, conflict, forbidden, notFound, unauthenticated } from './errors.mjs';
+import { createNoopAnalytics } from '../analytics/analytics.mjs';
 
 const sha256Hex = (s) => createHash('sha256').update(s).digest('hex');
 
@@ -34,7 +35,7 @@ const MAX_NAME = 200;
  * @param {{ uuid():string, token():string }} [deps.ids]
  * @param {{ now():string }} [deps.clock]
  */
-export function createIdentityService({ store, ledger, ids = defaultIds, clock = defaultClock }) {
+export function createIdentityService({ store, ledger, ids = defaultIds, clock = defaultClock, analytics = createNoopAnalytics() }) {
   if (!store) throw new Error('identity service requires a store');
   if (!ledger) throw new Error('identity service requires a ledger port');
 
@@ -121,6 +122,16 @@ export function createIdentityService({ store, ledger, ids = defaultIds, clock =
       });
     });
 
+    // Analytics is emitted AFTER the unit of work commits, so exactly one event
+    // per committed project — a rolled-back transaction fires nothing (§2.4).
+    // Server-side: distinct_id is the authenticated owner, never client-supplied.
+    analytics.projectCreated({
+      projectId: project.id,
+      actorPartyId,
+      baselineBudgetCents: baseline,
+      createdAt: now,
+    });
+
     return shapeProject(project, [ownerMembership], {
       baselineBudgetCents: baseline,
       currentBudgetCents: baseline,
@@ -176,6 +187,10 @@ export function createIdentityService({ store, ledger, ids = defaultIds, clock =
     await store.transaction(async (tx) => {
       stored = await tx.insertInvitation(invitation);
     });
+    // gc_invited — the owner opened the invite. No token/PII in the payload;
+    // only the invite method (R0 = single-use link).
+    analytics.gcInvited({ projectId, actorPartyId, actorRole: 'owner' });
+
     // The raw token is returned ONCE and never stored. Callers must not log it.
     return { invitation: shapeInvitation(stored), token: rawToken };
   }
@@ -216,6 +231,17 @@ export function createIdentityService({ store, ledger, ids = defaultIds, clock =
         occurredAt: now,
         payload: { partyId: actorPartyId, role: membership.role },
       });
+    });
+
+    // gc_joined — the second party is now on the record (the activation moment).
+    // hours_since_created is a server-clock delta from the project genesis, so we
+    // read the project's created_at (own schema, no cross-schema join).
+    const joinedProject = await store.getProject(membership.projectId);
+    analytics.gcJoined({
+      projectId: membership.projectId,
+      actorPartyId,
+      projectCreatedAt: joinedProject?.createdAt ?? now,
+      joinedAt: now,
     });
 
     return { membership: shapeMembership(membership) };
