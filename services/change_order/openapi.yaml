@@ -344,15 +344,24 @@ components:
     Error:
       type: object
       additionalProperties: false
-      required: [code, message]
+      description: >-
+        The uniform platform error envelope (design §6) — the same
+        `{ error: { code, message } }` shape Identity and the other services
+        return, and what the frontend reads (`body.error.message`).
+      required: [error]
       properties:
-        code:
-          type: string
-          description: >-
-            Stable machine code, one of: invalid_title, invalid_cost,
-            invalid_schedule_days, invalid_decision, unauthenticated,
-            not_a_member, self_decision, not_found, already_decided,
-            idempotency_key_reused.
-        message:
-          type: string
-          description: Human-readable explanation.
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: >-
+                Stable machine code, one of: invalid_title, invalid_cost,
+                invalid_schedule_days, invalid_decision, unauthenticated,
+                not_a_member, self_decision, not_found, already_decided,
+                idempotency_key_reused.
+            message:
+              type: string
+              description: Human-readable explanation.

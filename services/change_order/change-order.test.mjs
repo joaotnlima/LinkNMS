@@ -43,6 +43,7 @@ function makeService() {
   return { svc, ledger, identity, store };
 }
 
+// Returns a promise — the service is async so every caller awaits it.
 function propose(svc, actor = GC, overrides = {}) {
   return svc.propose(PROJECT, actor, {
     title: 'Upgrade to oak flooring',
@@ -79,9 +80,9 @@ function assertCoContract(co) {
 
 // ---- propose (FR3, FR8) ----------------------------------------------------
 
-test('propose opens *proposed* and captures scope/schedule/quality without moving the budget', () => {
+test('propose opens *proposed* and captures scope/schedule/quality without moving the budget', async () => {
   const { svc, ledger } = makeService();
-  const co = propose(svc);
+  const co = await propose(svc);
 
   assert.equal(co.status, 'proposed');
   assert.equal(co.proposedBy, GC);
@@ -100,73 +101,73 @@ test('propose opens *proposed* and captures scope/schedule/quality without movin
   assertCoContract(co);
 });
 
-test('propose ledgers a change_order_proposed event (auditable) but no budget move', () => {
+test('propose ledgers a change_order_proposed event (auditable) but no budget move', async () => {
   const { svc, ledger } = makeService();
-  propose(svc);
+  await propose(svc);
   const types = ledger._events.map((e) => e.type);
   assert.deepEqual(types, ['change_order_proposed']);
 });
 
-test('propose rejects a missing title and non-integer cost', () => {
+test('propose rejects a missing title and non-integer cost', async () => {
   const { svc } = makeService();
-  assert.throws(() => svc.propose(PROJECT, GC, { costDeltaCents: 100 }),
+  await assert.rejects(() => svc.propose(PROJECT, GC, { costDeltaCents: 100 }),
     (e) => e instanceof DomainError && e.status === 400 && e.code === 'invalid_title');
-  assert.throws(() => svc.propose(PROJECT, GC, { title: 'x', costDeltaCents: 1.5 }),
+  await assert.rejects(() => svc.propose(PROJECT, GC, { title: 'x', costDeltaCents: 1.5 }),
     (e) => e instanceof DomainError && e.status === 400 && e.code === 'invalid_cost');
-  assert.throws(() => svc.propose(PROJECT, GC, { title: 'x', costDeltaCents: 100, scheduleImpactDays: 1.5 }),
+  await assert.rejects(() => svc.propose(PROJECT, GC, { title: 'x', costDeltaCents: 100, scheduleImpactDays: 1.5 }),
     (e) => e instanceof DomainError && e.status === 400 && e.code === 'invalid_schedule_days');
 });
 
-test('a non-member cannot propose (403)', () => {
+test('a non-member cannot propose (403)', async () => {
   const { svc } = makeService();
-  assert.throws(() => propose(svc, OUTSIDER),
+  await assert.rejects(() => propose(svc, OUTSIDER),
     (e) => e instanceof DomainError && e.status === 403 && e.code === 'not_a_member');
 });
 
-test('an unauthenticated actor cannot propose (401)', () => {
+test('an unauthenticated actor cannot propose (401)', async () => {
   const { svc } = makeService();
-  assert.throws(() => propose(svc, null),
+  await assert.rejects(() => propose(svc, null),
     (e) => e instanceof DomainError && e.status === 401 && e.code === 'unauthenticated');
 });
 
 // ---- two-sided approval (FR4) ---------------------------------------------
 
-test('the proposer can NOT decide their own change order (403 self_decision)', () => {
+test('the proposer can NOT decide their own change order (403 self_decision)', async () => {
   const { svc, ledger } = makeService();
-  const co = propose(svc, GC);
-  assert.throws(() => svc.decide(co.id, GC, { decision: 'approve' }),
+  const co = await propose(svc, GC);
+  await assert.rejects(() => svc.decide(co.id, GC, { decision: 'approve' }),
     (e) => e instanceof DomainError && e.status === 403 && e.code === 'self_decision');
   // The blocked self-decision must not have moved the budget or written events.
   assert.equal(ledger._budgetEvents.size, 0);
-  assert.equal(svc.view(co.id).status, 'proposed');
+  assert.equal((await svc.view(co.id)).status, 'proposed');
 });
 
-test('a non-member cannot decide (403)', () => {
+test('a non-member cannot decide (403)', async () => {
   const { svc } = makeService();
-  const co = propose(svc, GC);
-  assert.throws(() => svc.decide(co.id, OUTSIDER, { decision: 'approve' }),
+  const co = await propose(svc, GC);
+  await assert.rejects(() => svc.decide(co.id, OUTSIDER, { decision: 'approve' }),
     (e) => e instanceof DomainError && e.status === 403 && e.code === 'not_a_member');
 });
 
-test('an invalid decision verb is rejected (400)', () => {
+test('an invalid decision verb is rejected (400)', async () => {
   const { svc } = makeService();
-  const co = propose(svc, GC);
-  assert.throws(() => svc.decide(co.id, HOMEOWNER, { decision: 'maybe' }),
+  const co = await propose(svc, GC);
+  await assert.rejects(() => svc.decide(co.id, HOMEOWNER, { decision: 'maybe' }),
     (e) => e instanceof DomainError && e.status === 400 && e.code === 'invalid_decision');
 });
 
-test('deciding an unknown change order is a 404', () => {
+test('deciding an unknown change order is a 404', async () => {
   const { svc } = makeService();
-  assert.throws(() => svc.decide('does-not-exist', HOMEOWNER, { decision: 'approve' }),
+  await assert.rejects(() => svc.decide('does-not-exist', HOMEOWNER, { decision: 'approve' }),
     (e) => e instanceof DomainError && e.status === 404 && e.code === 'not_found');
 });
 
 // ---- budget move on approve (FR5, FR6) ------------------------------------
 
-test('approval by a non-proposer moves the budget exactly once and reports before→after', () => {
+test('approval by a non-proposer moves the budget exactly once and reports before→after', async () => {
   const { svc, ledger } = makeService();
-  const co = propose(svc, GC, { costDeltaCents: 120_000 });
-  const decided = svc.decide(co.id, HOMEOWNER, { decision: 'approve' });
+  const co = await propose(svc, GC, { costDeltaCents: 120_000 });
+  const decided = await svc.decide(co.id, HOMEOWNER, { decision: 'approve' });
 
   assert.equal(decided.status, 'approved');
   assert.equal(decided.decidedBy, HOMEOWNER);
@@ -182,18 +183,18 @@ test('approval by a non-proposer moves the budget exactly once and reports befor
   assertCoContract(decided);
 });
 
-test('a credit (negative delta) lowers the budget on approval', () => {
+test('a credit (negative delta) lowers the budget on approval', async () => {
   const { svc } = makeService();
-  const co = propose(svc, GC, { costDeltaCents: -50_000, title: 'De-scope the deck' });
-  const decided = svc.decide(co.id, HOMEOWNER, { decision: 'approve' });
+  const co = await propose(svc, GC, { costDeltaCents: -50_000, title: 'De-scope the deck' });
+  const decided = await svc.decide(co.id, HOMEOWNER, { decision: 'approve' });
   assert.equal(decided.budget.afterCents, BASELINE - 50_000);
   assert.equal(decided.budget.movedCents, -50_000);
 });
 
-test('rejection never moves the budget (FR5)', () => {
+test('rejection never moves the budget (FR5)', async () => {
   const { svc, ledger } = makeService();
-  const co = propose(svc, GC);
-  const decided = svc.decide(co.id, HOMEOWNER, { decision: 'reject' });
+  const co = await propose(svc, GC);
+  const decided = await svc.decide(co.id, HOMEOWNER, { decision: 'reject' });
   assert.equal(decided.status, 'rejected');
   assert.equal(decided.decidedBy, HOMEOWNER);
   assert.equal(decided.budget.currentCents, BASELINE);
@@ -202,39 +203,39 @@ test('rejection never moves the budget (FR5)', () => {
   assert.equal(ledger._budgetEvents.size, 0);
 });
 
-test('a decided change order cannot be decided again (409)', () => {
+test('a decided change order cannot be decided again (409)', async () => {
   const { svc } = makeService();
-  const co = propose(svc, GC);
-  svc.decide(co.id, HOMEOWNER, { decision: 'approve' });
-  assert.throws(() => svc.decide(co.id, HOMEOWNER, { decision: 'reject' }),
+  const co = await propose(svc, GC);
+  await svc.decide(co.id, HOMEOWNER, { decision: 'approve' });
+  await assert.rejects(() => svc.decide(co.id, HOMEOWNER, { decision: 'reject' }),
     (e) => e instanceof DomainError && e.status === 409 && e.code === 'already_decided');
 });
 
 // ---- idempotency: serverless retries can not double-apply -----------------
 
-test('replaying an approve with the same idempotency key returns the prior result, no double budget move', () => {
+test('replaying an approve with the same idempotency key returns the prior result, no double budget move', async () => {
   const { svc, ledger } = makeService();
-  const co = propose(svc, GC, { costDeltaCents: 120_000 });
-  const first = svc.decide(co.id, HOMEOWNER, { decision: 'approve', idempotencyKey: 'retry-abc' });
-  const replay = svc.decide(co.id, HOMEOWNER, { decision: 'approve', idempotencyKey: 'retry-abc' });
+  const co = await propose(svc, GC, { costDeltaCents: 120_000 });
+  const first = await svc.decide(co.id, HOMEOWNER, { decision: 'approve', idempotencyKey: 'retry-abc' });
+  const replay = await svc.decide(co.id, HOMEOWNER, { decision: 'approve', idempotencyKey: 'retry-abc' });
 
   assert.equal(first.status, 'approved');
   assert.deepEqual(replay, first);
   // The budget moved once, not twice.
   assert.equal(ledger._budgetEvents.size, 1);
-  assert.equal(svc.view(co.id).budget.currentCents, BASELINE + 120_000);
+  assert.equal((await svc.view(co.id)).budget.currentCents, BASELINE + 120_000);
 });
 
-test('reusing an idempotency key for a DIFFERENT change order is rejected (409)', () => {
+test('reusing an idempotency key for a DIFFERENT change order is rejected (409)', async () => {
   const { svc } = makeService();
-  const a = propose(svc, GC);
-  const b = propose(svc, GC, { title: 'Second CO' });
-  svc.decide(a.id, HOMEOWNER, { decision: 'approve', idempotencyKey: 'shared-key' });
-  assert.throws(() => svc.decide(b.id, HOMEOWNER, { decision: 'approve', idempotencyKey: 'shared-key' }),
+  const a = await propose(svc, GC);
+  const b = await propose(svc, GC, { title: 'Second CO' });
+  await svc.decide(a.id, HOMEOWNER, { decision: 'approve', idempotencyKey: 'shared-key' });
+  await assert.rejects(() => svc.decide(b.id, HOMEOWNER, { decision: 'approve', idempotencyKey: 'shared-key' }),
     (e) => e instanceof DomainError && e.status === 409 && e.code === 'idempotency_key_reused');
 });
 
-test('a duplicate budget_event at the ledger is absorbed as an idempotent no-op (exactly-once)', () => {
+test('a duplicate budget_event at the ledger is absorbed as an idempotent no-op (exactly-once)', async () => {
   // Simulate the "transaction replayed after the budget_event already committed"
   // race: the ledger already has a budget_event for this CO. The service must
   // treat the LedgerBudgetConflict as the no-op it is, never a double-apply.
@@ -248,7 +249,7 @@ test('a duplicate budget_event at the ledger is absorbed as an idempotent no-op 
   const store = createInMemoryStore();
   const svc = createChangeOrderService({ store, ledger, identity });
 
-  const co = propose(svc, GC, { costDeltaCents: 90_000 });
+  const co = await propose(svc, GC, { costDeltaCents: 90_000 });
   // Pre-seed the ledger as if a prior attempt already moved the budget.
   ledger.recordBudgetEvent({}, {
     projectId: PROJECT, changeOrderId: co.id, deltaCents: 90_000,
@@ -256,7 +257,7 @@ test('a duplicate budget_event at the ledger is absorbed as an idempotent no-op 
   });
   assert.equal(ledger._budgetEvents.size, 1);
 
-  const decided = svc.decide(co.id, HOMEOWNER, { decision: 'approve' });
+  const decided = await svc.decide(co.id, HOMEOWNER, { decision: 'approve' });
   assert.equal(decided.status, 'approved');
   // Still exactly one budget_event; the second attempt did not double-apply.
   assert.equal(ledger._budgetEvents.size, 1);
@@ -265,10 +266,10 @@ test('a duplicate budget_event at the ledger is absorbed as an idempotent no-op 
 
 // ---- the one-screen view (FR6) + list (FR7) -------------------------------
 
-test('GET view returns the full one-screen answer for a proposed CO', () => {
+test('GET view returns the full one-screen answer for a proposed CO', async () => {
   const { svc } = makeService();
-  const co = propose(svc, GC);
-  const view = svc.view(co.id);
+  const co = await propose(svc, GC);
+  const view = await svc.view(co.id);
   assertCoContract(view);
   assert.equal(view.status, 'proposed');
   assert.equal(view.budget.beforeCents, BASELINE);
@@ -276,33 +277,33 @@ test('GET view returns the full one-screen answer for a proposed CO', () => {
   assert.equal(view.budget.projectedIfApprovedCents, BASELINE + co.costDeltaCents);
 });
 
-test('viewing an unknown change order is a 404', () => {
+test('viewing an unknown change order is a 404', async () => {
   const { svc } = makeService();
-  assert.throws(() => svc.view('nope'),
+  await assert.rejects(() => svc.view('nope'),
     (e) => e instanceof DomainError && e.status === 404 && e.code === 'not_found');
 });
 
-test('list returns a project\'s change orders chronologically (FR7) and requires membership', () => {
+test('list returns a project\'s change orders chronologically (FR7) and requires membership', async () => {
   const { svc } = makeService();
-  const a = propose(svc, GC, { title: 'First' });
-  const b = propose(svc, HOMEOWNER, { title: 'Second' });
-  const list = svc.list(PROJECT, GC);
+  const a = await propose(svc, GC, { title: 'First' });
+  const b = await propose(svc, HOMEOWNER, { title: 'Second' });
+  const list = await svc.list(PROJECT, GC);
   assert.equal(list.length, 2);
   assert.deepEqual(list.map((c) => c.id), [a.id, b.id]);
-  assert.throws(() => svc.list(PROJECT, OUTSIDER),
+  await assert.rejects(() => svc.list(PROJECT, OUTSIDER),
     (e) => e instanceof DomainError && e.status === 403);
 });
 
-test('multiple approved change orders sum into the budget, each contribution isolated (FR5)', () => {
+test('multiple approved change orders sum into the budget, each contribution isolated (FR5)', async () => {
   const { svc, ledger } = makeService();
-  const a = propose(svc, GC, { costDeltaCents: 100_000, title: 'A' });
-  const b = propose(svc, GC, { costDeltaCents: 250_000, title: 'B' });
-  svc.decide(a.id, HOMEOWNER, { decision: 'approve' });
-  svc.decide(b.id, HOMEOWNER, { decision: 'approve' });
+  const a = await propose(svc, GC, { costDeltaCents: 100_000, title: 'A' });
+  const b = await propose(svc, GC, { costDeltaCents: 250_000, title: 'B' });
+  await svc.decide(a.id, HOMEOWNER, { decision: 'approve' });
+  await svc.decide(b.id, HOMEOWNER, { decision: 'approve' });
 
   assert.equal(ledger._budgetEvents.size, 2);
-  const viewA = svc.view(a.id);
-  const viewB = svc.view(b.id);
+  const viewA = await svc.view(a.id);
+  const viewB = await svc.view(b.id);
   // Each approved CO reports its own isolated contribution.
   assert.equal(viewA.budget.movedCents, 100_000);
   assert.equal(viewB.budget.movedCents, 250_000);

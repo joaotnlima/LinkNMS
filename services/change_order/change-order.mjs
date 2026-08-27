@@ -21,6 +21,46 @@ import { DomainError, LedgerBudgetConflict } from './ports.mjs';
 
 const now = () => new Date().toISOString();
 
+// A budget move already applied for this CO (budget_event UNIQUE(change_order_id))
+// is an idempotent no-op, never a double-apply. The in-memory ledger (ports.mjs)
+// and the real pg ledger (../ledger/pg-ledger.mjs) each throw their OWN
+// `LedgerBudgetConflict` class, so a plain `instanceof` against one misses the
+// other. We match on the class NAME as well so the exactly-once guarantee holds
+// across both adapters. (Follow-up for the Ledger owner: promote this to a single
+// shared error type so the name-match crutch can go.)
+function isBudgetConflict(err) {
+  return err instanceof LedgerBudgetConflict || err?.constructor?.name === 'LedgerBudgetConflict';
+}
+
+// Move the budget, absorbing a duplicate (budget_event UNIQUE(change_order_id))
+// as the idempotent no-op it is — WITHOUT poisoning the outer transaction.
+//
+// On real Postgres a failed INSERT aborts the whole transaction, so simply
+// catching the LedgerBudgetConflict in JS is not enough: the enclosing COMMIT
+// would still roll the decide back (the CO would never flip to approved). We wrap
+// the move in a SAVEPOINT so a conflict rolls back ONLY the budget insert and the
+// surrounding decide+append survive. The in-memory adapter passes a plain `{}` tx
+// with no `query`, so there the savepoint steps are skipped and the JS catch alone
+// suffices — one code path, both adapters.
+async function moveBudgetAbsorbingDuplicate(tx, doMove) {
+  const sql = typeof tx?.query === 'function' ? (s) => tx.query(s) : null;
+  if (sql) await sql('SAVEPOINT co_budget_move');
+  try {
+    await doMove();
+    if (sql) await sql('RELEASE SAVEPOINT co_budget_move');
+  } catch (err) {
+    if (!isBudgetConflict(err)) throw err;
+    // The budget already moved for this CO → un-poison the tx and treat as a no-op.
+    if (sql) await sql('ROLLBACK TO SAVEPOINT co_budget_move');
+  }
+}
+
+// Every port method is awaited: the in-memory adapters return plain values
+// (awaiting them is a harmless no-op) while the Postgres adapters are async, so
+// one service body drives both. The mutating handlers open a store transaction,
+// do the projection write + ledger append/budget-move on that SAME connection so
+// they commit together (ADR-0006 §1), and only THEN read the one-screen `view`
+// from committed state.
 export function createChangeOrderService({ store, ledger, identity }) {
   if (!store || !ledger || !identity) {
     throw new Error('createChangeOrderService requires { store, ledger, identity } ports');
@@ -28,8 +68,8 @@ export function createChangeOrderService({ store, ledger, identity }) {
 
   // ---- propose (opens *proposed*) — FR3, FR8 ------------------------------
   // POST /projects/:id/change-orders
-  function propose(projectId, actorPartyId, input) {
-    identity.requireMember(actorPartyId, projectId); // any member may propose (ADR-0004)
+  async function propose(projectId, actorPartyId, input) {
+    await identity.requireMember(actorPartyId, projectId); // any member may propose (ADR-0004)
 
     const { title, costDeltaCents } = input ?? {};
     if (!title || typeof title !== 'string') {
@@ -63,10 +103,10 @@ export function createChangeOrderService({ store, ledger, identity }) {
       decision_idempotency_key: null,
     };
 
-    return store.transaction((tx) => {
-      store.insert(tx, row);
+    await store.transaction(async (tx) => {
+      await store.insert(tx, row);
       // The proposal is a ledgered event; proposing never moves the budget.
-      ledger.append(tx, {
+      await ledger.append(tx, {
         projectId,
         type: 'change_order_proposed',
         actorPartyId,
@@ -83,8 +123,8 @@ export function createChangeOrderService({ store, ledger, identity }) {
           qualityNote: row.quality_note,
         },
       });
-      return view(id);
     });
+    return view(id); // one-screen view from committed state
   }
 
   // ---- decide (approve | reject) — FR4, FR5 -------------------------------
@@ -92,15 +132,15 @@ export function createChangeOrderService({ store, ledger, identity }) {
   //
   // Two-sided rule enforced in code (403 here) AND by the DB CHECK. The budget
   // moves only on approve, only inside this transaction, exactly once.
-  function decide(changeOrderId, actorPartyId, { decision, idempotencyKey } = {}) {
+  async function decide(changeOrderId, actorPartyId, { decision, idempotencyKey } = {}) {
     if (decision !== 'approve' && decision !== 'reject') {
       throw new DomainError(400, 'invalid_decision', "decision must be 'approve' or 'reject'");
     }
 
-    const existing = store.get(changeOrderId);
+    const existing = await store.get(changeOrderId);
     if (!existing) throw new DomainError(404, 'not_found', 'change order not found');
 
-    identity.requireMember(actorPartyId, existing.project_id); // member of THIS project
+    await identity.requireMember(actorPartyId, existing.project_id); // member of THIS project
 
     // FR4 — a proposer can never decide their own CO. Checked before we touch
     // the DB so the caller gets a clean 403; the CHECK is the backstop.
@@ -124,8 +164,8 @@ export function createChangeOrderService({ store, ledger, identity }) {
     const status = decision === 'approve' ? 'approved' : 'rejected';
     const decidedAt = now();
 
-    return store.transaction((tx) => {
-      const result = store.decide(tx, {
+    await store.transaction(async (tx) => {
+      const result = await store.decide(tx, {
         id: changeOrderId,
         status,
         decidedByPartyId: actorPartyId,
@@ -135,16 +175,17 @@ export function createChangeOrderService({ store, ledger, identity }) {
 
       if (!result.applied) {
         // Lost the race: another writer decided between our read and this update.
-        // If it was the same idempotent replay, return that state; else 409.
-        const fresh = store.get(changeOrderId);
+        // If it was the same idempotent replay, commit a no-op and let the caller
+        // read the settled state below; else 409.
+        const fresh = await store.get(changeOrderId);
         if (idempotencyKey != null && fresh?.decision_idempotency_key === idempotencyKey) {
-          return view(changeOrderId);
+          return;
         }
         throw new DomainError(409, 'already_decided',
           `change order is already ${fresh?.status ?? 'decided'} and cannot be changed`);
       }
 
-      ledger.append(tx, {
+      await ledger.append(tx, {
         projectId: existing.project_id,
         type: status === 'approved' ? 'change_order_approved' : 'change_order_rejected',
         actorPartyId,
@@ -160,32 +201,30 @@ export function createChangeOrderService({ store, ledger, identity }) {
       // scope/schedule/quality (FR5, FR8). UNIQUE(change_order_id) at the ledger
       // makes it exactly-once even if this transaction is replayed.
       if (status === 'approved') {
-        try {
-          ledger.recordBudgetEvent(tx, {
-            projectId: existing.project_id,
-            changeOrderId,
-            deltaCents: existing.cost_delta_cents,
-            actorPartyId,
-            occurredAt: decidedAt,
-          });
-        } catch (err) {
-          if (!(err instanceof LedgerBudgetConflict)) throw err;
-          // A budget_event already exists for this CO → the move already
-          // happened. Treat as the no-op it is; do not double-apply.
-        }
+        await moveBudgetAbsorbingDuplicate(tx, () => ledger.recordBudgetEvent(tx, {
+          projectId: existing.project_id,
+          changeOrderId,
+          deltaCents: existing.cost_delta_cents,
+          actorPartyId,
+          occurredAt: decidedAt,
+        }));
       }
-
-      return view(changeOrderId);
     });
+
+    return view(changeOrderId); // one-screen view from committed state
   }
 
   // ---- the one-screen answer — FR6 ----------------------------------------
   // GET /change-orders/:id
-  function view(changeOrderId) {
-    const c = store.get(changeOrderId);
+  async function view(changeOrderId) {
+    const c = await store.get(changeOrderId);
     if (!c) throw new DomainError(404, 'not_found', 'change order not found');
 
-    const budget = ledger.currentBudget(c.project_id);
+    // The budget read goes through the Ledger port's own connection (it owns the
+    // schema — ADR-0006 §1), never the change_order tx. An unknown-to-ledger
+    // project reads as a zero baseline, matching the in-memory port.
+    const budget = (await ledger.currentBudget(c.project_id))
+      ?? { baselineCents: 0, currentCents: 0 };
     // budget before→after for THIS change order. An approved CO has moved the
     // total by its delta, so its "before" is current − delta. A proposed CO has
     // moved nothing; we still surface what it *would* do if approved, clearly
@@ -225,9 +264,10 @@ export function createChangeOrderService({ store, ledger, identity }) {
 
   // ---- list (chronological, FR7) ------------------------------------------
   // GET /projects/:id/change-orders
-  function list(projectId, actorPartyId) {
-    identity.requireMember(actorPartyId, projectId);
-    return store.listByProject(projectId).map((r) => view(r.id));
+  async function list(projectId, actorPartyId) {
+    await identity.requireMember(actorPartyId, projectId);
+    const rows = await store.listByProject(projectId);
+    return Promise.all(rows.map((r) => view(r.id)));
   }
 
   return { propose, decide, view, list };
