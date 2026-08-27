@@ -1,0 +1,27 @@
+openapi: "3.1.0"
+info:
+  title: LinkNMS API
+  version: "0.1.0"
+  description: >
+    R0 shared-record API — decision log, change orders, budget, audit trail.
+    Stub spec for Slice 0; expanded in Slices 1–5.
+servers:
+  - url: /api/v1
+    description: Current environment
+
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Liveness probe
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok

@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  migrations:
+    name: Migrations (forward-only)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: migrator
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: linknms_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Apply all migrations (forward pass)
+        env:
+          MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+        run: node db/migrate.mjs
+
+      - name: Second run is a no-op (idempotency check)
+        env:
+          MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+        run: node db/migrate.mjs
+
+  app-typecheck:
+    name: App — typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm install --ignore-scripts
+
+      - name: Type-check
+        working-directory: app
+        run: npx tsc --noEmit
