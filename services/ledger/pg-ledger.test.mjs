@@ -26,7 +26,12 @@ import { createPgLedger, LedgerBudgetConflict } from './pg-ledger.mjs';
 const { Pool } = pg;
 const here = dirname(fileURLToPath(import.meta.url));
 const DB = process.env.DATABASE_URL;
-const ssl = { rejectUnauthorized: false };
+// Neon (and any hosted PG) requires TLS; a local Postgres — the CI service
+// container or a docker throwaway — speaks no SSL and drops the connection if we
+// insist on it. Enable TLS unless the target is plainly local / opted out, so the
+// same suite runs green both against a throwaway Neon branch and in CI.
+const localDb = !DB || /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(DB) || /[?&]sslmode=disable/.test(DB);
+const ssl = localDb ? false : { rejectUnauthorized: false };
 
 describe('Postgres ledger (trust anchor)', { skip: DB ? false : 'set DATABASE_URL to run' }, () => {
   let pool;
