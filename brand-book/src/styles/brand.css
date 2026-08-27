@@ -57,6 +57,7 @@ table.scale th{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color
   padding:0 18px;height:44px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
 .btn.lg{height:52px;padding:0 24px}
 .btn.primary{background:var(--owner);color:#fff}
+.btn.builder{background:var(--builder);color:#fff}
 .btn.secondary{background:transparent;border-color:var(--outline-strong);color:var(--ink)}
 .btn.danger{background:var(--danger);color:#fff}
 .btn[disabled]{background:var(--surface-sunken);color:var(--muted);border-color:var(--outline);cursor:not-allowed}
@@ -107,3 +108,82 @@ table.scale th{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color
 .change .vals{margin-top:8px;font-variant-numeric:tabular-nums}
 .change .vals .old{color:var(--muted);text-decoration:line-through;margin-right:8px}
 .change .vals .arrow{color:var(--muted);margin:0 8px}
+
+/* ============================================================
+   Bootstrap-flow components (LINA-54).
+   Empty state, wizard stepper, party invite, Excel dropzone,
+   import column-mapping, and the WBS (actions → sub-actions) tree.
+   Tokens only; colour is never the sole signal.
+   ============================================================ */
+
+/* Empty state — a first screen with one clear action, never a blank page */
+.emptystate{border:1.5px dashed var(--outline-strong);border-radius:var(--radius-overlay);
+  background:var(--paper);padding:var(--space-8) var(--space-6);text-align:center;
+  display:flex;flex-direction:column;align-items:center;gap:10px;max-width:420px}
+.emptystate .es-ic{width:52px;height:52px;stroke:var(--outline-strong);fill:none;stroke-width:1.6}
+.emptystate .es-t{font-weight:700;font-size:15px;color:var(--ink)}
+.emptystate .es-d{font-size:13px;color:var(--muted);max-width:32ch;line-height:1.5}
+.emptystate .btn{margin-top:6px}
+
+/* Stepper — linear wizard progress (bootstrap is 3 steps; import is 3) */
+.stepper{display:flex;flex-direction:column;gap:6px;max-width:360px}
+.stepper .lbl{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}
+.stepper .track{display:flex;align-items:center;gap:6px}
+.stepper .seg{flex:1;height:5px;border-radius:3px;background:var(--outline)}
+.stepper .seg.done,.stepper .seg.on{background:var(--owner)}
+.stepper .seg.on{box-shadow:0 0 0 2px rgba(42,120,214,.18)}
+
+/* Party invite — a person invited to a role on the build */
+.invite{border:1px solid var(--outline);border-radius:var(--radius-control);background:var(--paper);
+  padding:12px;display:flex;gap:10px;align-items:center;max-width:420px}
+.invite .av{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:14px;flex:0 0 auto}
+.invite .av.owner{background:var(--owner-muted);color:var(--owner)}
+.invite .av.builder{background:var(--builder-muted);color:#a8451c}
+.invite .who{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+.invite .who .nm{font-weight:650;font-size:14px}
+.invite .who .em{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Excel dropzone — accept the plan the contractor already has */
+.dropzone{border:1.5px dashed var(--owner);border-radius:var(--radius-overlay);background:var(--owner-muted);
+  padding:var(--space-6) var(--space-4);text-align:center;display:flex;flex-direction:column;align-items:center;
+  gap:8px;max-width:420px}
+.dropzone .dz-ic{width:44px;height:44px;stroke:var(--owner);fill:none;stroke-width:1.6}
+.dropzone .dz-t{font-weight:700;font-size:14px;color:var(--owner)}
+.dropzone .dz-d{font-size:12px;color:var(--muted)}
+.filechip{display:flex;align-items:center;gap:9px;border:1px solid var(--outline);border-radius:var(--radius-control);
+  background:var(--surface-raised);padding:10px 12px;max-width:420px}
+.filechip .xl{width:30px;height:30px;border-radius:5px;background:#e8f3ec;color:var(--success);
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex:0 0 auto}
+.filechip .fn{font-weight:650;font-size:13px} .filechip .fs{font-size:11px;color:var(--muted)}
+.filechip .prog{height:5px;border-radius:3px;background:var(--outline);overflow:hidden;margin-top:6px}
+.filechip .prog>i{display:block;height:100%;background:var(--owner)}
+
+/* Import mapping — the contractor confirms what every column means (nothing guessed) */
+.maptbl{border:1px solid var(--outline);border-radius:var(--radius-control);overflow:hidden;
+  background:var(--surface-raised);max-width:560px}
+.maptbl .hd,.maptbl .rw{display:grid;grid-template-columns:1.1fr 1fr;gap:10px;padding:9px 12px;
+  border-bottom:1px solid var(--outline);align-items:center}
+.maptbl .hd{background:var(--surface-sunken);font-size:11px;font-weight:700;letter-spacing:.4px;
+  text-transform:uppercase;color:var(--muted)}
+.maptbl .rw:last-child{border-bottom:0}
+.maptbl .colname{font-weight:650;font-size:13px} .maptbl .sample{font-size:11px;color:var(--muted)}
+.mapsel{border:1px solid var(--outline);border-radius:var(--radius-control);background:var(--surface-raised);
+  padding:8px 10px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mapsel.set{border-color:var(--owner);color:var(--owner);background:var(--owner-muted)}
+.mapsel.unset{border-color:#ebd9b3;color:var(--warning);background:#faf1de}
+
+/* WBS tree — imported actions with their sub-actions and a mini gantt */
+.wbs{border:1px solid var(--outline);border-radius:var(--radius-control);overflow:hidden;
+  background:var(--surface-raised);max-width:520px}
+.wbs .r{display:grid;grid-template-columns:1fr 96px;gap:8px;padding:9px 12px;
+  border-bottom:1px solid var(--outline);align-items:center}
+.wbs .r:last-child{border-bottom:0}
+.wbs .r.act{background:var(--surface-sunken)} .wbs .r.act .lab{font-weight:700;font-size:13px}
+.wbs .r.sub .lab{font-size:13px;padding-left:18px;color:var(--muted);position:relative}
+.wbs .r.sub .lab::before{content:"";position:absolute;left:6px;top:7px;width:7px;height:7px;
+  border-left:1px solid var(--outline-strong);border-bottom:1px solid var(--outline-strong)}
+.wbs .gz{height:11px;border-radius:2px;background:var(--surface-sunken);border:1px solid var(--outline);
+  position:relative;overflow:hidden}
+.wbs .gz>i{position:absolute;top:0;bottom:0;display:block;border-radius:2px;background:var(--builder)}
+.wbs .gz>i.o{background:var(--owner)}

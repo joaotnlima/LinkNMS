@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinkNMS — Bootstrap a construction project · build-ready flow mockups</title>
+<!--
+  LINA-54 · Bootstrap flow: create a build → declare operating model → invite the
+  General Contractor → GC accepts → GC uploads an Excel of actions/sub-actions/
+  timelines → map columns → preview → master timeline populated.
+  Personas: Owner (screens 1-5, 11) + General Contractor (6-11). See
+  cowork/documentation/flows/01-bootstrap-project.md.
+  Tokens mirror design-system/tokens.json; components follow web-app/DESIGN.md
+  and are mapped in brand-book Storybook. Colour is NEVER the only signal.
+-->
+<style>
+  :root{
+    --owner:#2a78d6; --builder:#eb6834;
+    --fg:#0b0b0b; --paper:#fcfcfb; --sunken:#f4f3f0; --raised:#ffffff;
+    --outline:#dcdbd7; --outline-strong:#9b9a95; --muted:#5b5b58;
+    --owner-muted:#e2edfb; --owner-ink:#1a5296;
+    --builder-muted:#fce3d8; --builder-ink:#a8451c;
+    --success:#2e7d54; --warning:#b7791f; --danger:#c0392b;
+    --ok-fg:#2e7d54; --ok-bg:#e8f3ec; --ok-bd:#b7d8c4;
+    --warn-fg:#8a5a12; --warn-bg:#fbf3e2; --warn-bd:#e6cfa0;
+    --shadow:0 1px 2px rgba(11,11,11,.06), 0 4px 12px rgba(11,11,11,.08);
+    --shadow-lg:0 8px 24px rgba(11,11,11,.14);
+    --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s6:24px;--s8:32px;--s12:48px;
+    --r-ctrl:6px;--r-overlay:10px;
+    --font:system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);color:#1a1a17;background:#e9e8e3;line-height:1.45;
+       -webkit-font-smoothing:antialiased;padding:var(--s8) var(--s6) var(--s12)}
+  .num{font-variant-numeric:tabular-nums}
+  svg{display:block}
+
+  /* board chrome */
+  .board-head{max-width:2000px;margin:0 auto var(--s8)}
+  .board-head .lk{display:flex;align-items:center;gap:10px;margin-bottom:var(--s3)}
+  .board-head .lk .nm{font-weight:700;letter-spacing:-.4px;font-size:20px}
+  .board-head h1{font-size:26px;font-weight:650;letter-spacing:-.5px}
+  .board-head .sub{color:#55554e;font-size:14px;margin-top:8px;max-width:78ch}
+  .board-head .meta{color:#6b6a63;font-size:12px;margin-top:var(--s3)}
+  .legend{display:flex;flex-wrap:wrap;gap:var(--s4);align-items:center;background:#fff;
+          border:1px solid #d9d8d3;border-radius:8px;padding:10px var(--s4);margin-top:var(--s4);
+          font-size:12px;color:#55554e}
+  .legend b{color:#1a1a17}
+  .sw{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .sw .dot{width:12px;height:12px;border-radius:3px;border:1px solid rgba(0,0,0,.15)}
+
+  .section-cap{max-width:2000px;margin:var(--s12) auto var(--s4);display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .section-cap .n{font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+                  color:#8a8a82;background:#fff;border:1px solid #d9d8d3;border-radius:20px;padding:3px 10px}
+  .section-cap h2{font-size:18px;font-weight:650}
+  .section-cap span{color:#6b6a63;font-size:13px}
+
+  .rail{display:flex;align-items:flex-start;gap:var(--s2);max-width:2000px;margin:0 auto;
+        overflow-x:auto;padding-bottom:var(--s6)}
+  .step{flex:0 0 auto;display:flex;flex-direction:column;gap:10px}
+  .step .cap{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8a8a82}
+  .step .cap b{display:block;font-size:14px;font-weight:600;letter-spacing:0;text-transform:none;color:#1a1a17;margin-top:2px}
+  .arrow{flex:0 0 auto;align-self:center;color:#b9b8b2;font-size:24px;padding:0 4px;margin-top:200px}
+
+  /* device frames */
+  .phone{width:360px;background:var(--paper);color:var(--fg);border:10px solid #101010;
+         border-radius:38px;overflow:hidden;box-shadow:var(--shadow-lg)}
+  .statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;
+             padding:0 20px;font-size:13px;font-weight:600;background:var(--paper)}
+  .statusbar .sig{display:flex;gap:5px;align-items:center}
+  .topbar{display:flex;align-items:center;gap:var(--s2);padding:10px var(--s4);
+          border-bottom:1px solid var(--outline);background:var(--raised)}
+  .brand{display:flex;align-items:center;gap:7px;font-weight:650;font-size:14px}
+  .brand .mk{width:20px;height:20px}
+  .back{display:flex;align-items:center;gap:4px;font-size:14px;color:var(--owner);font-weight:600}
+  .title-c{margin:0 auto;font-weight:650;font-size:15px}
+  .kebab{color:var(--muted);font-size:20px;line-height:1;font-weight:700}
+
+  .screen{padding:var(--s4);display:flex;flex-direction:column;gap:var(--s3);min-height:620px;background:var(--paper)}
+  h2.scr{font-size:20px;font-weight:650;letter-spacing:-.3px}
+  h3.grp{font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+  .lede{font-size:13px;color:var(--muted)}
+  .spacer{margin-top:auto}
+
+  /* primitives */
+  .card{background:var(--raised);border:1px solid var(--outline);border-radius:var(--r-ctrl);padding:var(--s3)}
+  .card.flat{background:var(--paper)}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:var(--s2)}
+  .col{display:flex;flex-direction:column}
+  .stack{display:flex;flex-direction:column;gap:var(--s3)}
+  .divider{height:1px;background:var(--outline)}
+
+  .btn{display:flex;align-items:center;justify-content:center;gap:7px;height:44px;width:100%;
+       border-radius:var(--r-ctrl);font-size:14px;font-weight:650;border:1px solid var(--outline-strong);
+       background:var(--raised);color:var(--fg)}
+  .btn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2}
+  .btn.primary{background:var(--owner);border-color:var(--owner);color:#fff}
+  .btn.builder{background:var(--builder);border-color:var(--builder);color:#fff}
+  .btn.lg{height:52px;font-size:15px}
+  .btn.disabled{background:var(--sunken);border-color:var(--outline);color:var(--outline-strong)}
+  .btn-row{display:flex;gap:var(--s2)}
+  .link{color:var(--owner);font-size:13px;font-weight:600;text-decoration:none}
+
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:12px;font-weight:650}
+  .field .hint{font-weight:400;color:var(--muted)}
+  .input{min-height:44px;border:1px solid var(--outline);border-radius:var(--r-ctrl);background:var(--raised);
+         display:flex;align-items:center;padding:0 12px;font-size:14px}
+  .input.ph{color:var(--muted)}
+  .input.area{min-height:60px;align-items:flex-start;padding:11px 12px}
+  .input.focus{border-color:var(--owner);box-shadow:0 0 0 3px color-mix(in srgb,var(--owner) 30%,transparent)}
+
+  /* stepper */
+  .stepper{display:flex;align-items:center;gap:6px}
+  .stepper .s{flex:1;height:5px;border-radius:3px;background:var(--outline)}
+  .stepper .s.on{background:var(--owner)} .stepper .s.done{background:var(--owner)}
+  .stepper-lbl{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}
+
+  /* segmented operating-model choice */
+  .seg-v{display:flex;flex-direction:column;gap:8px}
+  .seg-opt{border:1px solid var(--outline);border-radius:var(--r-ctrl);padding:12px;background:var(--raised);display:flex;gap:10px;align-items:flex-start}
+  .seg-opt .rd{width:18px;height:18px;border-radius:50%;border:2px solid var(--outline-strong);flex:0 0 auto;margin-top:1px}
+  .seg-opt.on{border-color:var(--owner);box-shadow:0 0 0 2px color-mix(in srgb,var(--owner) 22%,transparent)}
+  .seg-opt.on .rd{border-color:var(--owner);background:radial-gradient(circle,var(--owner) 0 5px,transparent 6px)}
+  .seg-opt .t{font-weight:650;font-size:14px} .seg-opt .d{font-size:12px;color:var(--muted);margin-top:2px}
+
+  /* party tag */
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;border-radius:20px;padding:3px 9px;white-space:nowrap}
+  .tag .pd{width:8px;height:8px;border-radius:50%}
+  .tag.owner{background:var(--owner-muted);color:var(--owner-ink)} .tag.owner .pd{background:var(--owner)}
+  .tag.builder{background:var(--builder-muted);color:var(--builder-ink)} .tag.builder .pd{background:var(--builder)}
+
+  /* status badge */
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;border-radius:var(--r-ctrl);padding:3px 9px;border:1px solid}
+  .badge svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2}
+  .badge.pending{color:var(--warn-fg);border-color:var(--warn-bd);background:var(--warn-bg)}
+  .badge.ok{color:var(--ok-fg);border-color:var(--ok-bd);background:var(--ok-bg)}
+
+  /* empty state */
+  .empty{border:1.5px dashed var(--outline-strong);border-radius:var(--r-overlay);background:var(--paper);
+         padding:var(--s8) var(--s4);text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px}
+  .empty .ic{width:52px;height:52px;stroke:var(--outline-strong);fill:none;stroke-width:1.6}
+  .empty .t{font-weight:650;font-size:15px} .empty .d{font-size:13px;color:var(--muted);max-width:26ch}
+
+  /* invite row */
+  .invite{border:1px solid var(--outline);border-radius:var(--r-ctrl);background:var(--raised);padding:12px;display:flex;gap:10px;align-items:center}
+  .invite .av{width:38px;height:38px;border-radius:50%;background:var(--builder-muted);color:var(--builder-ink);
+              display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex:0 0 auto}
+  .invite .nm{font-weight:650;font-size:14px} .invite .em{font-size:12px;color:var(--muted)}
+
+  /* dropzone */
+  .drop{border:1.5px dashed var(--owner);border-radius:var(--r-overlay);background:var(--owner-muted);
+        padding:var(--s6) var(--s4);text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
+  .drop .ic{width:44px;height:44px;stroke:var(--owner);fill:none;stroke-width:1.6}
+  .drop .t{font-weight:650;font-size:14px;color:var(--owner-ink)} .drop .d{font-size:12px;color:var(--muted)}
+  .filechip{display:flex;align-items:center;gap:9px;border:1px solid var(--outline);border-radius:var(--r-ctrl);background:var(--raised);padding:10px 12px}
+  .filechip .xl{width:30px;height:30px;border-radius:5px;background:var(--ok-bg);color:var(--ok-fg);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex:0 0 auto}
+  .filechip .fn{font-weight:650;font-size:13px} .filechip .fs{font-size:11px;color:var(--muted)}
+  .prog{height:5px;border-radius:3px;background:var(--outline);overflow:hidden;margin-top:6px}
+  .prog>i{display:block;height:100%;background:var(--owner)}
+
+  /* wbs tree + mini gantt */
+  .wbs{border:1px solid var(--outline);border-radius:var(--r-ctrl);overflow:hidden;background:var(--raised)}
+  .wbs .a{display:grid;grid-template-columns:1fr 88px;gap:6px;padding:9px 11px;border-bottom:1px solid var(--outline);align-items:center}
+  .wbs .a:last-child{border-bottom:0}
+  .wbs .a.act{background:var(--sunken)} .wbs .a.act .lab{font-weight:700;font-size:13px}
+  .wbs .a.sub .lab{font-size:13px;padding-left:16px;color:var(--muted);position:relative}
+  .wbs .a.sub .lab::before{content:"";position:absolute;left:5px;top:8px;width:6px;height:6px;border-left:1px solid var(--outline-strong);border-bottom:1px solid var(--outline-strong)}
+  .gz{height:11px;border-radius:2px;position:relative;background:var(--sunken);border:1px solid var(--outline);overflow:hidden}
+  .gz>i{position:absolute;top:0;bottom:0;display:block;border-radius:2px}
+  .gz>i.o{background:var(--owner)} .gz>i.b{background:var(--builder)}
+
+  /* callout / stamp */
+  .callout{border:1px solid var(--warn-bd);background:var(--warn-bg);border-left:3px solid var(--warning);
+           border-radius:var(--r-ctrl);padding:10px 12px;font-size:12px;color:var(--warn-fg);line-height:1.5}
+  .callout b{color:var(--warn-fg)}
+  .stamp{border:1px solid var(--ok-bd);background:var(--ok-bg);border-radius:var(--r-ctrl);
+         padding:10px 12px;font-size:12px;color:var(--ok-fg);display:flex;gap:7px;align-items:flex-start}
+  .stamp svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;flex:0 0 auto;margin-top:1px}
+
+  /* designer note */
+  .note{width:360px;background:#fff;border:1px solid #ddd;border-left:3px solid var(--owner);
+        border-radius:8px;padding:11px 13px;font-size:12px;color:#44443e;line-height:1.55}
+  .note b{color:#1a1a17} .note .ac{font-weight:700;color:var(--owner)}
+
+  /* desktop import panel */
+  .desk{width:1180px;max-width:100%;background:var(--paper);border:1px solid var(--outline);border-radius:14px;
+        overflow:hidden;box-shadow:var(--shadow-lg)}
+  .desk .chrome{display:flex;align-items:center;gap:10px;padding:12px var(--s6);border-bottom:1px solid var(--outline);background:var(--raised)}
+  .desk .chrome .brand{font-size:15px}
+  .desk .chrome .crumbs{color:var(--muted);font-size:13px;margin-left:8px}
+  .desk .chrome .tag{margin-left:auto}
+  .desk .body{padding:var(--s6);display:grid;grid-template-columns:1fr 1.15fr;gap:var(--s6)}
+  .desk h2.scr{margin-bottom:2px}
+  .maptbl{border:1px solid var(--outline);border-radius:var(--r-ctrl);overflow:hidden;background:var(--raised)}
+  .maptbl .hd{display:grid;grid-template-columns:1.1fr 1fr;background:var(--sunken);font-size:11px;font-weight:700;
+              letter-spacing:.4px;text-transform:uppercase;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--outline)}
+  .maptbl .rw{display:grid;grid-template-columns:1.1fr 1fr;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--outline)}
+  .maptbl .rw:last-child{border-bottom:0}
+  .maptbl .colname{font-weight:650;font-size:13px} .maptbl .sample{font-size:11px;color:var(--muted)}
+  .sel{border:1px solid var(--outline);border-radius:var(--r-ctrl);background:var(--raised);padding:8px 10px;
+       font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .sel.set{border-color:var(--owner);color:var(--owner-ink);background:var(--owner-muted)}
+  .sel.warn{border-color:var(--warn-bd);color:var(--warn-fg);background:var(--warn-bg)}
+  .sel .cv{font-size:11px}
+  .prevtbl{border-collapse:collapse;width:100%;font-size:12px}
+  .prevtbl th,.prevtbl td{border-bottom:1px solid var(--outline);padding:7px 9px;text-align:left;white-space:nowrap}
+  .prevtbl th{font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);background:var(--sunken)}
+  .prevtbl td.num{font-variant-numeric:tabular-nums}
+  .prevtbl tr.warn td{background:var(--warn-bg)}
+  .count{display:inline-flex;gap:6px;align-items:center;font-size:12px;font-weight:650}
+  .count .n{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+
+<header class="board-head">
+  <div class="lk">
+    <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>
+    <span class="nm">LinkNMS</span>
+  </div>
+  <h1>Bootstrap a construction project</h1>
+  <p class="sub">The flow the product cannot start without: an owner goes from an empty account to a populated master
+    timeline — creating a build, declaring the operating model, inviting the General Contractor, and letting the GC
+    import their existing plan (actions, sub-actions, timelines) from Excel. Owner screens are phone-first; the Excel
+    import is designed desktop-first (dense mapping work). Spec: <b>cowork/documentation/flows/01-bootstrap-project.md</b>.</p>
+  <p class="meta">LINA-54 · Product Designer · light theme shown · dark parity inherits design-system/tokens.json ·
+    every state pairs colour + icon + label.</p>
+  <div class="legend">
+    <span class="sw"><span class="dot" style="background:var(--owner)"></span><b>Owner</b> side (blue)</span>
+    <span class="sw"><span class="dot" style="background:var(--builder)"></span><b>Contractor</b> side (orange)</span>
+    <span class="sw"><span class="dot" style="background:var(--warning)"></span>Pending / needs input</span>
+    <span class="sw"><span class="dot" style="background:var(--success)"></span>Verified / imported</span>
+    <span class="sw">New components → mapped in <b>brand-book</b> Storybook</span>
+  </div>
+</header>
+
+<!-- ============ PART 1 · OWNER CREATES THE BUILD & INVITES THE GC ============ -->
+<div class="section-cap"><span class="n">Part 1</span><h2>Owner creates the build &amp; invites the contractor</h2><span>phone-first · persona: Client / Owner</span></div>
+
+<div class="rail">
+
+  <!-- 1 · Empty portfolio -->
+  <div class="step"><div class="cap">Screen 1<b>Empty portfolio</b></div>
+    <div class="phone"><div class="statusbar"><span>9:41</span><span class="sig">●●● LinkNMS</span></div>
+      <div class="topbar"><span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>LinkNMS</span></div>
+      <div class="screen">
+        <h2 class="scr">Your builds</h2>
+        <div class="empty">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg>
+          <div class="t">No builds yet</div>
+          <div class="d">Start a shared record for your house. Everyone working on it reads the same facts.</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn primary lg"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Create your first build</button>
+      </div>
+    </div>
+  </div>
+  <div class="arrow">→</div>
+
+  <!-- 2 · New build basics -->
+  <div class="step"><div class="cap">Screen 2<b>New build · Basics</b></div>
+    <div class="phone"><div class="statusbar"><span>9:41</span><span class="sig">●●●</span></div>
+      <div class="topbar"><span class="back">‹ Cancel</span><span class="title-c">New build</span><span class="kebab" style="opacity:0">⋯</span></div>
+      <div class="screen">
+        <div><div class="stepper-lbl">Step 1 of 3 · Basics</div>
+          <div class="stepper" style="margin-top:6px"><span class="s on"></span><span class="s"></span><span class="s"></span></div></div>
+        <div class="field"><label>Build name</label><div class="input focus">Casa Almeida — Sintra</div></div>
+        <div class="field"><label>Address</label><div class="input">Rua das Oliveiras 14, Sintra</div></div>
+        <div class="field"><label>Build type</label><div class="input">New single-family house</div></div>
+        <div class="spacer"></div>
+        <button class="btn primary lg">Continue<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </div>
+    </div>
+  </div>
+  <div class="arrow">→</div>
+
+  <!-- 3 · Operating model -->
+  <div class="step"><div class="cap">Screen 3<b>New build · Operating model</b></div>
+    <div class="phone"><div class="statusbar"><span>9:41</span><span class="sig">●●●</span></div>
+      <div class="topbar"><span class="back">‹ Back</span><span class="title-c">New build</span><span class="kebab" style="opacity:0">⋯</span></div>
+      <div class="screen">
+        <div><div class="stepper-lbl">Step 2 of 3 · How it's built</div>
+          <div class="stepper" style="margin-top:6px"><span class="s done"></span><span class="s on"></span><span class="s"></span></div></div>
+        <p class="lede">This shapes who you invite. You'll only be asked once.</p>
+        <div class="seg-v">
+          <div class="seg-opt on"><span class="rd"></span><div><div class="t">Turnkey — one contractor</div><div class="d">A general contractor runs and coordinates every trade under one contract.</div></div></div>
+          <div class="seg-opt"><span class="rd"></span><div><div class="t">Direct to specialties</div><div class="d">You hire each trade yourself — mason, electrician, plumber… You coordinate.</div></div></div>
+          <div class="seg-opt"><span class="rd"></span><div><div class="t">Hybrid</div><div class="d">A contractor for structure, plus some trades you hire directly.</div></div></div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn primary lg">Continue<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </div>
+    </div>
+  </div>
+  <div class="arrow">→</div>
+
+  <!-- 4 · Invite GC -->
+  <div class="step"><div class="cap">Screen 4<b>Invite the contractor</b></div>
+    <div class="phone"><div class="statusbar"><span>9:41</span><span class="sig">●●●</span></div>
+      <div class="topbar"><span class="back">‹ Back</span><span class="title-c">New build</span><span class="kebab" style="opacity:0">⋯</span></div>
+      <div class="screen">
+        <div><div class="stepper-lbl">Step 3 of 3 · Invite</div>
+          <div class="stepper" style="margin-top:6px"><span class="s done"></span><span class="s done"></span><span class="s on"></span></div></div>
+        <p class="lede">Invite your General Contractor. They'll add the plan and timeline.</p>
+        <div class="field"><label>Name</label><div class="input">Nuno Ferreira — Ferreira Construção</div></div>
+        <div class="field"><label>Email</label><div class="input focus">nuno@ferreiraconstrucao.pt</div></div>
+        <div class="field"><label>Role on this build</label><div class="input"><span class="tag builder"><span class="pd"></span>General Contractor</span></div></div>
+        <div class="field"><label>Scope note <span class="hint">(optional)</span></label><div class="input area">Whole-house build per the signed contract.</div></div>
+        <div class="spacer"></div>
+        <button class="btn primary lg"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" style="display:none"/><path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z"/></svg>Send invite</button>
+      </div>
+    </div>
+  </div>
+  <div class="arrow">→</div>
+
+  <!-- 5 · Invite sent -->
+  <div class="step"><div class="cap">Screen 5<b>Invite sent</b></div>
+    <div class="phone"><div class="statusbar"><span>9:42</span><span class="sig">●●●</span></div>
+      <div class="topbar"><span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>LinkNMS</span></div>
+      <div class="screen">
+        <div class="row"><h2 class="scr">Casa Almeida</h2><span class="tag owner"><span class="pd"></span>You · Owner</span></div>
+        <div class="card"><div class="row"><span class="stepper-lbl" style="margin:0">Contractor</span><span class="badge pending"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Invite sent</span></div>
+          <div class="invite" style="margin-top:10px;border:0;padding:8px 0"><span class="av">NF</span><div><div class="nm">Nuno Ferreira</div><div class="em">nuno@ferreiraconstrucao.pt · awaiting reply</div></div></div>
+        </div>
+        <h3 class="grp">What happens next</h3>
+        <div class="card flat" style="font-size:13px;color:var(--muted);line-height:1.6">The contractor accepts, then uploads the plan of actions and timelines. Your master timeline fills in from there — you'll be notified.</div>
+        <div class="callout"><b>Nothing is tracked yet.</b> The record starts once the plan is imported.</div>
+        <div class="spacer"></div>
+        <button class="btn">Resend invite</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="rail" style="margin-top:var(--s4)">
+  <div class="note"><span class="ac">Why the model is asked first (screen 3).</span> The operating model decides <b>who</b> gets invited on the very next screen — one GC (turnkey), each trade (direct), or both (hybrid). It's a property of the build, captured once and never re-prompted. This is the first-time owner's anxiety budget respected: they don't have to "learn to manage a build."</div>
+  <div class="note"><span class="ac">Empty ≠ dead end.</span> Screens 1 and 7 are empty states with a single primary action, not blank dashboards. The stressed, first-time owner is never left guessing what to do next.</div>
+  <div class="note"><span class="ac">Neutral referee.</span> The invited party carries the <b>orange contractor tag</b> from the first moment; the owner is <b>blue</b>. Side is set by position + label + colour, never colour alone — legible in bright site light and for colour-blind users.</div>
+</div>
+
+<!-- ============ PART 2 · GC ACCEPTS & IMPORTS THE PLAN ============ -->
+<div class="section-cap"><span class="n">Part 2</span><h2>Contractor accepts &amp; imports the plan</h2><span>phone accept · desktop-first import · persona: General Contractor</span></div>
+
+<div class="rail">
+
+  <!-- 6 · GC accepts -->
+  <div class="step"><div class="cap">Screen 6<b>Contractor accepts</b></div>
+    <div class="phone"><div class="statusbar"><span>10:03</span><span class="sig">●●●</span></div>
+      <div class="topbar"><span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>LinkNMS</span></div>
+      <div class="screen" style="justify-content:center;gap:var(--s4)">
+        <div class="empty" style="border-style:solid;border-color:var(--outline);background:var(--raised)">
+          <span class="av" style="width:46px;height:46px;background:var(--owner-muted);color:var(--owner-ink)">MA</span>
+          <div class="t">Marta Almeida invited you</div>
+          <div class="d">to the shared record for <b>Casa Almeida — Sintra</b>, as General Contractor.</div>
+          <span class="tag builder"><span class="pd"></span>General Contractor</span>
+        </div>
+        <div class="card flat" style="font-size:12px;color:var(--muted);line-height:1.6">By joining you'll add the plan and manage your trade contract. Everything you log is stamped and shared with the owner.</div>
+        <button class="btn builder lg">Accept &amp; join the build</button>
+        <button class="btn" style="height:44px">Decline</button>
+      </div>
+    </div>
+  </div>
+  <div class="arrow">→</div>
+
+  <!-- 7 · GC empty build -->
+  <div class="step"><div class="cap">Screen 7<b>Add your plan</b></div>
+    <div class="phone"><div class="statusbar"><span>10:04</span><span class="sig">●●●</span></div>
+      <div class="topbar"><span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>LinkNMS</span></div>
+      <div class="screen">
+        <div class="row"><h2 class="scr">Casa Almeida</h2><span class="tag builder"><span class="pd"></span>You · GC</span></div>
+        <div class="empty">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z"/><path d="M14 4v5h5"/><path d="M9 14h6M9 17h6M9 11h2"/></svg>
+          <div class="t">Add your plan to start the record</div>
+          <div class="d">Upload your schedule of actions, sub-actions and timelines. Excel is fine — you'll map the columns next.</div>
+        </div>
+        <a class="link" style="text-align:center">↓ Download the LinkNMS plan template (.xlsx)</a>
+        <div class="spacer"></div>
+        <button class="btn builder lg"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>Upload plan (Excel)</button>
+      </div>
+    </div>
+  </div>
+  <div class="arrow">→</div>
+
+  <!-- 8 · Dropzone -->
+  <div class="step"><div class="cap">Screen 8<b>Upload · Dropzone</b></div>
+    <div class="phone"><div class="statusbar"><span>10:05</span><span class="sig">●●●</span></div>
+      <div class="topbar"><span class="back">‹ Cancel</span><span class="title-c">Import plan</span><span class="kebab" style="opacity:0">⋯</span></div>
+      <div class="screen">
+        <div class="stepper-lbl">Import · Step 1 of 3 · Choose file</div>
+        <div class="drop">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+          <div class="t">Drop your .xlsx here</div><div class="d">or tap to browse — max 10 MB</div>
+        </div>
+        <div class="filechip"><span class="xl">XLS</span><div style="flex:1"><div class="fn">plano-obra-casa-almeida.xlsx</div><div class="fs">248 KB · reading “Cronograma”…</div></div></div>
+        <div class="prog"><i style="width:72%"></i></div>
+        <div class="field"><label>Sheet</label><div class="input">Cronograma <span style="margin-left:auto;color:var(--muted)">▾</span></div></div>
+        <div class="spacer"></div>
+        <button class="btn builder lg disabled">Map columns →</button>
+      </div>
+    </div>
+  </div>
+  <div class="arrow">→</div>
+
+  <!-- 11 · Timeline populated (shown at end of Part 2 rail as the payoff) -->
+  <div class="step"><div class="cap">Screen 11<b>Timeline populated</b></div>
+    <div class="phone"><div class="statusbar"><span>10:07</span><span class="sig">●●●</span></div>
+      <div class="topbar"><span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>LinkNMS</span></div>
+      <div class="screen">
+        <div class="row"><h2 class="scr">Master timeline</h2><span class="tag builder"><span class="pd"></span>GC</span></div>
+        <div class="stamp"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg><div>Plan imported by <b>Nuno Ferreira</b> · 6 actions, 14 sub-actions · today 10:07. Owner notified.</div></div>
+        <div class="wbs">
+          <div class="a act"><span class="lab">1 · Foundations</span><span class="gz"><i class="b" style="left:2%;width:26%"></i></span></div>
+          <div class="a sub"><span class="lab">Excavation</span><span class="gz"><i class="b" style="left:2%;width:10%"></i></span></div>
+          <div class="a sub"><span class="lab">Rebar &amp; formwork</span><span class="gz"><i class="b" style="left:11%;width:9%"></i></span></div>
+          <div class="a sub"><span class="lab">Pour &amp; cure</span><span class="gz"><i class="b" style="left:19%;width:9%"></i></span></div>
+          <div class="a act"><span class="lab">2 · Structure</span><span class="gz"><i class="b" style="left:28%;width:30%"></i></span></div>
+          <div class="a act"><span class="lab">3 · Roof</span><span class="gz"><i class="b" style="left:56%;width:16%"></i></span></div>
+          <div class="a act"><span class="lab">4 · MEP rough-in</span><span class="gz"><i class="b" style="left:60%;width:22%"></i></span></div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn builder lg">Open the build</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============ THE IMPORT · DESKTOP-FIRST (screens 9 & 10) ============ -->
+<div class="section-cap"><span class="n">Import</span><h2>Screens 9–10 · Map columns &amp; preview — desktop-first</h2><span>dense tabular work · nothing is inferred silently</span></div>
+
+<div class="rail" style="display:block">
+  <div class="desk">
+    <div class="chrome"><span class="brand"><svg class="mk" width="20" height="20" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="#fcfcfb" stroke="#0b0b0b" stroke-width="2"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/><rect x="18" y="34" width="28" height="6" rx="3" fill="#2a78d6"/><rect x="18" y="44" width="17" height="6" rx="3" fill="#eb6834"/></svg>LinkNMS</span><span class="crumbs">Casa Almeida · Import plan · <b style="color:var(--fg)">Map columns</b></span><span class="tag builder"><span class="pd"></span>Nuno F. · GC</span></div>
+    <div class="body">
+      <!-- left: mapping -->
+      <div class="col" style="gap:var(--s3)">
+        <div><h2 class="scr">Map your columns</h2><p class="lede">We read <b>plano-obra-casa-almeida.xlsx › Cronograma</b>. Tell us what each column means — we don't guess.</p></div>
+        <div class="maptbl">
+          <div class="hd"><span>Spreadsheet column</span><span>Maps to LinkNMS field</span></div>
+          <div class="rw"><div><div class="colname">Tarefa</div><div class="sample">“Fundações”, “Escavação”, “Estrutura”…</div></div><div class="sel set"><span>Action / Sub-action</span><span class="cv">▾</span></div></div>
+          <div class="rw"><div><div class="colname">Início</div><div class="sample">“2026-09-01”, “2026-09-08”…</div></div><div class="sel set"><span>Start date</span><span class="cv">▾</span></div></div>
+          <div class="rw"><div><div class="colname">Fim</div><div class="sample">“2026-09-05”, “09/22/26”…</div></div><div class="sel set"><span>End date</span><span class="cv">▾</span></div></div>
+          <div class="rw"><div><div class="colname">Especialidade</div><div class="sample">“Estrutura”, “MEP”…</div></div><div class="sel set"><span>Trade</span><span class="cv">▾</span></div></div>
+          <div class="rw"><div><div class="colname">Depende de</div><div class="sample">“Fundações”, “Estrutura”…</div></div><div class="sel set"><span>Dependency</span><span class="cv">▾</span></div></div>
+          <div class="rw"><div><div class="colname">Notas</div><div class="sample">free text</div></div><div class="sel warn"><span>Not imported</span><span class="cv">▾</span></div></div>
+        </div>
+        <div class="callout"><b>1 column not mapped</b> — “Notas” will be skipped. Required fields (Action, Start, End) are all mapped, so you can continue.</div>
+      </div>
+      <!-- right: live preview -->
+      <div class="col" style="gap:var(--s3)">
+        <div class="row"><h3 class="grp" style="margin:0">Live preview · first 6 rows</h3>
+          <span class="count"><span class="badge ok"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>18 rows OK</span><span class="badge pending"><svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>2 warnings</span></span></div>
+        <div style="overflow:auto;border:1px solid var(--outline);border-radius:var(--r-ctrl)">
+          <table class="prevtbl">
+            <thead><tr><th>Action</th><th>Sub-action</th><th>Start</th><th>End</th><th>Trade</th><th>Depends on</th></tr></thead>
+            <tbody>
+              <tr><td>Foundations</td><td>—</td><td class="num">01 Sep</td><td class="num">22 Sep</td><td>Structure</td><td>—</td></tr>
+              <tr><td></td><td>Excavation</td><td class="num">01 Sep</td><td class="num">05 Sep</td><td>Structure</td><td>—</td></tr>
+              <tr><td></td><td>Rebar &amp; formwork</td><td class="num">08 Sep</td><td class="num">15 Sep</td><td>Structure</td><td>Excavation</td></tr>
+              <tr class="warn"><td></td><td>Pour &amp; cure</td><td class="num">16 Sep</td><td class="num">—</td><td>Structure</td><td>Rebar</td></tr>
+              <tr><td>Structure</td><td>—</td><td class="num">23 Sep</td><td class="num">20 Oct</td><td>Structure</td><td>Foundations</td></tr>
+              <tr class="warn"><td>MEP rough-in</td><td>Electrical 1st fix</td><td class="num">21 Oct</td><td class="num">04 Nov</td><td>MEP</td><td>Framing</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout"><b>2 rows to check after import:</b> “Pour &amp; cure” has no end date; “Electrical 1st fix” depends on <b>Framing</b>, which isn't an action in this file. Warnings don't block — you can import and fix these in the timeline.</div>
+        <div class="row"><span class="lede">Actions <b>6</b> · Sub-actions <b>14</b> · Trades <b>4</b></span>
+          <div class="btn-row" style="width:auto"><button class="btn" style="width:auto;padding:0 16px">Back</button><button class="btn builder" style="width:auto;padding:0 20px">Confirm import →</button></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="note" style="width:auto;max-width:1180px;margin-top:var(--s4)"><span class="ac">Why explicit mapping, not auto-detect.</span> The whole product exists to kill “I thought that was included / assumed it was ready.” Guessing the columns would reintroduce exactly that ambiguity at the worst moment — the foundation of the record. So the GC <b>confirms the meaning of every column</b>, sees a live preview, and per-row problems surface as <b>warnings that don't block</b> (import now, fix in place) while only a missing <b>required mapping</b> blocks Confirm. The <b>Dependency</b> column becomes the dependency-gated start; <b>Trade</b> seeds the Trade Contract. New components mapped in Storybook: <code>EmptyState, Stepper, PartyInvite, FileDropzone, ImportMapping, WBSTree</code>.</div>
+</div>
+
+</body>
+</html>
