@@ -49,6 +49,14 @@ function canonicalOccurredAt(occurredAt) {
 // Read the full chain for a project in seq order, shaped exactly as verifyChain
 // expects. occurred_at comes back in the same canonical ISO string that was
 // hashed, so verify recomputes identical payload/entry hashes.
+//
+// Reads go through the `ledger.project_audit` VIEW, never the base table. No app
+// role holds SELECT on ledger.audit_event by design (ADR-0002 §4) — the base
+// table is the trust anchor, reachable only by its owner and by append_event.
+// Querying it directly worked for as long as every service still connected as
+// the table-owning migrator; the moment role separation became real (LINA-56)
+// it is `42501 permission denied for table audit_event`. The view selects
+// exactly the columns below, so this is a narrowing, not a way around the guard.
 const READ_CHAIN_SQL = `
   select seq,
          type,
@@ -58,7 +66,7 @@ const READ_CHAIN_SQL = `
          payload_hash as "payloadHash",
          prev_hash    as "prevHash",
          entry_hash   as "entryHash"
-    from ledger.audit_event
+    from ledger.project_audit
    where project_id = $1
    order by seq`;
 
@@ -155,7 +163,7 @@ export function createPgLedger({ pool = getPool(), cache = createLedgerCache() }
       try {
         const baseRes = await client.query(
           `select (payload ->> 'baselineBudgetCents')::bigint as baseline
-             from ledger.audit_event
+             from ledger.project_audit
             where project_id = $1 and type = 'project_created'
             order by seq limit 1`,
           [projectId],

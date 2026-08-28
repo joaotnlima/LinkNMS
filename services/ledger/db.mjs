@@ -26,16 +26,47 @@ export function sslFor(connectionString) {
   return local ? false : { rejectUnauthorized: false };
 }
 
-export function createPool(connectionString = process.env.DATABASE_URL, { max = 8 } = {}) {
+// A Postgres role name we are willing to interpolate into `SET ROLE`. There is
+// no parameter binding for an identifier, so this is an allow-list, not an
+// escape: anything that is not a plain lower-snake identifier is refused.
+const SAFE_ROLE = /^[a-z_][a-z0-9_]*$/;
+
+/**
+ * @param {string} connectionString
+ * @param {{ max?: number, role?: string }} [opts]
+ * @param opts.role  Run every connection as this role via `SET ROLE`. Neon issues
+ *   the `<service>_app` roles as NOLOGIN (they cannot open a connection of their
+ *   own), so this is how a service still gets only its own privileges: connect
+ *   as the login role, then immediately drop into the service role. Least
+ *   privilege is then enforced by Postgres rather than by each service
+ *   remembering to behave — which is what the integration tests assert.
+ */
+export function createPool(connectionString = process.env.DATABASE_URL, { max = 8, role } = {}) {
   if (!connectionString) {
     throw new Error('DATABASE_URL is required for the ledger service');
   }
-  return new Pool({
+  if (role && !SAFE_ROLE.test(role)) {
+    throw new Error(`unsafe Postgres role name: ${JSON.stringify(role)}`);
+  }
+  const pool = new Pool({
     connectionString,
     max,
     idleTimeoutMillis: 10_000,
     ssl: sslFor(connectionString),
   });
+  if (role) {
+    // node-postgres serialises queries per client in submission order, so this
+    // lands before any caller query on the same connection without an await.
+    pool.on('connect', (client) => {
+      client.query(`SET ROLE ${role}`).catch((err) => {
+        // Fail loud and drop the connection: one that silently stayed on the
+        // login role would hold MORE privilege than intended.
+        console.error(`[db] SET ROLE ${role} failed`, err);
+        client.end();
+      });
+    });
+  }
+  return pool;
 }
 
 export function getPool() {

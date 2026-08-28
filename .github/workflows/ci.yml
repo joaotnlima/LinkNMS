@@ -85,6 +85,61 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
         run: npm run test:ledger
 
+  gateway-integration:
+    name: API surface — mounted endpoints over Postgres
+    runs-on: ubuntu-latest
+
+    # The R0 acceptance walk (FR1–FR9) driven through the SAME handlers the Next
+    # routes call, against a real database and — crucially — with each service
+    # connected as its own least-privilege `<service>_app` role.
+    #
+    # This is the only job that can catch a missing GRANT. Every other suite runs
+    # either in memory or as the table-owning migrator, which holds every
+    # privilege and therefore cannot observe a missing one. LINA-37, LINA-51 and
+    # LINA-56 each shipped a grant gap that unit tests could not see; three of
+    # them were found by this suite on the day it was written.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: migrator
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: linknms_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: services
+        run: npm install --ignore-scripts
+
+      # Full platform migration: roles, the five service schemas, and every
+      # per-service migration — including the grant matrix the suite asserts.
+      - name: Apply all migrations
+        env:
+          MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+        run: node db/migrate.mjs
+
+      - name: Run mounted-surface integration tests
+        working-directory: services
+        env:
+          # The suite connects as this login role and then SET ROLEs into each
+          # `<service>_app` role, exactly as the deployed API does.
+          VERIFY_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+        run: npm run test:gateway
+
   analytics-tests:
     name: Analytics — event contract + composition root
     runs-on: ubuntu-latest
