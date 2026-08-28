@@ -40,6 +40,14 @@ const mapMembership = (r) => r && {
   partyId: r.party_id,
   role: r.role,
   joinedAt: r.joined_at instanceof Date ? r.joined_at.toISOString() : r.joined_at,
+  // Present only where the query joins identity.party (listMemberships). The UI
+  // must render "who decided this" as a NAME, and party ids never leave this
+  // schema — decision and change_order live in their own schemas and cannot join
+  // to it. Every decision author and change-order proposer is by construction a
+  // project member, so the membership list is the one place that lookup can and
+  // should exist. Spread conditionally so the field is simply absent (rather
+  // than an misleading explicit null) on the queries that do not join.
+  ...(r.display_name === undefined ? {} : { displayName: r.display_name }),
 };
 const mapInvitation = (r) => r && {
   id: r.id,
@@ -77,8 +85,11 @@ export function createPgStore({ pool = getPool(), ledger }) {
   }
   async function listMemberships(projectId) {
     const { rows } = await pool.query(
-      `select * from identity.membership where project_id = $1
-        order by (role <> 'owner'), joined_at, id`,
+      `select m.*, p.display_name
+         from identity.membership m
+         left join identity.party p on p.id = m.party_id
+        where m.project_id = $1
+        order by (m.role <> 'owner'), m.joined_at, m.id`,
       [projectId],
     );
     return rows.map(mapMembership);

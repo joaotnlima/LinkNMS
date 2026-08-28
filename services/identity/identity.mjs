@@ -298,6 +298,16 @@ function shapeProject(project, memberships, budget, actingRole) {
     currentBudgetCents: budget?.currentBudgetCents ?? project.baselineBudgetCents,
     actingRole, // derived server-side from the session (never the body)
     createdAt: project.createdAt,
-    members: memberships.map((m) => ({ partyId: m.partyId, role: m.role, joinedAt: m.joinedAt })),
+    // `displayName` is null when the store did not join identity.party (the
+    // in-memory store, and the freshly-built owner membership createProject
+    // returns before any read). Null, not a fabricated name: the UI renders
+    // "Unknown party" rather than inventing an attribution, which on a record
+    // whose whole promise is "who decided this" is the only honest fallback.
+    members: memberships.map((m) => ({
+      partyId: m.partyId,
+      role: m.role,
+      joinedAt: m.joinedAt,
+      displayName: m.displayName ?? null,
+    })),
   };
 }

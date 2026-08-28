@@ -5,7 +5,6 @@ import { notFound } from 'next/navigation';
 import { getChangeOrder, getProject, ApiError } from '@/lib/api';
 import { CoStatusChip } from '@/components/CoStatusChip';
 import { CoDecisionButtons } from '@/components/CoDecisionButtons';
-import { DemoBanner } from '@/components/chrome';
 import { StatusIcon } from '@/components/icons';
 import { money, moneyPrecise, delta, formatDateTime, roleLabel } from '@/lib/format';
 
@@ -30,7 +29,6 @@ export default async function CoDetailPage({ params }: { params: Promise<{ id: s
         <a className="back" href="/projects/maple-street/change-orders">‹ Change orders</a>
       </header>
       <main className="screen">
-        <DemoBanner />
         <div className="spread">
           <h1 className="scr" style={{ maxWidth: '80%' }}>{co.title}</h1>
           <CoStatusChip status={co.status} />

@@ -2,7 +2,6 @@
 // ties the four surfaces together. Mobile-first; the shell caps width for desktop.
 import Link from 'next/link';
 import { Mark, HomeIcon, DecisionIcon, ChangeIcon, AuditIcon } from './icons';
-import { isDemo } from '@/lib/api';
 
 export function TopBar({ back }: { back?: { href: string; label: string } }) {
   return (
@@ -46,12 +45,7 @@ export function BottomNav({ projectId, active }: { projectId: string; active: Ta
   );
 }
 
-export function DemoBanner() {
-  if (!isDemo()) return null;
-  return (
-    <div className="demo-banner" role="note">
-      <strong>Demo data.</strong> Live Slices 1–4 API routes aren't wired to this deployment yet — showing the
-      Maple Street scenario. Set <code>LINKNMS_API_BASE</code> to read the live contract endpoints.
-    </div>
-  );
-}
+// `DemoBanner` is GONE (LINA-57), and deliberately not replaced by a quieter
+// variant. The surfaces now render persisted data or fail loudly; there is no
+// third state left for a banner to warn about, and keeping a dormant one would
+// re-open the door to shipping fixtures behind a notice nobody reads.
