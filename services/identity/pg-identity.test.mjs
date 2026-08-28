@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
-import { createPool } from '../ledger/db.mjs';
+import { createPool, sslFor } from '../ledger/db.mjs';
 import { createPgLedger } from '../ledger/pg-ledger.mjs';
 import { verifyChain } from '../ledger/hash-chain.mjs';
 import { createPgStore } from './pg-store.mjs';
@@ -30,7 +30,10 @@ const { Pool } = pg;
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..');
 const DB = process.env.DATABASE_URL;
-const ssl = { rejectUnauthorized: false };
+// sslFor() reads the target: TLS off-localhost, none on it. Hard-coding TLS here
+// made this suite Neon-only — against the CI Postgres container it died with
+// 'The server does not support SSL connections' before a single assertion ran.
+const ssl = sslFor(DB);
 
 // Migrations applied in the runner's deterministic order (db/migrate.mjs), minus
 // db/roles.sql: role creation + database-level GRANTs are a one-per-environment

@@ -75,6 +75,17 @@ jobs:
         working-directory: services
         run: npm install --ignore-scripts
 
+      # The ledger reader now goes through the `ledger.project_audit` VIEW rather
+      # than selecting ledger.audit_event directly (app roles hold no SELECT on
+      # the table — LINA-56). That view is created by 0002_ledger_roles.sql and
+      # granted to roles that db/roles.sql owns, so the suite can no longer get by
+      # on applying 0001 to a bare database: the full platform migration has to
+      # run first.
+      - name: Apply all migrations
+        env:
+          MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+        run: node db/migrate.mjs
+
       # Pure hash-chain core + Postgres adversarial suite (tamper/delete/forge/
       # reorder detected at exact seq, budget math, four-pillar status, audit
       # ETag/304, write-guard). Local PG speaks no TLS — the suite detects the
