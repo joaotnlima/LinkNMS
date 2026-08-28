@@ -1,0 +1,37 @@
+# LinkNMS — QA trust-invariant quality gate (LINA-21 / LINA-22).
+#
+# Guards the three properties that, if they can silently break, mean the product
+# has no reason to exist: audit-trail immutability, budget math, and
+# segregation of duties on change-order approval.
+#
+# Deliberately a SEPARATE workflow from ci.yml: this gate is stack-agnostic
+# (Python 3, zero dependencies) and must stay runnable even when the app or
+# service toolchain is mid-change. See qa/README.md.
+#
+# Today it runs against the golden fixture. When the domain HTTP surface lands
+# (LINA-56), a second step exports the same JSON shape from the live API and
+# points the checker at it too — see qa/README.md "Graduating the gate".
+name: quality-gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  trust-invariants:
+    name: QA — audit / budget / permission invariants
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Runs the checker twice over: the golden fixture must PASS, and five
+      # seeded tampering variants must each be CAUGHT. A gate that only ever
+      # passes proves nothing — this is the regression guard on the guard.
+      - name: Run audit-trail / budget / permission invariant gate
+        run: python3 qa/checks/run_gate.py

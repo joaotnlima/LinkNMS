@@ -1,0 +1,109 @@
+# Production schema gate (LINA-62).
+#
+# The app deploys from `main` automatically via Vercel; before this workflow the
+# schema did not. Code and schema drifted apart silently and asymmetrically —
+# deploys always won, migrations always lagged — with no signal until a request
+# hit the missing object in production. That is how PR #12's
+# 0004_ledger_change_order_budget_grant.sql sat unapplied in prod (LINA-51).
+#
+# This workflow closes it in two steps, in order:
+#   1. migrate — apply pending migrations to the production branch as `migrator`.
+#   2. verify  — read-only assert that prod matches the tree AND that the ledger
+#                grant matrix still holds. Fails the run naming the exact file
+#                or grant.
+#
+# WHY GITHUB ACTIONS AND NOT A VERCEL BUILD STEP
+# A Vercel build step is the wrong home for a privileged DB write: builds are
+# cached (a cache hit skips the step entirely), can run concurrently for the same
+# commit, and have no ordering guarantee against the deployment they produce.
+# An Actions job gated on push-to-`main` runs exactly once per merge commit, is
+# serialised by `concurrency`, and holds its credential in a secret that a PR
+# from a fork can never reach.
+#
+# SECURITY
+# `on: push: branches: [main]` ONLY. This workflow is never triggered by
+# `pull_request`, so a fork PR cannot execute it and cannot see its secrets.
+# MIGRATOR_DATABASE_URL is a production credential scoped to the `production`
+# environment; it lives in GitHub secrets and never in the repo.
+name: Production schema
+
+on:
+  push:
+    branches: [main]
+  # Catches a change made directly against the database between merges — e.g. a
+  # hand-applied grant widening. Verify only; this schedule never writes.
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+# Never run two migrations against production at once, and never cancel one
+# mid-flight: db/migrate.mjs is transactional per file, but a cancelled run
+# leaves the remaining files unapplied and the next push racing it.
+concurrency:
+  group: prod-schema
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply pending migrations to production
+    # Scheduled runs verify only — they must never write.
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fail loudly if the migrator credential is missing
+        env:
+          MIGRATOR_DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+        run: |
+          if [ -z "${MIGRATOR_DATABASE_URL}" ]; then
+            echo "::error::MIGRATOR_DATABASE_URL is not set in the 'production' environment."
+            echo "The production schema gate is unprovisioned — merges to main are NOT"
+            echo "applying migrations, which is the exact failure mode LINA-62 exists to"
+            echo "prevent. Add the secret (Neon production branch, role: migrator) and re-run."
+            exit 1
+          fi
+          psql --version
+
+      # db/migrate.mjs is forward-only, transactional per file and checksum-
+      # tracked, so running it on every push is safe: with nothing pending it is
+      # a no-op by construction. CI already proves that (ci.yml idempotency step).
+      - name: Show what is pending (dry run)
+        env:
+          MIGRATOR_DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+        run: node db/migrate.mjs --dry-run
+
+      - name: Apply
+        env:
+          MIGRATOR_DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+        run: node db/migrate.mjs
+
+  verify:
+    name: Verify production matches main
+    # Runs after migrate on a push; runs standalone on the daily schedule.
+    needs: [migrate]
+    if: always() && (github.event_name == 'schedule' || needs.migrate.result == 'success')
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Read-only by construction — every statement in the checker is a SELECT
+      # against a catalog. Prefer a dedicated read-only credential; fall back to
+      # the migrator so the gate still works before that role exists.
+      - name: Drift + grant-matrix check
+        env:
+          READONLY_DATABASE_URL: ${{ secrets.READONLY_DATABASE_URL }}
+          MIGRATOR_DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+        run: node scripts/check-prod-schema.mjs

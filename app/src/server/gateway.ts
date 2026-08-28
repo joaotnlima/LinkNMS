@@ -67,6 +67,22 @@ async function readBody(req: Request): Promise<unknown> {
   }
 }
 
+// The Next segment under /projects is `[id]`, but the domain handlers name that
+// param `projectId` (Identity uses `id`). Expose BOTH, once, here.
+//
+// This was previously a `withProjectId` helper copy-pasted into each route file,
+// and getting it wrong does not fail loudly: the handler reads `undefined`,
+// asks Identity whether the party is a member of project `undefined`, and
+// returns a perfectly plausible 403. A read path that denies the actual owner is
+// exactly the kind of bug that survives review, so the rename happens in the one
+// place every route already funnels through and cannot be forgotten.
+function normaliseParams(params: Record<string, string>): Record<string, string> {
+  const out = { ...params };
+  if (out.id && !out.projectId) out.projectId = out.id;
+  if (out.projectId && !out.id) out.id = out.projectId;
+  return out;
+}
+
 function toResponse(result: HandlerResult): NextResponse {
   if (result.status === 304 || result.body === null || result.body === undefined) {
     return new NextResponse(null, { status: result.status, headers: result.headers });
@@ -90,7 +106,7 @@ export async function handle(
       readBody(req),
     ]);
     const headers = Object.fromEntries(req.headers.entries());
-    return toResponse(await handler({ session, params, body, headers }));
+    return toResponse(await handler({ session, params: normaliseParams(params), body, headers }));
   } catch (err) {
     // A throw here is a wiring/config failure (e.g. a missing DATABASE_URL), not
     // a domain error — the service handlers map those themselves. Log it for the

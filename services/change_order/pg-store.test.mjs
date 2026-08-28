@@ -28,6 +28,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 
+import { sslFor } from '../ledger/db.mjs';
 import { createPgLedger } from '../ledger/pg-ledger.mjs';
 import { createPgStore } from './pg-store.mjs';
 import { createChangeOrderService } from './change-order.mjs';
@@ -37,7 +38,10 @@ const { Pool } = pg;
 const here = dirname(fileURLToPath(import.meta.url));
 const ledgerDir = join(here, '..', 'ledger');
 const DB = process.env.DATABASE_URL;
-const ssl = { rejectUnauthorized: false };
+// sslFor() reads the target: TLS off-localhost, none on it. Hard-coding TLS here
+// made this suite Neon-only — against the CI Postgres container it died with
+// 'The server does not support SSL connections' before a single assertion ran.
+const ssl = sslFor(DB);
 
 describe('Postgres Change Order store + ledger wiring', { skip: DB ? false : 'set DATABASE_URL to run' }, () => {
   let pool;

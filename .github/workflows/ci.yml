@@ -42,6 +42,17 @@ jobs:
           MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
         run: node db/migrate.mjs
 
+      # Self-test for the production schema gate (LINA-62). The same checker
+      # that guards prod in .github/workflows/prod-schema.yml runs here against
+      # this throwaway container, which was just migrated from the tree — so it
+      # must report zero drift and a correct grant matrix. Runs on every PR with
+      # no credentials, which is the point: the guard is only worth anything if
+      # a change that breaks it fails BEFORE it reaches main.
+      - name: Production schema checker self-test
+        env:
+          MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+        run: node scripts/check-prod-schema.mjs
+
   ledger-tests:
     name: Ledger — trust-anchor tests (Postgres)
     runs-on: ubuntu-latest
@@ -70,10 +81,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: services/package-lock.json
 
+      # `npm ci`, not `npm install`: Vercel deploys with `npm ci`, which fails
+      # hard on a package.json/package-lock.json mismatch while `npm install`
+      # silently repairs it. Using `npm install` here made CI structurally
+      # incapable of catching lockfile drift — green checks, red deploy
+      # (proven on PR #18, LINA-66). `--ignore-scripts` is a deliberate
+      # supply-chain choice; keep it.
       - name: Install dependencies
         working-directory: services
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
+
+      # The ledger reader now goes through the `ledger.project_audit` VIEW rather
+      # than selecting ledger.audit_event directly (app roles hold no SELECT on
+      # the table — LINA-56). That view is created by 0002_ledger_roles.sql and
+      # granted to roles that db/roles.sql owns, so the suite can no longer get by
+      # on applying 0001 to a bare database: the full platform migration has to
+      # run first.
+      - name: Apply all migrations
+        env:
+          MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+        run: node db/migrate.mjs
 
       # Pure hash-chain core + Postgres adversarial suite (tamper/delete/forge/
       # reorder detected at exact seq, budget math, four-pillar status, audit
@@ -84,6 +114,65 @@ jobs:
         env:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
         run: npm run test:ledger
+
+  gateway-integration:
+    name: API surface — mounted endpoints over Postgres
+    runs-on: ubuntu-latest
+
+    # The R0 acceptance walk (FR1–FR9) driven through the SAME handlers the Next
+    # routes call, against a real database and — crucially — with each service
+    # connected as its own least-privilege `<service>_app` role.
+    #
+    # This is the only job that can catch a missing GRANT. Every other suite runs
+    # either in memory or as the table-owning migrator, which holds every
+    # privilege and therefore cannot observe a missing one. LINA-37, LINA-51 and
+    # LINA-56 each shipped a grant gap that unit tests could not see; three of
+    # them were found by this suite on the day it was written.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: migrator
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: linknms_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: services/package-lock.json
+
+      # See the ledger job: `npm ci` mirrors the Vercel deploy install exactly,
+      # so lockfile drift fails here instead of at deploy time (LINA-66).
+      - name: Install dependencies
+        working-directory: services
+        run: npm ci --ignore-scripts
+
+      # Full platform migration: roles, the five service schemas, and every
+      # per-service migration — including the grant matrix the suite asserts.
+      - name: Apply all migrations
+        env:
+          MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+        run: node db/migrate.mjs
+
+      - name: Run mounted-surface integration tests
+        working-directory: services
+        env:
+          # The suite connects as this login role and then SET ROLEs into each
+          # `<service>_app` role, exactly as the deployed API does.
+          VERIFY_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+        run: npm run test:gateway
 
   analytics-tests:
     name: Analytics — event contract + composition root
@@ -101,10 +190,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: services/package-lock.json
 
+      # `npm ci` everywhere (LINA-66) — see the ledger job.
       - name: Install dependencies
         working-directory: services
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
 
       - name: Run analytics + composition tests
         working-directory: services

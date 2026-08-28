@@ -15,8 +15,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(here, 'migrations');
 
 export async function migrate(pool) {
+  // `create schema if not exists` is NOT free when the schema already exists:
+  // Postgres checks CREATE on the database BEFORE the existence check, so on a
+  // managed database where the migrator is not the database owner (Neon: the
+  // owner is `neondb_owner`) it fails 42501 even though there is nothing to do.
+  // Ask first, so a role that may use the schema but not create one still gets
+  // through — the migrations themselves need no database-level privilege.
+  const { rowCount } = await pool.query(
+    "select 1 from pg_namespace where nspname = 'ledger'",
+  );
+  if (rowCount === 0) await pool.query('create schema ledger');
+
   await pool.query(`
-    create schema if not exists ledger;
     create table if not exists ledger.schema_migrations (
       filename    text primary key,
       applied_at  timestamptz not null default now()

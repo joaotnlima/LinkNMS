@@ -59,18 +59,35 @@ function urlFor(varName) {
   return url;
 }
 
+// Optional `SET ROLE` per service. Neon provisions the `<service>_app` roles as
+// NOLOGIN, so when all four services share one login URL this is what still
+// gives each of them only its own privileges. Unset → no SET ROLE (plain local
+// Postgres, where the single dev role owns everything).
+//
+// DEPLOYMENT CONSTRAINT: setting any `*_DATABASE_ROLE` means the matching
+// `*_DATABASE_URL` must be Neon's DIRECT endpoint, not the `-pooler` one. A
+// transaction pooler does not give the client its own connection, so `SET ROLE`
+// does not reliably hold — measured, not theorised (LINA-56: 10/21 integration
+// assertions fail on `-pooler`, 21/21 pass direct). createPool refuses that
+// combination outright rather than let the wrong role serve a request.
+const roleFor = (varName) => process.env[varName] || undefined;
+
 /**
  * Build the whole service graph. Exported (rather than only the singleton) so
  * integration tests can build a container against a throwaway Neon branch
  * without touching process-wide state.
- * @param {{ urls?: Record<string,string>, analytics?: Object }} [opts]
+ * @param {{ urls?: Record<string,string>, roles?: Record<string,string>, analytics?: Object }} [opts]
  */
-export function createContainer({ urls = {}, analytics = getAnalytics() } = {}) {
+export function createContainer({ urls = {}, roles = {}, analytics = getAnalytics() } = {}) {
+  const pool = (svc, urlVar, roleVar) => createPool(
+    urls[svc] ?? urlFor(urlVar),
+    { role: roles[svc] ?? roleFor(roleVar) },
+  );
   const pools = {
-    identity: createPool(urls.identity ?? urlFor('IDENTITY_DATABASE_URL')),
-    decision: createPool(urls.decision ?? urlFor('DECISION_DATABASE_URL')),
-    changeOrder: createPool(urls.changeOrder ?? urlFor('CHANGE_ORDER_DATABASE_URL')),
-    ledger: createPool(urls.ledger ?? urlFor('LEDGER_DATABASE_URL')),
+    identity: pool('identity', 'IDENTITY_DATABASE_URL', 'IDENTITY_DATABASE_ROLE'),
+    decision: pool('decision', 'DECISION_DATABASE_URL', 'DECISION_DATABASE_ROLE'),
+    changeOrder: pool('changeOrder', 'CHANGE_ORDER_DATABASE_URL', 'CHANGE_ORDER_DATABASE_ROLE'),
+    ledger: pool('ledger', 'LEDGER_DATABASE_URL', 'LEDGER_DATABASE_ROLE'),
   };
 
   // See (2) above — one cache, four ledger bindings.
@@ -111,7 +128,7 @@ export function createContainer({ urls = {}, analytics = getAnalytics() } = {}) 
     pools,
     identity,
     parties,
-    analytics,
+    analytics: services.analytics,
     ledger: ledgerReader,
     services: { identity, decision: decisionService, changeOrder: changeOrderService },
     http: {

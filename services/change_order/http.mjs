@@ -18,11 +18,27 @@
 import { DomainError } from './ports.mjs';
 
 // Uniform error envelope shared across the platform (design §6; the frontend
-// reads `body.error.message`). A non-DomainError never leaks its detail.
+// reads `body.error.message`). An untyped error never leaks its detail.
+//
+// Both typed families must be mapped, not just this service's own. Authorization
+// here is Identity's (ADR-0004: one authorizer), so EVERY denial on these
+// endpoints — a non-member proposing, deciding, or reading a change order —
+// arrives as an `IdentityError`, not a `DomainError`. Matching only DomainError
+// turned all of them into a 500: the caller could not tell "you may not do this"
+// from "the server is broken", the frontend had no 403 to render, and a wall of
+// ordinary authorization denials looked like an outage. Matched structurally
+// (`status` + `code`) rather than by class, so a typed error from any service
+// maps correctly and this cannot silently regress.
 function errorBody(err) {
-  if (err instanceof DomainError) {
+  if (err instanceof DomainError
+      || (err && typeof err.status === 'number' && typeof err.code === 'string')) {
     return { status: err.status, body: { error: { code: err.code, message: err.message } } };
   }
+  // An unmapped throw is a bug or an infrastructure failure (a missing GRANT, a
+  // dropped connection), never a client mistake. The response deliberately says
+  // nothing — but a 500 that leaves no trace anywhere is undiagnosable in
+  // production, so the real error goes to the server log.
+  console.error('[change_order] unhandled service error', err);
   return { status: 500, body: { error: { code: 'internal', message: 'internal error' } } };
 }
 
