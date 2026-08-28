@@ -31,6 +31,24 @@ export function sslFor(connectionString) {
 // escape: anything that is not a plain lower-snake identifier is refused.
 const SAFE_ROLE = /^[a-z_][a-z0-9_]*$/;
 
+// `SET ROLE` is CONNECTION state, and a transaction-pooling endpoint does not
+// give a client a connection of its own — Neon's `-pooler` host is PgBouncer in
+// transaction mode, so consecutive statements from one client can land on
+// different server connections and one client's `SET ROLE` can be observed by
+// another. Verified on a throwaway Neon branch (LINA-56): with the four service
+// pools on `…-pooler…`, 10 of 21 integration assertions failed with
+// `permission denied for schema identity` / `… change_order` — the identity pool
+// executing as change_order_app. The same suite is 21/21 green on the direct
+// endpoint.
+//
+// The failures are the SAFE direction of that race. The unsafe one is silent:
+// a service running as the LOGIN role instead of its own, and our login role is
+// `migrator`, a `neon_superuser` member — which bypasses `ledger.append_event`'s
+// write guard entirely (LINA-35). Least privilege that holds only most of the
+// time is not least privilege, so this is refused at construction rather than
+// documented.
+const POOLED_ENDPOINT = /-pooler\./;
+
 /**
  * @param {string} connectionString
  * @param {{ max?: number, role?: string }} [opts]
@@ -40,6 +58,7 @@ const SAFE_ROLE = /^[a-z_][a-z0-9_]*$/;
  *   as the login role, then immediately drop into the service role. Least
  *   privilege is then enforced by Postgres rather than by each service
  *   remembering to behave — which is what the integration tests assert.
+ *   Requires a DIRECT endpoint; see POOLED_ENDPOINT above.
  */
 export function createPool(connectionString = process.env.DATABASE_URL, { max = 8, role } = {}) {
   if (!connectionString) {
@@ -47,6 +66,13 @@ export function createPool(connectionString = process.env.DATABASE_URL, { max = 
   }
   if (role && !SAFE_ROLE.test(role)) {
     throw new Error(`unsafe Postgres role name: ${JSON.stringify(role)}`);
+  }
+  if (role && POOLED_ENDPOINT.test(connectionString)) {
+    throw new Error(
+      `refusing to SET ROLE ${role} on a transaction-pooling endpoint: ` +
+      'the role would not reliably hold for the session. Use the direct ' +
+      "(non `-pooler`) host for role-separated service connections.",
+    );
   }
   const pool = new Pool({
     connectionString,

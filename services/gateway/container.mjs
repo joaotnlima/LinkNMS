@@ -63,6 +63,13 @@ function urlFor(varName) {
 // NOLOGIN, so when all four services share one login URL this is what still
 // gives each of them only its own privileges. Unset → no SET ROLE (plain local
 // Postgres, where the single dev role owns everything).
+//
+// DEPLOYMENT CONSTRAINT: setting any `*_DATABASE_ROLE` means the matching
+// `*_DATABASE_URL` must be Neon's DIRECT endpoint, not the `-pooler` one. A
+// transaction pooler does not give the client its own connection, so `SET ROLE`
+// does not reliably hold — measured, not theorised (LINA-56: 10/21 integration
+// assertions fail on `-pooler`, 21/21 pass direct). createPool refuses that
+// combination outright rather than let the wrong role serve a request.
 const roleFor = (varName) => process.env[varName] || undefined;
 
 /**

@@ -17,6 +17,11 @@ function errorBody(err) {
   if (err instanceof IdentityError || (err && typeof err.status === 'number' && typeof err.code === 'string')) {
     return { status: err.status, body: { error: { code: err.code, message: err.message } } };
   }
+  // An unmapped throw is a bug or an infrastructure failure (a missing GRANT, a
+  // dropped connection), never a client mistake. The response deliberately says
+  // nothing — but a 500 that leaves no trace anywhere is undiagnosable in
+  // production, so the real error goes to the server log.
+  console.error('[ledger] unhandled service error', err);
   return { status: 500, body: { error: { code: 'internal', message: 'internal error' } } };
 }
 

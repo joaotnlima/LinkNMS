@@ -58,16 +58,34 @@ describe('mounted HTTP surface over real Postgres', { skip: URL_ ? false : 'set 
   before(async () => {
     admin = createPool(URL_);
 
-    // Always run the ledger migrations, even though CI has already applied them
-    // through db/migrate.mjs. The two runners track state in different tables
-    // (platform.schema_migrations vs ledger.schema_migrations), so this DOES
-    // re-execute the ledger files — which is safe, and deliberately so: every one
-    // of them is `create … if not exists` / `create or replace` / `grant`, with
-    // no destructive or ordering-sensitive step. Running them unconditionally is
-    // what lets this suite point at a Neon branch cut from production and still
-    // pick up migrations that production has not received yet — exactly the case
-    // this slice's new grants are in.
-    await migrate(admin);
+    // Try to bring the ledger schema up to date in-process. In CI the migrator
+    // owns the database and this is what applies the slice's new grants; against
+    // a Neon branch it is a no-op at best, because a branch cut from production
+    // carries schemas owned by `neondb_owner` and our `migrator` role holds no
+    // DDL privilege on them. That is not a failure of this suite — the caller is
+    // expected to have run `node db/migrate.mjs` (which CI does, and which is the
+    // only supported path on Neon) — so a permission error is tolerated and the
+    // preflight below is what actually decides whether the schema is fit to test.
+    try {
+      await migrate(admin);
+    } catch (err) {
+      if (err.code !== '42501' && err.cause?.code !== '42501') throw err;
+    }
+
+    // Fail LOUD, and on the real reason, if the grants under test were never
+    // applied. Without this the suite would report a wall of authorization
+    // failures that look like product bugs and are in fact an unmigrated
+    // database — the single most expensive way to read a red build.
+    const missing = await admin.query(
+      `select r.rolname from unnest($1::text[]) as r(rolname)
+       where not exists (select 1 from pg_roles p where p.rolname = r.rolname)`,
+      [['identity_app', 'decision_app', 'change_order_app', 'ledger_app']],
+    );
+    assert.equal(
+      missing.rowCount,
+      0,
+      `run \`node db/migrate.mjs\` first — missing service roles: ${missing.rows.map((r) => r.rolname).join(', ')}`,
+    );
 
     // The deployed shape: one URL, but every service dropped into its OWN role
     // via SET ROLE, so the grants below are the ones production enforces.
