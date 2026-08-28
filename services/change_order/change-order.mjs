@@ -18,6 +18,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { DomainError, LedgerBudgetConflict } from './ports.mjs';
+import { createNoopAnalytics } from '../analytics/analytics.mjs';
 
 const now = () => new Date().toISOString();
 
@@ -42,16 +43,22 @@ function isBudgetConflict(err) {
 // surrounding decide+append survive. The in-memory adapter passes a plain `{}` tx
 // with no `query`, so there the savepoint steps are skipped and the JS catch alone
 // suffices — one code path, both adapters.
+//
+// Returns true when THIS call actually moved the budget, false when it absorbed a
+// duplicate. Analytics must describe what landed, so the caller emits
+// `budget_event_written` only on a true.
 async function moveBudgetAbsorbingDuplicate(tx, doMove) {
   const sql = typeof tx?.query === 'function' ? (s) => tx.query(s) : null;
   if (sql) await sql('SAVEPOINT co_budget_move');
   try {
     await doMove();
     if (sql) await sql('RELEASE SAVEPOINT co_budget_move');
+    return true;
   } catch (err) {
     if (!isBudgetConflict(err)) throw err;
     // The budget already moved for this CO → un-poison the tx and treat as a no-op.
     if (sql) await sql('ROLLBACK TO SAVEPOINT co_budget_move');
+    return false;
   }
 }
 
@@ -61,7 +68,7 @@ async function moveBudgetAbsorbingDuplicate(tx, doMove) {
 // do the projection write + ledger append/budget-move on that SAME connection so
 // they commit together (ADR-0006 §1), and only THEN read the one-screen `view`
 // from committed state.
-export function createChangeOrderService({ store, ledger, identity }) {
+export function createChangeOrderService({ store, ledger, identity, analytics = createNoopAnalytics() }) {
   if (!store || !ledger || !identity) {
     throw new Error('createChangeOrderService requires { store, ledger, identity } ports');
   }
@@ -69,7 +76,9 @@ export function createChangeOrderService({ store, ledger, identity }) {
   // ---- propose (opens *proposed*) — FR3, FR8 ------------------------------
   // POST /projects/:id/change-orders
   async function propose(projectId, actorPartyId, input) {
-    await identity.requireMember(actorPartyId, projectId); // any member may propose (ADR-0004)
+    // any member may propose (ADR-0004); the membership row also carries the role
+    // stamped on the analytics event, so we keep it rather than discarding it.
+    const membership = await identity.requireMember(actorPartyId, projectId);
 
     const { title, costDeltaCents } = input ?? {};
     if (!title || typeof title !== 'string') {
@@ -124,6 +133,21 @@ export function createChangeOrderService({ store, ledger, identity }) {
         },
       });
     });
+
+    // change_order_raised — after commit. Only flags/ids/cents, never the title
+    // or scope/quality note text (§3): has_scope_note, not the note itself.
+    analytics.changeOrderRaised({
+      projectId,
+      actorPartyId,
+      actorRole: membership?.role ?? null,
+      changeOrderId: id,
+      costDeltaCents,
+      linkedToDecision: row.decision_id != null,
+      scheduleImpactDays: row.schedule_impact_days,
+      hasScopeNote: row.scope_impact_note != null,
+      qualityFlag: row.quality_flag,
+    });
+
     return view(id); // one-screen view from committed state
   }
 
@@ -140,7 +164,8 @@ export function createChangeOrderService({ store, ledger, identity }) {
     const existing = await store.get(changeOrderId);
     if (!existing) throw new DomainError(404, 'not_found', 'change order not found');
 
-    await identity.requireMember(actorPartyId, existing.project_id); // member of THIS project
+    // member of THIS project; the role rides along onto the analytics event
+    const membership = await identity.requireMember(actorPartyId, existing.project_id);
 
     // FR4 — a proposer can never decide their own CO. Checked before we touch
     // the DB so the caller gets a clean 403; the CHECK is the backstop.
@@ -164,6 +189,11 @@ export function createChangeOrderService({ store, ledger, identity }) {
     const status = decision === 'approve' ? 'approved' : 'rejected';
     const decidedAt = now();
 
+    // Set inside the unit of work, read after it commits. Analytics must describe
+    // what actually landed, so a lost race or an idempotent replay emits nothing.
+    let decisionApplied = false;
+    let budgetMoved = false;
+
     await store.transaction(async (tx) => {
       const result = await store.decide(tx, {
         id: changeOrderId,
@@ -185,6 +215,8 @@ export function createChangeOrderService({ store, ledger, identity }) {
           `change order is already ${fresh?.status ?? 'decided'} and cannot be changed`);
       }
 
+      decisionApplied = true;
+
       await ledger.append(tx, {
         projectId: existing.project_id,
         type: status === 'approved' ? 'change_order_approved' : 'change_order_rejected',
@@ -201,7 +233,7 @@ export function createChangeOrderService({ store, ledger, identity }) {
       // scope/schedule/quality (FR5, FR8). UNIQUE(change_order_id) at the ledger
       // makes it exactly-once even if this transaction is replayed.
       if (status === 'approved') {
-        await moveBudgetAbsorbingDuplicate(tx, () => ledger.recordBudgetEvent(tx, {
+        budgetMoved = await moveBudgetAbsorbingDuplicate(tx, () => ledger.recordBudgetEvent(tx, {
           projectId: existing.project_id,
           changeOrderId,
           deltaCents: existing.cost_delta_cents,
@@ -210,6 +242,43 @@ export function createChangeOrderService({ store, ledger, identity }) {
         }));
       }
     });
+
+    if (decisionApplied) {
+      // change_order_decided — the A3 gate event. is_self_approval is computed
+      // HERE, server-side, from the stored proposer vs the authenticated actor:
+      // the client actor-switcher cannot reach this value. It is always 0 while
+      // the FR4 gate above holds, which is exactly why we send it — a 1 in the
+      // data means the gate regressed (§2.4).
+      analytics.changeOrderDecided({
+        projectId: existing.project_id,
+        actorPartyId,
+        decidedByRole: membership?.role ?? null,
+        changeOrderId,
+        decision: status, // 'approved' | 'rejected'
+        costDeltaCents: existing.cost_delta_cents,
+        isSelfApproval: actorPartyId === existing.proposed_by_party_id,
+        raisedAt: existing.created_at,
+        decidedAt,
+      });
+
+      // budget_event_written — only when THIS call actually moved the budget, so
+      // the event count matches the ledger's budget_event rows exactly once.
+      if (budgetMoved) {
+        // Read the settled total from committed state through the Ledger port's
+        // own connection. An unknown-to-ledger project reads as a zero baseline,
+        // matching `view` below — never a crash inside instrumentation.
+        const budget = (await ledger.currentBudget(existing.project_id))
+          ?? { baselineCents: 0, currentCents: 0 };
+        analytics.budgetEventWritten({
+          projectId: existing.project_id,
+          actorPartyId,
+          actorRole: membership?.role ?? null,
+          changeOrderId,
+          deltaCents: existing.cost_delta_cents,
+          newCurrentCents: budget.currentCents,
+        });
+      }
+    }
 
     return view(changeOrderId); // one-screen view from committed state
   }

@@ -21,6 +21,36 @@ extracted where the pressure actually is (ADR-0006):
 - `audit_event` is write-guarded: everything appends through
   `ledger.append_event(...)`; hash-chain construction lives in exactly one place.
 
+## Composition root (`composition.mjs`)
+
+The services are built **once per process**, in one place, so analytics is
+injected everywhere and nowhere twice. A route module mounts them like this:
+
+```js
+import { createServicesFromEnv, withAnalyticsFlush } from '../../services/composition.mjs';
+
+const { identity, changeOrder, changeOrderHttp } = createServicesFromEnv();
+
+export const POST = withAnalyticsFlush(async (req) => { /* … */ });
+```
+
+Two rules make instrumentation actually deliver:
+
+- **`analytics` is injected by `createServices`, never constructed per request.**
+  Each service takes `analytics` as an optional arg defaulting to a no-op — so a
+  missing injection is silent, not a crash. `getAnalytics()` reads the env once
+  (`POSTHOG_API_KEY`, `POSTHOG_HOST`, `RELEASE_SHA`); with no key it returns a
+  working no-op and domain behaviour is unchanged.
+- **Every handler is wrapped in `withAnalyticsFlush`.** The PostHog sink batches
+  captures into one `/batch/` request; on a serverless runtime an unflushed
+  buffer is a silently dropped batch. The wrapper flushes in a `finally`, so the
+  error path — the most valuable telemetry — flushes too, and a failing flush can
+  never turn a committed write into a 500.
+
+`services.decision` is `null` until the Decision Log has a Postgres store
+adapter. That absence is deliberate: a memory fallback would look wired and lose
+every decision on cold start.
+
 ## What's built so far
 
 - **`ledger/hash-chain.mjs`** — the trust anchor (ADR-0002): canonical JSON +
