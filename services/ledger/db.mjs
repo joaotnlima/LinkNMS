@@ -14,16 +14,27 @@ const { Pool } = pg;
 
 let sharedPool = null;
 
-export function createPool(connectionString = process.env.DATABASE_URL) {
+// Neon (and any hosted Postgres) requires TLS and its pooler presents a valid
+// cert; a local Postgres — the CI service container or a docker throwaway —
+// speaks no SSL and drops the connection if we insist on it. Enable TLS unless
+// the target is plainly local or has explicitly opted out, so one code path
+// serves production, preview, and CI.
+export function sslFor(connectionString) {
+  const local = !connectionString
+    || /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(connectionString)
+    || /[?&]sslmode=disable/.test(connectionString);
+  return local ? false : { rejectUnauthorized: false };
+}
+
+export function createPool(connectionString = process.env.DATABASE_URL, { max = 8 } = {}) {
   if (!connectionString) {
     throw new Error('DATABASE_URL is required for the ledger service');
   }
   return new Pool({
     connectionString,
-    max: 8,
+    max,
     idleTimeoutMillis: 10_000,
-    // Neon requires TLS; the pooler presents a valid cert.
-    ssl: { rejectUnauthorized: false },
+    ssl: sslFor(connectionString),
   });
 }
 
