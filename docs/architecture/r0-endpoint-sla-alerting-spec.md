@@ -56,17 +56,24 @@ call.
 | `http.request.method` | `POST` | ~4 | |
 | `http.response.status_code` | `200` | ~12 | exact code, for the status-mix panel |
 | `status_class` | `2xx` | 5 | derived; the alerting dimension |
-| `slo_class` | `mutation` | 3 | `read` \| `mutation` \| `chain_verify` — see §2 |
+| `slo_class` | `mutation` | 4 | `read` \| `mutation` \| `chain_verify` \| `exempt` — see §2 |
 | `deployment.environment` | `production` | 2 | `preview` \| `production` |
 
 ### 1.2 Route templating is mandatory (cardinality guard)
 
 The `route` attribute is the **template**, never the concrete path. `GET
-/projects/9f3.../decisions` → `route="GET /projects/:id/decisions"`. Emitting the
-raw path explodes cardinality by project count and re-introduces an id into
-telemetry (a soft PII leak). Middleware must read the matched route pattern from
-the router, not `req.url`. A route not in the §2 table must still map to a
-template (`UNMATCHED`) so a mis-tag is visible rather than silent.
+/projects/9f3.../decisions` → `route="GET /projects/:projectId/decisions"`.
+Emitting the raw path explodes cardinality by project count and re-introduces an
+id into telemetry (a soft PII leak). A route not in the §2 table must still map
+to a template (`UNMATCHED`) so a mis-tag is visible rather than silent.
+
+**Canonical parameter names.** The template's parameter names are the ones in
+that endpoint's `openapi.yaml`, colon-form: `{projectId}` → `:projectId`,
+`{changeOrderId}` → `:changeOrderId`, `{decisionId}` → `:decisionId`,
+`{token}` → `:token`. Not a free choice — if one service emits
+`/projects/:id/decisions` and another `/projects/:projectId/change-orders`, the
+Row-3 table splits the same shape across two spellings and per-route comparison
+stops working. The OpenAPI contract is the single source of the spelling.
 
 ### 1.3 No PII, same rule as LINA-28 §3
 
@@ -81,25 +88,63 @@ identifiers here are the *low-cardinality* `service`/`route`/`status` set above.
 Every R0 endpoint (design §6) classified. SLO class drives the target; the target
 is on **p95** at R0 ledger sizes, error rate on the rolling 1h window.
 
+All routes are under the `/api/v1` server prefix (per each service's
+`openapi.yaml` `servers:` entry); the `route` attribute omits that prefix.
+
+### 2.a Shipped — contract exists in an `openapi.yaml`
+
+Verified 2026-08-27 against `services/{identity,decision,change_order}/openapi.yaml`.
+These are the routes A1 coverage is graded on today.
+
 | Route (template) | Owning service | SLO class | p95 target | Notes |
 |---|---|---|---|---|
 | `POST /projects` | identity | mutation | 500 ms | |
-| `GET /projects/:id` | identity | read | 200 ms | composed read (budget+pillars); see §2.1 |
+| `GET /projects/:id` | identity | read | 200 ms | composed read (budget+pillars); see §2.1. Identity's contract names this param `{id}`, not `{projectId}` — §1.2 follows the contract |
 | `POST /projects/:id/invitations` | identity | mutation | 500 ms | |
 | `POST /invitations/:token/accept` | identity | mutation | 500 ms | |
-| `GET /projects/:id/decisions` | decision | read | 200 ms | |
-| `POST /projects/:id/decisions` | decision | mutation | 500 ms | ledger append in-txn |
-| `PATCH /decisions/:id` | decision | mutation | 500 ms | ledger append in-txn |
-| `GET /projects/:id/change-orders` | change_order | read | 200 ms | |
-| `POST /projects/:id/change-orders` | change_order | mutation | 500 ms | ledger append in-txn |
-| `POST /change-orders/:id/decision` | change_order | mutation | 500 ms | two-sided approve + budget move |
-| `GET /change-orders/:id` | change_order | read | 200 ms | the "one screen" answer (FR6) |
-| `GET /projects/:id/audit` | ledger | **chain_verify** | **1 s** | runs chain-verify; **not** a plain read |
-| `GET /projects/:id/plan` | schedule | read | 200 ms | |
-| `POST /projects/:id/stages` | schedule | mutation | 500 ms | ledger append in-txn |
-| `PATCH /stages/:id` | schedule | mutation | 500 ms | ledger append in-txn |
-| `POST /stages/:id/progress` | schedule | mutation | 500 ms | ledger append in-txn |
-| `POST /projects/:id/plan-document` | schedule | mutation | 500 ms* | *excludes blob transfer — see §2.2 |
+| `GET /projects/:projectId/decisions` | decision | read | 200 ms | |
+| `POST /projects/:projectId/decisions` | decision | mutation | 500 ms | ledger append in-txn |
+| `PATCH /decisions/:decisionId` | decision | mutation | 500 ms | ledger append in-txn |
+| `GET /projects/:projectId/change-orders` | change_order | read | 200 ms | |
+| `POST /projects/:projectId/change-orders` | change_order | mutation | 500 ms | ledger append in-txn |
+| `POST /change-orders/:changeOrderId/decision` | change_order | mutation | 500 ms | two-sided approve + budget move |
+| `GET /change-orders/:changeOrderId` | change_order | read | 200 ms | the "one screen" answer (FR6) |
+
+> **Contract drift note.** Identity spells the project param `{id}` where
+> decision and change_order spell it `{projectId}`. §1.2 defers to each
+> contract, so this is emitted faithfully rather than silently normalised — but
+> it means the same entity reads two ways in the Row-3 table. Harmonising the
+> OpenAPI contracts is the Architect's call, not mine; flagged, not blocked.
+
+### 2.b Planned — classified now, graded when the slice lands
+
+No `openapi.yaml` yet. Classified here so the route declares its `slo_class` at
+birth (§5.3) rather than being retrofitted, and excluded from A1 until shipped.
+
+| Route (template) | Owning service | SLO class | p95 target | Lands with |
+|---|---|---|---|---|
+| `GET /projects/:projectId/audit` | ledger | **chain_verify** | **1 s** | Slice 5 — runs chain-verify; **not** a plain read |
+| `GET /projects/:projectId/plan` | schedule | read | 200 ms | Slice 6 |
+| `POST /projects/:projectId/stages` | schedule | mutation | 500 ms | Slice 6, ledger append in-txn |
+| `PATCH /stages/:stageId` | schedule | mutation | 500 ms | Slice 6, ledger append in-txn |
+| `POST /stages/:stageId/progress` | schedule | mutation | 500 ms | Slice 6, ledger append in-txn |
+| `POST /projects/:projectId/plan-document` | schedule | mutation | 500 ms* | Slice 6; *excludes blob transfer — see §2.2 |
+
+### 2.c Exempt — instrumented, but no SLO and never alerting
+
+These exist and serve traffic, so they *must* carry a real `route` template
+(never `UNMATCHED`, which would fail A1), but they are infrastructure, not
+product surface: no SLO target, excluded from every §4 alert and from the Row-1
+summary.
+
+| Route (template) | Owning service | Why exempt |
+|---|---|---|
+| `GET /health` | app (gateway) | liveness probe; high-volume, near-zero latency — would flatter every aggregate |
+| `GET /api/docs` | app (gateway) | Swagger UI (ADR-0006) |
+| `GET /api/docs/openapi.yaml` | app (gateway) | served contract |
+
+Give them `slo_class=exempt` — a fourth value of the §1.1 `slo_class` attribute,
+so "has no SLO" is an explicit tag rather than a missing one.
 
 **Global error-rate SLO:** `5xx` rate < **1%** per `service` over the rolling 1h
 window. `4xx` is *not* an error for SLO purposes (a rejected CO, a `403`, a `404`
@@ -152,6 +197,12 @@ selector defaulting to `production`.
 
 Every panel filters to the same attribute set; no panel may introduce a query
 that requires an attribute outside §1.1.
+
+**Exempt routes (§2.c) are excluded from Rows 1, 2 and 4** and from every §4
+alert — a `/health` probe firing every few seconds at ~1 ms would drag every
+aggregate down and make the SLO summary read healthier than the product surface
+actually is. They remain visible in the Row-3 table (so their absence is
+detectable) behind a default-off "include exempt" toggle.
 
 ---
 
@@ -214,14 +265,42 @@ escalation). A PagerDuty/Opsgenie integration is the post-R0 upgrade; the routin
 What each service must ship so this dashboard has data. This is the buildable
 checklist.
 
-1. **One completion middleware per service**, wrapping every `/api/v1` handler,
+1. **One completion wrapper per service**, wrapping every `/api/v1` handler,
    emitting the three §1 instruments with the §1.1 attribute set on request
    completion (including thrown/5xx paths — use a `finally`/error boundary so an
    exception still records a data point with `status_class=5xx`).
-2. **Route template from the router**, never `req.url` (§1.2). Unmatched → `UNMATCHED`.
-3. **`slo_class` set from the §2 map**, co-located with the route definition so a
-   new endpoint declares its class at birth (a route with no class fails the
-   contract test in §7).
+
+   *Where this goes, given the shipped design.* R0's service handlers are
+   deliberately framework-agnostic: `services/change_order/http.mjs` exposes
+   `({ session, params, body }) → { status, body }` functions and a thin gateway
+   adapts the runtime request. **There is no router object to ask for a matched
+   pattern.** So the wrapper is a decorator applied at the point each handler is
+   registered, and the route template is **declared there as a static string**,
+   not inferred from `req.url` (§1.2). Concretely — one table per service,
+   sitting next to the handler map:
+
+   ```js
+   // route template + slo_class declared with the handler, per §2
+   export const CHANGE_ORDER_ROUTES = [
+     ['GET',  '/projects/:projectId/change-orders',      'read',     http.listChangeOrders],
+     ['POST', '/projects/:projectId/change-orders',      'mutation', http.proposeChangeOrder],
+     ['GET',  '/change-orders/:changeOrderId',           'read',     http.getChangeOrder],
+     ['POST', '/change-orders/:changeOrderId/decision',  'mutation', http.decideChangeOrder],
+   ];
+   ```
+
+   This keeps the metric shape out of the domain handlers (they stay
+   framework-agnostic and their tests stay unchanged) while making the template
+   a declared constant rather than a runtime guess. Also note the handlers
+   return `{ status, body }` and map errors internally via `errorBody` — a 500
+   is a *returned value*, not a throw, so the wrapper must read
+   `result.status` for `status_class` and not rely on catching alone.
+2. **`slo_class` declared with the route** (column 3 above), so a new endpoint
+   declares its class at birth. A route registered without one fails the
+   contract test in §7. Use `exempt` for §2.c infrastructure routes.
+3. **The gateway tags what it dispatches.** Any request the gateway cannot match
+   to a registered template still emits a data point with `route="UNMATCHED"` —
+   visible, never dropped (§1.2).
 4. **OTLP export**: metrics to the collector via OTLP; `service` =
    `service.name` resource attribute; `deployment.environment` from env. Export
    is fire-and-forget and must never block or fail a request (same non-blocking
@@ -255,8 +334,11 @@ alert *policy*, which are backend-portable. Cost tracked on
 LINA-41 is measurable when, on `preview` with synthetic traffic across all §2
 routes:
 
-- **A1 — coverage:** every §2 route appears in the Row-3 table with a non-null
-  p95 and a correct `slo_class`; zero requests land in `UNMATCHED`.
+- **A1 — coverage:** every **§2.a shipped** route appears in the Row-3 table
+  with a non-null p95 and a correct `slo_class`, and every §2.c exempt route
+  appears tagged `slo_class=exempt`; zero requests land in `UNMATCHED`. §2.b
+  planned routes are graded by this same gate when their slice lands, not
+  before — A1 is re-run per slice, not once.
 - **A2 — attribution:** a fault injected into one service raises that service's
   `5xx` series and **no other** service's (per-service attribution proven).
 - **A3 — SLO lines wired:** each `slo_class` panel shows its target line
@@ -277,6 +359,11 @@ gate the LINA-28 product spine.
 - **Shared discipline, separate transport:** PII guard, integer-cents, and
   "instrument with the feature, not after" carry over from LINA-28. Transport,
   keys, and ownership of shape differ (§0).
+- **Open — for the Architect (non-blocking):** the §2.a project-param drift
+  (`{id}` in identity vs `{projectId}` in decision/change_order). Harmonising
+  the OpenAPI contracts is an API-design call, not an analytics one. Until it's
+  decided the spec emits both spellings faithfully; whoever harmonises should
+  update §2.a in the same change.
 - **Open (non-blocking):** final OTLP backend choice (§6); whether chain-verify
   gets a cached/checkpointed path before the Row-4 trend breaches at scale
   (design §11) — I'll watch Row 4 and raise it with the Architect when the trend
