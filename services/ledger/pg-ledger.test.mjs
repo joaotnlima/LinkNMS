@@ -253,6 +253,47 @@ describe('Postgres ledger (trust anchor)', { skip: DB ? false : 'set DATABASE_UR
     }
   });
 
+  // REGRESSION (LINA-57). The test above hand-writes an approval payload carrying
+  // scheduleImpactDays/qualityFlag — a shape services/change_order never actually
+  // emits. Its real approval event is { decidedBy, changeOrderId, costDeltaCents };
+  // the schedule/quality fields exist only on the PROPOSAL. Reading them off the
+  // approval therefore summed nothing in production, and Time + Quality were
+  // permanently green however much had been approved.
+  //
+  // This test uses the payloads the service really writes, so it fails against the
+  // old fold and passes only when the approval is correlated back to its proposal.
+  test('four-pillar status: approved schedule/quality come from the PROPOSAL payload', async () => {
+    const { projectId } = await seedProject({ baselineBudgetCents: 1_000_000 });
+    const gc = randomUUID();
+    const co = randomUUID();
+
+    // Exactly what change_order emits on propose — the impact fields live here.
+    await ledger.appendEvent({
+      projectId, type: 'change_order_proposed', actorPartyId: gc,
+      occurredAt: '2026-08-26T12:00:00.000Z',
+      payload: {
+        changeOrderId: co, title: 'Engineered oak flooring', costDeltaCents: 300_000,
+        scopeImpactNote: 'oak over laminate', scheduleImpactDays: 5,
+        scheduleImpactNote: 'adds a week', qualityFlag: true, qualityNote: 'higher durability',
+      },
+    });
+    // ...and exactly what it emits on approve: a pointer, not a restatement.
+    await ledger.appendEvent({
+      projectId, type: 'change_order_approved', actorPartyId: randomUUID(),
+      occurredAt: '2026-08-26T12:05:00.000Z',
+      payload: { decidedBy: randomUUID(), changeOrderId: co, costDeltaCents: 300_000 },
+    });
+
+    const s = await ledger.status(projectId);
+    assert.equal(s.time.approvedScheduleImpactDays, 5, 'approved schedule days must come from the proposal');
+    assert.equal(s.time.status, 'amber');
+    assert.match(s.time.label, /~5 days/);
+    assert.equal(s.quality.approvedQualityFlagCount, 1, 'approved quality flag must come from the proposal');
+    assert.equal(s.quality.status, 'amber');
+    // Approving closes the scope question — it is decided, no longer open.
+    assert.equal(s.scope.openScopeNoteCount, 0);
+  });
+
   test('audit read: ETag = head entry_hash, 304 on no change', async () => {
     const { projectId } = await seedProject();
     const first = await ledger.getAudit(projectId);
