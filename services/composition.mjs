@@ -30,10 +30,6 @@ import { createIdentityService } from './identity/identity.mjs';
 import { createDecisionLog } from './decision/decision-log.mjs';
 import { createChangeOrderService } from './change_order/change-order.mjs';
 import { createChangeOrderHttp } from './change_order/http.mjs';
-import { createPgLedger } from './ledger/pg-ledger.mjs';
-import { getPool } from './ledger/db.mjs';
-import { createPgStore as createIdentityPgStore } from './identity/pg-store.mjs';
-import { createPgStore as createChangeOrderPgStore } from './change_order/pg-store.mjs';
 
 // ── The per-process analytics singleton ─────────────────────────────────────
 //
@@ -61,24 +57,34 @@ export function resetAnalyticsForTests() {
  * exercised by tests against in-memory adapters and by the runtime against
  * Postgres — the wiring under test is then literally the wiring that ships.
  *
- * `decision` is composed only when a decision store is supplied: the Decision
- * Log has no Postgres adapter yet (services/decision/ ships memory-adapters.mjs
- * only), so on the deployed target it is absent rather than silently backed by
- * process memory. Omitting it is loud at the route (no service to mount);
- * a memory fallback would look wired and lose every decision on cold start.
+ * `decision` is composed only when a decision store is supplied, so a target
+ * without one is loud at the route (no service to mount) rather than silently
+ * backed by process memory — a memory fallback would look wired and lose every
+ * decision on cold start.
+ *
+ * `ledgers` exists because the deployed target does NOT hand every service the
+ * same ledger object: each service appends through a pg ledger bound to its own
+ * least-privilege pool, so the append lands inside that service's transaction
+ * (ADR-0006 §1, and see services/gateway/container.mjs). They still share one
+ * cache. Tests that have a single ledger just pass `ledger` and get the old
+ * behaviour.
  *
  * @param {Object} ports
- * @param {Object} ports.ledger                 Ledger port (append/recordBudgetEvent/currentBudget)
+ * @param {Object} ports.ledger                 Default ledger port (append/recordBudgetEvent/currentBudget)
+ * @param {Object} [ports.ledgers]              Per-service ledger bindings; each falls back to `ledger`
  * @param {Object} ports.identityStore          Identity store adapter
  * @param {Object} ports.changeOrderStore       Change Order store adapter
  * @param {Object} [ports.decisionStore]        Decision store adapter (omit → no decision service)
- * @param {Object} [ports.decisionAuthz]        Decision authorizer
+ * @param {Object|Function} [ports.decisionAuthz]  Decision authorizer, or a
+ *   `(identity) => authz` factory for authorizers built over the Identity
+ *   service this composition creates (the deployed target's case)
  * @param {Function} [ports.clock]              Decision clock
  * @param {Function} [ports.ids]                Decision id generator
  * @param {Object} [ports.analytics]            Override the singleton (tests only)
  */
 export function createServices({
   ledger,
+  ledgers = {},
   identityStore,
   changeOrderStore,
   decisionStore = null,
@@ -91,23 +97,32 @@ export function createServices({
   if (!identityStore) throw new Error('createServices requires an { identityStore } port');
   if (!changeOrderStore) throw new Error('createServices requires a { changeOrderStore } port');
 
-  const identity = createIdentityService({ store: identityStore, ledger, analytics });
+  const identity = createIdentityService({
+    store: identityStore,
+    ledger: ledgers.identity ?? ledger,
+    analytics,
+  });
 
   // Change Order consumes the Identity SERVICE as its authorization port
   // (requireMember/roleOf), not a second copy of the membership rules — one
   // authorizer, so a permission fix lands everywhere at once (ADR-0004).
   const changeOrder = createChangeOrderService({
     store: changeOrderStore,
-    ledger,
+    ledger: ledgers.changeOrder ?? ledger,
     identity,
     analytics,
   });
 
+  // The real authorizer is built OVER the identity service composed just above
+  // (ADR-0004: one authorizer), which is why it may arrive as a factory — the
+  // caller cannot construct it before this function has made its subject.
+  const authz = typeof decisionAuthz === 'function' ? decisionAuthz(identity) : decisionAuthz;
+
   const decision = decisionStore
     ? createDecisionLog({
         store: decisionStore,
-        ledger,
-        authz: decisionAuthz,
+        ledger: ledgers.decision ?? ledger,
+        authz,
         clock,
         ids,
         analytics,
@@ -123,21 +138,12 @@ export function createServices({
   };
 }
 
-/**
- * Build the deployed-target composition: Postgres ledger + Postgres stores.
- *
- * The Identity store takes the ledger because identity writes are ledgered on
- * the same connection (ADR-0006 §1); the Change Order store opens its own.
- */
-export function createServicesFromEnv({ pool = getPool(), analytics = getAnalytics() } = {}) {
-  const ledger = createPgLedger({ pool });
-  return createServices({
-    ledger,
-    identityStore: createIdentityPgStore({ pool, ledger }),
-    changeOrderStore: createChangeOrderPgStore({ pool }),
-    analytics,
-  });
-}
+// There is deliberately NO `createServicesFromEnv` here. The deployed-target
+// wiring — which pools, which role per service, which ledger binding — lives in
+// exactly one place, services/gateway/container.mjs, and that container calls
+// `createServices` above. A second env-reading composition root would be a
+// single-pool shortcut that quietly drops the per-service role separation the
+// ledger's write guard depends on.
 
 /**
  * Wrap a route handler so the analytics buffer is flushed before its response is

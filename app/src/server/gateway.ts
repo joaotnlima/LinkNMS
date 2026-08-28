@@ -14,10 +14,12 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-// @ts-expect-error — .mjs service modules are plain JS with JSDoc types
+// The .mjs service modules are plain JS with JSDoc types; `allowJs` + the
+// `@services/*` path mapping (tsconfig.json) type them from source, so these
+// imports are checked rather than suppressed.
 import { getContainer } from '@services/gateway/container.mjs';
-// @ts-expect-error — as above
 import { SESSION_COOKIE, verifySession } from '@services/identity/session.mjs';
+import { getAnalytics } from '@services/composition.mjs';
 
 // Every route touches Postgres and a per-request session; nothing here is
 // statically renderable or cacheable.
@@ -98,5 +100,26 @@ export async function handle(
       { error: { code: 'internal', message: 'internal error' } },
       { status: 500 },
     );
+  } finally {
+    // THE FLUSH (LINA-58). The PostHog sink buffers captures and ships them in
+    // one batched POST; Vercel can freeze the instance the moment the response
+    // is written, so an unflushed buffer is a silently dropped batch. Every API
+    // route funnels through this one function, which is why the flush lives here
+    // and not in each route's discipline.
+    //
+    // `finally`, not the success path: a 4xx/5xx has usually emitted the MORE
+    // interesting events, and losing exactly the failure telemetry would be the
+    // worst possible sampling bias.
+    //
+    // Read from the analytics singleton rather than the container, so a request
+    // that failed because the container could not be built (missing
+    // DATABASE_URL) still flushes instead of throwing a second time. Analytics
+    // is best-effort by contract — `flush()` swallows sink errors — and the
+    // extra catch keeps that true if a future sink throws synchronously.
+    try {
+      await getAnalytics().flush();
+    } catch (flushErr) {
+      console.warn('[api] analytics flush failed', flushErr);
+    }
   }
 }

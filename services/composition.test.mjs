@@ -173,6 +173,76 @@ describe('composition root: analytics reaches every service', () => {
     assert.equal(services.decision, null,
       'a silent in-memory Decision Log would look wired and lose every decision on cold start');
   });
+
+  // The deployed target (services/gateway/container.mjs) hands each service a
+  // ledger bound to its OWN least-privilege pool, so an append lands inside that
+  // service's transaction (ADR-0006 §1). If a per-service binding were dropped
+  // on the floor here, every write would silently go through one role and the
+  // separation the ledger write guard depends on would be gone — with nothing
+  // failing until a production permission error.
+  test('each service appends through its own ledger binding when one is given', async () => {
+    const shared = createCompositionLedger();
+    const used = [];
+    const tag = (name) => new Proxy(shared, {
+      get(target, prop) {
+        if (prop === 'append' || prop === 'appendEvent' || prop === 'recordBudgetEvent') used.push(name);
+        return Reflect.get(target, prop);
+      },
+    });
+
+    const { services } = (() => {
+      const sink = createMemorySink();
+      const analytics = createAnalytics({ sink });
+      return {
+        services: createServices({
+          analytics,
+          ledger: tag('default'),
+          ledgers: { identity: tag('identity'), changeOrder: tag('changeOrder') },
+          identityStore: createIdentityStore({ ledger: shared }),
+          changeOrderStore: createChangeOrderStore(),
+        }),
+      };
+    })();
+
+    const project = await services.identity.createProject({
+      actorPartyId: HOMEOWNER, name: 'Maple Street', baselineBudgetCents: BASELINE,
+    });
+    const { token } = await services.identity.inviteCounterparty({
+      actorPartyId: HOMEOWNER, projectId: project.id,
+    });
+    await services.identity.acceptInvitation({ actorPartyId: GC, token });
+    const co = await services.changeOrder.propose(project.id, GC, {
+      title: 'Upgrade to oak flooring', costDeltaCents: DELTA,
+    });
+    await services.changeOrder.decide(co.id, HOMEOWNER, { decision: 'approve' });
+
+    assert.ok(used.includes('changeOrder'),
+      'the Change Order service must write through its own ledger binding');
+    assert.ok(!used.includes('default'),
+      'no service with an explicit binding may fall back to the default ledger');
+  });
+
+  // The Decision authorizer is built OVER the Identity service this function
+  // composes, so it cannot exist before the call — hence the factory form. If it
+  // were resolved against a second Identity instance the platform would have two
+  // authorizers and a permission fix would land in only one (ADR-0004).
+  test('a decisionAuthz factory receives the very Identity service just composed', () => {
+    const ledger = createCompositionLedger();
+    let handed = null;
+    const services = createServices({
+      analytics: createAnalytics({ sink: createMemorySink() }),
+      ledger,
+      identityStore: createIdentityStore({ ledger }),
+      changeOrderStore: createChangeOrderStore(),
+      decisionStore: {},
+      decisionAuthz: (identity) => {
+        handed = identity;
+        return { async can() { return true; } };
+      },
+    });
+    assert.equal(handed, services.identity);
+    assert.ok(services.decision, 'a decision store must yield a decision service');
+  });
 });
 
 // ---------------------------------------------------------------------------

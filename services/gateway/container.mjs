@@ -24,24 +24,29 @@
 //
 // 3. A LAZY, MEMOISED SINGLETON. Serverless invocations reuse a warm module, so
 //    pools are created once per instance and reused, never per request.
+//
+// 4. ANALYTICS INJECTED ONCE, HERE (LINA-58). Every service takes an optional
+//    `analytics` defaulting to a no-op sink, so without this injection the
+//    LINA-55 instrumentation runs and not one event leaves the process. The
+//    matching half is the FLUSH in app/src/server/gateway.ts: the PostHog sink
+//    batches, and on a serverless runtime an unflushed buffer is a dropped
+//    batch. Injection without flush reports nothing.
 import { createPool } from '../ledger/db.mjs';
 import { createLedgerCache } from '../ledger/cache.mjs';
 import { createPgLedger } from '../ledger/pg-ledger.mjs';
 import { createLedgerHttp } from '../ledger/http.mjs';
 
-import { createIdentityService } from '../identity/identity.mjs';
+import { createServices, getAnalytics } from '../composition.mjs';
+
 import { createPgStore as createIdentityPgStore } from '../identity/pg-store.mjs';
 import { createPartyStore } from '../identity/parties.mjs';
 import { createIdentityHttp } from '../identity/http.mjs';
 
-import { createDecisionLog } from '../decision/decision-log.mjs';
 import { createPgStore as createDecisionPgStore } from '../decision/pg-store.mjs';
 import { createIdentityAuthz } from '../decision/identity-authz.mjs';
 import { createDecisionHttp } from '../decision/http.mjs';
 
-import { createChangeOrderService } from '../change_order/change-order.mjs';
 import { createPgStore as createChangeOrderPgStore } from '../change_order/pg-store.mjs';
-import { createChangeOrderHttp } from '../change_order/http.mjs';
 
 // Per-service connection string with an explicit single-role fallback. Returning
 // the fallback is right for CI/local (one migrator role, no role separation to
@@ -58,9 +63,9 @@ function urlFor(varName) {
  * Build the whole service graph. Exported (rather than only the singleton) so
  * integration tests can build a container against a throwaway Neon branch
  * without touching process-wide state.
- * @param {{ urls?: Record<string,string> }} [opts]
+ * @param {{ urls?: Record<string,string>, analytics?: Object }} [opts]
  */
-export function createContainer({ urls = {} } = {}) {
+export function createContainer({ urls = {}, analytics = getAnalytics() } = {}) {
   const pools = {
     identity: createPool(urls.identity ?? urlFor('IDENTITY_DATABASE_URL')),
     decision: createPool(urls.decision ?? urlFor('DECISION_DATABASE_URL')),
@@ -74,38 +79,45 @@ export function createContainer({ urls = {} } = {}) {
 
   const ledgerReader = ledgerFor(pools.ledger);
 
-  // ── Identity (the sole authorizer, ADR-0004) ────────────────────────────────
-  const identityStore = createIdentityPgStore({
-    pool: pools.identity,
-    ledger: ledgerFor(pools.identity),
+  // Service construction itself lives in ../composition.mjs so the graph the
+  // deployed target runs is the SAME function the composition tests exercise
+  // against in-memory ports — including the analytics injection, without which
+  // every service silently falls back to the no-op sink and no event ever leaves
+  // the process (LINA-55/58). Only the ports differ here.
+  const services = createServices({
+    analytics,
+    // Identity reads the ledger (budget summaries) through the ledger role and
+    // writes through its own pool inside the store — see (1) above.
+    ledger: ledgerReader,
+    ledgers: {
+      decision: ledgerFor(pools.decision),
+      changeOrder: ledgerFor(pools.changeOrder),
+    },
+    identityStore: createIdentityPgStore({
+      pool: pools.identity,
+      ledger: ledgerFor(pools.identity),
+    }),
+    decisionStore: createDecisionPgStore({ pool: pools.decision }),
+    // A factory: the authorizer is built over the Identity service that
+    // createServices composes (ADR-0004 — one authorizer, no second copy).
+    decisionAuthz: (identity) => createIdentityAuthz({ identity }),
+    changeOrderStore: createChangeOrderPgStore({ pool: pools.changeOrder }),
   });
-  const identity = createIdentityService({ store: identityStore, ledger: ledgerReader });
+
+  const { identity, decision: decisionService, changeOrder: changeOrderService } = services;
   const parties = createPartyStore({ pool: pools.identity });
-
-  // ── Decision Log (FR2, FR7) ─────────────────────────────────────────────────
-  const decisionService = createDecisionLog({
-    store: createDecisionPgStore({ pool: pools.decision }),
-    ledger: ledgerFor(pools.decision),
-    authz: createIdentityAuthz({ identity }),
-  });
-
-  // ── Change Orders + budget (FR3–FR8) ────────────────────────────────────────
-  const changeOrderService = createChangeOrderService({
-    store: createChangeOrderPgStore({ pool: pools.changeOrder }),
-    ledger: ledgerFor(pools.changeOrder),
-    identity,
-  });
 
   return {
     pools,
     identity,
     parties,
+    analytics,
     ledger: ledgerReader,
     services: { identity, decision: decisionService, changeOrder: changeOrderService },
     http: {
       identity: createIdentityHttp({ service: identity }),
       decision: createDecisionHttp({ service: decisionService }),
-      changeOrder: createChangeOrderHttp({ service: changeOrderService, identity }),
+      changeOrder: services.changeOrderHttp,
       ledger: createLedgerHttp({ ledger: ledgerReader, identity }),
     },
     async close() {
