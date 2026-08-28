@@ -29,19 +29,20 @@ import { createLedgerCache } from '../ledger/cache.mjs';
 import { createPgLedger } from '../ledger/pg-ledger.mjs';
 import { createLedgerHttp } from '../ledger/http.mjs';
 
-import { createIdentityService } from '../identity/identity.mjs';
+// Service construction itself lives in composition.mjs (LINA-58) so the graph
+// the analytics tests exercise is literally the graph that ships. This file
+// supplies only the Postgres-specific ports it cannot know about.
+import { createServices, getAnalytics } from '../composition.mjs';
+
 import { createPgStore as createIdentityPgStore } from '../identity/pg-store.mjs';
 import { createPartyStore } from '../identity/parties.mjs';
 import { createIdentityHttp } from '../identity/http.mjs';
 
-import { createDecisionLog } from '../decision/decision-log.mjs';
 import { createPgStore as createDecisionPgStore } from '../decision/pg-store.mjs';
 import { createIdentityAuthz } from '../decision/identity-authz.mjs';
 import { createDecisionHttp } from '../decision/http.mjs';
 
-import { createChangeOrderService } from '../change_order/change-order.mjs';
 import { createPgStore as createChangeOrderPgStore } from '../change_order/pg-store.mjs';
-import { createChangeOrderHttp } from '../change_order/http.mjs';
 
 // Per-service connection string with an explicit single-role fallback. Returning
 // the fallback is right for CI/local (one migrator role, no role separation to
@@ -54,18 +55,28 @@ function urlFor(varName) {
   return url;
 }
 
+// Optional `SET ROLE` per service. Neon provisions the `<service>_app` roles as
+// NOLOGIN, so when all four services share one login URL this is what still
+// gives each of them only its own privileges. Unset → no SET ROLE (plain local
+// Postgres, where the single dev role owns everything).
+const roleFor = (varName) => process.env[varName] || undefined;
+
 /**
  * Build the whole service graph. Exported (rather than only the singleton) so
  * integration tests can build a container against a throwaway Neon branch
  * without touching process-wide state.
- * @param {{ urls?: Record<string,string> }} [opts]
+ * @param {{ urls?: Record<string,string>, roles?: Record<string,string>, analytics?: Object }} [opts]
  */
-export function createContainer({ urls = {} } = {}) {
+export function createContainer({ urls = {}, roles = {}, analytics = getAnalytics() } = {}) {
+  const pool = (svc, urlVar, roleVar) => createPool(
+    urls[svc] ?? urlFor(urlVar),
+    { role: roles[svc] ?? roleFor(roleVar) },
+  );
   const pools = {
-    identity: createPool(urls.identity ?? urlFor('IDENTITY_DATABASE_URL')),
-    decision: createPool(urls.decision ?? urlFor('DECISION_DATABASE_URL')),
-    changeOrder: createPool(urls.changeOrder ?? urlFor('CHANGE_ORDER_DATABASE_URL')),
-    ledger: createPool(urls.ledger ?? urlFor('LEDGER_DATABASE_URL')),
+    identity: pool('identity', 'IDENTITY_DATABASE_URL', 'IDENTITY_DATABASE_ROLE'),
+    decision: pool('decision', 'DECISION_DATABASE_URL', 'DECISION_DATABASE_ROLE'),
+    changeOrder: pool('changeOrder', 'CHANGE_ORDER_DATABASE_URL', 'CHANGE_ORDER_DATABASE_ROLE'),
+    ledger: pool('ledger', 'LEDGER_DATABASE_URL', 'LEDGER_DATABASE_ROLE'),
   };
 
   // See (2) above — one cache, four ledger bindings.
@@ -74,38 +85,42 @@ export function createContainer({ urls = {} } = {}) {
 
   const ledgerReader = ledgerFor(pools.ledger);
 
-  // ── Identity (the sole authorizer, ADR-0004) ────────────────────────────────
-  const identityStore = createIdentityPgStore({
-    pool: pools.identity,
-    ledger: ledgerFor(pools.identity),
+  const identityLedger = ledgerFor(pools.identity);
+
+  // Ports this file owns (Postgres-specific); the service graph itself — and the
+  // analytics injection that makes the LINA-55 event spine actually emit — is
+  // assembled by composition.mjs. Decision's authorizer needs the Identity
+  // SERVICE, which does not exist until createServices returns, so it is passed
+  // as a late-bound indirection rather than by building a second Identity.
+  let identityRef = null;
+  const lateIdentity = { authorize: (ctx) => identityRef.authorize(ctx) };
+  const graph = createServices({
+    ledger: ledgerReader,
+    identityLedger,
+    decisionLedger: ledgerFor(pools.decision),
+    changeOrderLedger: ledgerFor(pools.changeOrder),
+    identityStore: createIdentityPgStore({ pool: pools.identity, ledger: identityLedger }),
+    decisionStore: createDecisionPgStore({ pool: pools.decision }),
+    decisionAuthz: createIdentityAuthz({ identity: lateIdentity }),
+    changeOrderStore: createChangeOrderPgStore({ pool: pools.changeOrder }),
+    analytics,
   });
-  const identity = createIdentityService({ store: identityStore, ledger: ledgerReader });
+  identityRef = graph.identity;
+
+  const { identity, decision: decisionService, changeOrder: changeOrderService } = graph;
   const parties = createPartyStore({ pool: pools.identity });
-
-  // ── Decision Log (FR2, FR7) ─────────────────────────────────────────────────
-  const decisionService = createDecisionLog({
-    store: createDecisionPgStore({ pool: pools.decision }),
-    ledger: ledgerFor(pools.decision),
-    authz: createIdentityAuthz({ identity }),
-  });
-
-  // ── Change Orders + budget (FR3–FR8) ────────────────────────────────────────
-  const changeOrderService = createChangeOrderService({
-    store: createChangeOrderPgStore({ pool: pools.changeOrder }),
-    ledger: ledgerFor(pools.changeOrder),
-    identity,
-  });
 
   return {
     pools,
     identity,
     parties,
+    analytics: graph.analytics,
     ledger: ledgerReader,
     services: { identity, decision: decisionService, changeOrder: changeOrderService },
     http: {
       identity: createIdentityHttp({ service: identity }),
       decision: createDecisionHttp({ service: decisionService }),
-      changeOrder: createChangeOrderHttp({ service: changeOrderService, identity }),
+      changeOrder: graph.changeOrderHttp,
       ledger: createLedgerHttp({ ledger: ledgerReader, identity }),
     },
     async close() {

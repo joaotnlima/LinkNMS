@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
+import { createPool } from '../ledger/db.mjs';
 import { createPgLedger } from '../ledger/pg-ledger.mjs';
 import { verifyChain } from '../ledger/hash-chain.mjs';
 import { createPgStore } from './pg-store.mjs';
@@ -49,9 +50,6 @@ describe('Postgres identity (membership + authz + ledger seam)', { skip: DB ? fa
   let appPool; // connects AS identity_app: the real runtime grants
   let svc;
   let ledger;
-  // Set to identity_app's login password (created out of band by the owner, like
-  // the credential a serverless function would carry). Override via IDENTITY_APP_PW.
-  const APP_PW = process.env.IDENTITY_APP_PW || 'slice2-dev-only-pw';
 
   before(async () => {
     // DATABASE_URL is the migrator (owner) connection — it owns the schemas and the
@@ -62,10 +60,16 @@ describe('Postgres identity (membership + authz + ledger seam)', { skip: DB ? fa
       await ownerPool.query(sql);
     }
 
-    const appUrl = new URL(DB);
-    appUrl.username = 'identity_app';
-    appUrl.password = APP_PW;
-    appPool = new Pool({ connectionString: appUrl.toString(), ssl, max: 4 });
+    // Connect as the login role, then SET ROLE into identity_app — the same
+    // mechanism the deployed API uses (services/gateway/container.mjs, LINA-56).
+    //
+    // This previously opened a second connection AS identity_app with a password
+    // supplied out of band. Neon provisions the `<service>_app` roles NOLOGIN, so
+    // on any real branch that failed with `28P01 password authentication failed`
+    // and every assertion below — including the write-guard, which is the whole
+    // point of the file — silently stopped running. SET ROLE needs no second
+    // credential and yields exactly the same privilege set.
+    appPool = createPool(DB, { role: 'identity_app', max: 4 });
 
     // The ledger core: budgetSummary reads run on the owner pool; append(client, …)
     // runs on whatever client it's handed — here, identity_app's tx client.

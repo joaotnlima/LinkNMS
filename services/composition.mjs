@@ -30,10 +30,6 @@ import { createIdentityService } from './identity/identity.mjs';
 import { createDecisionLog } from './decision/decision-log.mjs';
 import { createChangeOrderService } from './change_order/change-order.mjs';
 import { createChangeOrderHttp } from './change_order/http.mjs';
-import { createPgLedger } from './ledger/pg-ledger.mjs';
-import { getPool } from './ledger/db.mjs';
-import { createPgStore as createIdentityPgStore } from './identity/pg-store.mjs';
-import { createPgStore as createChangeOrderPgStore } from './change_order/pg-store.mjs';
 
 // ── The per-process analytics singleton ─────────────────────────────────────
 //
@@ -67,8 +63,20 @@ export function resetAnalyticsForTests() {
  * process memory. Omitting it is loud at the route (no service to mount);
  * a memory fallback would look wired and lose every decision on cold start.
  *
+ * PER-SERVICE LEDGER BINDINGS. `ledger` is the default port, but each service
+ * may be given its OWN binding via `identityLedger` / `decisionLedger` /
+ * `changeOrderLedger`. That is not a style choice: under the role-separated
+ * deployment (LINA-56) each service holds its own pool as its own `<service>_app`
+ * role, and a service's projection write and its `ledger.append_event(...)` must
+ * land on the SAME connection to commit in one transaction (ADR-0006 §1). A
+ * single shared ledger bound to someone else's pool would silently split that
+ * atomicity in two. Tests that pass one in-memory `ledger` keep working unchanged.
+ *
  * @param {Object} ports
  * @param {Object} ports.ledger                 Ledger port (append/recordBudgetEvent/currentBudget)
+ * @param {Object} [ports.identityLedger]       Identity's ledger binding (default: ledger)
+ * @param {Object} [ports.decisionLedger]       Decision's ledger binding (default: ledger)
+ * @param {Object} [ports.changeOrderLedger]    Change Order's ledger binding (default: ledger)
  * @param {Object} ports.identityStore          Identity store adapter
  * @param {Object} ports.changeOrderStore       Change Order store adapter
  * @param {Object} [ports.decisionStore]        Decision store adapter (omit → no decision service)
@@ -79,6 +87,9 @@ export function resetAnalyticsForTests() {
  */
 export function createServices({
   ledger,
+  identityLedger = ledger,
+  decisionLedger = ledger,
+  changeOrderLedger = ledger,
   identityStore,
   changeOrderStore,
   decisionStore = null,
@@ -91,14 +102,14 @@ export function createServices({
   if (!identityStore) throw new Error('createServices requires an { identityStore } port');
   if (!changeOrderStore) throw new Error('createServices requires a { changeOrderStore } port');
 
-  const identity = createIdentityService({ store: identityStore, ledger, analytics });
+  const identity = createIdentityService({ store: identityStore, ledger: identityLedger, analytics });
 
   // Change Order consumes the Identity SERVICE as its authorization port
   // (requireMember/roleOf), not a second copy of the membership rules — one
   // authorizer, so a permission fix lands everywhere at once (ADR-0004).
   const changeOrder = createChangeOrderService({
     store: changeOrderStore,
-    ledger,
+    ledger: changeOrderLedger,
     identity,
     analytics,
   });
@@ -106,7 +117,7 @@ export function createServices({
   const decision = decisionStore
     ? createDecisionLog({
         store: decisionStore,
-        ledger,
+        ledger: decisionLedger,
         authz: decisionAuthz,
         clock,
         ids,
@@ -123,21 +134,12 @@ export function createServices({
   };
 }
 
-/**
- * Build the deployed-target composition: Postgres ledger + Postgres stores.
- *
- * The Identity store takes the ledger because identity writes are ledgered on
- * the same connection (ADR-0006 §1); the Change Order store opens its own.
- */
-export function createServicesFromEnv({ pool = getPool(), analytics = getAnalytics() } = {}) {
-  const ledger = createPgLedger({ pool });
-  return createServices({
-    ledger,
-    identityStore: createIdentityPgStore({ pool, ledger }),
-    changeOrderStore: createChangeOrderPgStore({ pool }),
-    analytics,
-  });
-}
+// The deployed-target builder lives in services/gateway/container.mjs, which
+// calls `createServices` above with role-separated pools, per-service ledger
+// bindings and the Decision Log's Postgres store. It is deliberately the ONLY
+// env-facing composition root: an earlier `createServicesFromEnv` here built a
+// second, single-pool graph with no decision service, and two builders is how a
+// service ends up analytics-instrumented on one path and silent on the other.
 
 /**
  * Wrap a route handler so the analytics buffer is flushed before its response is

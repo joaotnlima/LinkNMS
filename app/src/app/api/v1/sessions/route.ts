@@ -19,7 +19,6 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { container, currentSession } from '@/server/gateway';
 
-// @ts-expect-error — .mjs service module
 import { mintSession, sessionCookie, clearSessionCookie, SESSION_TTL_SECONDS } from '@services/identity/session.mjs';
 
 export const dynamic = 'force-dynamic';
