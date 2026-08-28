@@ -30,6 +30,7 @@
 import { cookies } from 'next/headers';
 
 import { getContainer } from '@services/gateway/container.mjs';
+import { getAnalytics } from '@services/composition.mjs';
 import { SESSION_COOKIE, verifySession } from '@services/identity/session.mjs';
 
 import type { Project, Decision, ChangeOrderDetail, ChangeOrderSummary, AuditResult, Pillars } from './types';
@@ -160,9 +161,33 @@ async function call<T>(op: OpName, params: Params = {}, body?: unknown): Promise
   // an anonymous caller is a redirect to sign-in, not a 403 rendered as a crash.
   if (!s) throw new UnauthenticatedError();
 
-  const result = isRemote()
-    ? await callHttp(route, params, body)
-    : await route.handler(getContainer())({ session: s, params: withAliases(params), body, headers: {} });
+  let result: { status: number; body?: unknown };
+  if (isRemote()) {
+    // The remote gateway runs handle(), which flushes on its own side.
+    result = await callHttp(route, params, body);
+  } else {
+    // THE FLUSH (LINA-58), repeated here on purpose. gateway.ts's `handle()`
+    // says "every API route funnels through this one function" — true of the
+    // /api/v1 route files, and no longer true of the UI, which since this
+    // cutover reaches the same handlers IN PROCESS without passing through it.
+    // The PostHog sink buffers captures, and Vercel can freeze the instance the
+    // moment the response is written, so skipping this drops the analytics for
+    // exactly the path real users take (the 8-event spine, LINA-55/28).
+    //
+    // `finally`, matching handle(): a failed write has usually emitted the more
+    // interesting events, and losing precisely the failure telemetry would be
+    // the worst possible sampling bias. Analytics is best-effort by contract —
+    // a flush problem must never become a render failure on the record itself.
+    try {
+      result = await route.handler(getContainer())({ session: s, params: withAliases(params), body, headers: {} });
+    } finally {
+      try {
+        await getAnalytics().flush();
+      } catch (flushErr) {
+        console.warn('[ui] analytics flush failed', flushErr);
+      }
+    }
+  }
 
   if (result.status >= 400) raise(result.status, result.body);
   return result.body as T;
