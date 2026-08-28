@@ -174,8 +174,16 @@ details.revs summary::-webkit-details-marker { display: none; }
 .ev .ev-t { font-size: 13px; font-weight: 600; }
 .ev .ev-h { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--muted); }
 
-/* ---- demo banner ---- */
-.demo-banner { font-size: 12px; color: var(--warn-fg); background: var(--warn-bg); border: 1px solid var(--warn-bd); border-radius: var(--r-ctrl); padding: 8px 12px; }
+/* ---- form feedback (LINA-57) ----
+   The demo-data banner used to live here. It is gone with the fixtures; what
+   replaced it is the honest failure text below. Note the error carries a glyph
+   and a sentence, not just a colour — FR9's label-and-icon rule applies to
+   errors exactly as it does to the four pillars. */
+.form-error { font-size: 13px; font-weight: 600; color: var(--bad-fg); background: var(--bad-bg); border: 1px solid var(--bad-bd); border-radius: var(--r-ctrl); padding: 8px 12px; }
+
+/* The one-time invitation code: monospace and wrapping, because it gets read
+   aloud and copied by hand as often as it gets pasted. */
+.token { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; width: 100%; padding: 10px 11px; border: 1px solid var(--outline-strong); border-radius: var(--r-ctrl); background: var(--sunken); color: var(--fg); }
 
 /* ---- bottom nav ---- */
 .botnav { position: sticky; bottom: 0; display: flex; border-top: 1px solid var(--outline); background: var(--raised); }

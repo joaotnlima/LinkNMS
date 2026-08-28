@@ -15,18 +15,18 @@
 // It is off by default, so a deploy that forgets to configure it fails closed:
 // no sign-in rather than an open one. Enable it only on preview/demo
 // environments. Real magic-link sign-in is tracked as a follow-up.
+//
+// The gate and the mint themselves live in @/server/signin (LINA-57), because the
+// sign-in FORM needs exactly the same two steps and a gate implemented twice is
+// a gate that eventually only closes once.
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { container, currentSession } from '@/server/gateway';
+import { signIn, secureCookies } from '@/server/signin';
 
-import { mintSession, sessionCookie, clearSessionCookie, SESSION_TTL_SECONDS } from '@services/identity/session.mjs';
+import { sessionCookie, clearSessionCookie, SESSION_TTL_SECONDS } from '@services/identity/session.mjs';
 
 export const dynamic = 'force-dynamic';
-
-const openSignInEnabled = () => process.env.LINKNMS_OPEN_SIGNIN === '1';
-// Cookies must not carry `Secure` over plain http, or local dev can never hold a
-// session. Everything deployed is https.
-const secureCookies = () => process.env.NODE_ENV === 'production';
 
 export async function GET() {
   const session = await currentSession();
@@ -41,13 +41,6 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  if (!openSignInEnabled()) {
-    // 404, not 403: an endpoint that is not enabled should not advertise itself.
-    return NextResponse.json(
-      { error: { code: 'not_found', message: 'not found' } },
-      { status: 404 },
-    );
-  }
   let body: { email?: string; displayName?: string; role?: string };
   try {
     body = await req.json();
@@ -59,13 +52,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    const party = await container().parties.findOrCreateByEmail({
-      email: body?.email,
-      displayName: body?.displayName,
-      role: body?.role ?? 'contractor',
-    });
-    const { token, expiresAt } = mintSession({ partyId: party.id });
-    const res = NextResponse.json({ partyId: party.id, party, expiresAt }, { status: 201 });
+    // The LINKNMS_OPEN_SIGNIN gate is inside signIn(), which throws
+    // SignInDisabledError (status 404) — handled by the typed branch below.
+    const { partyId, party, token, expiresAt } = await signIn(body);
+    const res = NextResponse.json({ partyId, party, expiresAt }, { status: 201 });
     res.headers.set('set-cookie', sessionCookie(token, {
       ttlSeconds: SESSION_TTL_SECONDS,
       secure: secureCookies(),

@@ -3,12 +3,23 @@
 // Surface 3b — Raise a change order. Captures cost impact plus the scope /
 // schedule / quality notes (FR8) that never move the budget. Money is entered in
 // dollars and converted to integer cents on submit (§6). Posts to the live
-// contract endpoint; in demo mode (no backend) it explains what would happen
-// rather than pretending to persist.
+// contract endpoint; a failure is reported as a failure — there is no simulated
+// success path (LINA-57).
 import { useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { parseCostDeltaToCents } from '@/lib/format';
 
-type Result = { kind: 'idle' | 'sending' } | { kind: 'demo' } | { kind: 'error'; message: string } | { kind: 'ok'; id: string };
+type Result = { kind: 'idle' | 'sending' } | { kind: 'error'; message: string } | { kind: 'ok'; id: string };
+
+/** `{ cents }` when the typed amount is exact, `{ error }` when it is not. */
+function readCostDelta(dollars: string): { cents?: number; error?: string } {
+  if (!dollars.trim()) return { cents: 0 };
+  try {
+    return { cents: parseCostDeltaToCents(dollars) };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'That cost impact is not a valid amount.' };
+  }
+}
 
 export default function RaiseChangeOrder() {
   const router = useRouter();
@@ -22,8 +33,11 @@ export default function RaiseChangeOrder() {
   const [qualityNote, setQualityNote] = useState('');
   const [result, setResult] = useState<Result>({ kind: 'idle' });
 
-  const costDeltaCents = Math.round(parseFloat(dollars || '0') * 100);
-  const valid = title.trim().length > 0 && Number.isFinite(costDeltaCents);
+  // Parsed, not rounded (LINA-57): `Math.round(parseFloat(x) * 100)` used to
+  // turn "4200.999" into $4201.00 silently. A cost impact that is not exactly
+  // what the user typed has no business entering an append-only record.
+  const { cents: costDeltaCents, error: costError } = readCostDelta(dollars);
+  const valid = title.trim().length > 0 && costDeltaCents !== undefined;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,20 +58,25 @@ export default function RaiseChangeOrder() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (res.status === 404 || res.status === 501) {
-        setResult({ kind: 'demo' });
-        return;
-      }
+      // Every non-2xx is a FAILURE, 404 included (LINA-57). The previous
+      // "demo mode" branch told the user what would have happened, which on a
+      // form whose whole job is to put a cost change on the record is the one
+      // outcome that must never be simulated.
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        setResult({ kind: 'error', message: j?.error?.message ?? `Request failed (${res.status})` });
+        setResult({
+          kind: 'error',
+          message: j?.error?.message ?? `The change order was not recorded (${res.status}). Nothing has changed.`,
+        });
         return;
       }
       const co = await res.json();
       router.push(`/change-orders/${co.id}`);
     } catch {
-      // No backend reachable in this deployment — treat as demo.
-      setResult({ kind: 'demo' });
+      setResult({
+        kind: 'error',
+        message: 'The change order could not be sent, so nothing was recorded. Check your connection and try again.',
+      });
     }
   }
 
@@ -112,7 +131,13 @@ export default function RaiseChangeOrder() {
             </div>
           )}
 
-          {costDeltaCents !== 0 && Number.isFinite(costDeltaCents) && (
+          {costError && (
+            <p className="form-error" role="alert" style={{ marginBottom: 12 }}>
+              <span aria-hidden="true">⚠ </span>
+              {costError}
+            </p>
+          )}
+          {costDeltaCents !== undefined && costDeltaCents !== 0 && (
             <p className="cap" style={{ marginBottom: 12 }}>
               Cost impact recorded as <strong>{costDeltaCents} cents</strong>.
             </p>
@@ -126,13 +151,6 @@ export default function RaiseChangeOrder() {
           </div>
         </form>
 
-        {result.kind === 'demo' && (
-          <div className="demo-banner" role="status" style={{ marginTop: 16 }}>
-            <strong>Demo mode.</strong> This would create a <em>proposed</em> change order via{' '}
-            <code>POST /api/v1/projects/{id}/change-orders</code> and route you to its one-screen detail.
-            The Change-Order API (Slice 4) isn't wired to this deployment yet.
-          </div>
-        )}
         {result.kind === 'error' && (
           <div className="integrity bad" role="alert" style={{ marginTop: 16 }}>
             {result.message}

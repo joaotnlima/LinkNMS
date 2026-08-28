@@ -2,7 +2,7 @@
 // entry point to raise one. Each row links to the "one screen" detail. (design §7)
 import Link from 'next/link';
 import { getChangeOrders } from '@/lib/api';
-import { TopBar, BottomNav, DemoBanner } from '@/components/chrome';
+import { TopBar, BottomNav } from '@/components/chrome';
 import { CoStatusChip } from '@/components/CoStatusChip';
 import { formatDate, roleLabel, delta } from '@/lib/format';
 
@@ -15,7 +15,6 @@ export default async function ChangeOrdersPage({ params }: { params: Promise<{ i
     <>
       <TopBar back={{ href: `/projects/${id}`, label: 'Home' }} />
       <main className="screen">
-        <DemoBanner />
         <div className="spread">
           <div>
             <h1 className="scr">Change orders</h1>

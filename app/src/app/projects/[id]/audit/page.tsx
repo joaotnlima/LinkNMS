@@ -4,7 +4,7 @@
 // (later) plan/progress events. Budget deltas are shown inline so the running
 // budget trail is legible. (design §7, FR2/FR7, Acceptance)
 import { getAudit } from '@/lib/api';
-import { TopBar, BottomNav, DemoBanner } from '@/components/chrome';
+import { TopBar, BottomNav } from '@/components/chrome';
 import { ShieldCheck, StatusIcon } from '@/components/icons';
 import { formatDateTime, delta, roleLabel } from '@/lib/format';
 import type { AuditEvent } from '@/lib/types';
@@ -39,7 +39,6 @@ export default async function AuditPage({ params }: { params: Promise<{ id: stri
     <>
       <TopBar back={{ href: `/projects/${id}`, label: 'Home' }} />
       <main className="screen">
-        <DemoBanner />
         <div>
           <h1 className="scr">Audit trail</h1>
           <p className="sub">Every decision and change, in the order it happened — tamper-evident by a hash chain.</p>
