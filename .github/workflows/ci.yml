@@ -70,10 +70,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: services/package-lock.json
 
+      # `npm ci`, not `npm install`: Vercel deploys with `npm ci`, which fails
+      # hard on a package.json/package-lock.json mismatch while `npm install`
+      # silently repairs it. Using `npm install` here made CI structurally
+      # incapable of catching lockfile drift — green checks, red deploy
+      # (proven on PR #18, LINA-66). `--ignore-scripts` is a deliberate
+      # supply-chain choice; keep it.
       - name: Install dependencies
         working-directory: services
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
 
       # Pure hash-chain core + Postgres adversarial suite (tamper/delete/forge/
       # reorder detected at exact seq, budget math, four-pillar status, audit
@@ -95,10 +103,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
 
+      # See the ledger job: `npm ci` mirrors the Vercel deploy install exactly,
+      # so lockfile drift fails here instead of at deploy time (LINA-66).
       - name: Install dependencies
         working-directory: app
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
 
       - name: Type-check
         working-directory: app
