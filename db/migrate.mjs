@@ -19,12 +19,10 @@
 // Requires `psql` on PATH (present in every Postgres CI image and locally via
 // libpq). Zero npm dependencies by design.
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { ROOT, ROLES_FILE, migrationFiles, sha256 } from './migration-files.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DRY_RUN = process.argv.includes('--dry-run');
 
 const DB_URL =
@@ -58,30 +56,13 @@ function queryScalarRows(sql) {
 }
 
 // Migration set (deterministic order) ----------------------------------------
-function sha256(abs) {
-  return createHash('sha256').update(readFileSync(abs)).digest('hex');
-}
-function serviceMigrations() {
-  const svcRoot = join(ROOT, 'services');
-  if (!existsSync(svcRoot)) return [];
-  const out = [];
-  for (const svc of readdirSync(svcRoot).sort()) {
-    const dir = join(svcRoot, svc, 'migrations');
-    if (!existsSync(dir)) continue;
-    for (const f of readdirSync(dir).sort()) {
-      if (f.endsWith('.sql') && !f.endsWith('.test.sql')) {
-        out.push(`services/${svc}/migrations/${f}`);
-      }
-    }
-  }
-  return out;
-}
-// db/0001_platform.sql (creates platform.schema_migrations) first, then every
-// service migration. db/roles.sql is handled separately below: it must run
-// BEFORE the platform grants that reference the roles, yet it runs before the
-// ledger table exists — so it is idempotent and always applied, never recorded.
-const ROLES_FILE = 'db/roles.sql';
-const FILES = ['db/0001_platform.sql', ...serviceMigrations()];
+// Enumerated by db/migration-files.mjs so the production drift detector
+// (scripts/check-prod-schema.mjs, LINA-62) sees exactly the same set: db/
+// 0001_platform.sql first, then every service migration sorted by (svc, NNNN).
+// db/roles.sql is handled separately below: it must run BEFORE the platform
+// grants that reference the roles, yet it runs before the ledger table exists —
+// so it is idempotent and always applied, never recorded.
+const FILES = migrationFiles();
 
 // Run ------------------------------------------------------------------------
 // Bootstrap: the ledger table lives in db/0001_platform.sql, so before it exists

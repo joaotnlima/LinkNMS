@@ -42,6 +42,17 @@ jobs:
           MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
         run: node db/migrate.mjs
 
+      # Self-test for the production schema gate (LINA-62). The same checker
+      # that guards prod in .github/workflows/prod-schema.yml runs here against
+      # this throwaway container, which was just migrated from the tree — so it
+      # must report zero drift and a correct grant matrix. Runs on every PR with
+      # no credentials, which is the point: the guard is only worth anything if
+      # a change that breaks it fails BEFORE it reaches main.
+      - name: Production schema checker self-test
+        env:
+          MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+        run: node scripts/check-prod-schema.mjs
+
   ledger-tests:
     name: Ledger — trust-anchor tests (Postgres)
     runs-on: ubuntu-latest
