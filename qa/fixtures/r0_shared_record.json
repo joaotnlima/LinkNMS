@@ -1,0 +1,103 @@
+{
+  "_meta": {
+    "name": "R0 shared-record — golden fixture",
+    "purpose": "One realistic homeowner+GC build used as the canonical seed for QA. Mirrors the R0 MVP scope (decision log + change orders + budget-impact trail). Every downstream test asserts against these numbers.",
+    "schema_version": "0.1",
+    "owner": "QA Developer (LINA-21)",
+    "invariants_exercised": [
+      "audit-immutability: decisions/change-orders are append-only; edits produce revisions, never in-place mutation",
+      "budget-math: current_total == baseline + sum(delta of APPROVED change orders)",
+      "permission/segregation-of-duties: a change order cannot be approved by its proposer or by the project owner"
+    ]
+  },
+
+  "project": {
+    "id": "prj_maple_street",
+    "name": "Maple Street new build",
+    "currency": "USD",
+    "budget_baseline_cents": 42000000,
+    "owner_party_id": "party_homeowner"
+  },
+
+  "parties": [
+    { "id": "party_homeowner", "role": "homeowner", "name": "Dana Ruiz",        "is_owner": true  },
+    { "id": "party_gc",        "role": "gc",        "name": "Vertex Builders",   "is_owner": false },
+    { "id": "party_architect", "role": "architect", "name": "Iris Chen, AIA",    "is_owner": false },
+    { "id": "party_sub_elec",  "role": "subcontractor", "name": "Bright Electric","is_owner": false }
+  ],
+
+  "decisions": [
+    {
+      "id": "dec_001", "seq": 1,
+      "title": "Approved foundation plan rev C",
+      "author_party_id": "party_architect",
+      "created_at": "2026-03-02T15:04:00Z",
+      "revisions": [
+        { "rev": 1, "at": "2026-03-02T15:04:00Z", "by": "party_architect", "summary": "Initial: foundation plan rev C accepted." }
+      ]
+    },
+    {
+      "id": "dec_002", "seq": 2,
+      "title": "Use engineered lumber for second-floor joists",
+      "author_party_id": "party_gc",
+      "created_at": "2026-03-11T09:20:00Z",
+      "revisions": [
+        { "rev": 1, "at": "2026-03-11T09:20:00Z", "by": "party_gc", "summary": "Initial: switch to engineered lumber, pending owner cost approval." },
+        { "rev": 2, "at": "2026-03-12T18:00:00Z", "by": "party_gc", "summary": "Amended: added span table reference. Prior revision preserved." }
+      ]
+    }
+  ],
+
+  "change_orders": [
+    {
+      "id": "co_001", "number": 1,
+      "title": "Engineered lumber upgrade (2nd-floor joists)",
+      "linked_decision_id": "dec_002",
+      "proposer_party_id": "party_gc",
+      "delta_cents": 380000,
+      "status": "approved",
+      "created_at": "2026-03-12T18:05:00Z",
+      "decided_at": "2026-03-13T14:30:00Z",
+      "decided_by_party_id": "party_homeowner"
+    },
+    {
+      "id": "co_002", "number": 2,
+      "title": "Add whole-house surge protection",
+      "linked_decision_id": null,
+      "proposer_party_id": "party_sub_elec",
+      "delta_cents": 65000,
+      "status": "approved",
+      "created_at": "2026-04-01T11:00:00Z",
+      "decided_at": "2026-04-02T16:45:00Z",
+      "decided_by_party_id": "party_homeowner"
+    },
+    {
+      "id": "co_003", "number": 3,
+      "title": "Upgrade kitchen window package",
+      "linked_decision_id": null,
+      "proposer_party_id": "party_gc",
+      "delta_cents": 220000,
+      "status": "proposed",
+      "created_at": "2026-04-10T08:15:00Z",
+      "decided_at": null,
+      "decided_by_party_id": null
+    },
+    {
+      "id": "co_004", "number": 4,
+      "title": "Relocate laundry hookups (owner request, later withdrawn)",
+      "linked_decision_id": null,
+      "proposer_party_id": "party_gc",
+      "delta_cents": 140000,
+      "status": "rejected",
+      "created_at": "2026-04-12T10:00:00Z",
+      "decided_at": "2026-04-13T09:00:00Z",
+      "decided_by_party_id": "party_homeowner"
+    }
+  ],
+
+  "expected": {
+    "approved_delta_total_cents": 445000,
+    "current_budget_total_cents": 42445000,
+    "note": "42000000 baseline + 380000 (co_001) + 65000 (co_002). co_003 proposed and co_004 rejected do NOT move the budget."
+  }
+}
