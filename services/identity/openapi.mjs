@@ -70,6 +70,12 @@ export const schemas = {
       projectId: { type: 'string' },
       role: roleEnum,
       status: { type: 'string', enum: ['pending', 'accepted'] },
+      // OpenAPI 3.1 is JSON Schema 2020-12: nullability is a type union, not the
+      // 3.0 `nullable` keyword (which 3.1 removed).
+      email: {
+        type: ['string', 'null'],
+        description: 'The address the invitation was mailed to; null on the out-of-band path.',
+      },
       createdAt: { type: 'string' },
     },
   },
@@ -80,6 +86,12 @@ export const schemas = {
     properties: {
       invitation: { $ref: '#/components/schemas/Invitation' },
       token: { type: 'string' },
+      emailed: {
+        type: 'boolean',
+        description:
+          'True only when the invitation was actually handed to the mailer. The raw token ' +
+          'is returned either way, so a delivery failure never strands the inviter.',
+      },
     },
   },
   MembershipCreated: {
@@ -97,7 +109,17 @@ export const schemas = {
   },
   InviteRequest: {
     type: 'object',
-    properties: { role: { type: 'string', enum: ['counterparty'] } },
+    properties: {
+      role: { type: 'string', enum: ['counterparty'] },
+      email: {
+        type: ['string', 'null'],
+        format: 'email',
+        description:
+          'Optional (LINA-84). Supplied, the invitation link is emailed to this address and ' +
+          'the response reports `emailed`. Omitted, nothing is sent and the caller delivers ' +
+          'the raw token out of band. Lower-cased server-side, same normalisation as sign-in.',
+      },
+    },
   },
 };
 

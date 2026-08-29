@@ -22,8 +22,21 @@ function validate(schema, value, path = '$', errs = []) {
     const name = schema.$ref.split('/').pop();
     return validate(schemas[name], value, path, errs);
   }
+  // OpenAPI 3.1 is JSON Schema 2020-12, where `type` may be a UNION and
+  // nullability is spelled `['string', 'null']` (3.0's `nullable` is gone). A
+  // union passes if the value satisfies any branch — without this, an optional
+  // field like `Invitation.email` could not be expressed at all.
+  if (Array.isArray(schema.type)) {
+    const ok = schema.type.some(
+      (one) => validate({ ...schema, type: one }, value, path, []).length === 0,
+    );
+    if (!ok) errs.push(`${path}: expected one of ${schema.type.join(' | ')}`);
+    return errs;
+  }
   const t = schema.type;
-  if (t === 'object') {
+  if (t === 'null') {
+    if (value !== null) errs.push(`${path}: expected null`);
+  } else if (t === 'object') {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
       errs.push(`${path}: expected object`); return errs;
     }
