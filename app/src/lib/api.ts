@@ -30,6 +30,7 @@
 import { cookies } from 'next/headers';
 
 import { getContainer } from '@services/gateway/container.mjs';
+import { normaliseParams } from '@services/gateway/params.mjs';
 import { getAnalytics } from '@services/composition.mjs';
 import { SESSION_COOKIE, verifySession } from '@services/identity/session.mjs';
 
@@ -161,10 +162,16 @@ async function call<T>(op: OpName, params: Params = {}, body?: unknown): Promise
   // an anonymous caller is a redirect to sign-in, not a 403 rendered as a crash.
   if (!s) throw new UnauthenticatedError();
 
+  // Alias `[id]` ⇄ `projectId` and reject a malformed identifier BEFORE either
+  // transport — so a stale bookmark to /projects/not-a-uuid is a 400 here rather
+  // than a `uuid` cast error deep in Postgres, and so both transports answer it
+  // identically instead of only the remote one being checked.
+  const p = withAliases(params);
+
   let result: { status: number; body?: unknown };
   if (isRemote()) {
     // The remote gateway runs handle(), which flushes on its own side.
-    result = await callHttp(route, params, body);
+    result = await callHttp(route, p, body);
   } else {
     // THE FLUSH (LINA-58), repeated here on purpose. gateway.ts's `handle()`
     // says "every API route funnels through this one function" — true of the
@@ -179,7 +186,7 @@ async function call<T>(op: OpName, params: Params = {}, body?: unknown): Promise
     // the worst possible sampling bias. Analytics is best-effort by contract —
     // a flush problem must never become a render failure on the record itself.
     try {
-      result = await route.handler(getContainer())({ session: s, params: withAliases(params), body, headers: {} });
+      result = await route.handler(getContainer())({ session: s, params: p, body, headers: {} });
     } finally {
       try {
         await getAnalytics().flush();
@@ -198,11 +205,22 @@ async function call<T>(op: OpName, params: Params = {}, body?: unknown): Promise
 // routes — the in-process transport bypasses that file, so it must do the same
 // thing here or a handler reads `undefined` and returns a perfectly plausible
 // 403 on the owner's own project.
+//
+// It used to do that with a second copy of the aliasing; both transports now call
+// the ONE implementation in services/gateway/params.mjs, which additionally
+// rejects a malformed identifier as a typed 400 before it can become a Postgres
+// `uuid` parameter (LINA-79). Translated to ApiError here so the surfaces see the
+// same error type they already handle.
 function withAliases(params: Params): Params {
-  const out = { ...params };
-  if (out.id && !out.projectId) out.projectId = out.id;
-  if (out.projectId && !out.id) out.id = out.projectId;
-  return out;
+  try {
+    return normaliseParams(params) as Params;
+  } catch (err) {
+    const e = err as { status?: number; code?: string; message?: string };
+    if (typeof e?.status === 'number' && typeof e?.code === 'string') {
+      throw new ApiError(e.status, e.message ?? 'bad request', e.code);
+    }
+    throw err;
+  }
 }
 
 async function callHttp(route: Op, params: Params, body: unknown): Promise<{ status: number; body?: unknown }> {
