@@ -17,7 +17,7 @@ import { cookies } from 'next/headers';
 
 import { ApiError, createProject, inviteCounterparty, acceptInvitation } from '@/lib/api';
 import { parseBudgetToCents } from '@/lib/format';
-import { signIn, SESSION_COOKIE, sessionCookieOptions } from '@/server/signin';
+import { signIn, requestSignInLink, SESSION_COOKIE, sessionCookieOptions } from '@/server/signin';
 
 export interface FormState { error?: string }
 
@@ -103,4 +103,27 @@ export async function signInAction(_prev: FormState, form: FormData): Promise<Fo
 export async function signOutAction(): Promise<void> {
   (await cookies()).delete(SESSION_COOKIE);
   redirect('/');
+}
+
+// ── Magic-link sign-in — request a link (LINA-76, ADR-0007) ───────────────────
+//
+// The production front door. Unlike signInAction (the demo open-signin path,
+// which mints a session immediately), this only REQUESTS an emailed link — the
+// session is minted later, when /auth/callback consumes the token. It ALWAYS
+// resolves the same way (redirect to the "check your email" state) whether or
+// not the email is known, so the form is not a membership oracle (ADR-0007 §4).
+export async function requestSignInLinkAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const email = String(form.get('email') ?? '').trim();
+  const displayName = String(form.get('displayName') ?? '').trim();
+  const next = String(form.get('next') ?? '/');
+
+  try {
+    await requestSignInLink({ email, displayName: displayName || undefined, next });
+  } catch (err) {
+    // Only a 503 (email unconfigured) or 502 (send failed) lands here — both are
+    // server-side and identical for every address, so they leak nothing.
+    return { error: message(err, 'Could not send a sign-in link. Please try again shortly.') };
+  }
+  // Uniform success state — the same for known, unknown, and rate-limited emails.
+  redirect('/sign-in?sent=1');
 }

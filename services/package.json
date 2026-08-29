@@ -9,7 +9,8 @@
     "test": "node --test **/*.test.mjs",
     "test:ledger": "node --test ledger/hash-chain.test.mjs ledger/pg-ledger.test.mjs",
     "test:analytics": "node --test analytics/analytics.test.mjs composition.test.mjs",
-    "test:gateway": "node --test --test-concurrency=1 gateway/container.pg.test.mjs identity/pg-identity.test.mjs change_order/pg-store.test.mjs"
+    "test:signin": "node --test identity/sign-in.test.mjs email/sender.test.mjs",
+    "test:gateway": "node --test --test-concurrency=1 gateway/container.pg.test.mjs identity/pg-identity.test.mjs identity/pg-sign-in.test.mjs change_order/pg-store.test.mjs identity/sign-in.test.mjs email/sender.test.mjs"
   },
   "dependencies": {
     "pg": "^8.23.0"

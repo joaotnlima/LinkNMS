@@ -40,6 +40,19 @@ const nextConfig = {
     };
     return config;
   },
+
+  // The magic-link callback carries the single-use token in a query param
+  // (LINA-76, ADR-0007 §2). `Referrer-Policy: no-referrer` on that page stops the
+  // token from leaking to any third party in a Referer header. Set as a real HTTP
+  // header here (the page also renders <meta name="referrer"> as defence in depth).
+  async headers() {
+    return [
+      {
+        source: '/auth/callback',
+        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
