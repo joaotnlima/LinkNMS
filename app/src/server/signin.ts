@@ -13,6 +13,7 @@
 // email for a session with NO proof and is refused unless LINKNMS_OPEN_SIGNIN=1
 // is explicitly set. Off by default: a deploy that forgets to configure it has
 // no sign-in rather than an open one.
+import { headers } from 'next/headers';
 import { getContainer } from '@services/gateway/container.mjs';
 import { mintSession, SESSION_COOKIE, SESSION_TTL_SECONDS } from '@services/identity/session.mjs';
 
@@ -59,6 +60,36 @@ export async function signIn(input: { email?: string; displayName?: string; role
   });
   const { token, expiresAt } = mintSession({ partyId: party.id });
   return { partyId: party.id, party, token, expiresAt };
+}
+
+// ── Magic-link sign-in — the PROOF half (LINA-76, ADR-0007) ──────────────────
+//
+// The real production front door (open sign-in above is the demo one). This is
+// the server-action side of POST /api/v1/sessions/request: it derives the public
+// origin and client IP from the request headers and hands them to the sign-in
+// service, which mints a single-use token and emails it. It resolves the SAME
+// way whether or not the email is known (ADR-0007 §4); the only throw is a 503
+// when email delivery is unconfigured (fail closed, §5) or a 502 on send failure
+// — both of which the action surfaces as a retry message, never as an oracle.
+export async function requestSignInLink(input: {
+  email?: string;
+  displayName?: string;
+  next?: string;
+}): Promise<void> {
+  const h = await headers();
+  const proto = h.get('x-forwarded-proto') ?? 'https';
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000';
+  const baseUrl = (process.env.APP_BASE_URL ?? `${proto}://${host}`).replace(/\/+$/, '');
+  const xff = h.get('x-forwarded-for');
+  const ip = xff ? xff.split(',')[0].trim() || null : h.get('x-real-ip');
+
+  await getContainer().signIn.request({
+    email: input.email,
+    displayName: input.displayName,
+    next: input.next,
+    ip,
+    baseUrl,
+  });
 }
 
 /** Cookie attributes matching services/identity/session.mjs's Set-Cookie flags. */

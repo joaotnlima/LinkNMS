@@ -40,6 +40,8 @@ import { createServices, getAnalytics } from '../composition.mjs';
 
 import { createPgStore as createIdentityPgStore } from '../identity/pg-store.mjs';
 import { createPartyStore } from '../identity/parties.mjs';
+import { createPgSignInStore } from '../identity/sign-in-store.mjs';
+import { createSignInService } from '../identity/sign-in.mjs';
 import { createIdentityHttp } from '../identity/http.mjs';
 
 import { createPgStore as createDecisionPgStore } from '../decision/pg-store.mjs';
@@ -124,10 +126,21 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
   const { identity, decision: decisionService, changeOrder: changeOrderService } = services;
   const parties = createPartyStore({ pool: pools.identity });
 
+  // Magic-link sign-in (LINA-76, ADR-0007): the "proof" half of the session. Its
+  // token table lives in schema `identity`, so it runs on the identity pool /
+  // role — no ledger seam (minting/consuming a link writes no audit event). It
+  // resolves the party through the same `parties` upsert the open-sign-in route
+  // uses; the route mints the cookie via identity/session.mjs `mintSession`.
+  const signIn = createSignInService({
+    store: createPgSignInStore({ pool: pools.identity }),
+    parties,
+  });
+
   return {
     pools,
     identity,
     parties,
+    signIn,
     analytics: services.analytics,
     ledger: ledgerReader,
     services: { identity, decision: decisionService, changeOrder: changeOrderService },

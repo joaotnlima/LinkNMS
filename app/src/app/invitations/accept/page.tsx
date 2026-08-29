@@ -16,8 +16,14 @@ export default async function AcceptInvitationPage({
 }: {
   searchParams: Promise<{ token?: string }>;
 }) {
-  if (!(await isSignedIn())) redirect('/sign-in?next=/invitations/accept');
   const { token } = await searchParams;
+  // Signed out → prove the email by magic link first, then come straight back
+  // HERE with the token intact (ADR-0007 §3/§5). Acceptance still requires a real
+  // session — there is deliberately no "invite implies identity" shortcut.
+  if (!(await isSignedIn())) {
+    const back = `/invitations/accept${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    redirect(`/sign-in?next=${encodeURIComponent(back)}`);
+  }
 
   return (
     <>
