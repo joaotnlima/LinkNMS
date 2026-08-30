@@ -206,26 +206,40 @@ qualities that make a record credible in a dispute.
 Two identity colors carry the brand's central idea — the two sides of a build,
 side by side — anchored by a drawing-paper neutral pair.
 
-- **Owner Blue** — `#2a78d6` — the homeowner's side: what was planned and
+- **Owner Blue** — `#3e5c8a` — the homeowner's side: what was planned and
   agreed. Mandatory identity color.
-- **Builder Orange** — `#eb6834` — the builder's side: what actually happened
+- **Builder Orange** — `#b4633b` — the builder's side: what actually happened
   on site. Mandatory identity color.
-- **Ink** — `#0b0b0b` — near-black for text and marks, the "graphite" of the
+- **Ink** — `#16181d` — near-black for text and marks, the "graphite" of the
   record. Mandatory.
-- **Paper** — `#fcfcfb` — warm off-white, the calm surface the record sits on.
+- **Paper** — `#fbfaf7` — warm off-white, the calm surface the record sits on.
   Mandatory.
+
+These four were re-based in **LINA-86** (from `#2a78d6` / `#eb6834` / `#0b0b0b`
+/ `#fcfcfb`) to the desaturated set the design file had already moved to. The
+driver was accessibility as much as art direction: the retired Owner Blue
+scored 4.30:1 on Paper and so failed WCAG AA for body text despite being a
+mandatory identity colour; the current value scores 6.48:1 and passes.
+
+The web app (`app/`) still renders the retired palette by deliberate decision —
+its migration is scheduled separately and is not a bug to be fixed in passing.
 
 The Owner Blue / Builder Orange pairing is the signature: planned and actual
 are always distinguishable at a glance, never merged into one voice.
 
 ### Typefaces
 
-- **System sans stack** — `system-ui`, `-apple-system`, `Segoe UI`,
-  `sans-serif`. Role: everything (interface, data, and marks). No display or
-  brand typeface is licensed; the choice is deliberate — a neutral, universally
-  available face keeps the record feeling like a document, not a campaign.
-- Licensing: system fonts only, no license required (not independently
-  verified beyond that they ship with the target operating systems).
+- **Inter** — role: everything (interface, data, and marks), with the system
+  stack (`system-ui`, `-apple-system`, `Segoe UI`, `sans-serif`) retained as
+  the fallback. Adopted in **LINA-86**; the brand previously specified the bare
+  system stack. The intent is unchanged — a neutral, highly legible face keeps
+  the record feeling like a document, not a campaign — but Inter makes that
+  neutrality consistent across operating systems instead of varying per device.
+- **Archivo** — role: display only, on the landing page (LINA-80). It does not
+  appear in the product UI.
+- Licensing: both faces are SIL Open Font Licence and are self-hosted via
+  `next/font`, so no commercial licence and no third-party request at runtime.
+  The system fallbacks ship with the target operating systems.
 
 ### Art Direction
 

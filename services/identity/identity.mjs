@@ -17,10 +17,45 @@
 
 import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import { can, ACTION } from './authz.mjs';
-import { badRequest, conflict, forbidden, notFound, unauthenticated } from './errors.mjs';
+import { IdentityError, badRequest, conflict, forbidden, notFound, unauthenticated } from './errors.mjs';
 import { createNoopAnalytics } from '../analytics/analytics.mjs';
+// The SAME normaliser the sign-in path uses, so an address typed into the invite
+// form and the same address typed into the sign-in form are one key (LINA-84).
+import { normalizeEmail } from './sign-in.mjs';
+import { sendEmail, isEmailConfigured } from '../email/sender.mjs';
 
 const sha256Hex = (s) => createHash('sha256').update(s).digest('hex');
+
+// The invitation email. Same visual language as the sign-in link (sign-in.mjs):
+// inline-styled, self-contained, no tracking pixels and no external assets — an
+// invite that renders as a broken-image box in a jobsite mail client is worse
+// than plain text. `projectName` is the owner's own project name, so it is
+// escaped rather than interpolated raw.
+const escapeHtml = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function invitationEmailHtml({ link, projectName, inviterName }) {
+  const who = inviterName ? `${escapeHtml(inviterName)} has` : 'You have been';
+  const what = projectName ? `<strong>${escapeHtml(projectName)}</strong>` : 'their build';
+  return `<!DOCTYPE html><html lang="en"><body style="margin:0;background:#f4f3f0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b0b0b">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px"><tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#fcfcfb;border:1px solid #dcdbd7;border-radius:12px;padding:32px">
+      <tr><td style="font-weight:700;font-size:18px;letter-spacing:-.01em;padding-bottom:8px">LinkNMS <span style="color:#9a9a9a;font-weight:500;font-size:13px">Trust built-in.</span></td></tr>
+      <tr><td style="font-size:20px;font-weight:600;padding:16px 0 8px">${who} invited you to ${what}</td></tr>
+      <tr><td style="font-size:15px;line-height:1.5;color:#5b5b58;padding-bottom:24px">LinkNMS is the shared record of what was agreed, what changed, and what it cost. Accept below to join as the contractor on this build.</td></tr>
+      <tr><td><a href="${link}" style="display:inline-block;background:#2a78d6;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:14px 26px;border-radius:36px">Accept the invitation</a></td></tr>
+      <tr><td style="font-size:12px;line-height:1.5;color:#9a9a9a;padding-top:28px;border-top:1px dashed #dcdbd7">This invitation can be accepted once. If you weren't expecting it, ignore this email.</td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`;
+}
+
+// Where the invited GC lands. The accept page already exists and reads the token
+// from the query string (app/src/app/invitations/accept/page.tsx).
+function buildInviteLink(baseUrl, rawToken) {
+  const base = String(baseUrl || '').replace(/\/+$/, '');
+  return `${base}/invitations/accept?token=${encodeURIComponent(rawToken)}`;
+}
 
 // Default id/token/clock providers — injectable so tests are deterministic.
 const defaultIds = { uuid: () => randomUUID(), token: () => randomBytes(24).toString('base64url') };
@@ -34,8 +69,17 @@ const MAX_NAME = 200;
  * @param {{ budgetSummary(projectId): Promise<any>|any }} deps.ledger  Ledger port
  * @param {{ uuid():string, token():string }} [deps.ids]
  * @param {{ now():string }} [deps.clock]
+ * @param {{ send(msg,opts):Promise<any>, isConfigured(env):boolean }} [deps.sender]  email port (LINA-84)
  */
-export function createIdentityService({ store, ledger, ids = defaultIds, clock = defaultClock, analytics = createNoopAnalytics() }) {
+export function createIdentityService({
+  store,
+  ledger,
+  ids = defaultIds,
+  clock = defaultClock,
+  analytics = createNoopAnalytics(),
+  sender = { send: sendEmail, isConfigured: isEmailConfigured },
+  env = process.env,
+}) {
   if (!store) throw new Error('identity service requires a store');
   if (!ledger) throw new Error('identity service requires a ledger port');
 
@@ -157,10 +201,39 @@ export function createIdentityService({ store, ledger, ids = defaultIds, clock =
   // POST /projects/:id/invitations — owner-only (FR1). Mints a single-use token,
   // stores only its SHA-256, and returns the RAW token exactly once (never
   // persisted, never logged) for the inviter to deliver out of band.
-  async function inviteCounterparty({ actorPartyId, projectId, role = 'counterparty' }) {
+  //
+  // LINA-84: `email` is OPTIONAL. Supplied → the address is stored (normalised)
+  // and the link is mailed to the GC. Omitted → the pre-LINA-84 behaviour is
+  // unchanged: no address, no send, and the raw token still comes back in the
+  // 201 body for the owner to deliver out of band. Both paths return the token,
+  // so mailing is strictly additive and a mail outage never strands the owner.
+  //
+  // NOT YET DONE HERE — the auto-seat of ADR-0008 §4. `identity.seat` does not
+  // exist on any branch, so there is nothing to insert into; see the LINA-84
+  // thread. When it lands, the seat row is inserted INSIDE the `store.transaction`
+  // below (same unit of work as the invitation, per the brief) — the seam is
+  // marked there.
+  async function inviteCounterparty({ actorPartyId, projectId, role = 'counterparty', email, baseUrl }) {
     await authorize({ actorPartyId, action: ACTION.INVITE_COUNTERPARTY, projectId });
     if (role !== 'counterparty') throw badRequest('R0 invites the counterparty role only');
-    if (!(await store.getProject(projectId))) throw notFound('project');
+    const project = await store.getProject(projectId);
+    if (!project) throw notFound('project');
+
+    // An address was offered but is unusable → tell the OWNER plainly. This is not
+    // the sign-in path: there is no enumeration concern here (the owner is
+    // authenticated and authorised on their own project), and silently swallowing
+    // a typo'd GC address is exactly the "invite vanished" failure this issue
+    // exists to kill. `undefined`/empty means "out-of-band", not "malformed".
+    const offered = typeof email === 'string' ? email.trim() : '';
+    const cleanEmail = offered ? normalizeEmail(offered) : null;
+    if (offered && !cleanEmail) throw badRequest('that does not look like an email address');
+
+    // Fail closed BEFORE minting: if the deploy cannot send mail, an invite-by-email
+    // must not report success having mailed nothing (same discipline as ADR-0007 §5).
+    // The out-of-band path is unaffected — it never needed a mailer.
+    if (cleanEmail && !sender.isConfigured(env)) {
+      throw new IdentityError('email_unconfigured', 503, 'email delivery is not configured');
+    }
 
     // Fast, clean 409s before minting a token: a counterparty already joined, or an
     // invite is already pending. (The DB UNIQUEs are the ultimate backstop.)
@@ -176,6 +249,7 @@ export function createIdentityService({ store, ledger, ids = defaultIds, clock =
       id: ids.uuid(),
       projectId,
       tokenHash: sha256Hex(rawToken),
+      email: cleanEmail, // null on the out-of-band path
       role: 'counterparty',
       status: 'pending',
       invitedByPartyId: actorPartyId,
@@ -186,13 +260,47 @@ export function createIdentityService({ store, ledger, ids = defaultIds, clock =
     let stored;
     await store.transaction(async (tx) => {
       stored = await tx.insertInvitation(invitation);
+      // ── ADR-0008 §4 seam (LINA-84 §2) ────────────────────────────────────────
+      // The invite-sourced seat belongs HERE, in the same unit of work as the
+      // invitation, so an invite can never commit without the seat that makes it
+      // usable. Not written yet: `identity.seat` exists in ADR-0008 but in no
+      // migration on any branch, and the INSERT grant is an open trust-boundary
+      // question for the Architect. When both land:
+      //   if (cleanEmail) await tx.insertSeat({ email: cleanEmail, source: 'invite' });
     });
     // gc_invited — the owner opened the invite. No token/PII in the payload;
-    // only the invite method (R0 = single-use link).
-    analytics.gcInvited({ projectId, actorPartyId, actorRole: 'owner' });
+    // only the invite method (R0 = single-use link) and now whether it was mailed.
+    analytics.gcInvited({ projectId, actorPartyId, actorRole: 'owner', method: cleanEmail ? 'email' : 'link' });
+
+    // Mail AFTER commit, deliberately: an invitation that exists but wasn't mailed
+    // is recoverable (the owner still holds the token from the 201 body and can
+    // resend), whereas a mail sent for a row that then rolled back is a live link
+    // to nothing. A send failure therefore does NOT void the invitation — it
+    // surfaces as `emailed: false` so the UI can fall back to the copyable link.
+    let emailed = false;
+    if (cleanEmail) {
+      try {
+        await sender.send(
+          {
+            to: cleanEmail,
+            subject: `You've been invited to ${project.name} on LinkNMS`,
+            html: invitationEmailHtml({
+              link: buildInviteLink(baseUrl, rawToken),
+              projectName: project.name,
+              inviterName: (await store.getParty?.(actorPartyId))?.displayName ?? null,
+            }),
+          },
+          { env },
+        );
+        emailed = true;
+      } catch (err) {
+        // Never log the raw token or the body — only that delivery failed.
+        console.error('[identity] invitation email failed to send', err?.code ?? err?.message ?? 'unknown');
+      }
+    }
 
     // The raw token is returned ONCE and never stored. Callers must not log it.
-    return { invitation: shapeInvitation(stored), token: rawToken };
+    return { invitation: shapeInvitation(stored), token: rawToken, emailed };
   }
 
   // POST /invitations/:token/accept — the invited GC joins. The acting party is the
@@ -281,6 +389,10 @@ function shapeInvitation(i) {
   return {
     id: i.id,
     projectId: i.projectId,
+    // The address the invite was sent to, or null on the out-of-band path. Safe
+    // to return: the only reader is the owner who just typed it, on their own
+    // project, behind the owner-only capability gate.
+    email: i.email ?? null,
     role: i.role,
     status: i.status,
     createdAt: i.createdAt,
