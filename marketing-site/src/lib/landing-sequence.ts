@@ -97,12 +97,6 @@ const ZERO_NODE: Node = {
 
 const NODES: readonly Node[] = [ZERO_NODE, ...SEQUENCE_KEYFRAMES.map(toNode)];
 
-/** Stage per node index, straight off the table. Used only to blend the images. */
-const NODE_STAGE: readonly StageNumber[] = [
-  FIRST_KEYFRAME.stage,
-  ...SEQUENCE_KEYFRAMES.map((kf) => kf.stage)
-];
-
 export const EMPTY_STAGE_BLEND: Record<StageNumber, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
 
 function clamp01(value: number): number {
@@ -161,9 +155,15 @@ export function sequenceStateAt(p: number): SequenceState {
     return acc;
   }, {} as SequenceRows);
 
+  // The blend endpoints come from `stageFor` — the same single selector the
+  // rest of the app reads — applied to the two nodes' bar states. Reading the
+  // table's `stage` column here instead would be a *second* place a stage is
+  // decided, and the one the renderer actually paints; the two would agree
+  // today and be free to drift tomorrow. `p` reaches this only by choosing
+  // which two bar states to ask about, never by naming a stage.
   const stageBlend = { ...EMPTY_STAGE_BLEND };
-  const fromStage = NODE_STAGE[index - 1];
-  const toStage = NODE_STAGE[index];
+  const fromStage = stageFor(prev.rows);
+  const toStage = stageFor(next.rows);
   if (fromStage === toStage) {
     stageBlend[toStage] = 1;
   } else {

@@ -139,6 +139,23 @@ console.log('monotonic advance and continuity');
     check(`stage never decreases at p=${p.toFixed(4)}`, stage >= prevStage, `${prevStage} → ${stage}`);
     prevStage = stage;
 
+    // The stage the RENDERER paints is the stage the bars imply — at every p,
+    // not just at the four keyframes. `SequenceMotion.render()` marks a stage
+    // visible at blend >= 0.5, so that is what we assert against `stageFor`.
+    // Without this, `stageFor` could be correct and still be dead code while
+    // the blend was driven off a second, drift-prone stage table.
+    // The dominant stage in the blend — ties break to the later stage, the same
+    // way row semantics commit at the segment midpoint.
+    const painted = ([1, 2, 3, 4] as const).reduce((best, n) =>
+      s.stageBlend[n] >= s.stageBlend[best] ? n : best
+    );
+    eq(`painted stage is stageFor(rows) at p=${p.toFixed(4)}`, painted, stage);
+    check(
+      `painted stage is at least half opaque at p=${p.toFixed(4)}`,
+      s.stageBlend[painted] >= 0.5,
+      `blend was ${s.stageBlend[painted]}`
+    );
+
     for (const key of SEQUENCE_ROW_KEYS) {
       const wasClosed = prev.rows[key].state === 'closed';
       check(`${key} stays closed at p=${p.toFixed(4)}`, !wasClosed || s.rows[key].state === 'closed');
