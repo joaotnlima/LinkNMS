@@ -1179,6 +1179,33 @@
   overflow: hidden;
   padding-block: clamp(72px, 9vw, 128px);
 }
+.lp-cta__photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  /* Ink ground while the lazy photo loads and as the no-JS/save-data fallback. */
+  background: var(--lp-ink);
+}
+.lp-cta__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* The pen's `CTA Scrim` — base flat ink over the photo, then a top-darkening
+   linear scrim. Match S7 CTA (desktop 1440): darkest at the top, where the
+   kicker / headline / sub / form sit. The ghost wordmark and content layer
+   paint above it. */
+.lp-cta__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background-color: #16181da6;
+  background-image: linear-gradient(180deg, #16181df2 0%, #16181dd9 48%, #16181d26 100%);
+  pointer-events: none;
+}
 .lp-cta__ghost {
   position: absolute;
   left: 50%;
@@ -1192,11 +1219,11 @@
   pointer-events: none;
   user-select: none;
   white-space: nowrap;
-  z-index: 0;
+  z-index: 2;
 }
 .lp-cta__inner {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: clamp(32px, 5vw, 72px);
@@ -1205,6 +1232,14 @@
 @media (min-width: 980px) {
   .lp-cta__inner {
     grid-template-columns: minmax(0, 1fr) 300px;
+  }
+}
+/* S7 CTA (mobile 390): the scrim runs the other way — darkest at the bottom,
+   lighter over the copy up top. Base flat ink differs too. */
+@media (max-width: 979px) {
+  .lp-cta__scrim {
+    background-color: #16181db3;
+    background-image: linear-gradient(180deg, #16181d99 0%, #16181deb 45%, #16181dfa 100%);
   }
 }
 .lp-cta h2 {
@@ -1218,9 +1253,14 @@
   color: var(--lp-cream-60);
   max-width: 54ch;
 }
+/* The pen draws this note at `$lp-cream-40`, which lands at ~3.7:1 over the
+   ink/scrim ground — below the 4.5:1 bar acceptance requires for S7 text. The
+   scrim cannot lift it (ink is already the darkest possible backing), so this
+   note is bumped to cream-60 to meet AA. Deviation from the pen's exact hex,
+   flagged for reviewer sign-off (LINA-100). */
 .lp-cta__note {
   margin-top: 16px;
-  color: var(--lp-cream-40);
+  color: var(--lp-cream-60);
 }
 
 /* Waitlist form, CTA variant: inline email + button on the dark section. */
@@ -1245,7 +1285,10 @@
 .lp-form select {
   width: 100%;
   background: #fbfaf714;
-  border: 1px solid var(--lp-cream-hair);
+  /* The pen's ~`$lp-cream-hair` stroke is only ~1.4:1 over the photo ground —
+     below the 3:1 non-text bar. Bumped to cream-40 so the field boundary stays
+     visible over the photographic CTA background (LINA-100, flagged deviation). */
+  border: 1px solid var(--lp-cream-40);
   border-radius: 999px;
   color: var(--lp-cream);
   font: inherit;
@@ -1257,7 +1300,9 @@
   color: #16181d;
 }
 .lp-form input::placeholder {
-  color: var(--lp-cream-40);
+  /* Pen placeholder is `$lp-cream-40`, ~3.7:1 — same AA fail as the note.
+     Bumped to cream-60 for the same reason (LINA-100, flagged deviation). */
+  color: var(--lp-cream-60);
 }
 .lp-form input:focus,
 .lp-form select:focus {
