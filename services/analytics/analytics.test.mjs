@@ -17,7 +17,11 @@ import assert from 'node:assert/strict';
 
 import { createAnalytics, createNoopAnalytics } from './analytics.mjs';
 import { createMemorySink, createPosthogSink } from './sink.mjs';
-import { EVENTS, assertNoPii, hoursBetween, AnalyticsContractError } from './events.mjs';
+import {
+  EVENTS, SURFACE, assertNoPii, hoursBetween, AnalyticsContractError,
+  STAGE_STATUS, TRANSITION_KIND, PLAN_HEADLINE, STAGE_UPDATE_KIND,
+  classifyTransition, planHeadline, planPercentComplete,
+} from './events.mjs';
 import { analyticsFromEnv } from './config.mjs';
 
 // Real services under test — the instrumentation must live in the domain code,
@@ -396,5 +400,260 @@ describe('sinks and env wiring', () => {
       const method = m.toLowerCase().replace(/_(.)/g, (_, c) => c.toUpperCase());
       assert.equal(typeof noop[method], 'function', `noop analytics must implement ${method}()`);
     }
+  });
+});
+
+// ── Slice 6: plan/progress event contract (LINA-71, extends LINA-28) ─────────
+//
+// No `services/schedule/` domain service exists yet (LINA-69 builds it), so
+// unlike the Group-A suite above these assert the FACADE contract directly.
+// They are the shape LINA-69 must emit against; when the schedule service
+// lands, its own suite asserts the call sites.
+describe('Slice 6 plan/progress event contract (LINA-71)', () => {
+  const S = STAGE_STATUS;
+  const rollup = { stageCount: 3, doneStageCount: 1, blockedStageCount: 1, inProgressStageCount: 0 };
+
+  test('all 5 plan events carry the super-properties and surface=plan', () => {
+    const { sink, analytics, errors } = makeAnalytics();
+    analytics.planDocumentUploaded({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty',
+      planDocumentId: 'doc-1', revision: 1, rollup,
+    });
+    analytics.stageAdded({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty',
+      stageId: 'stage-1', position: 1, isFirstStage: true, rollup,
+    });
+    analytics.stageUpdated({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty',
+      stageId: 'stage-1', updateKind: STAGE_UPDATE_KIND.EDIT, rollup,
+    });
+    analytics.progressReported({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty',
+      stageId: 'stage-1', entrySeq: 1, statusFrom: S.NOT_STARTED, statusTo: S.IN_PROGRESS, rollup,
+    });
+    analytics.planTimelineViewed({
+      projectId: PROJECT, actorPartyId: HOMEOWNER, actorRole: 'owner', rollup,
+    });
+
+    assert.deepEqual(errors, []);
+    const names = sink.captures.map((e) => e.event);
+    assert.deepEqual(names, [
+      EVENTS.PLAN_DOCUMENT_UPLOADED, EVENTS.STAGE_ADDED, EVENTS.STAGE_UPDATED,
+      EVENTS.PROGRESS_REPORTED, EVENTS.PLAN_TIMELINE_VIEWED,
+    ]);
+    for (const e of sink.captures) {
+      for (const p of SUPER_PROPS) assert.ok(p in e.properties, `${e.event} must carry ${p}`);
+      assert.equal(e.properties.surface, SURFACE.PLAN);
+      assert.deepEqual(e.groups, { project: PROJECT });
+    }
+  });
+
+  test('plan_document_uploaded distinguishes first upload from a replacement', () => {
+    const { sink, analytics } = makeAnalytics();
+    const base = { projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty', planDocumentId: 'doc-1' };
+    analytics.planDocumentUploaded({ ...base, revision: 1 });
+    analytics.planDocumentUploaded({ ...base, planDocumentId: 'doc-2', revision: 2, supersededDocumentId: 'doc-1' });
+    assert.equal(sink.captures[0].properties.is_replacement, false);
+    assert.equal(sink.captures[1].properties.is_replacement, true);
+    assert.equal(sink.captures[1].properties.superseded_document_id, 'doc-1');
+  });
+
+  test('a full sha256 content hash is truncated below the free-text guard', () => {
+    const { sink, analytics, errors } = makeAnalytics();
+    analytics.planDocumentUploaded({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty',
+      planDocumentId: 'doc-1', revision: 1, contentHash: 'a'.repeat(64),
+    });
+    assert.deepEqual(errors, []);
+    assert.equal(sink.captures[0].properties.content_hash.length, 32);
+  });
+
+  test('every transition in the §8.1 table classifies deterministically', () => {
+    const statuses = [S.NOT_STARTED, S.IN_PROGRESS, S.BLOCKED, S.DONE];
+    for (const from of statuses) {
+      for (const to of statuses) {
+        const c = classifyTransition(from, to);
+        assert.ok(Object.values(TRANSITION_KIND).includes(c.transition_kind), `${from}->${to}`);
+        assert.equal(c.is_self_transition, from === to, `${from}->${to} self`);
+      }
+    }
+    // Self-transitions are real appends, not no-ops (§8.1 ●).
+    assert.equal(classifyTransition(S.IN_PROGRESS, S.IN_PROGRESS).transition_kind, TRANSITION_KIND.RE_REPORT);
+    // `done` is not terminal — a reopen is a first-class, countable event.
+    assert.equal(classifyTransition(S.DONE, S.IN_PROGRESS).is_reopen, true);
+    // → not_started from anywhere else is the single conditional transition (⚠️).
+    assert.equal(classifyTransition(S.DONE, S.NOT_STARTED).is_correction, true);
+    assert.equal(classifyTransition(S.NOT_STARTED, S.NOT_STARTED).is_correction, false);
+  });
+
+  test('blocked primitives are independent of transition_kind (done→blocked counts as both)', () => {
+    const c = classifyTransition(S.DONE, S.BLOCKED);
+    // transition_kind labels it a reopen (precedence), but the countable
+    // "did this stage enter blocked?" primitive must still fire — otherwise the
+    // blocked-rate metric silently undercounts reopened-then-blocked stages.
+    assert.equal(c.transition_kind, TRANSITION_KIND.REOPEN);
+    assert.equal(c.entered_blocked, true);
+    assert.equal(c.is_reopen, true);
+    assert.equal(classifyTransition(S.BLOCKED, S.BLOCKED).entered_blocked, false);
+    assert.equal(classifyTransition(S.BLOCKED, S.DONE).exited_blocked, true);
+  });
+
+  test('progress_reported carries the from→to pair, the seq, and blocked dwell time', () => {
+    const { sink, analytics } = makeAnalytics();
+    analytics.progressReported({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty',
+      stageId: 'stage-1', entrySeq: 7, statusFrom: S.BLOCKED, statusTo: S.IN_PROGRESS,
+      previousEntryAt: '2026-08-01T00:00:00.000Z', reportedAt: '2026-08-03T00:00:00.000Z',
+      advisoryPercent: 60, note: 'permit cleared',
+    });
+    const p = sink.captures[0].properties;
+    assert.equal(p.status_from, S.BLOCKED);
+    assert.equal(p.status_to, S.IN_PROGRESS);
+    assert.equal(p.entry_seq, 7);
+    assert.equal(p.exited_blocked, true);
+    // 48h stuck in `blocked` — this is the "how long does a stage stay blocked?" read.
+    assert.equal(p.hours_in_previous_status, 48);
+    assert.equal(p.advisory_percent, 60);
+    assert.equal(p.has_note, true);
+    assert.equal(p.note_len, 14);
+    // The note BODY never ships.
+    assert.ok(!JSON.stringify(p).includes('permit cleared'));
+  });
+
+  test('plan percent is equally weighted, floors, and only reaches 100 when every stage is done', () => {
+    assert.equal(planPercentComplete(1, 3), 33);
+    assert.equal(planPercentComplete(2, 3), 66);
+    assert.equal(planPercentComplete(3, 3), 100);
+    assert.equal(planPercentComplete(3, 4), 75);
+    assert.equal(planPercentComplete(0, 0), null); // zero stages ⇒ no headline
+    // 99 is the ceiling while any stage is unfinished — never rounded up to 100.
+    assert.equal(planPercentComplete(999, 1000), 99);
+  });
+
+  test('headline follows §8.3 R1 precedence — blocked outranks a finished plan', () => {
+    const h = (stageCount, doneStageCount, blockedStageCount, inProgressStageCount) =>
+      planHeadline({ stageCount, doneStageCount, blockedStageCount, inProgressStageCount });
+    assert.equal(h(3, 2, 1, 0), PLAN_HEADLINE.ATTENTION_NEEDED);
+    assert.equal(h(3, 3, 0, 0), PLAN_HEADLINE.COMPLETE);
+    assert.equal(h(3, 1, 0, 0), PLAN_HEADLINE.IN_PROGRESS);
+    assert.equal(h(3, 0, 0, 1), PLAN_HEADLINE.IN_PROGRESS);
+    assert.equal(h(3, 0, 0, 0), PLAN_HEADLINE.NOT_STARTED);
+    assert.equal(h(0, 0, 0, 0), null);
+  });
+
+  test('AC-P11 rollup walk reported on the event matches the spec exactly', () => {
+    const { sink, analytics } = makeAnalytics();
+    const report = (r) => analytics.progressReported({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty',
+      stageId: 'stage-x', entrySeq: 1, statusFrom: S.NOT_STARTED, statusTo: S.IN_PROGRESS, rollup: r,
+    });
+    report({ stageCount: 3, doneStageCount: 1, blockedStageCount: 1, inProgressStageCount: 0 });
+    report({ stageCount: 3, doneStageCount: 1, blockedStageCount: 0, inProgressStageCount: 1 });
+    report({ stageCount: 3, doneStageCount: 3, blockedStageCount: 0, inProgressStageCount: 0 });
+    report({ stageCount: 4, doneStageCount: 3, blockedStageCount: 0, inProgressStageCount: 0 });
+    const read = sink.captures.map((e) => [e.properties.plan_headline, e.properties.plan_percent_complete]);
+    assert.deepEqual(read, [
+      [PLAN_HEADLINE.ATTENTION_NEEDED, 33],
+      [PLAN_HEADLINE.IN_PROGRESS, 33],
+      [PLAN_HEADLINE.COMPLETE, 100],
+      [PLAN_HEADLINE.IN_PROGRESS, 75],
+    ]);
+  });
+
+  test('AC-P12 stage planned cost never moves the reported plan percent or headline', () => {
+    const { sink, analytics } = makeAnalytics();
+    const r = { stageCount: 3, doneStageCount: 1, blockedStageCount: 0, inProgressStageCount: 1 };
+    analytics.stageUpdated({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty', stageId: 'stage-1',
+      updateKind: STAGE_UPDATE_KIND.EDIT, costChanged: true, plannedCostDeltaCents: 20_000_00, rollup: r,
+    });
+    const p = sink.captures[0].properties;
+    assert.equal(p.plan_percent_complete, 33);
+    assert.equal(p.plan_headline, PLAN_HEADLINE.IN_PROGRESS);
+    assert.equal(p.has_cost_change, true);
+    // The delta is reported for plan-completeness, but no budget property is
+    // present on a plan event — the budget spine is change-order-only (AC-P5).
+    assert.ok(!('new_current_cents' in p) && !('baseline_budget_cents' in p));
+  });
+
+  test('stage_updated separates edit from reorder and keeps one save as one event', () => {
+    const { sink, analytics } = makeAnalytics();
+    const base = { projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty', stageId: 'stage-1' };
+    analytics.stageUpdated({ ...base, updateKind: STAGE_UPDATE_KIND.REORDER, positionFrom: 3, positionTo: 1 });
+    analytics.stageUpdated({ ...base, updateKind: STAGE_UPDATE_KIND.EDIT_REORDER, positionFrom: 1, positionTo: 2, labelChanged: true, fieldsChangedCount: 2 });
+    assert.equal(sink.captures.length, 2);
+    assert.equal(sink.captures[0].properties.update_kind, STAGE_UPDATE_KIND.REORDER);
+    assert.equal(sink.captures[0].properties.position_from, 3);
+    assert.equal(sink.captures[1].properties.update_kind, STAGE_UPDATE_KIND.EDIT_REORDER);
+    assert.equal(sink.captures[1].properties.has_label_change, true);
+  });
+
+  test('plan_timeline_viewed is attributable to the homeowner and flags an empty plan', () => {
+    const { sink, analytics } = makeAnalytics();
+    analytics.planTimelineViewed({
+      projectId: PROJECT, actorPartyId: HOMEOWNER, actorRole: 'owner',
+      rollup: { stageCount: 0, doneStageCount: 0, blockedStageCount: 0, inProgressStageCount: 0 },
+    });
+    analytics.planTimelineViewed({
+      projectId: PROJECT, actorPartyId: HOMEOWNER, actorRole: 'owner', hasPlanDocument: true,
+      gcJoinedAt: '2026-08-01T00:00:00.000Z', viewedAt: '2026-08-02T00:00:00.000Z',
+      rollup: { stageCount: 2, doneStageCount: 0, blockedStageCount: 0, inProgressStageCount: 1 },
+    });
+    // Activation is this event filtered to actor_role == 'owner' AND not empty.
+    assert.equal(sink.captures[0].properties.actor_role, 'owner');
+    assert.equal(sink.captures[0].properties.is_empty_plan, true);
+    assert.equal(sink.captures[0].properties.plan_headline, null);
+    assert.equal(sink.captures[1].properties.is_empty_plan, false);
+    assert.equal(sink.captures[1].properties.hours_since_gc_joined, 24);
+  });
+
+  test('time-to-first-stage and time-to-first-progress are measured from gc_joined', () => {
+    const { sink, analytics } = makeAnalytics();
+    analytics.stageAdded({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty', stageId: 'stage-1', position: 1,
+      isFirstStage: true, gcJoinedAt: '2026-08-01T00:00:00.000Z', addedAt: '2026-08-01T06:00:00.000Z',
+    });
+    analytics.progressReported({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty', stageId: 'stage-1', entrySeq: 1,
+      statusFrom: S.NOT_STARTED, statusTo: S.IN_PROGRESS, isFirstProgressForProject: true,
+      gcJoinedAt: '2026-08-01T00:00:00.000Z', reportedAt: '2026-08-04T00:00:00.000Z',
+    });
+    assert.equal(sink.captures[0].properties.is_first_stage, true);
+    assert.equal(sink.captures[0].properties.hours_since_gc_joined, 6);
+    assert.equal(sink.captures[1].properties.is_first_progress_for_project, true);
+    assert.equal(sink.captures[1].properties.hours_since_gc_joined, 72);
+  });
+
+  test('the PII guard still holds on plan events — a stage label can never ship', () => {
+    const { analytics, errors } = makeAnalytics();
+    // A future contributor adding the stage name as a property must fail loudly.
+    assert.throws(
+      () => assertNoPii({ stage_name: 'Foundation pour' }, EVENTS.STAGE_ADDED),
+      AnalyticsContractError,
+    );
+    assert.throws(
+      () => assertNoPii({ progress_note: 'x'.repeat(80) }, EVENTS.PROGRESS_REPORTED),
+      AnalyticsContractError,
+    );
+    // Advisory percent must stay a finite number; planned cost integer cents.
+    assert.throws(
+      () => assertNoPii({ planned_cost_cents: 1234.5 }, EVENTS.STAGE_ADDED),
+      AnalyticsContractError,
+    );
+    analytics.stageAdded({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty',
+      stageId: 'stage-1', position: 1, plannedCostCents: 1_500_00,
+    });
+    assert.deepEqual(errors, []);
+  });
+
+  test('a broken sink can never fail a plan write', () => {
+    const analytics = createAnalytics({
+      sink: { capture() { throw new Error('posthog down'); }, identify() {}, groupIdentify() {} },
+    });
+    assert.doesNotThrow(() => analytics.progressReported({
+      projectId: PROJECT, actorPartyId: GC, actorRole: 'counterparty', stageId: 's', entrySeq: 1,
+      statusFrom: 'not_started', statusTo: 'blocked',
+    }));
   });
 });
