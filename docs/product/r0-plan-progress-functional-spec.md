@@ -2,7 +2,8 @@
 
 - **Owner:** Product Manager
 - **Status:** Delivered — unblocks LINA-43 (Slice 6 implementation child issues)
-- **Date:** 2026-08-26
+- **Date:** 2026-08-26 · **rev 2** 2026-08-28 (added §8: stage state machine, advance
+  authority, and progress rollup rules — the Architect's LINA-43 unblock action)
 - **Context:** LINA-26 (R0) · CEO reframe 2026-08-25 (plan approved 22:39) · ADR-0005 · `r0-technical-design.md` §7/§12 (Slice 6)
 - **Scope note:** This document is the *what/why* only. Data model, API, infra,
   service boundaries and the ledger discipline are **already decided and owned by
@@ -236,13 +237,158 @@ the final event contract; PM owns that these questions are answerable.
 
 ---
 
-## 8. Handoff
+## 8. Stage state machine, advance authority, and progress rollup
+
+Added 2026-08-28 at the Architect's request (LINA-43 unblock action): §2–§5 pinned
+*which* statuses exist and *who owns* the plan, but left three things implicit that
+implementation cannot guess. They are decided here. Same scope rule as §0: these are
+functional requirements, not schema or API instructions.
+
+### 8.1 The stage state machine
+
+**One stage's status is derived, never stored as authority.** A stage's *current*
+status is the status carried by its **latest progress entry**; a stage with **zero**
+progress entries is `not_started`. There is no separate mutable status column that
+could disagree with the append-only history (FR-P3).
+
+Ordering of "latest" must be **total and deterministic**: order by the entry's
+recorded time, and where two entries share a timestamp, break the tie by **ledger
+sequence** (the same seq discipline FR7 already uses for change orders). Two reports
+in the same second must never produce an ambiguous headline.
+
+**Transition table.** Rows = current status, columns = reported status.
+
+| from ↓ / to → | `not_started` | `in_progress` | `blocked` | `done` |
+|---|---|---|---|---|
+| **`not_started`** | ● re-report | ✅ start | ✅ blocked before starting | ✅ start-and-finish |
+| **`in_progress`** | ⚠️ correction | ● re-report | ✅ hit a blocker | ✅ finish |
+| **`blocked`** | ⚠️ correction | ✅ unblocked | ● re-report | ✅ finished despite it |
+| **`done`** | ⚠️ correction | ✅ reopen (rework) | ✅ reopen blocked | ● re-report |
+
+- ✅ **Allowed, ordinary.** No confirmation, no special handling.
+- ● **Re-report (self-transition): allowed.** Reporting the same status again is a
+  normal way to update the advisory percent or add a note. It is a **new append**, not
+  a no-op — it must appear in the history with its own author and timestamp.
+- ⚠️ **Correction (→ `not_started` from any other status): allowed but a note is
+  required.** Walking a stage back to "hasn't started" after work was reported is only
+  ever a mistake-fix, and the record must say why. This is the **single** conditional
+  transition in R0.
+
+**No transition is forbidden.** That is deliberate and follows from §5's "the record
+tells the truth either way": construction genuinely goes backwards (rework, a
+re-opened inspection, a mis-tapped status), and a system that *refuses* the true
+status forces the GC to lie or to stop reporting. The append-only history — not a
+locked state machine — is what makes this trustworthy. `done` is therefore **not**
+terminal.
+
+**Nothing advances a stage except a GC report.** Explicitly: the passage of a planned
+end date does **not** move a stage to `done`, `in_progress`, or `blocked`; no other
+stage's status moves it; no change-order approval moves it; no job or scheduled task
+moves it. Every status change in the record has a human author. A stage sitting in
+`not_started` past its planned start date is a true and useful signal — it must be
+shown as-is, never auto-corrected.
+
+### 8.2 Who may advance a stage
+
+| Action | GC (counterparty) | Homeowner (owner) | System |
+|---|---|---|---|
+| Add / update / reorder a stage | ✅ | ❌ denied | ❌ never |
+| Upload / replace the plan document | ✅ | ❌ denied | ❌ never |
+| Record a progress entry (any transition above) | ✅ | ❌ denied | ❌ never |
+| Read the plan, stages, progress, and full history | ✅ | ✅ | — |
+
+- **Only an authenticated GC with an active membership on that project** may write.
+  There is no delegation, no sub/inspector role, and no admin override in R0 (§7).
+- **The homeowner is denied, not hidden.** A homeowner attempting any write is an
+  authorization **denial** — and, per LINA-56's finding, a denial must surface as a
+  denial, never as a 500.
+- **No self-approval question arises here.** The plan is GC-authored, not two-sided
+  (ADR-0005 §5). The homeowner's lever stays the change-order gate (FR-P7), which
+  Slice 6 must not loosen (AC-P6).
+- **Every write is ledgered in the same transaction as its projection update** — if
+  the audit event doesn't land, the status change didn't happen. (ADR-0005 §2;
+  mechanism is engineering's, the invariant is functional.)
+
+### 8.3 Progress rollup rules
+
+The homeowner needs one honest headline for the whole build. **All rollup is derived
+on read** from the per-stage current statuses — it is never stored, never itself a
+ledgered event, and never something a GC sets directly.
+
+**R1 — Plan headline status.** Evaluate in this order; first match wins:
+
+1. Any stage `blocked` → **Attention needed**. Blocked outranks everything, including
+   a plan that is otherwise finished. It is the homeowner's intervention signal (§2 Q1)
+   and must never be averaged away.
+2. ≥1 stage and all stages `done` → **Complete**.
+3. Any stage `in_progress` or `done` → **In progress**.
+4. All stages `not_started` → **Not started**.
+5. Zero stages → **no headline at all** — render the §5 empty state. Never "0% complete."
+
+**R2 — Plan percent complete = count of `done` stages ÷ total stages**, floored to a
+whole number.
+
+- **Equal weighting only.** Not weighted by planned cost, not weighted by planned
+  duration, and the per-stage advisory percent (§2 Q1) is **excluded entirely**.
+  Cost-weighting would let a stage-cost edit move a headline number and make planned
+  cost feel like budget truth — the one thing §2 Q2 forbids. Duration-weighting would
+  manufacture the schedule claim the Time pillar refuses (§5). Equal weighting is
+  crude and obviously crude, which is exactly why it can't be mistaken for a
+  commitment.
+- `blocked` and `in_progress` both count as **not done**. Only `done` counts.
+- **100% is reachable only when every stage is literally `done`** — never by rounding.
+  If any stage is not `done`, the number must floor to at most 99%.
+- The percent is always shown **subordinate to the R1 headline**, never alone. A plan
+  reading "Attention needed · 80%" is correct and must not be collapsed to "80%."
+
+**R3 — Current stage pointer.** "What's happening now" = the **first stage in plan
+order** whose status is `in_progress` or `blocked`; if none, the first `not_started`
+stage; if none, there is no current stage (the plan is complete). Plan order, not
+dates, decides — dates are the GC's plan, not a schedule engine (§5).
+
+**R4 — Rollup is recomputed, never cached as truth.** Adding, reordering, or editing a
+stage changes the rollup with no progress entry involved (adding a stage to a complete
+plan correctly drops it out of **Complete**). The rollup must always be consistent with
+the per-stage statuses a homeowner can see on the same screen.
+
+### 8.4 Acceptance criteria for §8 (extends §4)
+
+- **AC-P8** Each transition marked ✅ in 8.1 succeeds and appends a new attributed
+  entry; a self-transition (●) with a changed percent/note also appends; a `→
+  not_started` correction (⚠️) **without a note is rejected**, and **with** a note
+  succeeds. After a full `not_started → in_progress → done → in_progress → done`
+  cycle, all **five** entries are retrievable in order with authors and timestamps.
+- **AC-P9** Two progress entries recorded with the identical timestamp resolve to a
+  single, stable current status via ledger seq — repeated reads never flip.
+- **AC-P10** A homeowner attempting each write in 8.2 is **denied** (an authorization
+  denial, not a 500, not a silent no-op), while every read in 8.2 succeeds for both
+  parties.
+- **AC-P11** Rollup: with stages `[done, blocked, not_started]` the plan reads
+  **Attention needed · 33%**, and the current stage is the `blocked` one. Unblocking it
+  to `in_progress` gives **In progress · 33%**; taking it to `done` and the third to
+  `done` gives **Complete · 100%**. Adding a new `not_started` stage to that complete
+  plan immediately returns **In progress · 75%**.
+- **AC-P12** Tripling a stage's planned cost changes **neither** the plan percent nor
+  the headline (proves rollup is unweighted), and — per AC-P5 — still does not move the
+  budget.
+- **AC-P13** A stage whose planned end date has passed while `not_started` is still
+  reported as `not_started`; no background process has advanced it.
+
+---
+
+## 9. Handoff
 
 This completes the PM functional detailing that Slice 6 was blocked on. The design
 seam (ADR-0005, technical design §3/§6/§7) is unchanged and sufficient — nothing here
 requires a data-model or API change; the three defaults ADR-0005 assumed are now
 **confirmed decisions** (status enum + optional advisory %, free-form planned cost
 with a read-only hint, view-only progress with decision-log as the response path).
+
+**Rev 2 (2026-08-28):** §8 closes the three gaps the Architect flagged on LINA-43 —
+transitions, advance authority, and rollup — so nothing about stage/progress behaviour
+is left to implementer inference. §8 likewise requires no data-model or API change: the
+stage status is derived from the append-only `stage_progress` history the seam already
+models, and the rollup is derived on read.
 
 **Next owner: Founding Engineer** — open the Slice 6 implementation child issues
 against the existing seam. Designer (LINA-27) and Analytics (LINA-28) get a light
