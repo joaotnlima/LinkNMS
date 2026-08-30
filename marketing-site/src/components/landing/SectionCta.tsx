@@ -4,8 +4,8 @@ import {
   CONTRACT_TOTAL,
   MATERIALS_DELTA_SINCE_MARCH,
   PHONE_PREVIEW,
-  SEQUENCE_LANE_HEIGHT,
-  SEQUENCE_TRACK_UNITS,
+  PHONE_TRACK_UNITS,
+  TRACK_LANE_HEIGHT,
   formatEur,
   formatEurDelta
 } from '@/lib/landing-numbers';
@@ -15,8 +15,8 @@ import { PlanTrack } from './PlanTrack';
 //
 // The phone shows the same build at the same moment as the rest of the page:
 // the contract total and the March movement come from the numbers module, and
-// its four bars use the same PlanTrack the pinned sequence uses, at the phone
-// frame's 6px lanes rather than the desktop 7px.
+// its four bars use the same PlanTrack the gantt uses, at the phone frame's
+// 6px lanes rather than the gantt's 9px.
 
 const PHONE_ROWS = [
   { key: 'foundations', planned: { offset: 0, width: 30 }, actual: { offset: 0, width: 30, state: 'closed' as const } },
@@ -25,8 +25,8 @@ const PHONE_ROWS = [
   { key: 'finishes', planned: { offset: 110, width: 50 }, actual: { offset: 120, width: 40, state: 'actual' as const } }
 ];
 
-/** The phone frame's track is 160 units wide, not the sequence's 320. */
-const PHONE_TRACK_UNITS = SEQUENCE_TRACK_UNITS / 2;
+/** The phone frame's track is 160 units wide, not the 320-unit phone track. */
+const PHONE_TRACK_UNITS_160 = PHONE_TRACK_UNITS / 2;
 
 export async function SectionCta({ locale, source }: { locale: string; source: string }) {
   const t = await getTranslations('lp.cta');
@@ -66,8 +66,8 @@ export async function SectionCta({ locale, source }: { locale: string; source: s
               <p className="n">{tp(`rows.${row.key}`)}</p>
               <PlanTrack
                 rowKey={`phone-${row.key}`}
-                trackUnits={PHONE_TRACK_UNITS}
-                laneHeight={SEQUENCE_LANE_HEIGHT - 1}
+                trackUnits={PHONE_TRACK_UNITS_160}
+                laneHeight={TRACK_LANE_HEIGHT - 1}
                 laneGap={2}
                 planned={row.planned}
                 actual={row.actual}

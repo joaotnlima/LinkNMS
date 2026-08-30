@@ -1,4 +1,5 @@
 import { getTranslations } from 'next-intl/server';
+import type { CSSProperties } from 'react';
 import {
   GANTT_MONTHS,
   GANTT_TRACK_UNITS,
@@ -7,10 +8,17 @@ import {
   formatEurDelta
 } from '@/lib/landing-numbers';
 import { PlanTrack } from './PlanTrack';
+import { RevealOnScroll } from './RevealOnScroll';
+import { ScrollReel } from './ScrollReel';
 
-// 02 · The Record — blue agreed / orange changed / green closed, then the gantt
-// that the whole encoding is about. The six package values sum to the contract
+// 02 · The Record — blue agreed / orange changed / green closed and the gantt
+// the whole encoding is about. The six package values sum to the contract
 // total by construction (see landing-numbers.ts).
+//
+// Order follows the pen's frame: encoding row, then the Scroll Reel (the
+// founder's "fade-in of the images with the scrolling"), then the gantt, with
+// the legend as a sibling after the card. The reel and the gantt each live in
+// a RevealOnScroll shell so the scroll story can animate.
 
 const LEGEND = ['baseline', 'actual', 'closed'] as const;
 const LEGEND_FILL: Record<(typeof LEGEND)[number], string> = {
@@ -39,67 +47,75 @@ export async function SectionRecord({ locale }: { locale: string }) {
             <span className="closed">{t('closed')}</span>
           </h2>
           <div className="lp-record__explainer">
-            <p>{t('explainer')}</p>
+            <p className="copy">{t('explainer')}</p>
             <p className="note lp-micro">{t('note')}</p>
+            <p className="body body--mobile">{t('explainerMobile')}</p>
           </div>
         </div>
 
-        <div className="lp-gantt">
-          <table>
-            <caption className="lp-skip">{t('tableCaption')}</caption>
-            <thead>
-              <tr>
-                <th scope="col" className="lp-micro">
-                  {t('colPackage')}
-                </th>
-                <th scope="col" className="months">
-                  <div className="lp-gantt__months lp-micro">
-                    {GANTT_MONTHS.map((m) => (
-                      <span key={m}>{t(`months.${m}`)}</span>
-                    ))}
-                  </div>
-                </th>
-                <th scope="col" className="value lp-micro">
-                  {t('colValue')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {WORK_PACKAGE_ROWS.map((row) => (
-                <tr key={row.key}>
-                  <th scope="row" className="name">
-                    {t(`packages.${row.key}`)}
+        <RevealOnScroll variant="reel">
+          <ScrollReel />
+        </RevealOnScroll>
+
+        <RevealOnScroll variant="gantt">
+          <div className="lp-gantt">
+            <table>
+              <caption className="lp-skip">{t('tableCaption')}</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="lp-micro">
+                    {t('colPackage')}
                   </th>
-                  <td>
-                    <PlanTrack
-                      rowKey={row.key}
-                      trackUnits={GANTT_TRACK_UNITS}
-                      laneHeight={9}
-                      planned={{ offset: row.plannedOffset, width: row.plannedWidth }}
-                      actual={{ offset: row.actualOffset, width: row.actualWidth, state: row.state }}
-                    />
-                  </td>
-                  <td className="value">
-                    <b>{formatEur(row.value, locale)}</b>
-                    {row.delta !== undefined && (
-                      <span className="delta lp-micro">{formatEurDelta(row.delta, locale)}</span>
-                    )}
-                  </td>
+                  <th scope="col" className="months">
+                    <div className="lp-gantt__months lp-micro">
+                      {GANTT_MONTHS.map((m) => (
+                        <span key={m}>{t(`months.${m}`)}</span>
+                      ))}
+                    </div>
+                  </th>
+                  <th scope="col" className="value lp-micro">
+                    {t('colValue')}
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {WORK_PACKAGE_ROWS.map((row, i) => (
+                  <tr key={row.key} style={{ '--delay': `${i * 150}ms` } as CSSProperties}>
+                    <th scope="row" className="name">
+                      {t(`packages.${row.key}`)}
+                    </th>
+                    <td>
+                      <PlanTrack
+                        rowKey={`gantt-${row.key}`}
+                        trackUnits={GANTT_TRACK_UNITS}
+                        laneHeight={9}
+                        laneGap={5}
+                        planned={{ offset: row.plannedOffset, width: row.plannedWidth }}
+                        actual={{ offset: row.actualOffset, width: row.actualWidth, state: row.state }}
+                      />
+                    </td>
+                    <td className="value">
+                      <b>{formatEur(row.value, locale)}</b>
+                      {row.delta !== undefined && (
+                        <span className="delta lp-micro">{formatEurDelta(row.delta, locale)}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           <ul className="lp-gantt__legend lp-micro">
-            {LEGEND.map((key) => (
-              <li key={key}>
+            {LEGEND.map((key, i) => (
+              <li key={key} style={{ '--li': `${i * 160}ms` } as CSSProperties}>
                 <span className="swatch" style={{ background: LEGEND_FILL[key] }} aria-hidden="true" />
                 {t(`legend.${key}`)}
               </li>
             ))}
             <li className="audit">{t('legend.audit')}</li>
           </ul>
-        </div>
+        </RevealOnScroll>
       </div>
     </section>
   );

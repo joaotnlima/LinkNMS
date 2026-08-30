@@ -285,8 +285,9 @@
       "agreed": "Azul é o que ficou acordado.",
       "changed": "Laranja é o que mudou.",
       "closed": "Verde é o que fechou.",
-      "explainer": "O scroll faz avançar as imagens da obra enquanto o gráfico acompanha o contrato. O azul fica fixo, o laranja marca o desvio, o verde fecha a linha.",
-      "note": "Imagem + gráfico, não um slideshow",
+      "explainer": "O scroll faz avançar as imagens da obra enquanto o gant acompanha o contrato. O azul fica fixo, o laranja marca o desvio, o verde fecha a linha.",
+      "explainerMobile": "Uma linha do tempo guarda os três estados ao mesmo tempo. As imagens avançam com o scroll, a linha de base fica azul, a mudança vem a laranja e o trabalho fechado fica verde.",
+      "note": "Imagem + gantt, não um slideshow",
       "tableCaption": "Capítulos de trabalho face à linha de base acordada, com o valor de cada um.",
       "colPackage": "Capítulo de trabalho",
       "colValue": "Valor",
@@ -313,47 +314,28 @@
         "actual": "Alterado · mudança assinada",
         "closed": "Fechado · ambas as leituras guardadas",
         "audit": "Cada barra guarda quem a mudou, quando e porquê"
+      },
+      "reel": {
+        "index": "03",
+        "indexMobile": "02.1",
+        "title": "Construção em scroll  ·  Imagem + gantt",
+        "titleMobile": "Construção em scroll · Mobile",
+        "note": "A imagem e o gráfico movem-se juntos.",
+        "noteMobile": "Move-se com o gant.",
+        "labels": {
+          "1": "Design",
+          "2": "Estrutura",
+          "3": "Acabamento",
+          "4": "Construída"
+        },
+        "alt": {
+          "1": "Fase de design: a casa no primeiro desenho.",
+          "2": "Fase de estrutura: o esqueleto está de pé.",
+          "3": "Fase de acabamento: cobertura e envolvente fechadas.",
+          "4": "Fase de construção: a casa terminada."
+        },
+        "scrollNote": "A construção avança em imagens enquanto o gant fecha do azul para o laranja e o verde."
       }
-    },
-    "sequence": {
-      "label": "O desenho torna-se a casa",
-      "barsHead": "Previsto · Real",
-      "rows": {
-        "foundations": "Fundações",
-        "structure": "Estrutura",
-        "envelope": "Envolvente",
-        "finishes": "Acabamentos"
-      },
-      "captions": {
-        "A": {
-          "micro": "p 0,00 → 0,15 · As linhas desenham-se sozinhas",
-          "line": "No início, é só um desenho."
-        },
-        "B": {
-          "micro": "p 0,15 → 0,40 · Fundações e estrutura fecham",
-          "line": "Cada acordo levanta uma parede."
-        },
-        "C": {
-          "micro": "p 0,40 → 0,70 · O desvio aparece e resolve-se",
-          "line": "As coisas mudam. Fica registado."
-        },
-        "D": {
-          "micro": "p 0,70 → 1,00 · Fecha tudo",
-          "line": "A casa. No prazo, no orçamento, no âmbito."
-        }
-      },
-  "hud": {
-   "time": "Prazo",
-   "timeValue": "0 dias de atraso",
-   "cost": "Custo",
-   "scope": "Âmbito",
-   "scopeValue": "100%",
-   "readings": {
-    "B": { "time": "8 meses", "scope": "100%" },
-    "C": { "time": "+ 9 dias", "scope": "98%" },
-    "D": { "time": "0 dias de atraso", "scope": "100%" }
-   }
-  }
     },
     "planIn": {
       "label": "Meter o plano lá dentro",
