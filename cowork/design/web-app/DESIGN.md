@@ -229,6 +229,38 @@ Two layers: the **UI primitives** every screen is assembled from, and the
 - **Party tag** — labels a row or comment by role using colour **plus** the
   role name and a fixed position; colour alone never identifies a party.
 
+### Plan components
+
+Added for the plan timeline (LINA-70, surface 5). Reference implementation:
+`screens/r0-plan-timeline-hifi.html`.
+
+- **Stage status chip** — the four stage statuses, each carrying colour **plus**
+  a label **plus** an icon of a distinct shape: `not_started` (neutral, dashed
+  circle) · `in_progress` (`primary`-family info tint, half-filled circle) ·
+  `blocked` (**filled** `danger`, triangle) · `done` (`success` tint, check
+  circle). `blocked` is the only filled chip in the system — it is the
+  homeowner's intervention signal and must win the screen. Amber
+  (`warning`) stays reserved for *change order pending*; never use it for a
+  stage.
+- **Stage row** — order label, name, planned date range, optional scope note,
+  planned-cost allocation, and the status chip. A coloured left rail repeats
+  the status; `blocked` widens that rail, tints the card, and surfaces the GC's
+  reason quote inline. Identical in both roles — the GC's row simply adds
+  authoring controls in `secondary`.
+- **Plan headline** — the derived plan status as a **word** (Attention needed /
+  Complete / In progress / Not started) at display weight, with the percent
+  **subordinate** beneath it at caption size and muted. The percent never
+  renders alone, never in a heading, and zero stages means no headline at all —
+  render the empty state instead.
+- **Advisory percent** — texture, not a measure. Renders only while a stage is
+  `in_progress`, at caption size, always after the status word, with an
+  optional hairline track. It is the GC's estimate, never a computed number.
+- **Allocation hint** — planned cost, at stage or plan level, in a dashed
+  `surface-sunken` container with an *information only* eyebrow and a link out
+  to the authoritative budget. Deliberately unlike the budget metric: no
+  display numerals, no signed-delta colour, and no "over budget" wording even
+  when the plan over-allocates.
+
 ## Do's and Don'ts
 
 - **Do** design and test every core flow on a phone first, one-handed, before
@@ -256,3 +288,8 @@ Two layers: the **UI primitives** every screen is assembled from, and the
   for floating surfaces only.
 - **Don't** hide an essential action behind hover, a swipe-only gesture, or a
   desktop-only layout.
+- **Don't** typeset a planned or allocated figure like the current budget.
+  Planned cost is an allocation; only an approved change order moves the
+  budget, and the interface must never let the two be confused.
+- **Don't** let a percentage become the headline of a plan or a stage. The
+  status word carries the meaning; the number is subordinate to it, always.
