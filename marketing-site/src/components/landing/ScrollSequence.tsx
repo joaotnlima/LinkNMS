@@ -6,6 +6,7 @@ import {
   SEQUENCE_FINAL_KEYFRAME,
   SEQUENCE_IMAGE_HEIGHT,
   SEQUENCE_IMAGE_WIDTH,
+  SEQUENCE_KEYFRAMES,
   SEQUENCE_LANE_HEIGHT,
   SEQUENCE_PLANNED,
   SEQUENCE_ROW_KEYS,
@@ -14,24 +15,27 @@ import {
   formatEur
 } from '@/lib/landing-numbers';
 import { PlanTrack } from './PlanTrack';
+import { SequenceMotion } from './SequenceMotion';
 
 /**
  * The pinned scroll sequence — server-rendered at p = 1.
  *
  * This markup IS the final state: stage-4 visible, four green bars, the HUD
  * filled with the three values. It is deliberately NOT the empty state.
- * The animation (a later commit, blocked on the stage assets) reads this state
- * out of the DOM, winds it back to p = 0, and only then attaches the trigger —
- * so no-JS, reduced-motion, save-data and small-viewport visitors all get the
- * finished house and the three numbers, and a JS failure degrades to the most
- * informative state rather than a blank screen.
+ * <SequenceMotion /> (LINA-89) reads this state out of the DOM, winds it back to
+ * p = 0, and only then attaches the trigger — so no-JS, reduced-motion,
+ * save-data and small-viewport visitors all get the finished house and the three
+ * numbers, and a JS failure degrades to the most informative state rather than a
+ * blank screen.
  *
- * There is no client JS in this file, and no `p` anywhere in it.
+ * There is no `p` anywhere in this file. The only client code it mounts is the
+ * motion component, which is inert until its own guard says otherwise.
  *
- * ASSETS: the four stage stills are not in the repo yet (LINA-83 blocker (a)).
+ * ASSETS: the four stage stills are not in the repo yet (LINA-89 blocker).
  * The <picture> below points at the paths they will occupy. Until they land the
- * images 404 and the section renders on the ink ground with the scrim, bars and
- * HUD intact — degraded, but readable and correctly laid out.
+ * images are omitted entirely and the section renders on the ink ground with the
+ * scrim, bars and HUD intact — degraded, but readable, correctly laid out, and
+ * still fully scrubbed.
  */
 
 const AVIF_SIZES = '(min-width: 1400px) 1400px, 100vw';
