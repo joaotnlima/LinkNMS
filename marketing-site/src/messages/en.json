@@ -23,7 +23,12 @@
       "The same record, for everyone on site.",
       "Planned against actual, in one place."
     ],
-    "personas": ["Homeowner", "Contractor", "Specialty", "Architect"],
+    "personas": [
+      "Homeowner",
+      "Contractor",
+      "Specialty",
+      "Architect"
+    ],
     "lede": "LinkNMS is the shared, verifiable record for a house build — the neutral ground where the homeowner and everyone doing the work argue from the record, not from memory.",
     "cta": "Join the waitlist",
     "link": "See how it works"
@@ -31,25 +36,52 @@
   "tamper": {
     "h": "It reveals edits. It doesn't prevent them.",
     "b": "It shows that a record was altered after the fact — it does not prevent the alteration. We never blur the two.",
-    "slogan": { "a": "Trust", "b": "built-in." }
+    "slogan": {
+      "a": "Trust",
+      "b": "built-in."
+    }
   },
   "audience": {
     "eyebrow": "Same record, both sides",
     "h2": "Built for everyone on the build.",
     "cards": [
-      { "t": "Homeowner", "b": "See the budget, the schedule and every decision — without a private second set of books." },
-      { "t": "Contractor / builder", "b": "Every change you log is on the record: who agreed it, when, and by how much." },
-      { "t": "Specialty / subcontractor", "b": "The same tasks and scope everyone else sees — no version drift, no crossed wires." },
-      { "t": "Architect", "b": "The model attached to the record, planned against what actually happened on site." }
+      {
+        "t": "Homeowner",
+        "b": "See the budget, the schedule and every decision — without a private second set of books."
+      },
+      {
+        "t": "Contractor / builder",
+        "b": "Every change you log is on the record: who agreed it, when, and by how much."
+      },
+      {
+        "t": "Specialty / subcontractor",
+        "b": "The same tasks and scope everyone else sees — no version drift, no crossed wires."
+      },
+      {
+        "t": "Architect",
+        "b": "The model attached to the record, planned against what actually happened on site."
+      }
     ]
   },
   "how": {
     "eyebrow": "How it works",
     "h2": "Three steps, one record.",
     "steps": [
-      { "n": "01", "t": "Open the record", "b": "Create the build. Invite the owner, the builder and each specialty to the same shared record." },
-      { "n": "02", "t": "Log every change", "b": "Tasks, budget and scope change as the build moves. Each edit captures who, when and how much." },
-      { "n": "03", "t": "Read planned vs. actual", "b": "See what was agreed against what happened on site — legible at a glance, labelled so it reads without colour." }
+      {
+        "n": "01",
+        "t": "Open the record",
+        "b": "Create the build. Invite the owner, the builder and each specialty to the same shared record."
+      },
+      {
+        "n": "02",
+        "t": "Log every change",
+        "b": "Tasks, budget and scope change as the build moves. Each edit captures who, when and how much."
+      },
+      {
+        "n": "03",
+        "t": "Read planned vs. actual",
+        "b": "See what was agreed against what happened on site — legible at a glance, labelled so it reads without colour."
+      }
     ]
   },
   "feat": {
@@ -80,20 +112,47 @@
     "is": {
       "t": "What LinkNMS is",
       "items": [
-        { "b": "The shared, verifiable record", "s": "for one house build." },
-        { "b": "Neutral ground", "s": "for owner, contractor and every specialty." },
-        { "b": "Time, money, scope and history", "s": "in one place." },
-        { "b": "All your builds in one place", "s": "— switch between them, one portfolio dashboard." },
-        { "b": "BIM upload and preview", "s": "— the model, attached to the record." }
+        {
+          "b": "The shared, verifiable record",
+          "s": "for one house build."
+        },
+        {
+          "b": "Neutral ground",
+          "s": "for owner, contractor and every specialty."
+        },
+        {
+          "b": "Time, money, scope and history",
+          "s": "in one place."
+        },
+        {
+          "b": "All your builds in one place",
+          "s": "— switch between them, one portfolio dashboard."
+        },
+        {
+          "b": "BIM upload and preview",
+          "s": "— the model, attached to the record."
+        }
       ]
     },
     "isnt": {
       "t": "What LinkNMS is not",
       "items": [
-        { "b": "Not tamper-proof", "s": "— tamper-evident: it reveals edits, it doesn't prevent them." },
-        { "b": "Not a BIM authoring or analysis suite", "s": "— no Revit or ArchiCAD replacement." },
-        { "b": "Not a permitting integration", "s": "— it marks phases, it doesn't talk to city systems." },
-        { "b": "Not your back office", "s": "— your builds and their record, not accounting, payroll or CRM." }
+        {
+          "b": "Not tamper-proof",
+          "s": "— tamper-evident: it reveals edits, it doesn't prevent them."
+        },
+        {
+          "b": "Not a BIM authoring or analysis suite",
+          "s": "— no Revit or ArchiCAD replacement."
+        },
+        {
+          "b": "Not a permitting integration",
+          "s": "— it marks phases, it doesn't talk to city systems."
+        },
+        {
+          "b": "Not your back office",
+          "s": "— your builds and their record, not accounting, payroll or CRM."
+        }
       ]
     }
   },
@@ -102,9 +161,18 @@
     "h2": "Priced for the whole build, not per seat.",
     "note": "Direction, not final numbers. Pricing lands with the product.",
     "columns": [
-      { "t": "Solo build", "b": "One owner running one house build with their contractor. The core record, free while we're in development." },
-      { "t": "Working build", "b": "The active build with every specialty on the same record — planned vs. actual, approvals, BIM preview." },
-      { "t": "Portfolio", "b": "Several builds at once in one portfolio dashboard, for contractors and owners running more than one." }
+      {
+        "t": "Solo build",
+        "b": "One owner running one house build with their contractor. The core record, free while we're in development."
+      },
+      {
+        "t": "Working build",
+        "b": "The active build with every specialty on the same record — planned vs. actual, approvals, BIM preview."
+      },
+      {
+        "t": "Portfolio",
+        "b": "Several builds at once in one portfolio dashboard, for contractors and owners running more than one."
+      }
     ]
   },
   "faq": {
@@ -140,6 +208,7 @@
     "email": "Email",
     "emailPh": "you@example.com",
     "role": "Which side are you on?",
+    "rolePlaceholder": "Select one…",
     "roleOptions": {
       "homeowner": "Homeowner running a build",
       "contractor": "Contractor / builder",
@@ -166,5 +235,269 @@
     "privacy": "Privacy",
     "contact": "Contact",
     "fine": "LinkNMS is a product in development. Nothing on this page is a guarantee of uptime, adoption, or a shipped feature — the change history is tamper-evident, not tamper-proof."
+  },
+  "lp": {
+    "skip": "Skip to content",
+    "header": {
+      "status": "Built for turnkey. Made for trust.",
+      "navLabel": "Main",
+      "langLabel": "Language",
+      "cta": "Request access",
+      "nav": {
+        "problem": "The problem",
+        "how": "How it works",
+        "builders": "For builders",
+        "pricing": "Pricing"
+      }
+    },
+    "hero": {
+      "lede": "Every turnkey build ends in the same argument. You said this cost €X, now it's €Y. linkNMS keeps the plan, the price and the proof in one record — so the answer takes ten seconds, not two meetings.",
+      "meta": "Plan · Price · Proof",
+      "primary": "Request access",
+      "secondary": "See how it works",
+      "reassure": "Free while we onboard your first build · No card",
+      "platforms": {
+        "head": "Available on",
+        "ios": "iOS app",
+        "mobileWeb": "Mobile web",
+        "desktopWeb": "Desktop web",
+        "note": "The builder answers from the scaffold. The owner checks from the office. Same build, same record."
+      },
+      "card": {
+        "title": "One record from\nfirst quote to\nfinal key.",
+        "body": "Tasks, dependencies, money and every change — signed by whoever made it."
+      }
+    },
+    "argument": {
+      "label": "The argument",
+      "labelRight": "Happens on every build",
+      "headline": "You said this cost {quote}.",
+      "headlineAccent": "Now it's {total}.",
+      "sub": "Nobody is lying. The kitchen moved, the tiles were swapped, the frame slipped two weeks. It all happened in WhatsApp, on site, over the phone — and none of it is written down anywhere both sides can read.",
+      "thread1": "João, the budget you sent in March said {quote}. The invoice says {total}.",
+      "thread2": "Yes, but you changed the flooring and the bathroom moved. I told you at the time.",
+      "thread3": "Told me when? Show me.",
+      "threadCaption": "This is the moment linkNMS exists for"
+    },
+    "record": {
+      "label": "The record",
+      "labelRight": "Three colours, one truth",
+      "agreed": "Blue is what you agreed.",
+      "changed": "Orange is what changed.",
+      "closed": "Green is what closed.",
+      "explainer": "The scroll advances the build images while the chart tracks the contract. Blue stays fixed, orange marks drift, green closes the row.",
+      "note": "Image + chart, not a slideshow",
+      "tableCaption": "Work packages against the agreed baseline, with the value of each.",
+      "colPackage": "Work package",
+      "colValue": "Value",
+      "months": {
+        "MAR": "Mar",
+        "APR": "Apr",
+        "MAY": "May",
+        "JUN": "Jun",
+        "JUL": "Jul",
+        "AUG": "Aug",
+        "SEP": "Sep",
+        "OCT": "Oct"
+      },
+      "packages": {
+        "foundations": "Site & foundations",
+        "structure": "Structure & frame",
+        "envelope": "Roof & envelope",
+        "cladding": "Windows & cladding",
+        "mep": "Electrical & plumbing",
+        "finishes": "Finishes & flooring"
+      },
+      "legend": {
+        "baseline": "Agreed baseline",
+        "actual": "Moved · signed change",
+        "closed": "Closed · both readings kept",
+        "audit": "Every bar carries who moved it, when, and why"
+      }
+    },
+    "sequence": {
+      "label": "The drawing becomes the house",
+      "barsHead": "Planned · Actual",
+      "rows": {
+        "foundations": "Foundations",
+        "structure": "Structure",
+        "envelope": "Envelope",
+        "finishes": "Finishes"
+      },
+      "captions": {
+        "A": {
+          "micro": "p 0.00 → 0.15 · The lines draw themselves",
+          "line": "At the start, it's only a drawing."
+        },
+        "B": {
+          "micro": "p 0.15 → 0.40 · Foundations and structure close",
+          "line": "Every agreement raises a wall."
+        },
+        "C": {
+          "micro": "p 0.40 → 0.70 · The slip appears and resolves",
+          "line": "Things change. It gets recorded."
+        },
+        "D": {
+          "micro": "p 0.70 → 1.00 · Everything closes",
+          "line": "The house. On time, on budget, on scope."
+        }
+      },
+  "hud": {
+   "time": "Time",
+   "timeValue": "0 days slipped",
+   "cost": "Cost",
+   "scope": "Scope",
+   "scopeValue": "100%",
+   "readings": {
+    "B": { "time": "8 months", "scope": "100%" },
+    "C": { "time": "+ 9 days", "scope": "98%" },
+    "D": { "time": "0 days slipped", "scope": "100%" }
+   }
+  }
+    },
+    "planIn": {
+      "label": "Getting the plan in",
+      "labelRight": "Excel, PDF, or built right here",
+      "headline": "Upload what you already have.",
+      "sub": "Nobody rebuilds their budget from scratch. Drop in the spreadsheet you quoted with and linkNMS reads it into work packages, sub-tasks and prices.",
+      "steps": {
+        "01": {
+          "t": "Drop the file",
+          "d": "XLSX, CSV or PDF. Straight from the estimator, no template to fill."
+        },
+        "02": {
+          "t": "Confirm the columns",
+          "d": "You map price, quantity and dates once. It remembers your format."
+        },
+        "03": {
+          "t": "Both sides sign it",
+          "d": "The moment you both accept, that plan becomes the blue baseline."
+        }
+      },
+      "rowsRead": "{rows} rows read",
+      "columnsMapped": "Columns mapped",
+      "tableCaption": "The uploaded spreadsheet, parsed into work packages and sub-tasks.",
+      "colPackage": "Work package",
+      "colQty": "Qty",
+      "colUnit": "Unit",
+      "colUnitPrice": "Unit price",
+      "colTotal": "Total",
+      "packages": {
+        "structure": "Structure & frame",
+        "cladding": "Windows & cladding"
+      },
+      "rows": {
+        "slab": "Concrete slab, ground floor",
+        "timber": "Timber frame + sheathing",
+        "steel": "Steel connections",
+        "brick": "Brick + ETICS, north face",
+        "glazing": "Aluminium frames, triple glaze"
+      },
+      "foot": "Contract total · {packages} work packages · {subTasks} sub-tasks",
+      "band": "No spreadsheet? Specialty partners build the plan inside linkNMS and export it. The plan always belongs to whoever does the work — and the acceptance proof is identical either way.",
+      "bandLink": "See the handshake"
+    },
+    "materials": {
+      "label": "Materials & money",
+      "labelRight": "Where the budget actually moves",
+      "headline": "Half the budget is a material decision.",
+      "body": "Wood or tile. Brick, or concrete with ETICS. Each line of the plan carries the materials it rests on, with quantities and unit prices. Swap one and the overview redraws itself — you see exactly which slice of the budget moved, by how much, and who signed it off.",
+      "body2": "When a supplier raises the price of brick in March, that is not a change order. It is a price movement, and linkNMS records it as its own kind of event.",
+      "swap": {
+        "title": "Ground floor · Flooring",
+        "chip": "Material changed",
+        "from": "Oak engineered board",
+        "to": "Porcelain tile, large format",
+        "unitLine": "{price} / {unit} × {area} {unit}",
+        "approved": "Approved by {name} — {when}"
+      },
+      "composition": {
+        "head": "How {total} is made up",
+        "headRight": "Materials carry {pct}% — and all of the volatility",
+        "aria": "Budget composition of {total}. Materials are {materials}, {pct}% of the contract.",
+        "sinceMarch": "{delta} since March",
+        "slices": {
+          "structure": "Structure",
+          "envelope": "Envelope",
+          "materials": "Materials",
+          "mep": "MEP",
+          "finishes": "Finishes"
+        }
+      }
+    },
+    "who": {
+      "label": "Who it is for",
+      "labelRight": "Two people who don't trust each other yet",
+      "marta": {
+        "quote": "“I just want to know if we're still on budget — without feeling like I'm accusing anyone of anything.”",
+        "name": "Marta",
+        "role": "First-time owner · Porto",
+        "traits": {
+          "t1": "Mobile only",
+          "t2": "Short sessions",
+          "t3": "Needs reassurance"
+        }
+      },
+      "joao": {
+        "quote": "“I'm not hiding anything. I just don't have two hours every night to write down what I already know.”",
+        "name": "João",
+        "role": "Master builder · 31 years on site",
+        "traits": {
+          "t1": "Phone only",
+          "t2": "Low digital comfort",
+          "t3": "10 seconds, not 2 minutes"
+        }
+      }
+    },
+    "cta": {
+      "kicker": "Request access · Portugal first, Q3 2026",
+      "headline": "Stop arguing from memory.",
+      "sub": "One plan, one price, one record both sides can read. Owners stop guessing. Builders stop defending themselves. The build just gets built."
+    },
+    "phone": {
+      "aria": "The linkNMS app showing the schedule and the contract total for a build in progress.",
+      "week": "Week {week} of {total} · On track",
+      "tabs": {
+        "schedule": "Schedule",
+        "money": "Money",
+        "history": "History"
+      },
+      "rows": {
+        "foundations": "Foundations",
+        "structure": "Structure",
+        "envelope": "Envelope",
+        "finishes": "Finishes"
+      },
+      "contractTotal": "Contract total",
+      "sinceMarch": "{delta} since March"
+    },
+    "footer": {
+      "tagline": "Project management for turnkey builds. Made in Portugal, for the way houses actually get built here.",
+      "copyright": "© {year} linkNMS, Lda · Porto",
+      "privacy": "Privacy",
+      "terms": "Terms",
+      "product": {
+        "head": "Product",
+        "record": "The record",
+        "plan": "Plan & schedule",
+        "money": "Money",
+        "materials": "Materials",
+        "history": "Change history"
+      },
+      "for": {
+        "head": "For",
+        "homeowners": "Homeowners",
+        "contractors": "General contractors",
+        "partners": "Specialty partners",
+        "architects": "Architects"
+      },
+      "company": {
+        "head": "Company",
+        "about": "About",
+        "research": "Personas & research",
+        "privacy": "Privacy",
+        "contact": "Contact"
+      }
+    }
   }
 }

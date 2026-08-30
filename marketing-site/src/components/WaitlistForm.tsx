@@ -67,6 +67,21 @@ function acquisition(fallbackSource: string): { source: string; referrer: string
   return { source: source.slice(0, 120), referrer };
 }
 
+// The form has one presentation, because the landing page is the only page
+// that renders it. There is one submit path, one spam path and one analytics
+// path.
+//
+// §6 Q5 (founder, 2026-08-29): "Keep role as a second step after email. The CTA
+// form shows email first; role appears after email is entered." So the select
+// stays hidden until the email field has something in it — the design's
+// single-field ask is what the visitor sees, and role is asked only once they
+// have already committed to answering.
+//
+// The placeholder option below is the analytics review's one non-negotiable
+// (`landing-event-map-v2` §3.7): the old form preselected `homeowner`, so a
+// submitter who ignored the dropdown was indistinguishable from one who chose
+// it, and every role we have ever collected is suspect. An empty first option
+// makes "did not answer" a distinct, honest value.
 export function WaitlistForm({ source }: { source: string }) {
   const t = useTranslations('waitlist');
   const locale = useLocale();
@@ -82,6 +97,8 @@ export function WaitlistForm({ source }: { source: string }) {
   const widgetIdRef = useRef<string | null>(null);
   // form_start fires once per mount, on the first focus of the email field.
   const startedRef = useRef(false);
+  // The role step unlocks once an email has been typed.
+  const [emailEntered, setEmailEntered] = useState(false);
 
   const onEmailFocus = () => {
     if (startedRef.current) return;
@@ -173,7 +190,7 @@ export function WaitlistForm({ source }: { source: string }) {
 
   if (state === 'success' || state === 'dup') {
     return (
-      <div className="form-msg" role="status">
+      <div className="lp-form__msg" role="status">
         <p className="mt">{t('successTitle')}</p>
         <p className="mb">{state === 'dup' ? t('errorDup') : t('successBody')}</p>
       </div>
@@ -182,9 +199,11 @@ export function WaitlistForm({ source }: { source: string }) {
 
   return (
     <>
-      <form className="field" onSubmit={onSubmit} noValidate>
+      <form className="lp-form" onSubmit={onSubmit} noValidate>
         <div className="inp">
-          <label htmlFor="email">{t('email')}</label>
+          <label className="lp-micro" htmlFor="email">
+            {t('email')}
+          </label>
           <input
             id="email"
             name="email"
@@ -193,34 +212,41 @@ export function WaitlistForm({ source }: { source: string }) {
             required
             autoComplete="email"
             onFocus={onEmailFocus}
+            onChange={(e) => setEmailEntered(e.currentTarget.value.trim().length > 0)}
           />
         </div>
-        <div className="inp">
-          <label htmlFor="role">{t('role')}</label>
-          <select id="role" name="role">
-            {roleOptions.map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {emailEntered && (
+          <div className="inp">
+            <label className="lp-micro" htmlFor="role">
+              {t('role')}
+            </label>
+            <select id="role" name="role" defaultValue="">
+              {/* Empty placeholder — "did not answer" must be its own value. */}
+              <option value="">{t('rolePlaceholder')}</option>
+              {roleOptions.map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {/* Honeypot — real users never fill this */}
         <div className="hp" aria-hidden="true">
           <label htmlFor="company">Company</label>
           <input id="company" name="company" type="text" tabIndex={-1} autoComplete="off" />
         </div>
         {siteKey && <div ref={widgetRef} className="cf-turnstile-widget" />}
-        <button className="btn-pill" type="submit" disabled={state === 'submitting'}>
+        <button className="lp-btn" type="submit" disabled={state === 'submitting'}>
           {state === 'submitting' ? t('submitting') : t('submit')}
         </button>
       </form>
       {state === 'error' && (
-        <div className="form-msg error" role="alert">
+        <div className="lp-form__msg lp-form__msg--error" role="alert">
           <p className="mb">{t('errorGeneric')}</p>
         </div>
       )}
-      <p className="note">{t('note')}</p>
+      <p className="lp-cta__note lp-micro">{t('note')}</p>
     </>
   );
 }

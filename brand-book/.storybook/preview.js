@@ -8,9 +8,9 @@ const preview = {
     backgrounds: {
       default: "Paper",
       values: [
-        { name: "Paper", value: "#fcfcfb" },
+        { name: "Paper", value: "#fbfaf7" },
         { name: "Sunken", value: "#f4f3f0" },
-        { name: "Ink", value: "#0b0b0b" },
+        { name: "Ink", value: "#16181d" },
       ],
     },
     options: {

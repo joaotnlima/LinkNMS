@@ -105,6 +105,12 @@ export function createSignInService({
   env = process.env,
 }) {
   if (!store) throw new Error('sign-in service requires a store');
+  // Refuse to boot against a store with no seat gate rather than discovering it
+  // as a TypeError on the first request. A sign-in path that silently lost its
+  // allowlist is open registration, so this is a construction-time hard stop.
+  if (typeof store.hasActiveSeat !== 'function') {
+    throw new Error('sign-in service requires a store with hasActiveSeat (ADR-0008 seat gate)');
+  }
   if (!parties?.findOrCreateByEmail) throw new Error('sign-in service requires a parties port');
 
   /**
@@ -121,6 +127,25 @@ export function createSignInService({
     const clean = normalizeEmail(email);
     // A malformed address is an indistinguishable no-op: still 202, nothing sent.
     if (!clean) return;
+
+    // THE SEAT GATE (ADR-0008). Without it, `consume` ends in
+    // findOrCreateByEmail — so proving control of ANY address on the internet
+    // mints a party, i.e. open registration on a trust product. A link is minted
+    // and mailed only to an address that holds an active seat.
+    //
+    // Note WHERE this sits: after the malformed-address check, before anything
+    // is written or sent, and it declines exactly like every other decline — the
+    // route still answers 202 {}. A seated and an unseated address are
+    // indistinguishable from outside, so the allowlist is not a membership
+    // oracle either; ADR-0007 §4 survives intact.
+    //
+    // It is deliberately CHEAPER than the rate-limit check (one indexed point
+    // lookup vs two COUNTs), so the common hostile case — a stranger's address —
+    // costs the least. The trade-off is that an unseated request inserts no row
+    // and therefore does not accrue against the per-IP counter; that is
+    // acceptable because such a request writes nothing and sends nothing, so the
+    // only thing it can exhaust is our own request budget, not a user's inbox.
+    if (!(await store.hasActiveSeat(clean))) return;
 
     const now = clock.now();
     const since = new Date(now.getTime() - rate.windowMs).toISOString();

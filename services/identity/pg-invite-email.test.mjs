@@ -6,7 +6,7 @@
 // the DB job runs the real thing (same convention as pg-sign-in.test.mjs).
 //
 // What it proves beyond the in-memory tests:
-//   * 0004_identity.sql APPLIES on top of the platform + ledger + identity
+//   * 0005_identity.sql APPLIES on top of the platform + ledger + identity
 //     migrations, and is REPLAYABLE (running it twice is not an error);
 //   * the new column is reachable through identity_app's EXISTING grants — a
 //     table-level privilege covers a column added later, so this migration needs
@@ -17,10 +17,10 @@
 //   * ── THE GRANT REGRESSION ──────────────────────────────────────────────────
 //     identity_app's privileges on identity.invitation are EXACTLY
 //     SELECT/INSERT/UPDATE — no DELETE, no TRUNCATE — and it holds nothing at
-//     all on identity.seat beyond what ADR-0008 grants. `identity.seat` does not
-//     exist on any branch yet (that is the open half of LINA-84), so the seat
-//     assertion below is written to be true today AND to start failing loudly
-//     the moment a seat table appears with an INSERT grant nobody reviewed.
+//     all on identity.seat beyond what ADR-0008 grants. The seat table landed on
+//     main in 0004_identity.sql (LINA-75) with SELECT only, so the assertion
+//     below is now live and fails loudly the moment an INSERT grant nobody
+//     reviewed slips onto it.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -44,6 +44,7 @@ const MIGRATIONS = [
   'services/identity/migrations/0002_identity.sql',
   'services/identity/migrations/0003_identity.sql',
   'services/identity/migrations/0004_identity.sql',
+  'services/identity/migrations/0005_identity.sql',
 ];
 
 describe('Postgres invite-by-email', { skip: DB ? false : 'set DATABASE_URL to run' }, () => {
@@ -58,10 +59,10 @@ describe('Postgres invite-by-email', { skip: DB ? false : 'set DATABASE_URL to r
       const sql = await readFile(join(ROOT, rel), 'utf8');
       await ownerPool.query(sql);
     }
-    // Replayability: 0004 must be safe to run twice. The runner never does this,
+    // Replayability: 0005 must be safe to run twice. The runner never does this,
     // but a migration that is not idempotent is a migration that cannot be
     // recovered by hand when a forward pass dies halfway.
-    const again = await readFile(join(ROOT, 'services/identity/migrations/0004_identity.sql'), 'utf8');
+    const again = await readFile(join(ROOT, 'services/identity/migrations/0005_identity.sql'), 'utf8');
     await ownerPool.query(again);
 
     appPool = createPool(DB, { role: 'identity_app', max: 4 });
@@ -138,10 +139,10 @@ describe('Postgres invite-by-email', { skip: DB ? false : 'set DATABASE_URL to r
     );
   });
 
-  // The seat boundary, asserted ahead of the table existing. ADR-0008 says
-  // identity_app holds SELECT ONLY on identity.seat. This migration does not
-  // create that table; if a later one does, this test is the thing that catches
-  // an INSERT grant slipping in without the Architect's sign-off.
+  // The seat boundary. ADR-0008 says identity_app holds SELECT ONLY on
+  // identity.seat, which 0004 (LINA-75) creates. This migration does not touch
+  // that table, and this test is what catches an INSERT grant slipping in
+  // without the Architect's sign-off.
   test('GRANTS: identity_app never gains a write grant on identity.seat', async () => {
     const { rows } = await ownerPool.query(
       `select privilege_type from information_schema.role_table_grants

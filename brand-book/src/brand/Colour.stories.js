@@ -17,13 +17,17 @@ const swatch = (name, hex, role) =>
     <div class="role">${role}</div>
   </div>`;
 
+// NOTE: these hexes are transcribed by hand from design-system/tokens.json —
+// `npm run tokens` regenerates tokens.css but NOT this file, so the two can
+// drift. They were last reconciled at the LINA-86 identity re-base. If you
+// change a primitive, change it in tokens.json first, then here.
 export const Identity = {
   render: () =>
     `<div class="swatches">
-      ${swatch("Owner Blue", "#2a78d6", "Planned · owner side")}
-      ${swatch("Builder Orange", "#eb6834", "Actual · builder side")}
-      ${swatch("Ink", "#0b0b0b", "Text & marks")}
-      ${swatch("Paper", "#fcfcfb", "Surface")}
+      ${swatch("Owner Blue", "#3e5c8a", "Planned · owner side")}
+      ${swatch("Builder Orange", "#b4633b", "Actual · builder side")}
+      ${swatch("Ink", "#16181d", "Text & marks")}
+      ${swatch("Paper", "#fbfaf7", "Surface")}
     </div>`,
 };
 

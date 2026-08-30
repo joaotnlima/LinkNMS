@@ -1,61 +1,74 @@
--- Identity — invite-by-email: give identity.invitation an address (LINA-84; ADR-0008 §4).
+-- Identity — the seat allowlist (LINA-75; ADR-0008).
 --
--- 0002 modelled the invitation as a PURE BEARER TOKEN: project + sha256(token) +
--- role + status, and nothing about WHO it was for. That was deliberate for the
--- out-of-band flow (the owner copy-pastes a link into WhatsApp), but it means
--- there is no address to mail the link to and — once ADR-0008's seat allowlist
--- lands — nothing to auto-seat the counterparty against.
+-- WHY THIS EXISTS. ADR-0007 gave us a working front door: prove you control an
+-- email, get a session. But `consume` ends in `parties.findOrCreateByEmail`,
+-- which means proving control of ANY address on the internet mints a party. On
+-- a trust product that is open registration — the moment RESEND_API_KEY lands on
+-- production, anybody can walk in. The CEO's rollout is the opposite: ten free
+-- seats given away by hand, paid seats after. So sign-in needs an ALLOWLIST, and
+-- this table is it.
 --
--- Forward-only: 0002 is already applied, so this is a NEW migration rather than
--- an edit (`db/migrate.mjs` treats an edited applied file as a checksum error).
+-- WHERE THE GATE SITS. In `request` — we decline to MINT and MAIL a link to an
+-- address with no seat. Not in `consume`: gating there would mail a real link to
+-- an unseated stranger and then reject it, which both wastes a send and teaches
+-- an attacker that the address exists. Declining at mint keeps ADR-0007 §4
+-- intact — the response is still a uniform 202 whether or not a seat exists, so
+-- this table is NOT a membership oracle either.
 --
--- ── Numbering note for the reviewer ────────────────────────────────────────────
--- The LINA-84 brief says "0005_identity.sql". On origin/main the identity
--- migrations are 0001, 0002, 0003 — 0004 is the next free ordinal, and no seat
--- migration exists on any branch. This file therefore claims 0004. If the
--- unmerged ADR-0008 seat migration also lands as 0004, ONE of the two must be
--- renumbered before merge; they do not touch the same objects, so the rename is
--- mechanical (the runner keys on filename, so renaming an APPLIED file is itself
--- a checksum error — renumber before either is applied to production).
+-- THE STRIPE SEAM. This is the whole point of a separate table rather than a
+-- boolean on identity.party. Who may sign in is one question ("is there an
+-- active seat for this address"); how the seat was paid for is another
+-- (`source`, and later a subscription id). When billing arrives, Stripe inserts
+-- and revokes seat rows and NOT ONE LINE of the auth path changes. `source`
+-- already carries 'beta' for the ten giveaways and reserves 'stripe'.
+--
+-- NOT LEDGER HISTORY. A seat is commercial access, not project history: granting
+-- one answers "who may log in", never "who decided what and what did it cost".
+-- So there is no audit event and no ledger seam here, exactly as 0003 reasoned
+-- for sign-in tokens. The trust anchor is untouched by this file.
 
 CREATE SCHEMA IF NOT EXISTS identity;
 
--- The address the invitation was sent to, lower-cased. NULLABLE ON PURPOSE: the
--- out-of-band path (invite with no email) must keep working and still return a
--- shareable token, so "no address" stays a first-class state rather than being
--- forced into a sentinel.
+-- One row per address that is allowed through the front door. `email` is the
+-- natural key, lower-cased by the caller the same way sign-in normalizes it, so
+-- `Ana@x.com` and `ana@x.com` are one seat and cannot be double-granted.
 --
--- The value is normalised in the service by `normalizeEmail` (sign-in.mjs) — the
--- SAME function the sign-in path uses, so `Ana@X.com` typed into the invite form
--- and `ana@x.com` typed into the sign-in form are one address. The CHECK below is
--- a cheap backstop against a bypassing writer, not a re-implementation of that
--- validation: it only asserts the invariant the service guarantees (lower-cased,
--- non-blank, contains an `@`). Address VALIDITY is the service's business.
-ALTER TABLE identity.invitation
-  ADD COLUMN IF NOT EXISTS email text;
+-- A seat is deliberately keyed on the EMAIL, not on identity.party.id: the whole
+-- job of the seat is to decide whether a party may be created in the first
+-- place, so it has to exist before the party does.
+CREATE TABLE IF NOT EXISTS identity.seat (
+  id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  email        text        NOT NULL UNIQUE CHECK (length(btrim(email)) > 0),
+  -- 'beta'   — one of the hand-granted free seats (the first ten).
+  -- 'invite' — a counterparty seated because a project owner invited them by
+  --            email; they ride in on someone else's project and, per ADR-0008,
+  --            do not consume a beta seat.
+  -- 'stripe' — reserved: a seat backed by a paid subscription.
+  source       text        NOT NULL DEFAULT 'beta'
+                             CHECK (source IN ('beta', 'invite', 'stripe')),
+  -- Revocation is a status flip, never a DELETE: we want to keep the record that
+  -- a seat was granted and withdrawn. Only 'active' opens the door.
+  status       text        NOT NULL DEFAULT 'active'
+                             CHECK (status IN ('active', 'revoked')),
+  note         text,                                     -- free-text: who this is, why granted
+  granted_at   timestamptz NOT NULL DEFAULT now(),
+  revoked_at   timestamptz,
+  -- Belt and braces: a revoked seat must carry its revocation timestamp and an
+  -- active one must not, so `status` can never drift away from the audit trail.
+  CONSTRAINT seat_revoked_consistent CHECK (
+    (status = 'active'  AND revoked_at IS NULL) OR
+    (status = 'revoked' AND revoked_at IS NOT NULL)
+  )
+);
 
--- Idempotent guard: ADD CONSTRAINT has no IF NOT EXISTS before PG 16 that covers
--- re-runs cleanly, so drop-then-add keeps this migration replayable.
-ALTER TABLE identity.invitation
-  DROP CONSTRAINT IF EXISTS invitation_email_normalised;
+-- The gate is a single point lookup on (email, status) on the hot sign-in path.
+CREATE INDEX IF NOT EXISTS identity_seat_active_idx
+  ON identity.seat (email) WHERE status = 'active';
 
-ALTER TABLE identity.invitation
-  ADD CONSTRAINT invitation_email_normalised
-  CHECK (
-    email IS NULL
-    OR (email = lower(email) AND length(btrim(email)) > 0 AND position('@' in email) > 1)
-  );
-
--- Look-ups are "is there a pending invite for this address?", which is how the
--- seat/mail path finds the row. Partial: an accepted invitation is history and is
--- never queried by address.
-CREATE INDEX IF NOT EXISTS identity_invitation_email_pending_idx
-  ON identity.invitation (email)
-  WHERE email IS NOT NULL AND status = 'pending';
-
--- ── Grants ────────────────────────────────────────────────────────────────────
--- Deliberately EMPTY. identity_app already holds SELECT, INSERT, UPDATE on
--- identity.invitation (0002); in PostgreSQL a table-level privilege covers
--- columns added later, so a new column needs no new grant. Nothing here widens
--- the matrix — in particular this migration does NOT touch identity.seat, whose
--- INSERT boundary is the open design question on LINA-84 §2.
+-- Least-privilege, and narrower than the other identity tables ON PURPOSE.
+-- identity_app only ever ASKS whether a seat exists — it must never be able to
+-- grant itself one, so a bug or an injection on the request path cannot widen
+-- who may sign in. Seats are issued out of band (scripts/grant-seat.mjs runs as
+-- migrator) and, later, by the billing webhook under its own role.
+REVOKE ALL ON TABLE identity.seat FROM PUBLIC;
+GRANT SELECT ON TABLE identity.seat TO identity_app;
