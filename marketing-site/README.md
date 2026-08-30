@@ -61,6 +61,6 @@ A ready-to-run migration is committed at `drizzle/0000_init.sql`.
 ## Deploy (Vercel)
 
 Set the project root to `marketing-site/`. Add env vars from `.env.example`
-(`DATABASE_URL`, `RESEND_API_KEY`, `NEXT_PUBLIC_POSTHOG_KEY`, `TURNSTILE_*`,
+(`DATABASE_URL`, `RESEND_API_KEY`, `POSTHOG_KEY`, `TURNSTILE_*`,
 `NEXT_PUBLIC_SITE_URL`). `main` → production; every PR gets a preview URL (used
 for the es-ES native review).
