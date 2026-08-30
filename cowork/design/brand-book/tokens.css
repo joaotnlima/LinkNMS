@@ -1,22 +1,23 @@
 /* GENERATED from design-system/tokens.json by design-system/build-tokens.mjs — do not edit by hand. */
 :root {
-  --owner: #2a78d6;
-  --builder: #eb6834;
-  --ink: #0b0b0b;
-  --paper: #fcfcfb;
+  --owner: #3e5c8a;
+  --builder: #b4633b;
+  --ink: #16181d;
+  --paper: #fbfaf7;
   --surface-sunken: #f4f3f0;
   --surface-raised: #ffffff;
   --outline: #dcdbd7;
   --outline-strong: #9b9a95;
   --muted: #5b5b58;
-  --owner-muted: #e2edfb;
-  --builder-muted: #fce3d8;
+  --owner-muted: #dce3ee;
+  --builder-muted: #f0e1d8;
   --success: #2e7d54;
   --warning: #b7791f;
   --danger: #c0392b;
   --fade: #9a9a9a;
   --fade-dark: #8c8c8c;
-  --sans: system-ui,-apple-system,"Segoe UI",sans-serif;
+  --sans: Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --display: Archivo,Inter,system-ui,sans-serif;
   --size-display: 28px;
   --size-heading: 20px;
   --size-subheading: 16px;

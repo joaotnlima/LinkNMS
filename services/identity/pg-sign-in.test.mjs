@@ -42,6 +42,7 @@ const MIGRATIONS = [
   'services/identity/migrations/0001_identity.sql',
   'services/identity/migrations/0002_identity.sql',
   'services/identity/migrations/0003_identity.sql',
+  'services/identity/migrations/0004_identity.sql',
 ];
 
 // A sender that never touches the network. It is "configured" so /request runs
@@ -85,6 +86,17 @@ describe('Postgres magic-link sign-in', { skip: DB ? false : 'set DATABASE_URL t
     await ownerPool?.end();
   });
 
+  // Grant a seat as the OWNER, because identity_app deliberately cannot
+  // (0004_identity.sql grants it SELECT only). Every address these tests sign in
+  // with must be seated first — that is the ADR-0008 gate doing its job.
+  async function seat(email) {
+    await ownerPool.query(
+      "insert into identity.seat (email, source, note) values ($1,'beta','pg test') on conflict (email) do nothing",
+      [email],
+    );
+    return email;
+  }
+
   function service(overrides = {}) {
     return createSignInService({
       store,
@@ -100,7 +112,7 @@ describe('Postgres magic-link sign-in', { skip: DB ? false : 'set DATABASE_URL t
     const ids = recordingIds();
     const sender = fakeSender();
     const svc = service({ ids, sender });
-    const email = `dana-${randomUUID()}@example.com`;
+    const email = await seat(`dana-${randomUUID()}@example.com`);
 
     await svc.request({ email, baseUrl: 'https://app.linknms.com' });
     assert.equal(sender.sent.length, 1, 'a link was emailed');
@@ -122,7 +134,7 @@ describe('Postgres magic-link sign-in', { skip: DB ? false : 'set DATABASE_URL t
   test('DOUBLE-CONSUME RACE settled by the DB: two concurrent consumes → one row', async () => {
     const ids = recordingIds();
     const svc = service({ ids });
-    await svc.request({ email: `race-${randomUUID()}@example.com`, baseUrl: 'https://app.linknms.com' });
+    await svc.request({ email: await seat(`race-${randomUUID()}@example.com`), baseUrl: 'https://app.linknms.com' });
     const raw = ids.tokens.at(-1);
     const hash = (await import('node:crypto')).createHash('sha256').update(raw).digest('hex');
     const now = new Date().toISOString();
@@ -135,9 +147,11 @@ describe('Postgres magic-link sign-in', { skip: DB ? false : 'set DATABASE_URL t
   });
 
   test('/request does not distinguish a known email from an unknown one (ADR §4)', async () => {
-    const known = `known-${randomUUID()}@example.com`;
+    // Both are SEATED, so the only difference under test is party-existence —
+    // which is the thing ADR-0007 §4 says must not be observable.
+    const known = await seat(`known-${randomUUID()}@example.com`);
     await parties.findOrCreateByEmail({ email: known, role: 'contractor' }); // pre-existing party
-    const unknown = `unknown-${randomUUID()}@example.com`;
+    const unknown = await seat(`unknown-${randomUUID()}@example.com`);
 
     const sender = fakeSender();
     const svc = service({ sender });
@@ -174,5 +188,41 @@ describe('Postgres magic-link sign-in', { skip: DB ? false : 'set DATABASE_URL t
       /permission denied/i,
       'no DELETE grant — spent rows are pruned out-of-band, not on the request path',
     );
+  });
+
+  // ── The seat gate at the database level (LINA-75; ADR-0008) ────────────────
+  test('an unseated address mints NO row against real Postgres', async () => {
+    const sender = fakeSender();
+    const svc = service({ sender });
+    const email = `unseated-${randomUUID()}@example.com`;
+
+    await svc.request({ email, baseUrl: 'https://app.linknms.com' });
+
+    assert.equal(sender.sent.length, 0, 'no email for an address with no seat');
+    const { rows } = await ownerPool.query(
+      'select count(*)::int as n from identity.sign_in_token where email = $1',
+      [email],
+    );
+    assert.equal(rows[0].n, 0, 'no sign_in_token row exists for an unseated address');
+  });
+
+  test('GRANT REGRESSION: identity_app can read seats but cannot create one', async () => {
+    // The runtime role must not be able to widen who may sign in — that is the
+    // whole reason seats are issued out of band (0004_identity.sql). If someone
+    // ever adds INSERT to that grant, this test is what catches it.
+    const email = `selfseat-${randomUUID()}@example.com`;
+    await assert.rejects(
+      () => appPool.query("insert into identity.seat (email) values ($1)", [email]),
+      (e) => /permission denied/i.test(e.message),
+      'identity_app must not hold INSERT on identity.seat',
+    );
+    // ...while the SELECT the gate depends on does work.
+    await ownerPool.query("insert into identity.seat (email) values ($1)", [email]);
+    assert.equal(await store.hasActiveSeat(email), true);
+    // A revoked seat closes the door again.
+    await ownerPool.query(
+      "update identity.seat set status='revoked', revoked_at=now() where email=$1", [email],
+    );
+    assert.equal(await store.hasActiveSeat(email), false);
   });
 });

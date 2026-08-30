@@ -54,13 +54,16 @@ const COPY: Record<Locale, {
 
 function template(locale: Locale, confirmUrl: string): string {
   const c = COPY[locale] ?? COPY.pt;
-  return `<!DOCTYPE html><html lang="${locale}"><body style="margin:0;background:#f4f3f0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b0b0b">
+  // Hexes are literal because email clients do not support CSS custom
+  // properties. Identity colours re-based at LINA-86 — keep in step with
+  // design-system/tokens.json by hand.
+  return `<!DOCTYPE html><html lang="${locale}"><body style="margin:0;background:#f4f3f0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#16181d">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px"><tr><td align="center">
-    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#fcfcfb;border:1px solid #dcdbd7;border-radius:12px;padding:32px">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#fbfaf7;border:1px solid #dcdbd7;border-radius:12px;padding:32px">
       <tr><td style="font-weight:700;font-size:18px;letter-spacing:-.01em;padding-bottom:8px">LinkNMS <span style="color:#9a9a9a;font-weight:500;font-size:13px">Trust built-in.</span></td></tr>
       <tr><td style="font-size:20px;font-weight:600;padding:16px 0 8px">${c.heading}</td></tr>
       <tr><td style="font-size:15px;line-height:1.5;color:#5b5b58;padding-bottom:24px">${c.body}</td></tr>
-      <tr><td><a href="${confirmUrl}" style="display:inline-block;background:#2a78d6;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:14px 26px;border-radius:36px">${c.cta}</a></td></tr>
+      <tr><td><a href="${confirmUrl}" style="display:inline-block;background:#3e5c8a;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:14px 26px;border-radius:36px">${c.cta}</a></td></tr>
       <tr><td style="font-size:12px;line-height:1.5;color:#9a9a9a;padding-top:28px;border-top:1px dashed #dcdbd7;margin-top:24px">${c.footer}</td></tr>
     </table>
   </td></tr></table>

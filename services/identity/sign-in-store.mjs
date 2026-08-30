@@ -9,6 +9,7 @@
 //   countRecentByIp(ip, sinceIso)       -> number   (per-IP rate limit)
 //   insertToken(row)                    -> void      (mint; stores token_hash only)
 //   consumeToken(tokenHash, nowIso)     -> { email, displayName } | null
+//   hasActiveSeat(email)                -> boolean   (the ADR-0008 seat gate)
 //
 // consumeToken is THE trust-critical operation: it must be a single atomic
 // conditional update — "flip consumed_at to now WHERE it is still null AND not
@@ -22,9 +23,12 @@
 import { getPool } from '../ledger/db.mjs';
 
 // ── In-memory reference ────────────────────────────────────────────────────────
-export function createMemorySignInStore() {
+export function createMemorySignInStore({ seats = [] } = {}) {
   /** @type {Map<string, any>} tokenHash -> row */
   const tokens = new Map();
+  // The in-memory seat allowlist mirrors `identity.seat WHERE status='active'`:
+  // tests seed it with the addresses that hold a seat and nothing else.
+  const seated = new Set(seats.map((e) => String(e).trim().toLowerCase()));
 
   function countRecentByEmail(email, sinceIso) {
     let n = 0;
@@ -59,7 +63,18 @@ export function createMemorySignInStore() {
     return { email: t.email, displayName: t.displayName ?? null };
   }
 
-  return { countRecentByEmail, countRecentByIp, insertToken, consumeToken };
+  function hasActiveSeat(email) {
+    return seated.has(email);
+  }
+
+  // Test affordance only — production seats are granted out of band, and
+  // identity_app holds no INSERT on identity.seat precisely so the request path
+  // cannot seat anybody (0004_identity.sql).
+  function grantSeat(email) {
+    seated.add(String(email).trim().toLowerCase());
+  }
+
+  return { countRecentByEmail, countRecentByIp, insertToken, consumeToken, hasActiveSeat, grantSeat };
 }
 
 // ── Postgres adapter (schema `identity`, migrations/0003_identity.sql) ──────────
@@ -107,5 +122,16 @@ export function createPgSignInStore({ pool = getPool() } = {}) {
     return { email: rows[0].email, displayName: rows[0].display_name ?? null };
   }
 
-  return { countRecentByEmail, countRecentByIp, insertToken, consumeToken };
+  // The gate (ADR-0008). A point lookup against the partial index; SELECT is the
+  // only grant identity_app holds on this table, so the request path can read
+  // who is allowed in but can never add somebody.
+  async function hasActiveSeat(email) {
+    const { rows } = await pool.query(
+      "select 1 from identity.seat where email = $1 and status = 'active' limit 1",
+      [email],
+    );
+    return rows.length > 0;
+  }
+
+  return { countRecentByEmail, countRecentByIp, insertToken, consumeToken, hasActiveSeat };
 }
