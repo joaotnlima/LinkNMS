@@ -1,4 +1,22 @@
-import { Resend } from 'resend';
+// Waitlist double opt-in email.
+//
+// The PROVIDER lives in `services/email/sender.mjs` (ADR-0007 §5) — one
+// fetch-based, dependency-free Resend client shared with magic-link sign-in, so
+// the API key handling, the from-address discipline, and the "never log the
+// body" rule exist in exactly one place. This file owns only what is specific to
+// the waitlist: the localized copy, the template, and the failure policy.
+//
+// ── THE ONE DELIBERATE DIFFERENCE ────────────────────────────────────────────
+// The shared sender FAILS CLOSED: it throws when Resend is unconfigured or the
+// send is rejected. That is correct for sign-in, where a swallowed failure is a
+// silent open door. It is wrong here: a missed waitlist confirmation is a lost
+// signup, not a security event, and a dev/preview deploy with no RESEND_API_KEY
+// should still let the funnel be exercised end to end.
+//
+// So the catch lives HERE, at the call site, and NOT inside the sender — the
+// asymmetry is the waitlist's choice to make, and burying a degrade branch in
+// the shared client is exactly how it would one day reach sign-in.
+import { sendEmail, isEmailConfigured as senderConfigured } from '@services/email/sender.mjs';
 
 type Locale = 'pt' | 'en' | 'es';
 
@@ -53,11 +71,12 @@ function template(locale: Locale, confirmUrl: string): string {
 }
 
 export function isEmailConfigured() {
-  return Boolean(process.env.RESEND_API_KEY);
+  return senderConfigured();
 }
 
 // Send the localized double opt-in email. Returns false (without throwing) when
-// Resend isn't configured so the signup still succeeds in dev.
+// Resend isn't configured or the send fails, so the signup still succeeds in dev
+// — see the asymmetry note at the top of this file.
 export async function sendConfirmationEmail(
   to: string,
   locale: Locale,
@@ -67,18 +86,21 @@ export async function sendConfirmationEmail(
     console.warn('[email] RESEND_API_KEY not set — confirmation link:', confirmUrl);
     return false;
   }
-  const from = process.env.RESEND_FROM || 'LinkNMS <waitlist@linknms.com>';
   const c = COPY[locale] ?? COPY.pt;
-  const resend = new Resend(process.env.RESEND_API_KEY);
-  const { error } = await resend.emails.send({
-    from,
-    to,
-    subject: c.subject,
-    html: template(locale, confirmUrl)
-  });
-  if (error) {
-    console.error('[email] send failed:', error);
+  try {
+    await sendEmail({
+      to,
+      subject: c.subject,
+      html: template(locale, confirmUrl),
+      // The waitlist keeps its own from-address; the sender's default is the
+      // sign-in one. RESEND_FROM stays the deploy-level override it always was.
+      from: process.env.RESEND_FROM || 'LinkNMS <waitlist@linknms.com>'
+    });
+    return true;
+  } catch (err) {
+    // Status/code only — the sender never logs a body, and neither do we: the
+    // confirmation link in it is a bearer credential.
+    console.error('[email] send failed:', (err as { code?: string })?.code ?? 'unknown');
     return false;
   }
-  return true;
 }

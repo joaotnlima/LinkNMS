@@ -12,6 +12,10 @@
 // in Postgres (a serverless deploy has no shared memory).
 import { NextResponse } from 'next/server';
 import { container } from '@/server/gateway';
+// Only a hop our own proxy wrote — the left-most x-forwarded-for entry is the
+// client's own claim, so keying the per-IP limit on it protected nothing
+// (LINA-79).
+import { clientIpOf } from '@services/gateway/client-ip.mjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,14 +31,6 @@ function originOf(req: Request): string {
   return `${proto}://${host}`;
 }
 
-// Best-effort client IP for the per-IP rate limit. The left-most x-forwarded-for
-// hop is the closest we get on Vercel; absent → null (the limit still holds
-// per-email).
-function ipOf(req: Request): string | null {
-  const xff = req.headers.get('x-forwarded-for');
-  if (xff) return xff.split(',')[0].trim() || null;
-  return req.headers.get('x-real-ip');
-}
 
 export async function POST(req: Request) {
   let body: { email?: string; displayName?: string; next?: string } = {};
@@ -50,7 +46,7 @@ export async function POST(req: Request) {
       email: body?.email,
       displayName: body?.displayName,
       next: body?.next,
-      ip: ipOf(req),
+      ip: clientIpOf(req.headers),
       baseUrl: originOf(req),
     });
     // 202 Accepted, empty body — the same answer for known, unknown, malformed,

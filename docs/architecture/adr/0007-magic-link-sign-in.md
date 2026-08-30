@@ -90,6 +90,18 @@ themselves *and* look authorised on the record.
   Because a serverless deploy has no shared memory, the counter lives in
   Postgres alongside the tokens — a `COUNT(*)` over recent rows for that email
   is sufficient and needs no new infrastructure.
+- The per-IP key must come from a hop the **client cannot forge** (amended,
+  LINA-79). A proxy *appends* the address it observed, so the LEFT-most
+  `x-forwarded-for` entry is the caller's own claim about itself: keying on it
+  lets an attacker mint a fresh counter per request, which is worse than no
+  per-IP limit at all because it reads as protection it does not provide. Derive
+  it instead from `x-vercel-forwarded-for`, then `x-real-ip`, then the
+  RIGHT-most `x-forwarded-for` entry — all written by our own proxy — and reject
+  anything that is not a well-formed address, so junk cannot buy its own bucket
+  (`services/gateway/client-ip.mjs`). With no proxy in front no header is
+  trustworthy and the value is `null`; the per-IP counter is then simply skipped.
+  Nothing security-critical may key off this value — the **per-email** limit is
+  what protects a given person's inbox.
 - Consumption failures (`expired`, `already used`, `unknown`) all return the
   same `400 invalid_token`. The user-facing copy says "this link is no longer
   valid — request a new one".

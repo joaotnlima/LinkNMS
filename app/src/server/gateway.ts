@@ -18,6 +18,9 @@ import { cookies } from 'next/headers';
 // `@services/*` path mapping (tsconfig.json) type them from source, so these
 // imports are checked rather than suppressed.
 import { getContainer } from '@services/gateway/container.mjs';
+// `[id]` ⇄ `projectId` aliasing plus the UUID shape check, shared with the
+// in-process transport in src/lib/api.ts so the two cannot diverge (LINA-79).
+import { normaliseParams } from '@services/gateway/params.mjs';
 import { SESSION_COOKIE, verifySession } from '@services/identity/session.mjs';
 import { getAnalytics } from '@services/composition.mjs';
 
@@ -67,22 +70,6 @@ async function readBody(req: Request): Promise<unknown> {
   }
 }
 
-// The Next segment under /projects is `[id]`, but the domain handlers name that
-// param `projectId` (Identity uses `id`). Expose BOTH, once, here.
-//
-// This was previously a `withProjectId` helper copy-pasted into each route file,
-// and getting it wrong does not fail loudly: the handler reads `undefined`,
-// asks Identity whether the party is a member of project `undefined`, and
-// returns a perfectly plausible 403. A read path that denies the actual owner is
-// exactly the kind of bug that survives review, so the rename happens in the one
-// place every route already funnels through and cannot be forgotten.
-function normaliseParams(params: Record<string, string>): Record<string, string> {
-  const out = { ...params };
-  if (out.id && !out.projectId) out.projectId = out.id;
-  if (out.projectId && !out.id) out.id = out.projectId;
-  return out;
-}
-
 function toResponse(result: HandlerResult): NextResponse {
   if (result.status === 304 || result.body === null || result.body === undefined) {
     return new NextResponse(null, { status: result.status, headers: result.headers });
@@ -108,7 +95,18 @@ export async function handle(
     const headers = Object.fromEntries(req.headers.entries());
     return toResponse(await handler({ session, params: normaliseParams(params), body, headers }));
   } catch (err) {
-    // A throw here is a wiring/config failure (e.g. a missing DATABASE_URL), not
+    // A typed `{ status, code }` throw is a client error the boundary itself
+    // raised — today only the malformed-identifier 400 from normaliseParams
+    // (LINA-79). Matched structurally, the same way every services/*/http.mjs
+    // adapter does it, so it stays a 4xx instead of being logged as an outage.
+    const e = err as { status?: number; code?: string; message?: string };
+    if (typeof e?.status === 'number' && typeof e?.code === 'string' && e.status < 500) {
+      return NextResponse.json(
+        { error: { code: e.code, message: e.message ?? 'bad request' } },
+        { status: e.status },
+      );
+    }
+    // Anything else is a wiring/config failure (e.g. a missing DATABASE_URL), not
     // a domain error — the service handlers map those themselves. Log it for the
     // server operator; return nothing that could leak connection detail.
     console.error('[api] unhandled route failure', err);

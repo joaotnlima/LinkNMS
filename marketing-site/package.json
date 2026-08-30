@@ -27,8 +27,7 @@
     "posthog-js": "^1.420.0",
     "posthog-node": "^5.51.2",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "resend": "^4.5.1"
+    "react-dom": "^19.1.0"
   },
   "overrides": {
     "postcss": "^8.5.26",

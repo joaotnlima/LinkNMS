@@ -1,5 +1,11 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
+
+const siteDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.join(siteDir, '..');
 
 // PostHog key (LINA-63). Vercel refuses to store a `NEXT_PUBLIC_*` var as a
 // "sensitive" secret — by definition those are public — so the value is
@@ -29,9 +35,21 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+
   env: {
     NEXT_PUBLIC_POSTHOG_KEY: posthogKey
-  }
+  },
+
+  // The waitlist route sends through the shared transactional-email sender at
+  // `<repo>/services/email/sender.mjs` (ADR-0007 §5, adopted in LINA-79), which
+  // lives OUTSIDE this Next root. Next must trace from the repo root or the
+  // serverless function ships without it. Same arrangement as app/next.config.ts.
+  //
+  // ⚠️ DEPLOY: the Vercel project has Root Directory = `marketing-site`. This
+  // setting only covers the build; the project ALSO needs "Include source files
+  // outside of the Root Directory in the Build Step" enabled, or `../services`
+  // is never uploaded. That is an Architect-owned project setting.
+  outputFileTracingRoot: repoRoot
 };
 
 export default withNextIntl(nextConfig);
