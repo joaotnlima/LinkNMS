@@ -6,10 +6,8 @@ import { track } from '@/lib/analytics-client';
 /**
  * `section_view` — the replacement for `scroll_depth` (event map v2 §3.3).
  *
- * With a pinned 300vh section, "scrolled 50% of the page" stops meaning
- * "read half the page", so reading progress is measured per section instead:
- * a section counts as viewed when it is ≥50% in the viewport for ≥1s, once per
- * section per pageview.
+ * Reading progress is measured per section: a section counts as viewed when it
+ * is ≥50% in the viewport for ≥1s, once per section per pageview.
  *
  * One observer for the whole page, mounted once. It reads the section list off
  * the DOM rather than taking it as a prop so adding a section cannot silently
@@ -24,7 +22,6 @@ const SECTIONS: { id: string; slug: string }[] = [
   { id: 'top', slug: 'hero' },
   { id: 'the-argument', slug: 's01_argument' },
   { id: 'the-record', slug: 's02_record' },
-  { id: 'the-sequence', slug: 's02_sequence' },
   { id: 'getting-the-plan-in', slug: 's03_plan_in' },
   { id: 'materials-and-money', slug: 's04_materials' },
   { id: 'who-it-is-for', slug: 's05_who_for' },

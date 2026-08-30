@@ -10,17 +10,15 @@ import { NavLink, type NavTarget } from './NavLink';
 
 /*
  * ─────────────────────────────────────────────────────────────────────────────
- * THIS ELEMENT MUST STAY A SIBLING OF THE PINNED SECTION, NEVER A DESCENDANT.
+ * THIS ELEMENT MUST STAY A SIBLING OF THE SECTIONS, NEVER A DESCENDANT.
  *
- * GSAP's ScrollTrigger `pin: true` wraps the pinned section in a `pin-spacer`
- * and may apply a transform to it. A `position: fixed` element inside a
- * transformed ancestor is positioned against that ancestor instead of the
- * viewport — the header would visibly detach and scroll away with the section.
- * Render <LandingHeader /> at page level, above <main>, and nowhere else.
- *
- * Space for the header is reserved by the *content layer inside* the pinned
- * stage (`padding-top: var(--header-h)` in .lp-sequence__content), not on the
- * section box and not via ScrollTrigger's `pinnedContainer`.
+ * The header is `position: fixed`. It must not live inside a transformed
+ * ancestor (the old pinned ScrollSequence used a ScrollTrigger `pin-spacer`,
+ * which applies a transform) or one with a containing block — either way a
+ * `position: fixed` element is positioned against that ancestor instead of the
+ * viewport and visibly detaches from the page. Render <LandingHeader /> at
+ * page level, above <main>, and nowhere else. Today that means simply: it is
+ * never a child of a section.
  * See LINA-82 `landing-redesign-technical-plan`, decision D1.
  * ─────────────────────────────────────────────────────────────────────────────
  */

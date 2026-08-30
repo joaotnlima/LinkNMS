@@ -5,7 +5,7 @@
 // fallback, never upscaled past the native 1402w. Stage-2 is the banding probe:
 // if q50 bands in the sky gradient, prefer q55 (still fits the ≤900 KB budget).
 //
-// Naming matches what ScrollSequence.tsx's <picture> and hasLandingImage() expect:
+// Naming matches what ScrollReel.tsx's <picture> and hasLandingImage() expect:
 //   {slug}-1400.{avif,webp}, {slug}-700.{avif,webp}
 
 import sharp from 'sharp';
