@@ -68,8 +68,17 @@ function mutableClock(startMs) {
 const BASE = 'https://app.linknms.com';
 const START = Date.parse('2026-08-29T12:00:00.000Z');
 
+// Every address these tests exercise holds a seat by default (ADR-0008), so the
+// pre-existing suite keeps asserting what it was written to assert — the seat
+// gate is a NEW axis, covered on its own below, not a confound in these cases.
+const SEATED = [
+  'dana@example.com', 'known@example.com', 'stranger@example.com', 'fresh@example.com',
+  // the per-IP rate-limit case fans out over distinct seated addresses
+  'u0@example.com', 'u1@example.com', 'u2@example.com', 'u3@example.com', 'u4@example.com',
+];
+
 function build(overrides = {}) {
-  const store = overrides.store ?? createMemorySignInStore();
+  const store = overrides.store ?? createMemorySignInStore({ seats: overrides.seats ?? SEATED });
   const parties = overrides.parties ?? fakeParties();
   const sender = overrides.sender ?? fakeSender();
   const ids = overrides.ids ?? recordingIds();
@@ -214,5 +223,83 @@ describe('sign-in — redirect safety', () => {
     // A hostile next is dropped, not embedded.
     const link = buildLink(BASE, 'RAW', 'https://evil.com');
     assert.match(link, /\/auth\/callback\?token=RAW$/);
+  });
+});
+
+// ── The seat gate (LINA-75; ADR-0008) ────────────────────────────────────────
+// These are the tests that stop `RESEND_API_KEY` on production from meaning
+// "anybody on the internet may create a party". The property under test is not
+// "unseated users get an error" — it is that they get NOTHING, and that the
+// nothing is externally identical to success.
+describe('sign-in — seat gate (ADR-0008)', () => {
+  test('an unseated address mints no token and sends no email', async () => {
+    const { svc, sender, store } = build({ seats: ['seated@example.com'] });
+
+    await svc.request({ email: 'nobody@example.com', baseUrl: BASE });
+
+    assert.equal(sender.sent.length, 0, 'no email to an address with no seat');
+    // Nothing was written either: the rate-limit counter is our proxy for "a row
+    // exists", and it must still be zero.
+    assert.equal(
+      await store.countRecentByEmail('nobody@example.com', new Date(0).toISOString()),
+      0,
+      'no sign-in token row is minted for an unseated address',
+    );
+  });
+
+  test('a seated address still goes through unchanged', async () => {
+    const { svc, sender } = build({ seats: ['seated@example.com'] });
+    await svc.request({ email: 'seated@example.com', baseUrl: BASE });
+    assert.equal(sender.sent.length, 1);
+    assert.equal(sender.sent[0].to, 'seated@example.com');
+  });
+
+  test('seated and unseated are indistinguishable to the caller — both resolve, neither throws', async () => {
+    // THE anti-oracle property. If declining a seat threw (or returned a
+    // different shape), /request would answer differently for a seated address
+    // than an unseated one and become a "does this person have access" probe.
+    const { svc } = build({ seats: ['seated@example.com'] });
+    const seated = await svc.request({ email: 'seated@example.com', baseUrl: BASE });
+    const unseated = await svc.request({ email: 'nobody@example.com', baseUrl: BASE });
+    assert.deepEqual(seated, unseated, 'both resolve to the same (undefined) value');
+  });
+
+  test('the gate is case- and whitespace-insensitive, matching normalizeEmail', async () => {
+    // A seat granted for `ana@x.com` must not be walked around — nor missed — by
+    // typing `  Ana@X.com `. Both sides lower-case, so this is one seat.
+    const { svc, sender } = build({ seats: ['ana@example.com'] });
+    await svc.request({ email: '  Ana@Example.COM  ', baseUrl: BASE });
+    assert.equal(sender.sent.length, 1, 'the seat matches regardless of case/whitespace');
+    assert.equal(sender.sent[0].to, 'ana@example.com');
+  });
+
+  test('the unconfigured-email 503 still precedes the gate — no seat probe on a broken deploy', async () => {
+    const { svc } = build({ sender: fakeSender({ configured: false }), seats: [] });
+    await assert.rejects(
+      () => svc.request({ email: 'nobody@example.com', baseUrl: BASE }),
+      (e) => e.status === 503 && e.code === 'email_unconfigured',
+    );
+  });
+
+  test('a store with no seat gate refuses to construct rather than running open', async () => {
+    // Defence in depth: losing the allowlist must be a boot failure, never a
+    // silently open front door.
+    const gateless = createMemorySignInStore();
+    delete gateless.hasActiveSeat;
+    assert.throws(
+      () => createSignInService({ store: gateless, parties: fakeParties() }),
+      /hasActiveSeat/,
+    );
+  });
+
+  test('a seat authorises the door, not a role — consume still creates a plain party', async () => {
+    // A seat says "you may sign in". It must NOT be a backdoor way to hand
+    // somebody project authority; authorisation stays per-project membership
+    // (ADR-0004).
+    const { svc, parties, ids } = build({ seats: ['seated@example.com'] });
+    await svc.request({ email: 'seated@example.com', baseUrl: BASE });
+    const { party } = await svc.consume({ token: ids.tokens.at(-1) });
+    assert.equal(party.email, 'seated@example.com');
+    assert.equal(party.role, 'contractor', 'default party role is unchanged by seating');
   });
 });
