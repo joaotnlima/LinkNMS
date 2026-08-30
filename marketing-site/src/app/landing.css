@@ -47,11 +47,14 @@
   --plan-closed-fg: #1f5b41;
   --plan-closed-line: #b5d6c4;
 
-  /* Header height. Read by the pinned stage's content layer to reserve space
-     (technical plan D1) — never by ScrollTrigger. */
+  /* Header height. Read by LandingHeader for the scrolled state's geometry. */
   --header-h: 82px;
   --lp-gutter: clamp(20px, 4.4vw, 64px);
   --lp-maxw: 1312px;
+
+  /* Vertical rhythm inside a content section: label bar → row → reel → gantt.
+     Matches the pen's 66px section gap (70 for The Argument). */
+  --lp-sec-gap: clamp(28px, 4.6vw, 66px);
 }
 
 :root:has(.lp-header[data-stuck='true']) {
@@ -95,8 +98,8 @@
 .lp-labelbar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding-block: 28px;
+  gap: 20px;
+  padding-block: 0;
 }
 .lp-labelbar .rule {
   flex: 1 1 auto;
@@ -115,11 +118,26 @@
 }
 
 .lp-section {
-  padding-block: clamp(64px, 8vw, 112px);
+  padding-block: clamp(56px, 8vw, 110px);
 }
 .lp-section--dark {
   background: var(--lp-ink);
   color: var(--lp-cream);
+}
+
+/* Content sections stack their blocks (label bar, rows, the reel, the gantt)
+   with the pen's section gap. Deliberately scoped — the CTA has its own grid. */
+.lp-argument .lp-wrap,
+.lp-record .lp-wrap,
+.lp-planin .lp-wrap,
+.lp-materials .lp-wrap,
+.lp-who .lp-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lp-sec-gap);
+}
+.lp-argument .lp-wrap {
+  --lp-sec-gap: clamp(28px, 4.9vw, 70px);
 }
 
 /* Dashed rule (hero info card) — 8px dashes, 1px, 60% cream. */
@@ -481,12 +499,13 @@
 .lp-argument__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: clamp(32px, 5vw, 72px);
+  gap: clamp(24px, 4.6vw, 70px);
   align-items: start;
 }
 @media (min-width: 940px) {
   .lp-argument__row {
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+    gap: 88px;
   }
 }
 .lp-argument h2 {
@@ -537,12 +556,13 @@
 .lp-record__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: clamp(28px, 4vw, 64px);
+  gap: clamp(28px, 4.4vw, 66px);
   align-items: end;
 }
 @media (min-width: 940px) {
   .lp-record__row {
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.22fr) minmax(0, 1fr);
+    gap: 88px;
   }
 }
 .lp-record__encoding {
@@ -560,23 +580,46 @@
 .lp-record__encoding .closed {
   color: var(--plan-closed);
 }
+.lp-record__explainer {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 10px;
+}
 .lp-record__explainer p {
   font-size: clamp(15px, 1.35vw, 17px);
   line-height: 1.6;
   color: var(--lp-cream-60);
 }
 .lp-record__explainer .note {
-  margin-top: 14px;
+  margin-top: 0;
   color: var(--lp-cream);
+}
+/* Desktop explainer (copy + note) is the pen's Explainer column; the mobile
+   Body variant is the pen's `landing-page (mobile)` frame. Exactly one shows. */
+.lp-record__explainer .body--mobile {
+  display: none;
+}
+@media (max-width: 939px) {
+  .lp-record__explainer {
+    padding-top: 0;
+    gap: 14px;
+  }
+  .lp-record__explainer .copy,
+  .lp-record__explainer .note {
+    display: none;
+  }
+  .lp-record__explainer .body--mobile {
+    display: block;
+  }
 }
 
 /* Gantt */
 .lp-gantt {
-  margin-top: clamp(32px, 4vw, 56px);
   background: #fbfaf70a;
   border: 1px solid var(--lp-cream-hair);
-  border-radius: 14px;
-  padding: clamp(16px, 2vw, 24px);
+  border-radius: 6px;
+  padding: 22px 24px;
   overflow-x: auto;
 }
 .lp-gantt table {
@@ -593,13 +636,16 @@
 .lp-gantt th.months {
   padding: 0 0 14px;
 }
+.lp-gantt tbody tr {
+  border-block-start: 1px solid #fbfaf714;
+}
 .lp-gantt th.value,
 .lp-gantt td.value {
   text-align: right;
   white-space: nowrap;
 }
 .lp-gantt td {
-  padding-block: 10px;
+  padding-block: 9px;
   vertical-align: middle;
   font-size: 13px;
 }
@@ -620,12 +666,15 @@
   justify-content: space-between;
   color: var(--lp-cream-60);
 }
+/* The legend lives OUTSIDE the card, as a sibling after it (pen frame). The
+   reveal shell's 32px gap is the pen's 32 between items. */
 .lp-gantt__legend {
+  list-style: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 20px;
-  margin-top: 24px;
+  gap: 32px;
+  margin-top: 0;
   color: var(--lp-cream-60);
 }
 .lp-gantt__legend .swatch {
@@ -648,145 +697,219 @@
   overflow: visible;
 }
 
-/* ---------- The pinned scroll sequence ---------- */
+/* ---------- Scroll reveal shells (LINA-98) ----------
+   The server renders the FINAL state (photo up, bars closed); these rules only
+   matter once RevealOnScroll gets the animated render path. `is-animating`
+   hides the content (with no transition yet), `is-revealed` runs each
+   transition exactly once, per element. static path = no classes = final state. */
 
-.lp-sequence {
-  position: relative;
-  background: var(--lp-ink);
-  color: var(--lp-cream);
-  min-height: min(900px, 100svh);
+.lp-reveal--gantt {
   display: flex;
-  overflow: hidden;
+  flex-direction: column;
+  gap: 32px;
+  align-items: stretch;
 }
-/* Image layer is full-bleed and runs behind the translucent header — intended
-   (technical plan D1). Only the content layer is inset. */
-.lp-sequence__images {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background: var(--lp-ink);
-}
-.lp-sequence__stage {
-  position: absolute;
-  inset: 0;
+
+/* Reel card fade + stagger. `--d` is set inline per card. */
+.lp-reveal.is-animating .lp-reel__card {
   opacity: 0;
 }
-.lp-sequence__stage img {
+.lp-reveal.is-animating.is-revealed .lp-reel__card {
+  opacity: 1;
+  transition: opacity 0.5s ease var(--d);
+}
+
+/* Gantt bars: grow from the planned origin to the closed position. Each lane
+   carries --lane-x / --lane-y / --lane-w from PlanTrack; the attribute
+   transform stays the static-path source of truth. Origin is the viewbox's
+   left edge so a bar always grows from its start. */
+.lp-reveal--gantt [data-lane] {
+  transform-box: view-box;
+  transform-origin: 0 50%;
+}
+.lp-reveal--gantt.is-animating [data-lane] {
+  transform: translate(var(--lane-x) var(--lane-y)) scale(0.001, 1);
+}
+.lp-reveal--gantt.is-animating.is-revealed [data-lane] {
+  transform: translate(var(--lane-x) var(--lane-y)) scale(var(--lane-w) 1);
+  transition: transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) var(--delay);
+}
+.lp-reveal--gantt.is-animating.is-revealed [data-lane='actual'] {
+  transition-delay: calc(var(--delay) + 120ms);
+}
+/* Legend fades on its own stagger (--li set inline). */
+.lp-reveal--gantt.is-animating .lp-gantt__legend li {
+  opacity: 0;
+}
+.lp-reveal--gantt.is-animating.is-revealed .lp-gantt__legend li {
+  opacity: 1;
+  transition: opacity 0.5s ease var(--li);
+}
+
+/* ---------- The Scroll Reel (S3) ----------
+   A card holding four stage photos + p chips + captions — the founder's
+   "fade-in of the images with the scrolling". Shell padding/radius/fill/stroke
+   are the pen frame's exact values. */
+
+.lp-reel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 6px;
+  background: #fbfaf70a;
+  border: 1px solid #fbfaf71a;
+}
+.lp-reel__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+.lp-reel__index {
+  color: var(--lp-cream-40);
+}
+.lp-reel__title {
+  color: var(--lp-cream);
+  white-space: nowrap;
+}
+.lp-reel__head .rule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: #fbfaf71a;
+}
+
+.lp-reel__cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.lp-reel__card {
+  position: relative;
+  aspect-ratio: 32 / 22;
+  margin: 0;
+  border-radius: 8px;
+  background: #16181d;
+  overflow: hidden;
+}
+.lp-reel__img {
+  position: absolute;
+  inset: 0;
+}
+.lp-reel__img img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
 }
-/* Server-rendered default is p=1: stage-4 visible, the other three at 0.
-   JS winds this back to p=0; it never authors the empty state. */
-.lp-sequence__stage[data-visible='true'] {
-  opacity: 1;
-}
-.lp-sequence__scrim {
+.lp-reel__scrim {
   position: absolute;
-  inset: 0;
-  z-index: 1;
-  background: linear-gradient(180deg, #16181d00 0%, #16181dd9 55%, #16181df7 100%);
+  inset: auto 0 0;
+  height: 100px;
+  background: linear-gradient(180deg, #16181d00 0%, #16181dbf 62%, #16181df2 100%);
+  pointer-events: none;
 }
-.lp-sequence__content {
-  position: relative;
-  z-index: 2;
-  /* Fill the stage so the caption, bars and HUD sit on its bottom edge, which
-     is what the scrim is shaped for. */
-  flex: 1 1 auto;
+.lp-reel__chip {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: #16181de6;
+  color: var(--lp-cream);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.lp-reel__caption {
+  position: absolute;
+  bottom: 14px;
+  left: 16px;
+  right: 16px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  gap: clamp(20px, 3vw, 36px);
-  width: 100%;
-  /* Reserve the fixed header's space here — on the content layer inside the
-     stage, not on the section box and not via ScrollTrigger (plan D1). */
-  padding-top: calc(var(--header-h) + 24px);
-  padding-bottom: clamp(32px, 4vw, 56px);
+  gap: 4px;
 }
-/* The four captions and the three HUD readings are all server-rendered and
-   stacked; only the p=1 keyframe (KF D) is visible by default. <SequenceMotion />
-   swaps which one shows as p advances. Positioning the blocks absolutely keeps
-   the caption area's height stable so a swap never nudges the bars below. */
-.lp-sequence__caption {
-  position: relative;
-  min-height: clamp(78px, 11vh, 110px);
+.lp-reel__stage {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lp-cream);
 }
-.lp-sequence__caption-block {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
+.lp-reel__note {
+  font-size: 10px;
+  color: var(--lp-cream-60);
 }
-.lp-sequence__caption-block[data-visible='false'],
-.lp-hud__cell .value [data-kf][data-visible='false'] {
+
+/* Mobile variants (pen `landing-page (mobile)` frame). Desktop copy elements
+   stay in the DOM and are simply hidden; exactly one variant renders. */
+.lp-reel__index--mobile,
+.lp-reel__title--mobile,
+.lp-reel__note--mobile {
   display: none;
 }
-.lp-sequence__caption .micro {
-  color: var(--lp-cream);
+.lp-reel__scroll-note {
+  display: none;
+  max-width: 60ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--lp-cream-60);
 }
-.lp-sequence__caption .line {
-  margin-top: 10px;
-  font-size: clamp(20px, 2.6vw, 34px);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-.lp-sequence__panels {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: clamp(24px, 3vw, 48px);
-  align-items: end;
-}
-@media (min-width: 900px) {
-  .lp-sequence__panels {
-    grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+@media (max-width: 939px) {
+  .lp-reel {
+    gap: 10px;
+    padding: 14px 12px;
   }
-}
-.lp-bars__head {
-  color: var(--lp-cream-60);
-  margin-bottom: 12px;
-}
-.lp-bars__row {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 12px;
-}
-.lp-bars__row .name {
-  font-size: 12px;
-  color: var(--lp-cream-60);
-}
-.lp-bars__row[data-closed='true'] .name {
-  color: var(--lp-cream);
-}
-.lp-hud {
-  display: flex;
-  flex-wrap: wrap;
-  gap: clamp(24px, 4vw, 56px);
-}
-.lp-hud__cell .label {
-  /* Design specifies 40% cream here; raised to 60% because 40% cream over the
-     scrim measures ~4.0:1 and these three labels are not decorative.
-     Flagged on LINA-83 for the contrast audit. */
-  color: var(--lp-cream-60);
-}
-.lp-hud__cell .value {
-  margin-top: 8px;
-  font-family: var(--lp-display, inherit);
-  font-weight: 800;
-  font-size: clamp(22px, 2.4vw, 32px);
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-}
-.lp-hud[data-tone='baseline'] .value {
-  color: var(--plan-baseline);
-}
-.lp-hud[data-tone='actual'] .value {
-  color: var(--plan-actual);
-}
-.lp-hud[data-tone='closed'] .value {
-  color: var(--plan-closed);
+  .lp-reel__head {
+    gap: 10px;
+    font-size: 9px;
+    letter-spacing: 0.11em;
+  }
+  .lp-reel__index--desktop,
+  .lp-reel__title--desktop,
+  .lp-reel__note--desktop {
+    display: none;
+  }
+  .lp-reel__index--mobile,
+  .lp-reel__title--mobile,
+  .lp-reel__note--mobile {
+    display: inline;
+  }
+  .lp-reel__cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .lp-reel__scrim {
+    height: 50px;
+    background: linear-gradient(180deg, #16181d00 0%, #16181dbf 60%, #16181df2 100%);
+  }
+  .lp-reel__chip {
+    top: 8px;
+    left: 8px;
+    padding: 5px 8px;
+    font-size: 8px;
+    letter-spacing: 0.11em;
+  }
+  .lp-reel__caption {
+    bottom: 10px;
+    left: 12px;
+    right: 12px;
+    gap: 2px;
+  }
+  .lp-reel__stage {
+    font-size: 11px;
+  }
+  .lp-reel__note {
+    font-size: 8px;
+  }
+  .lp-reel__scroll-note {
+    display: block;
+  }
 }
 
 /* ---------- 03 Getting The Plan In ---------- */
@@ -794,12 +917,13 @@
 .lp-planin__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: clamp(32px, 4vw, 64px);
+  gap: clamp(28px, 4vw, 64px);
   align-items: start;
 }
 @media (min-width: 1000px) {
   .lp-planin__row {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2.05fr);
+    gap: 80px;
   }
 }
 .lp-planin h2 {
@@ -942,12 +1066,13 @@
 .lp-materials__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: clamp(32px, 4vw, 64px);
+  gap: clamp(28px, 4vw, 64px);
   align-items: start;
 }
 @media (min-width: 1000px) {
   .lp-materials__row {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.13fr);
+    gap: 80px;
   }
 }
 .lp-materials h2 {
@@ -1179,6 +1304,33 @@
   overflow: hidden;
   padding-block: clamp(72px, 9vw, 128px);
 }
+.lp-cta__photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  /* Ink ground while the lazy photo loads and as the no-JS/save-data fallback. */
+  background: var(--lp-ink);
+}
+.lp-cta__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* The pen's `CTA Scrim` — base flat ink over the photo, then a top-darkening
+   linear scrim. Match S7 CTA (desktop 1440): darkest at the top, where the
+   kicker / headline / sub / form sit. The ghost wordmark and content layer
+   paint above it. */
+.lp-cta__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background-color: #16181da6;
+  background-image: linear-gradient(180deg, #16181df2 0%, #16181dd9 48%, #16181d26 100%);
+  pointer-events: none;
+}
 .lp-cta__ghost {
   position: absolute;
   left: 50%;
@@ -1192,11 +1344,11 @@
   pointer-events: none;
   user-select: none;
   white-space: nowrap;
-  z-index: 0;
+  z-index: 2;
 }
 .lp-cta__inner {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: clamp(32px, 5vw, 72px);
@@ -1205,6 +1357,14 @@
 @media (min-width: 980px) {
   .lp-cta__inner {
     grid-template-columns: minmax(0, 1fr) 300px;
+  }
+}
+/* S7 CTA (mobile 390): the scrim runs the other way — darkest at the bottom,
+   lighter over the copy up top. Base flat ink differs too. */
+@media (max-width: 979px) {
+  .lp-cta__scrim {
+    background-color: #16181db3;
+    background-image: linear-gradient(180deg, #16181d99 0%, #16181deb 45%, #16181dfa 100%);
   }
 }
 .lp-cta h2 {
@@ -1218,9 +1378,14 @@
   color: var(--lp-cream-60);
   max-width: 54ch;
 }
+/* The pen draws this note at `$lp-cream-40`, which lands at ~3.7:1 over the
+   ink/scrim ground — below the 4.5:1 bar acceptance requires for S7 text. The
+   scrim cannot lift it (ink is already the darkest possible backing), so this
+   note is bumped to cream-60 to meet AA. Deviation from the pen's exact hex,
+   flagged for reviewer sign-off (LINA-100). */
 .lp-cta__note {
   margin-top: 16px;
-  color: var(--lp-cream-40);
+  color: var(--lp-cream-60);
 }
 
 /* Waitlist form, CTA variant: inline email + button on the dark section. */
@@ -1245,7 +1410,10 @@
 .lp-form select {
   width: 100%;
   background: #fbfaf714;
-  border: 1px solid var(--lp-cream-hair);
+  /* The pen's ~`$lp-cream-hair` stroke is only ~1.4:1 over the photo ground —
+     below the 3:1 non-text bar. Bumped to cream-40 so the field boundary stays
+     visible over the photographic CTA background (LINA-100, flagged deviation). */
+  border: 1px solid var(--lp-cream-40);
   border-radius: 999px;
   color: var(--lp-cream);
   font: inherit;
@@ -1257,7 +1425,9 @@
   color: #16181d;
 }
 .lp-form input::placeholder {
-  color: var(--lp-cream-40);
+  /* Pen placeholder is `$lp-cream-40`, ~3.7:1 — same AA fail as the note.
+     Bumped to cream-60 for the same reason (LINA-100, flagged deviation). */
+  color: var(--lp-cream-60);
 }
 .lp-form input:focus,
 .lp-form select:focus {

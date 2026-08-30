@@ -3,14 +3,18 @@
 import { ANIMATION_ENABLED } from './landing-flags';
 
 /**
- * The fallback guard for the pinned scroll sequence, and the analytics answer
- * to "which experience was actually served?" (`landing-event-map-v2` §2).
+ * The fallback guard for the landing reveals (reel fade-in, gantt bars), and
+ * the analytics answer to "which experience was actually served?"
+ * (`landing-event-map-v2` §2).
  *
- * This module is the ONLY place the guard is expressed. The animation must call
- * `resolveRenderPath()` and return early on `static` **before** it `await
- * import()`s gsap / ScrollTrigger / Lenis — the acceptance criterion is zero
- * extra bytes on the reduced path, so a top-level import (or `next/dynamic` on
- * a component that renders unconditionally) fails it on every phone.
+ * This module is the ONLY place the guard is expressed. The reveal components
+ * must call `resolveRenderPath()` and return early on `static` **before** they
+ * touch any animation state — the acceptance criterion is zero extra work on
+ * the reduced path, so the wind-back and observer never even mount.
+ *
+ * The default HTML is always the FINAL state: no-JS, reduced-motion, save-data
+ * and small-viewport visitors see the finished reel and closed bars, exactly
+ * the information the pen shows.
  *
  * Nothing in here imports an animation library, which is what makes it safe to
  * evaluate on every page load.
@@ -56,16 +60,16 @@ export function resolveRenderPath(): { renderPath: RenderPath; staticReason: Sta
     }
   } catch {
     // A guard that throws must fail closed to the static path — the server
-    // already rendered the informative state, so there is nothing to lose.
+    // already rendered the final state, so there is nothing to lose.
     return { renderPath: 'static', staticReason: 'error' };
   }
 
   if (!ANIMATION_ENABLED) {
     // The guard would have allowed the animation, but the animation is not
-    // built yet (LINA-83 blocker (a): the stage assets are not in the repo).
-    // Reporting `animated` here would fabricate the exact comparison
-    // `render_path` exists to make, so we report the truth and carry a reason
-    // the event map does not have a value for yet — flagged to Analytics.
+    // built yet. Reporting `animated` here would fabricate the exact
+    // comparison `render_path` exists to make, so we report the truth and
+    // carry a reason the event map does not have a value for yet — flagged to
+    // Analytics.
     return { renderPath: 'static', staticReason: 'not_implemented' };
   }
 

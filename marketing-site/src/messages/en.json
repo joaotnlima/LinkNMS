@@ -285,8 +285,9 @@
       "agreed": "Blue is what you agreed.",
       "changed": "Orange is what changed.",
       "closed": "Green is what closed.",
-      "explainer": "The scroll advances the build images while the chart tracks the contract. Blue stays fixed, orange marks drift, green closes the row.",
-      "note": "Image + chart, not a slideshow",
+      "explainer": "The scroll advances the build images while the gant tracks the contract. Blue stays fixed, orange marks drift, green closes the row.",
+      "explainerMobile": "One timeline holds all three states at once. The images advance with the scroll, the baseline stays blue, the change comes in orange, and closed work turns green.",
+      "note": "Image + gantt, not a slideshow",
       "tableCaption": "Work packages against the agreed baseline, with the value of each.",
       "colPackage": "Work package",
       "colValue": "Value",
@@ -313,47 +314,28 @@
         "actual": "Moved · signed change",
         "closed": "Closed · both readings kept",
         "audit": "Every bar carries who moved it, when, and why"
+      },
+      "reel": {
+        "index": "03",
+        "indexMobile": "02.1",
+        "title": "Scroll build  ·  Image + gantt",
+        "titleMobile": "Scroll build · Mobile",
+        "note": "The image and the chart move together.",
+        "noteMobile": "Moves with the gant.",
+        "labels": {
+          "1": "Design",
+          "2": "Structure",
+          "3": "Finish",
+          "4": "Built"
+        },
+        "alt": {
+          "1": "Design stage: the house at its first drawing.",
+          "2": "Structure stage: the frame is up.",
+          "3": "Finish stage: the roof and envelope are closed.",
+          "4": "Built stage: the finished house."
+        },
+        "scrollNote": "The construction advances in images while the gant closes from blue to orange to green."
       }
-    },
-    "sequence": {
-      "label": "The drawing becomes the house",
-      "barsHead": "Planned · Actual",
-      "rows": {
-        "foundations": "Foundations",
-        "structure": "Structure",
-        "envelope": "Envelope",
-        "finishes": "Finishes"
-      },
-      "captions": {
-        "A": {
-          "micro": "p 0.00 → 0.15 · The lines draw themselves",
-          "line": "At the start, it's only a drawing."
-        },
-        "B": {
-          "micro": "p 0.15 → 0.40 · Foundations and structure close",
-          "line": "Every agreement raises a wall."
-        },
-        "C": {
-          "micro": "p 0.40 → 0.70 · The slip appears and resolves",
-          "line": "Things change. It gets recorded."
-        },
-        "D": {
-          "micro": "p 0.70 → 1.00 · Everything closes",
-          "line": "The house. On time, on budget, on scope."
-        }
-      },
-  "hud": {
-   "time": "Time",
-   "timeValue": "0 days slipped",
-   "cost": "Cost",
-   "scope": "Scope",
-   "scopeValue": "100%",
-   "readings": {
-    "B": { "time": "8 months", "scope": "100%" },
-    "C": { "time": "+ 9 days", "scope": "98%" },
-    "D": { "time": "0 days slipped", "scope": "100%" }
-   }
-  }
     },
     "planIn": {
       "label": "Getting the plan in",
