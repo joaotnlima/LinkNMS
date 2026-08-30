@@ -39,16 +39,48 @@ If any of these can silently break, LinkNMS has no reason to exist:
    its proposer, and an owner-proposed CO cannot be self-approved by the owner.
    Every approval is attributed and timestamped.
 
-## Graduating the gate to live data (blocked on LINA-56)
+## Live-data gate (graduated — LINA-64)
 
-The checker reads a JSON document. Today that's a static fixture; next it's a
-live export from the real API. The remaining work is tracked as a follow-up and
-is gated on **LINA-56** (mount the domain HTTP surface) — there is no endpoint
-to export from until it merges.
+The checker reads a JSON document. It now runs against **two** of them on every
+PR:
 
-**Known field-name delta.** The fixture predates the real schema, so an export
-cannot be fed to the checker unchanged. Verified against
-`services/change_order/migrations/*.sql` on `main`:
+- the **static fixture** — proves the checker catches tampering
+  (`quality-gate.yml`, via `run_gate.py`);
+- a **live export** — proves the *real system* upholds the invariants. The
+  `gateway-integration` job in `ci.yml` seeds the golden homeowner+GC build
+  through the mounted HTTP surface (LINA-56) over Postgres and reads it back,
+  then points the checker at the export **and** the fixture.
+
+The exporter is `services/gateway/export-live-record.mjs`. It drives the same
+composition-root handlers the Next routes call, so what the gate checks is the
+deployed path, not a rehearsal of it. Run it locally against a throwaway,
+already-migrated database:
+
+```bash
+cd services
+DATABASE_URL=postgres://…  node gateway/export-live-record.mjs /tmp/live.json
+python3 ../qa/checks/audit_budget_invariants.py /tmp/live.json
+```
+
+**Budget math is the load-bearing assertion.** The export's `expected` block is
+sourced from the live **ledger status endpoint**, and the checker independently
+re-sums the approved deltas from the exported change orders — so any drift
+between the change-order projection and the authoritative ledger total fails the
+build. Segregation of duties is, on live data, defence-in-depth (the DB already
+enforces it via the `decided_by_is_not_proposer` CHECK); append-only history and
+budget math are where this gate uniquely earns its keep.
+
+**R0 shape note.** The shared record is bilateral — one owner and exactly one
+counterparty (`inviteCounterparty` 409s a second). The live export therefore
+seeds every change order as proposed by the GC and decided by the homeowner;
+this still exercises the full delta set (approved / proposed / rejected) and
+keeps proposer ≠ decider. The static fixture keeps its four illustrative parties.
+
+**Field-name normalisation.** The fixture predates the real schema, so a live
+export cannot be fed to the checker unchanged. The exporter is the normaliser:
+it maps the live API's field names to the checker's canonical (fixture) names.
+**Do not** rename the fixture — `run_gate.py`'s tamper mutators key off its field
+names. Verified against `services/change_order/migrations/*.sql` on `main`:
 
 | Fixture field | Real column (`change_order.change_order`) |
 |---|---|
@@ -57,20 +89,16 @@ cannot be fed to the checker unchanged. Verified against
 | `decided_by_party_id` | `decided_by_party_id` *(matches)* |
 | `status` | `status` *(matches — `proposed`/`approved`/`rejected`)* |
 
-Note the DB already enforces segregation of duties itself via the
-`decided_by_is_not_proposer` CHECK constraint — so on live data that invariant
-becomes a *defence-in-depth* assertion rather than the only guard. The budget
-and append-only-history invariants remain the checker's unique contribution.
+The exporter also normalises the live API's camelCase (`costDeltaCents`,
+`proposedBy`, `decidedBy`, `baselineBudgetCents`, revision `authorPartyId`) onto
+these same canonical names.
 
-To graduate:
+### Still to layer on (follow-up)
 
-1. Add an API/CLI step that seeds the golden build and exports the shape above,
-   normalising the field names in the table (either in the exporter or behind a
-   small adapter in the checker — **do not** silently rename the fixture, the
-   tamper mutators in `run_gate.py` key off its field names).
-2. Point the checker at the export **in addition to** the static fixture — now
-   the gate proves the *real system* upholds the invariants, not just the seed.
-3. Layer the fuller suite from the test strategy (e2e critical flows,
-   permission matrix, immutability snapshot tests) on top.
+The fuller suite from the LINA-21 test strategy — e2e critical flows across the
+UI, the multi-party permission matrix, and immutability snapshot tests — sits on
+top of this gate and is tracked separately. The live invariant export closes the
+budget-math + append-only-history graduation; the broader flow coverage is the
+next increment.
 
 See the **LinkNMS Test Strategy** document on LINA-21 for the full plan.
