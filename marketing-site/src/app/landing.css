@@ -24,9 +24,16 @@
   --lp-ink-40: #16181d66;
   --lp-ink-hair: #16181d26;
 
-  /* Plan semantics. Same hexes as the product's --owner / --builder / --success;
-     the rename is semantic, not chromatic (spec §4). The bars and HUD read
-     these and never a literal colour. */
+  /* Plan semantics. --plan-baseline / --plan-actual are the same hexes as the
+     brandbook's --owner / --builder: the rename is semantic, not chromatic —
+     these name a commitment state where --owner/--builder name a party (LINA-80).
+
+     Verified against design-system/tokens.json after the LINA-86 identity
+     re-base. --plan-closed (#2f7d5b) is NOT yet the brandbook's --success
+     (#2e7d54); that last hex is re-based with the web-app palette, which the
+     founder has deferred. Do not assume parity on the green until then.
+
+     The bars and HUD read these and never a literal colour. */
   --plan-baseline: #3e5c8a;
   --plan-baseline-muted: #dce3ee;
   --plan-baseline-fg: #2e4a72;
