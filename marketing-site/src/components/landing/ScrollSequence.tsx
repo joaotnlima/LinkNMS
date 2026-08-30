@@ -76,11 +76,13 @@ export async function ScrollSequence({ locale }: { locale: string }) {
                     width={SEQUENCE_IMAGE_WIDTH}
                     height={SEQUENCE_IMAGE_HEIGHT}
                     decoding="async"
-                    // The stage the server renders is the one that must be on
-                    // screen immediately; the other three are only needed once
-                    // the animation runs.
-                    loading={visible ? 'eager' : 'lazy'}
-                    {...(visible ? { fetchPriority: 'high' as const } : {})}
+                    // Every stage is below the fold at page load — the sequence
+                    // is the fourth section — so none of them earn an eager,
+                    // high-priority fetch that would delay first meaningful
+                    // paint. Stage 4 (the server-visible p=1 frame) loads lazily
+                    // like the rest; a no-JS or reduced-motion visitor reaches it
+                    // after scrolling into the section regardless (LINA-89 perf).
+                    loading="lazy"
                   />
                 </picture>
               )}
