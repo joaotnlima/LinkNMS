@@ -27,7 +27,7 @@
 // service handlers (ADR-0004), not in the Next route files — so the in-process
 // path is not a privilege shortcut. The acting party comes from the signed
 // session cookie and nothing else.
-import { cookies } from 'next/headers';
+import { cookies, headers as requestHeaders } from 'next/headers';
 
 import { getContainer } from '@services/gateway/container.mjs';
 import { normaliseParams } from '@services/gateway/params.mjs';
@@ -186,7 +186,22 @@ async function call<T>(op: OpName, params: Params = {}, body?: unknown): Promise
     // the worst possible sampling bias. Analytics is best-effort by contract —
     // a flush problem must never become a render failure on the record itself.
     try {
-      result = await route.handler(getContainer())({ session: s, params: p, body, headers: {} });
+      // Real request headers, not `{}` (LINA-84). The invite handler builds the
+      // emailed accept link from the forwarded host/proto, so an empty bag here
+      // would mail every GC a `localhost:3000` link on the exact path real users
+      // take. gateway.ts already forwards them for the /api/v1 routes; the
+      // in-process transport bypasses that file, so it must do the same.
+      //
+      // `p`, not a second withAliases(params): LINA-79 hoisted the aliasing and
+      // the malformed-identifier check above the transport split so both paths
+      // answer a bad id identically. Re-deriving it here would validate twice
+      // and leave a second call site to drift.
+      result = await route.handler(getContainer())({
+        session: s,
+        params: p,
+        body,
+        headers: Object.fromEntries((await requestHeaders()).entries()),
+      });
     } finally {
       try {
         await getAnalytics().flush();
@@ -316,11 +331,22 @@ export async function createProject(input: { name: string; baselineBudgetCents: 
  * never persisted — the caller must show it to the inviter immediately, and it
  * must never be logged or written to analytics.
  */
-export async function inviteCounterparty(projectId: string): Promise<{ token: string }> {
-  const res = await call<{ token: string; invitation: { id: string } }>(
-    'inviteCounterparty', { id: projectId }, { role: 'counterparty' },
+/**
+ * Invite the one GC. `email` is optional (LINA-84): supplied, the server mails
+ * the accept link and reports `emailed`; omitted, nothing is sent. The raw
+ * single-use token comes back either way, so the owner always has a link to
+ * hand over even when delivery fails.
+ */
+export async function inviteCounterparty(
+  projectId: string,
+  email?: string,
+): Promise<{ token: string; emailed: boolean }> {
+  const res = await call<{ token: string; emailed?: boolean; invitation: { id: string } }>(
+    'inviteCounterparty',
+    { id: projectId },
+    { role: 'counterparty', ...(email ? { email } : {}) },
   );
-  return { token: res.token };
+  return { token: res.token, emailed: res.emailed === true };
 }
 
 export async function acceptInvitation(token: string): Promise<{ projectId: string }> {

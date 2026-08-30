@@ -32,6 +32,20 @@ function errorBody(err) {
 
 const actorOf = (session) => session?.partyId ?? null;
 
+// The public origin the invitation link is built against (LINA-84). Derived from
+// the ENV override or the request's forwarded headers — NEVER from the request
+// body. A body-supplied origin would let any authenticated owner mint an invite
+// email, sent from our domain, whose "Accept" button points at a host they chose:
+// a credential-phishing primitive wearing our brand. Same precedence as the
+// sign-in route (app/src/app/api/v1/sessions/request/route.ts).
+function originOf(headers = {}, env = process.env) {
+  if (env.APP_BASE_URL) return env.APP_BASE_URL.replace(/\/+$/, '');
+  const h = (k) => headers?.[k] ?? headers?.[k.toLowerCase()] ?? null;
+  const proto = h('x-forwarded-proto') ?? 'https';
+  const host = h('x-forwarded-host') ?? h('host') ?? 'localhost:3000';
+  return `${proto}://${host}`;
+}
+
 /**
  * @param {Object} deps
  * @param {ReturnType<import('./identity.mjs').createIdentityService>} deps.service
@@ -64,12 +78,17 @@ export function createIdentityHttp({ service }) {
 
   // POST /projects/:id/invitations — FR1, second half: invite the one GC.
   // Owner-only. The 201 body carries the raw token ONCE; it is not stored.
-  async function inviteCounterparty({ session, params, body }) {
+  // `email` is optional (LINA-84): present → the link is mailed to the GC and the
+  // body reports `emailed`; absent → unchanged, the owner delivers the token
+  // out of band. Either way the raw token is in the 201 body.
+  async function inviteCounterparty({ session, params, body, headers }) {
     try {
       const result = await service.inviteCounterparty({
         actorPartyId: actorOf(session),
         projectId: params.id,
         role: body?.role ?? 'counterparty',
+        email: body?.email,
+        baseUrl: originOf(headers),
       });
       return {
         status: 201,

@@ -124,6 +124,136 @@ describe('inviteCounterparty (only the owner invites)', () => {
   });
 });
 
+// ── Invite by email (LINA-84, ADR-0008 §4) ───────────────────────────────────
+//
+// The one rule these tests exist to protect: the token comes back on EVERY
+// successful path. Mailing is an addition to the out-of-band flow, never a
+// replacement, so no failure mode may leave the owner holding nothing.
+describe('inviteCounterparty by email', () => {
+  // A recording sender, so nothing here touches the network.
+  function withSender({ configured = true, fail = false } = {}) {
+    const sent = [];
+    const ledger = createMemoryLedger();
+    const store = createMemoryStore({ ledger });
+    const sender = {
+      isConfigured: () => configured,
+      send: async (msg) => {
+        if (fail) throw new Error('resend exploded');
+        sent.push(msg);
+        return { id: 'msg_1' };
+      },
+    };
+    return { svc: createIdentityService({ store, ledger, sender, env: {} }), sent };
+  }
+
+  const project = async (svc, o) =>
+    svc.createProject({ actorPartyId: o, name: 'Maple Street', baselineBudgetCents: 100 });
+
+  test('an email is normalised, stored, and mailed a link to the accept page', async () => {
+    const { svc, sent } = withSender();
+    const o = owner();
+    const p = await project(svc, o);
+
+    const res = await svc.inviteCounterparty({
+      actorPartyId: o, projectId: p.id, email: '  GC@Example.COM ', baseUrl: 'https://app.linknms.com/',
+    });
+
+    assert.equal(res.emailed, true);
+    assert.equal(res.invitation.email, 'gc@example.com', 'lower-cased and trimmed like sign-in');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].to, 'gc@example.com');
+    assert.match(sent[0].subject, /Maple Street/);
+    // The link must carry the RAW token to the accept page, on the given origin.
+    assert.ok(
+      sent[0].html.includes(`https://app.linknms.com/invitations/accept?token=${encodeURIComponent(res.token)}`),
+      'the emailed link points at the accept page with the raw token',
+    );
+    // The token is still returned, so the owner is never dependent on delivery.
+    assert.ok(res.token && res.token.length > 10);
+  });
+
+  test('no email → nothing is sent, and the out-of-band token still comes back', async () => {
+    const { svc, sent } = withSender();
+    const o = owner();
+    const p = await project(svc, o);
+
+    const res = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id });
+
+    assert.equal(sent.length, 0, 'the out-of-band path must not mail anybody');
+    assert.equal(res.invitation.email, null);
+    assert.equal(res.emailed, false);
+    assert.ok(res.token && res.token.length > 10);
+  });
+
+  test('a malformed address is a 400 to the OWNER, and mints nothing', async () => {
+    const { svc, sent } = withSender();
+    const o = owner();
+    const p = await project(svc, o);
+
+    // Unlike /sessions/request, this is not an enumeration surface — the owner is
+    // authenticated on their own project, so a typo must be said out loud rather
+    // than silently swallowed into an invite that never arrives.
+    await expectError(
+      svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, email: 'not-an-address' }),
+      400,
+    );
+    assert.equal(sent.length, 0);
+    // Nothing was minted, so a corrected retry is not blocked by a stale pending invite.
+    const ok = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, email: 'gc@example.com' });
+    assert.equal(ok.emailed, true);
+  });
+
+  test('unconfigured mailer → 503 before minting; the out-of-band path is unaffected', async () => {
+    const { svc } = withSender({ configured: false });
+    const o = owner();
+    const p = await project(svc, o);
+
+    // Fail closed rather than report a success having mailed nothing (ADR-0007 §5).
+    await expectError(
+      svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, email: 'gc@example.com' }),
+      503,
+    );
+    // No mailer is needed to hand over a code, so this must still work.
+    const res = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id });
+    assert.ok(res.token);
+  });
+
+  test('a send failure does NOT void the invitation — emailed:false, token intact', async () => {
+    const { svc } = withSender({ fail: true });
+    const o = owner();
+    const p = await project(svc, o);
+
+    const res = await svc.inviteCounterparty({
+      actorPartyId: o, projectId: p.id, email: 'gc@example.com', baseUrl: 'https://x.test',
+    });
+
+    assert.equal(res.emailed, false, 'the UI needs to know delivery did not happen');
+    assert.ok(res.token, 'the owner keeps a link to send by hand');
+    // And the invitation really is live: the GC can accept with that token.
+    const gc = owner();
+    const { membership } = await svc.acceptInvitation({ actorPartyId: gc, token: res.token });
+    assert.equal(membership.role, 'counterparty');
+  });
+
+  test('an emailed invitation is accepted exactly like an out-of-band one', async () => {
+    const { svc } = withSender();
+    const o = owner();
+    const p = await project(svc, o);
+    const res = await svc.inviteCounterparty({
+      actorPartyId: o, projectId: p.id, email: 'gc@example.com', baseUrl: 'https://x.test',
+    });
+
+    const gc = owner();
+    const { membership } = await svc.acceptInvitation({ actorPartyId: gc, token: res.token });
+    assert.equal(membership.role, 'counterparty');
+    assert.equal(membership.partyId, gc);
+
+    // Seating grants sign-in only; project authority is still the membership, and
+    // UNIQUE(project_id, role) remains the backstop against a second counterparty.
+    await expectError(svc.inviteCounterparty({ actorPartyId: o, projectId: p.id }), 409);
+  });
+});
+
 describe('acceptInvitation', () => {
   let svc, ledger;
   beforeEach(() => ({ svc, ledger } = setup()));
