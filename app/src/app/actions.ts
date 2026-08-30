@@ -50,20 +50,32 @@ export async function createProjectAction(_prev: FormState, form: FormData): Pro
 
 // ── FR1: invite the GC ───────────────────────────────────────────────────────
 
-export interface InviteState extends FormState { token?: string }
+export interface InviteState extends FormState {
+  token?: string;
+  /** The address it was mailed to, echoed back for the confirmation copy. */
+  sentTo?: string;
+  /** True only when the server actually handed the message to the mailer. */
+  emailed?: boolean;
+}
 
 /**
  * ⚠️ The raw invitation token comes back exactly once and is NEVER persisted —
  * only its SHA-256 is. It is returned to the page so the owner can hand it over,
  * and it must not be logged, revalidated into a cache, or sent to analytics.
+ *
+ * The email is OPTIONAL (LINA-84). With one, the GC is mailed the accept link;
+ * without one, this is the unchanged copy-the-code flow. The token is surfaced
+ * in BOTH cases on purpose — if delivery fails the owner is not stranded, they
+ * still have a link to send by hand.
  */
 export async function inviteAction(_prev: InviteState, form: FormData): Promise<InviteState> {
   const projectId = String(form.get('projectId') ?? '');
   if (!projectId) return { error: 'Missing project.' };
+  const email = String(form.get('email') ?? '').trim();
   try {
-    const { token } = await inviteCounterparty(projectId);
+    const { token, emailed } = await inviteCounterparty(projectId, email || undefined);
     revalidatePath(`/projects/${projectId}`);
-    return { token };
+    return { token, emailed, ...(email ? { sentTo: email } : {}) };
   } catch (err) {
     return { error: message(err, 'Could not create an invitation.') };
   }

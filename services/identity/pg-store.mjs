@@ -53,6 +53,7 @@ const mapInvitation = (r) => r && {
   id: r.id,
   projectId: r.project_id,
   tokenHash: r.token_hash,
+  email: r.email ?? null, // LINA-84: null on the out-of-band (token-only) path
   role: r.role,
   status: r.status,
   invitedByPartyId: r.invited_by_party_id,
@@ -135,9 +136,9 @@ export function createPgStore({ pool = getPool(), ledger }) {
           try {
             const { rows } = await client.query(
               `insert into identity.invitation
-                 (id, project_id, token_hash, role, status, invited_by_party_id, created_at)
-               values ($1, $2, $3, $4, $5, $6, $7) returning *`,
-              [i.id, i.projectId, i.tokenHash, i.role, i.status, i.invitedByPartyId, i.createdAt],
+                 (id, project_id, token_hash, email, role, status, invited_by_party_id, created_at)
+               values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
+              [i.id, i.projectId, i.tokenHash, i.email ?? null, i.role, i.status, i.invitedByPartyId, i.createdAt],
             );
             return mapInvitation(rows[0]);
           } catch (e) { throw asConflict(e); }

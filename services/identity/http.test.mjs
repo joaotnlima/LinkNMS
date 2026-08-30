@@ -154,3 +154,78 @@ test('accepting with an unknown token is a 404, and anonymously a 401', async ()
   const anon = await http.acceptInvitation({ session: null, params: { token: 'nope' } });
   assert.equal(anon.status, 401);
 });
+
+// ── Invite-by-email: where the emailed link's origin comes from (LINA-84) ─────
+//
+// THE property: the origin is taken from the forwarded request headers (or the
+// APP_BASE_URL override), NEVER from the request body. A body-supplied origin
+// would let any authenticated owner have LinkNMS send mail, from our domain,
+// whose "Accept" button points at a host of their choosing — a phishing
+// primitive wearing our brand.
+test('the emailed invite link uses the forwarded origin, never a body-supplied one', async () => {
+  const sent = [];
+  const ledger = createMemoryLedger();
+  const store = createMemoryStore({ ledger });
+  const service = createIdentityService({
+    store,
+    ledger,
+    sender: { isConfigured: () => true, send: async (m) => { sent.push(m); } },
+    env: {}, // no APP_BASE_URL, so the headers decide
+  });
+  const http = createIdentityHttp({ service });
+
+  const homeowner = party();
+  const created = await http.createProject({
+    session: session(homeowner), body: { name: 'Maple Street', baselineBudgetCents: 100 },
+  });
+
+  const invited = await http.inviteCounterparty({
+    session: session(homeowner),
+    params: { id: created.body.id },
+    body: {
+      email: 'gc@example.com',
+      // Both of these are forgeries and must be ignored.
+      baseUrl: 'https://evil.example',
+      origin: 'https://evil.example',
+    },
+    headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'app.linknms.com' },
+  });
+
+  assert.equal(invited.status, 201);
+  assert.equal(invited.body.emailed, true);
+  assert.equal(sent.length, 1);
+  assert.ok(
+    sent[0].html.includes('https://app.linknms.com/invitations/accept?token='),
+    'the link is built from the forwarded host',
+  );
+  assert.ok(!sent[0].html.includes('evil.example'), 'a body-supplied origin is inert');
+  // The token still rides the 201 body, so the owner is never left with nothing.
+  assert.ok(invited.body.token);
+  assert.equal(invited.headers['cache-control'], 'no-store');
+});
+
+test('invite without an email is unchanged: 201, a token, and nothing sent', async () => {
+  const sent = [];
+  const ledger = createMemoryLedger();
+  const store = createMemoryStore({ ledger });
+  const service = createIdentityService({
+    store, ledger,
+    sender: { isConfigured: () => true, send: async (m) => { sent.push(m); } },
+    env: {},
+  });
+  const http = createIdentityHttp({ service });
+
+  const homeowner = party();
+  const created = await http.createProject({
+    session: session(homeowner), body: { name: 'Maple Street', baselineBudgetCents: 100 },
+  });
+  const invited = await http.inviteCounterparty({
+    session: session(homeowner), params: { id: created.body.id }, body: {}, headers: {},
+  });
+
+  assert.equal(invited.status, 201);
+  assert.ok(invited.body.token);
+  assert.equal(invited.body.emailed, false);
+  assert.equal(invited.body.invitation.email, null);
+  assert.equal(sent.length, 0);
+});

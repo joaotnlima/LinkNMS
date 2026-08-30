@@ -24,6 +24,9 @@ export interface ActionState {
   error?: string;
   /** The one-time invitation code. Never persisted — see the invite panel. */
   token?: string;
+  /** Invite-by-email (LINA-84): the address it went to, and whether it was sent. */
+  sentTo?: string;
+  emailed?: boolean;
 }
 
 export function ActionForm({
