@@ -342,13 +342,18 @@
           "line": "The house. On time, on budget, on scope."
         }
       },
-      "hud": {
-        "time": "Time",
-        "timeValue": "0 days slipped",
-        "cost": "Cost",
-        "scope": "Scope",
-        "scopeValue": "100%"
-      }
+  "hud": {
+   "time": "Time",
+   "timeValue": "0 days slipped",
+   "cost": "Cost",
+   "scope": "Scope",
+   "scopeValue": "100%",
+   "readings": {
+    "B": { "time": "8 months", "scope": "100%" },
+    "C": { "time": "+ 9 days", "scope": "98%" },
+    "D": { "time": "0 days slipped", "scope": "100%" }
+   }
+  }
     },
     "planIn": {
       "label": "Getting the plan in",

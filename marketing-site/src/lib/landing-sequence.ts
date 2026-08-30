@@ -106,6 +106,10 @@ const NODE_STAGE: readonly StageNumber[] = [
 export const EMPTY_STAGE_BLEND: Record<StageNumber, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
 
 function clamp01(value: number): number {
+  // Not a Number is not a scroll position — fail safe to the start of the
+  // sequence (p=0) rather than letting a comparison with NaN fall through to
+  // the end of the table.
+  if (!Number.isFinite(value)) return 0;
   return value < 0 ? 0 : value > 1 ? 1 : value;
 }
 

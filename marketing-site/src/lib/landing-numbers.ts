@@ -151,6 +151,16 @@ export const MATERIAL_SWAP_SAVING = MATERIAL_SWAP_FROM_TOTAL - MATERIAL_SWAP_TO_
  */
 export const SEQUENCE_TRACK_UNITS = 320;
 export const SEQUENCE_LANE_HEIGHT = 7;
+/** Gap between the planned lane and the actual lane, in track units. */
+export const SEQUENCE_LANE_GAP = 3;
+
+/** Fill for a bar in a given plan state, as a token. Shared so the server render
+ *  (`PlanTrack`) and the animation (`SequenceMotion`) can never disagree. */
+export const PLAN_STATE_FILL: Record<PlanState, string> = {
+  baseline: 'var(--plan-baseline)',
+  actual: 'var(--plan-actual)',
+  closed: 'var(--plan-closed)'
+};
 
 export type SequenceRowKey = 'foundations' | 'structure' | 'envelope' | 'finishes';
 
@@ -233,6 +243,27 @@ export const SEQUENCE_FINAL_KEYFRAME = SEQUENCE_KEYFRAMES[SEQUENCE_KEYFRAMES.len
 
 /** Baseline lane opacity once every row has closed (KF D: "blue baseline at 35%"). */
 export const SEQUENCE_CLOSED_BASELINE_OPACITY = 0.35;
+
+/**
+ * HUD cost reading per keyframe, straight off the KF A–D table.
+ *
+ * B and D read the flat contract total; C carries the signed materials movement
+ * ("+ € 3,200") that is the slip in progress. Charged to one record here so the
+ * three keyframes can never disagree with CONTRACT_TOTAL / MATERIALS_DELTA_SINCE_MARCH.
+ */
+export type SequenceHudKey = 'B' | 'C' | 'D';
+
+export const SEQUENCE_HUD_COST: Record<SequenceHudKey, { value?: number; delta?: number }> = {
+  B: { value: CONTRACT_TOTAL },
+  C: { delta: MATERIALS_DELTA_SINCE_MARCH },
+  D: { value: CONTRACT_TOTAL }
+};
+
+export function formatSequenceHudCost(key: SequenceHudKey, locale: string): string {
+  const entry = SEQUENCE_HUD_COST[key];
+  if (entry.delta != null) return formatEurDelta(entry.delta, locale);
+  return formatEur(entry.value ?? CONTRACT_TOTAL, locale);
+}
 
 /** The four stage stills, in order. Served from /images as AVIF → WebP → PNG. */
 export const SEQUENCE_STAGES = [

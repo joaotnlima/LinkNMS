@@ -1,4 +1,4 @@
-import type { PlanState } from '@/lib/landing-numbers';
+import { PLAN_STATE_FILL, SEQUENCE_LANE_GAP, type PlanState } from '@/lib/landing-numbers';
 
 /**
  * A planned/actual bar pair, drawn as real DOM SVG.
@@ -17,16 +17,10 @@ import type { PlanState } from '@/lib/landing-numbers';
  * which forces layout on every scrub frame and will not hold 60 fps.
  */
 
-const STATE_FILL: Record<PlanState, string> = {
-  baseline: 'var(--plan-baseline)',
-  actual: 'var(--plan-actual)',
-  closed: 'var(--plan-closed)'
-};
-
 export type PlanTrackProps = {
   trackUnits: number;
   laneHeight: number;
-  /** Gap between the planned lane and the actual lane, in units. */
+  /** Gap between the planned lane and the actual lane, in units. Defaults to the shared constant. */
   laneGap?: number;
   planned: { offset: number; width: number };
   actual: { offset: number; width: number; state: PlanState };
@@ -40,12 +34,12 @@ export type PlanTrackProps = {
 export function PlanTrack({
   trackUnits,
   laneHeight,
-  laneGap = 3,
-  planned,
-  actual,
+  laneGap = SEQUENCE_LANE_GAP,
   baselineOpacity = 1,
   rowKey,
-  className
+  className,
+  planned,
+  actual
 }: PlanTrackProps) {
   const height = laneHeight * 2 + laneGap;
   return (
@@ -69,7 +63,7 @@ export function PlanTrack({
         data-lane="actual"
         transform={`translate(${actual.offset} ${laneHeight + laneGap}) scale(${actual.width} 1)`}
       >
-        <rect x="0" y="0" width="1" height={laneHeight} fill={STATE_FILL[actual.state]} />
+        <rect x="0" y="0" width="1" height={laneHeight} fill={PLAN_STATE_FILL[actual.state]} />
       </g>
     </svg>
   );

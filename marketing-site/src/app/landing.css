@@ -697,6 +697,24 @@
   padding-top: calc(var(--header-h) + 24px);
   padding-bottom: clamp(32px, 4vw, 56px);
 }
+/* The four captions and the three HUD readings are all server-rendered and
+   stacked; only the p=1 keyframe (KF D) is visible by default. <SequenceMotion />
+   swaps which one shows as p advances. Positioning the blocks absolutely keeps
+   the caption area's height stable so a swap never nudges the bars below. */
+.lp-sequence__caption {
+  position: relative;
+  min-height: clamp(78px, 11vh, 110px);
+}
+.lp-sequence__caption-block {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+.lp-sequence__caption-block[data-visible='false'],
+.lp-hud__cell .value [data-kf][data-visible='false'] {
+  display: none;
+}
 .lp-sequence__caption .micro {
   color: var(--lp-cream);
 }

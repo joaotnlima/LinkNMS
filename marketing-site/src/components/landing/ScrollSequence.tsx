@@ -1,7 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { hasLandingImage } from '@/lib/landing-assets';
 import {
-  CONTRACT_TOTAL,
   SEQUENCE_CLOSED_BASELINE_OPACITY,
   SEQUENCE_FINAL_KEYFRAME,
   SEQUENCE_IMAGE_HEIGHT,
@@ -12,7 +11,7 @@ import {
   SEQUENCE_ROW_KEYS,
   SEQUENCE_STAGES,
   SEQUENCE_TRACK_UNITS,
-  formatEur
+  formatSequenceHudCost
 } from '@/lib/landing-numbers';
 import { PlanTrack } from './PlanTrack';
 import { SequenceMotion } from './SequenceMotion';
@@ -97,8 +96,20 @@ export async function ScrollSequence({ locale }: { locale: string }) {
           which is the intended look (technical plan D1). */}
       <div className="lp-sequence__content lp-wrap">
         <div className="lp-sequence__caption">
-          <p className="micro lp-micro">{t(`captions.${kf.id}.micro`)}</p>
-          <p className="line">{t(`captions.${kf.id}.line`)}</p>
+          {/* All four captions are server-rendered; the final one (KF D) is
+              visible. <SequenceMotion /> swaps which one shows as p advances —
+              the copy itself lives here once, on the server, never re-authored. */}
+          {SEQUENCE_KEYFRAMES.map((k) => (
+            <div
+              key={k.id}
+              className="lp-sequence__caption-block"
+              data-caption={k.id}
+              data-visible={k.id === kf.id ? 'true' : 'false'}
+            >
+              <p className="micro lp-micro">{t(`captions.${k.id}.micro`)}</p>
+              <p className="line">{t(`captions.${k.id}.line`)}</p>
+            </div>
+          ))}
         </div>
 
         <div className="lp-sequence__panels">
@@ -129,19 +140,38 @@ export async function ScrollSequence({ locale }: { locale: string }) {
           <dl className="lp-hud" data-tone={kf.hud.tone}>
             <div className="lp-hud__cell">
               <dt className="label lp-micro">{t('hud.time')}</dt>
-              <dd className="value">{t('hud.timeValue')}</dd>
+              <dd className="value">
+                {(['B', 'C', 'D'] as const).map((r) => (
+                  <span key={r} data-kf={r} data-visible={r === 'D' ? 'true' : 'false'}>
+                    {t(`hud.readings.${r}.time`)}
+                  </span>
+                ))}
+              </dd>
             </div>
             <div className="lp-hud__cell">
               <dt className="label lp-micro">{t('hud.cost')}</dt>
-              <dd className="value">{formatEur(CONTRACT_TOTAL, locale)}</dd>
+              <dd className="value">
+                {(['B', 'C', 'D'] as const).map((r) => (
+                  <span key={r} data-kf={r} data-visible={r === 'D' ? 'true' : 'false'}>
+                    {formatSequenceHudCost(r, locale)}
+                  </span>
+                ))}
+              </dd>
             </div>
             <div className="lp-hud__cell">
               <dt className="label lp-micro">{t('hud.scope')}</dt>
-              <dd className="value">{t('hud.scopeValue')}</dd>
+              <dd className="value">
+                {(['B', 'C', 'D'] as const).map((r) => (
+                  <span key={r} data-kf={r} data-visible={r === 'D' ? 'true' : 'false'}>
+                    {t(`hud.readings.${r}.scope`)}
+                  </span>
+                ))}
+              </dd>
             </div>
           </dl>
         </div>
       </div>
+      <SequenceMotion />
     </section>
   );
 }

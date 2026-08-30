@@ -342,13 +342,18 @@
           "line": "La casa. En plazo, en presupuesto, en alcance."
         }
       },
-      "hud": {
-        "time": "Plazo",
-        "timeValue": "0 días de retraso",
-        "cost": "Coste",
-        "scope": "Alcance",
-        "scopeValue": "100%"
-      }
+  "hud": {
+   "time": "Plazo",
+   "timeValue": "0 días de retraso",
+   "cost": "Coste",
+   "scope": "Alcance",
+   "scopeValue": "100%",
+   "readings": {
+    "B": { "time": "8 meses", "scope": "100%" },
+    "C": { "time": "+ 9 días", "scope": "98%" },
+    "D": { "time": "0 días de retraso", "scope": "100%" }
+   }
+  }
     },
     "planIn": {
       "label": "Meter el plan dentro",

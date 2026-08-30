@@ -342,13 +342,18 @@
           "line": "A casa. No prazo, no orçamento, no âmbito."
         }
       },
-      "hud": {
-        "time": "Prazo",
-        "timeValue": "0 dias de atraso",
-        "cost": "Custo",
-        "scope": "Âmbito",
-        "scopeValue": "100%"
-      }
+  "hud": {
+   "time": "Prazo",
+   "timeValue": "0 dias de atraso",
+   "cost": "Custo",
+   "scope": "Âmbito",
+   "scopeValue": "100%",
+   "readings": {
+    "B": { "time": "8 meses", "scope": "100%" },
+    "C": { "time": "+ 9 dias", "scope": "98%" },
+    "D": { "time": "0 dias de atraso", "scope": "100%" }
+   }
+  }
     },
     "planIn": {
       "label": "Meter o plano lá dentro",
