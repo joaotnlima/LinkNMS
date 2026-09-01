@@ -24,6 +24,7 @@ const URLS = {
   identity: 'postgres://identity_app@localhost:5432/linknms?sslmode=disable',
   decision: 'postgres://decision_app@localhost:5432/linknms?sslmode=disable',
   changeOrder: 'postgres://change_order_app@localhost:5432/linknms?sslmode=disable',
+  schedule: 'postgres://schedule_app@localhost:5432/linknms?sslmode=disable',
   ledger: 'postgres://ledger_app@localhost:5432/linknms?sslmode=disable',
 };
 
@@ -34,13 +35,13 @@ describe('createContainer', () => {
     const container = createContainer({ urls: URLS, analytics: noopAnalytics() });
     try {
       const pools = Object.values(container.pools);
-      assert.equal(pools.length, 4);
-      assert.equal(new Set(pools).size, 4, 'one pool per service role, never shared');
+      assert.equal(pools.length, 5);
+      assert.equal(new Set(pools).size, 5, 'one pool per service role, never shared');
 
-      for (const name of ['identity', 'decision', 'changeOrder', 'ledger']) {
+      for (const name of ['identity', 'decision', 'changeOrder', 'schedule', 'ledger']) {
         assert.ok(container.http[name], `route layer needs container.http.${name}`);
       }
-      for (const name of ['identity', 'decision', 'changeOrder']) {
+      for (const name of ['identity', 'decision', 'changeOrder', 'schedule']) {
         assert.ok(container.services[name], `container.services.${name} must be composed`);
       }
     } finally {
@@ -62,7 +63,7 @@ describe('createContainer', () => {
     const saved = { ...process.env };
     for (const key of [
       'DATABASE_URL', 'IDENTITY_DATABASE_URL', 'DECISION_DATABASE_URL',
-      'CHANGE_ORDER_DATABASE_URL', 'LEDGER_DATABASE_URL',
+      'CHANGE_ORDER_DATABASE_URL', 'SCHEDULE_DATABASE_URL', 'LEDGER_DATABASE_URL',
     ]) delete process.env[key];
     try {
       assert.throws(() => createContainer({ analytics: noopAnalytics() }), /DATABASE_URL/);

@@ -50,6 +50,8 @@ import { createDecisionHttp } from '../decision/http.mjs';
 
 import { createPgStore as createChangeOrderPgStore } from '../change_order/pg-store.mjs';
 
+import { createPgStore as createSchedulePgStore } from '../schedule/pg-store.mjs';
+
 // Per-service connection string with an explicit single-role fallback. Returning
 // the fallback is right for CI/local (one migrator role, no role separation to
 // test); production supplies all four.
@@ -89,6 +91,7 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
     identity: pool('identity', 'IDENTITY_DATABASE_URL', 'IDENTITY_DATABASE_ROLE'),
     decision: pool('decision', 'DECISION_DATABASE_URL', 'DECISION_DATABASE_ROLE'),
     changeOrder: pool('changeOrder', 'CHANGE_ORDER_DATABASE_URL', 'CHANGE_ORDER_DATABASE_ROLE'),
+    schedule: pool('schedule', 'SCHEDULE_DATABASE_URL', 'SCHEDULE_DATABASE_ROLE'),
     ledger: pool('ledger', 'LEDGER_DATABASE_URL', 'LEDGER_DATABASE_ROLE'),
   };
 
@@ -111,6 +114,7 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
     ledgers: {
       decision: ledgerFor(pools.decision),
       changeOrder: ledgerFor(pools.changeOrder),
+      schedule: ledgerFor(pools.schedule),
     },
     identityStore: createIdentityPgStore({
       pool: pools.identity,
@@ -121,9 +125,13 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
     // createServices composes (ADR-0004 — one authorizer, no second copy).
     decisionAuthz: (identity) => createIdentityAuthz({ identity }),
     changeOrderStore: createChangeOrderPgStore({ pool: pools.changeOrder }),
+    scheduleStore: createSchedulePgStore({ pool: pools.schedule }),
   });
 
-  const { identity, decision: decisionService, changeOrder: changeOrderService } = services;
+  const {
+    identity, decision: decisionService, changeOrder: changeOrderService,
+    schedule: scheduleService,
+  } = services;
   const parties = createPartyStore({ pool: pools.identity });
 
   // Magic-link sign-in (LINA-76, ADR-0007): the "proof" half of the session. Its
@@ -143,11 +151,15 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
     signIn,
     analytics: services.analytics,
     ledger: ledgerReader,
-    services: { identity, decision: decisionService, changeOrder: changeOrderService },
+    services: {
+      identity, decision: decisionService, changeOrder: changeOrderService,
+      schedule: scheduleService,
+    },
     http: {
       identity: createIdentityHttp({ service: identity }),
       decision: createDecisionHttp({ service: decisionService }),
       changeOrder: services.changeOrderHttp,
+      schedule: services.scheduleHttp,
       ledger: createLedgerHttp({ ledger: ledgerReader, identity }),
     },
     async close() {

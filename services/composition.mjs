@@ -30,6 +30,8 @@ import { createIdentityService } from './identity/identity.mjs';
 import { createDecisionLog } from './decision/decision-log.mjs';
 import { createChangeOrderService } from './change_order/change-order.mjs';
 import { createChangeOrderHttp } from './change_order/http.mjs';
+import { createScheduleService } from './schedule/schedule.mjs';
+import { createScheduleHttp } from './schedule/http.mjs';
 
 // ── The per-process analytics singleton ─────────────────────────────────────
 //
@@ -74,6 +76,7 @@ export function resetAnalyticsForTests() {
  * @param {Object} [ports.ledgers]              Per-service ledger bindings; each falls back to `ledger`
  * @param {Object} ports.identityStore          Identity store adapter
  * @param {Object} ports.changeOrderStore       Change Order store adapter
+ * @param {Object} [ports.scheduleStore]        Schedule store adapter (omit → no schedule service)
  * @param {Object} [ports.decisionStore]        Decision store adapter (omit → no decision service)
  * @param {Object|Function} [ports.decisionAuthz]  Decision authorizer, or a
  *   `(identity) => authz` factory for authorizers built over the Identity
@@ -87,6 +90,7 @@ export function createServices({
   ledgers = {},
   identityStore,
   changeOrderStore,
+  scheduleStore = null,
   decisionStore = null,
   decisionAuthz = null,
   clock = undefined,
@@ -129,12 +133,29 @@ export function createServices({
       })
     : null;
 
+  // Schedule & Progress (Slice 6, LINA-69). Composed only when a schedule store is
+  // supplied, so a target without one is loud at the route (no service to mount)
+  // rather than silently backed by process memory. It consumes the Identity
+  // SERVICE as its sole authorizer (GC-only writes, homeowner read-only — ADR-0004)
+  // and its OWN ledger binding so each plan/progress write ledgers in the same
+  // transaction as its projection (spec §8.2). It takes no budget-move port: stage
+  // planned cost can never move the budget (spec §2 Q2).
+  const schedule = scheduleStore
+    ? createScheduleService({
+        store: scheduleStore,
+        ledger: ledgers.schedule ?? ledger,
+        identity,
+      })
+    : null;
+
   return {
     analytics,
     identity,
     decision,
     changeOrder,
+    schedule,
     changeOrderHttp: createChangeOrderHttp({ service: changeOrder, identity }),
+    scheduleHttp: schedule ? createScheduleHttp({ service: schedule }) : null,
   };
 }
 

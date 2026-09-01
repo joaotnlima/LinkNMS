@@ -1,0 +1,270 @@
+openapi: 3.1.0
+info:
+  title: LinkNMS — Schedule & Progress API
+  version: 0.1.0-r0
+  description: >-
+    The GC-owned construction plan and its progress (Slice 6, LINA-69; ADR-0005;
+    r0-plan-progress-functional-spec §8; FR-P1, FR-P3–P6). The GC enters the plan
+    as an ordered list of stages and reports progress on them; the homeowner reads
+    everything and is denied every write (an authorization denial, never a 500 —
+    spec §8.2).
+
+    A stage's **current status is derived**, never stored: it is the status of the
+    latest append-only progress entry, ordered by (reported_at, seq) — a total
+    order (spec §8.1). Progress entries are never updated or deleted. Every
+    transition is allowed; the one conditional is a correction back to
+    `not_started`, which requires a note. Nothing but a GC report advances a stage
+    — no date, no cascade, no change-order approval (spec §8.1).
+
+    The plan rollup (headline · percent · current-stage pointer) is **derived on
+    read**, equally weighted (count of `done` ÷ total), never cost- or
+    duration-weighted (spec §8.3). Stage planned cost is free-form and can **never**
+    move the authoritative budget: this service records no budget event and holds
+    no grant to (spec §2 Q2, AC-P5/P12). The plan surface shows planned cost only
+    as a read-only allocation hint against the baseline.
+
+    The acting party is **server-derived** from the authenticated session
+    (ADR-0004); it is never accepted in a request body. Money is signed integer
+    cents.
+servers:
+  - url: /api
+    description: R0 single-instance gateway (services share one Postgres, one schema each)
+
+tags:
+  - name: schedule
+    description: The plan timeline, stages, and append-only progress.
+
+paths:
+  /projects/{projectId}/plan:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [schedule]
+      summary: The plan timeline + derived rollup (FR-P4, FR-P6)
+      description: >-
+        Ordered stages with each stage's current derived status and advisory
+        percent, plus the plan headline, percent complete, current-stage pointer,
+        and the read-only allocated-vs-baseline hint. Readable by both parties.
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plan' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /projects/{projectId}/stages:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [schedule]
+      summary: Add a stage to the plan (FR-P1) — GC only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StageCreate' }
+      responses:
+        '201':
+          description: The created stage.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Stage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /stages/{stageId}:
+    parameters:
+      - $ref: '#/components/parameters/StageId'
+    get:
+      tags: [schedule]
+      summary: One stage + its full attributed progress history (FR-P3, AC-P3)
+      responses:
+        '200':
+          description: The stage with history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Stage' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [schedule]
+      summary: Edit or reorder a stage (FR-P1) — GC only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StagePatch' }
+      responses:
+        '200':
+          description: The updated stage.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Stage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /stages/{stageId}/progress:
+    parameters:
+      - $ref: '#/components/parameters/StageId'
+    post:
+      tags: [schedule]
+      summary: Append a progress report (FR-P3, spec §8.1) — GC only
+      description: >-
+        Appends a new attributed, time-stamped entry. Every transition is allowed;
+        a correction back to `not_started` requires a note (400 `note_required`
+        otherwise). `percent` is advisory and only stored while `in_progress`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProgressReport' }
+      responses:
+        '201':
+          description: The stage with the new report reflected as current.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Stage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    StageId:
+      name: stageId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Invalid input.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthenticated:
+      description: No acting party in session.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: The acting party may not perform this action (e.g. a homeowner write).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: The stage does not exist.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  schemas:
+    Status:
+      type: string
+      enum: [not_started, in_progress, blocked, done]
+    Headline:
+      description: >-
+        The plan headline (spec §8.3 R1). `null` means the empty state (zero
+        stages) — render "your GC hasn't added the plan yet", never "0%".
+      type: [string, 'null']
+      enum: [attention_needed, complete, in_progress, not_started, null]
+    StageCreate:
+      type: object
+      required: [name, position]
+      properties:
+        name: { type: string }
+        position: { type: integer, description: Plan order (not dates). }
+        scopeNote: { type: [string, 'null'] }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        plannedEndDate: { type: [string, 'null'], format: date }
+        plannedCostCents:
+          type: [integer, 'null']
+          description: Free-form; NEVER moves the budget (spec §2 Q2).
+    StagePatch:
+      type: object
+      description: Any subset of the editable fields; at least one required.
+      properties:
+        name: { type: string }
+        position: { type: integer }
+        scopeNote: { type: [string, 'null'] }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        plannedEndDate: { type: [string, 'null'], format: date }
+        plannedCostCents: { type: [integer, 'null'] }
+    ProgressReport:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/Status' }
+        percent:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 100
+          description: Advisory; ignored unless status is in_progress (spec §2 Q1).
+        note:
+          type: [string, 'null']
+          description: Required when correcting a stage back to not_started (spec §8.1).
+    ProgressEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        stageId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/Status' }
+        percent: { type: [integer, 'null'] }
+        note: { type: [string, 'null'] }
+        reportedBy: { type: string, format: uuid }
+        reportedAt: { type: string, format: date-time }
+    Stage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        name: { type: string }
+        position: { type: integer }
+        scopeNote: { type: [string, 'null'] }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        plannedEndDate: { type: [string, 'null'], format: date }
+        plannedCostCents: { type: [integer, 'null'] }
+        currentStatus: { $ref: '#/components/schemas/Status' }
+        currentPercent:
+          type: [integer, 'null']
+          description: The advisory percent, only present while in_progress.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        history:
+          type: array
+          description: Full attributed history, oldest→newest (present on single-stage reads).
+          items: { $ref: '#/components/schemas/ProgressEntry' }
+    Allocation:
+      type: object
+      description: Read-only allocation hint (FR-P6). NOT the budget; cannot move it.
+      properties:
+        allocatedCents: { type: integer, description: Sum of planned stage costs. }
+        baselineCents: { type: integer, description: The ledger's authoritative baseline. }
+        deltaCents: { type: integer, description: allocatedCents − baselineCents (informational). }
+    Plan:
+      type: object
+      properties:
+        projectId: { type: string, format: uuid }
+        headline: { $ref: '#/components/schemas/Headline' }
+        percentComplete:
+          type: [integer, 'null']
+          description: Equal-weighted done÷total, floored; null when zero stages (spec §8.3 R2).
+        currentStageId: { type: [string, 'null'], format: uuid }
+        totalStages: { type: integer }
+        doneStages: { type: integer }
+        stages:
+          type: array
+          items: { $ref: '#/components/schemas/Stage' }
+        allocation: { $ref: '#/components/schemas/Allocation' }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
