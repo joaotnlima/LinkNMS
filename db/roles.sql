@@ -39,5 +39,20 @@ BEGIN
     EXECUTE format('REVOKE ALL ON DATABASE %I FROM %I', current_database(), r);
     EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), r);
   END LOOP;
+
+  -- The marketing waitlist role (LINA-96). NOT a split-DB service — it lives in
+  -- the `landing` schema (owned by neondb_owner), and its table grants are issued
+  -- by that owner in marketing-site/drizzle/0002_landing_app_role.sql, because a
+  -- neon_superuser *member* like `migrator` cannot GRANT on objects it does not
+  -- own (its GRANTs no-op with a warning). It is declared here so the role model
+  -- records it and it is only ever created BY SQL: a SQL-created role never
+  -- inherits neon_superuser, whereas the Neon-console/API-created `landing_app`
+  -- it replaces always did — the superuser membership that let the public signup
+  -- form bypass every grant, including ledger.append_event (LINA-96 / LINA-35).
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'landing_app_v2') THEN
+    CREATE ROLE landing_app_v2 NOLOGIN;
+  END IF;
+  EXECUTE format('REVOKE ALL ON DATABASE %I FROM landing_app_v2', current_database());
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO landing_app_v2', current_database());
 END
 $$;
