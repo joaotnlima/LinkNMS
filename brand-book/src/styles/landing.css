@@ -1,0 +1,242 @@
+/* ============================================================
+   Landing-page components (LINA-108).
+   Ground truth: `landing-page`, `landing-page (mobile 390)`,
+   `Header — sticky states` and `key-frames` in cowork/pen/linkNMS.pen.
+   Marketing-site scope only — the product UI does not use these.
+
+   Every value reads a token (--plan-* / --lp-* / --lp-display).
+   Where the .pen frames set a value that fails contrast, THIS FILE
+   CARRIES THE FIX and says so inline — see pen `key-frames` handoff
+   and the LINA-100 S7 review for the cream-40 → cream-60 moves.
+   ============================================================ */
+
+.lp {
+  font-family: var(--lp-sans, var(--sans));
+  color: var(--lp-cream);
+  -webkit-font-smoothing: antialiased;
+}
+.lp-light { background: var(--lp-cream); color: var(--lp-ink); padding: 28px; border-radius: 8px; }
+.lp-field { background: var(--lp-ink); padding: 28px; border-radius: 8px; }
+.lp-display { font-family: var(--lp-display, var(--display)); font-weight: 800; letter-spacing: -0.02em; line-height: 0.98; }
+.lp-micro {
+  color: var(--lp-cream-60); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase; line-height: 1.4;
+}
+
+/* ---------- Sticky header — rest / stuck, one element ---------- */
+
+.lp-header {
+  position: relative; display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; padding-inline: var(--lp-gutter, 28px); box-sizing: border-box;
+  color: var(--lp-cream); background-color: transparent; border-bottom: 1px solid transparent;
+  /* Only these three properties animate. 180ms ease-out, nothing else. */
+  transition: background-color 180ms ease-out, height 180ms ease-out, padding 180ms ease-out;
+}
+.lp-header.rest { height: 82px; }
+.lp-header.stuck {
+  height: 64px;
+  background-color: var(--lp-ink-92, #16181deb);
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  border-bottom-color: var(--lp-cream-hair);
+}
+.lp-header__slot { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.lp-header__dot { width: 7px; height: 7px; border-radius: 999px; background: var(--lp-cream); flex: none; }
+.lp-header__status { display: inline-flex; align-items: center; gap: 9px; color: var(--lp-cream-60); font-size: 11px;
+  font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.lp-header__nav { display: flex; align-items: center; gap: clamp(14px, 2vw, 28px); list-style: none; margin: 0; padding: 0; }
+.lp-header__nav a { color: var(--lp-cream-60); font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+  text-transform: uppercase; text-decoration: none; }
+.lp-header__nav a[aria-current], .lp-header__nav a:hover { color: var(--lp-cream); }
+.lp-cta {
+  font: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--lp-ink); background: var(--lp-cream); border: 0; border-radius: 999px;
+  padding: 0 16px; height: 34px; cursor: pointer; white-space: nowrap;
+}
+
+/* ---------- Language menu — 9 locales, right-aligned to the trigger ---------- */
+
+.lp-lang { position: relative; display: inline-block; }
+.lp-lang__trigger {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--lp-cream-20); border: 0; border-radius: 999px;
+  padding: 8px 12px; font: inherit; font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+  color: var(--lp-cream); cursor: pointer;
+}
+.lp-lang__trigger svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+.lp-lang__panel {
+  position: absolute; top: calc(100% + 10px); right: 0; z-index: 1;
+  width: 236px; margin: 0; padding: 6px; list-style: none;
+  background: #1c1f26f2; border: 1px solid var(--lp-cream-hair); border-radius: 12px;
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+}
+.lp-lang__panel li a {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px;
+  border-radius: 8px; text-decoration: none; font-size: 13.5px; color: var(--lp-cream-60);
+}
+.lp-lang__panel li a:hover { background: var(--lp-cream-20); color: var(--lp-cream); }
+.lp-lang__panel li a[aria-current] { background: var(--lp-cream-20); color: var(--lp-cream); font-weight: 600; }
+/* FIX: locale code was cream-40 in the frame (3.49:1 here) — bumped to cream-60. */
+.lp-lang__panel .code { margin-left: auto; color: var(--lp-cream-60); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; }
+.lp-lang__panel li a[aria-current] .code { color: var(--lp-cream); }
+.lp-lang__tick { width: 13px; height: 13px; flex: none; opacity: 0; }
+.lp-lang__panel li a[aria-current] .lp-lang__tick { opacity: 1; }
+
+/* ---------- Gradient scrim — the legibility recipe ---------- */
+
+.lp-scrim-demo { position: relative; height: 240px; border-radius: 8px; overflow: hidden; }
+.lp-scrim-demo .photo { position: absolute; inset: 0;
+  background: linear-gradient(120deg, #ffffff 0%, #b9b2a3 45%, #4a463d 100%); }
+.lp-scrim {
+  position: absolute; inset: auto 0 0 0; height: 100%; pointer-events: none;
+  background: linear-gradient(180deg, #16181d59 38%, #16181dd9 72%, #16181df7 100%);
+}
+.lp-scrim-demo .caption { position: absolute; left: 20px; right: 20px; bottom: 18px; }
+
+/* ---------- Label bar — index · label · rule · right label ---------- */
+
+.lp-labelbar { display: flex; align-items: baseline; gap: 20px; }
+.lp-labelbar .index { color: var(--lp-cream-60); font-variant-numeric: tabular-nums; }
+.lp-labelbar .title { color: var(--lp-ink); font-weight: 700; font-size: 15px; }
+.lp-labelbar .rule { flex: 1 1 auto; height: 1px; background: var(--lp-ink-hair); align-self: center; }
+.lp-labelbar .right { color: var(--lp-ink-40); text-align: right; }
+.lp-field .lp-labelbar .title { color: var(--lp-cream); }
+.lp-field .lp-labelbar .rule { background: var(--lp-cream-20); }
+.lp-field .lp-labelbar .right { color: var(--lp-cream-40); }
+
+/* ---------- Stage card / scroll reel (S3) ---------- */
+
+.lp-reel { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; max-width: 960px; }
+.lp-stage {
+  position: relative; aspect-ratio: 32 / 22; margin: 0; border-radius: 8px;
+  background: var(--lp-ink); overflow: hidden;
+}
+.lp-stage__img { position: absolute; inset: 0;
+  background: linear-gradient(150deg, #d8d2c6 0%, #8d8578 55%, #2a2b31 100%); }
+.lp-stage__scrim { position: absolute; inset: auto 0 0; height: 100px;
+  background: linear-gradient(180deg, #16181d00 0%, #16181dbf 62%, #16181df2 100%); pointer-events: none; }
+.lp-stage__chip {
+  position: absolute; top: 12px; left: 12px; padding: 7px 11px; border-radius: 999px;
+  background: var(--lp-ink-90, #16181de6); color: var(--lp-cream);
+  font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+}
+.lp-stage__cap { position: absolute; bottom: 14px; left: 16px; right: 16px; display: flex; flex-direction: column; gap: 4px; }
+.lp-stage__t { font-size: 14px; font-weight: 600; color: var(--lp-cream); }
+.lp-stage__n { font-size: 10px; color: var(--lp-cream-60); }
+
+/* ---------- Plan bar track — planned lane above actual lane ---------- */
+
+.lp-plan { display: grid; gap: 12px; max-width: 420px; }
+.lp-plan-row { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: center; }
+.lp-plan-row .name { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.lp-track { position: relative; width: 320px; height: 18px; }
+.lp-lane { position: absolute; left: 0; right: 0; height: 7px; }
+.lp-lane.planned { top: 0; }
+.lp-lane.actual { top: 11px; }
+.lp-lane .fill { position: absolute; top: 0; bottom: 0; border-radius: 0; }
+.lp-field .lp-lane.planned { background: var(--lp-ink); }
+.lp-field .lp-lane.actual  { background: var(--lp-ink); }
+/* On the ink field the plan colours need lighter tints: base --plan-* tones
+   drop to 2.62 (baseline) / 4.05 (actual) / 3.56 (closed) :1 on ink. */
+.lp-field .fill.baseline { background: var(--plan-baseline-on-dark, #6e85a7); }
+.lp-field .fill.actual   { background: var(--plan-actual-on-dark, #bb714d); }
+.lp-field .fill.closed   { background: var(--plan-closed-on-dark, #4e9074); }
+/* KF D residual baseline at 80%, not the frame's 35% (1.34:1 — invisible). */
+.lp-field .fill.baseline.ghost { opacity: 0.8; }
+.lp-light .lp-lane { border: 1px solid var(--plan-track-line, #888883); box-sizing: border-box; }
+.lp-light .lp-lane .fill { top: -1px; bottom: -1px; }
+.lp-light .lp-lane.planned { background: var(--plan-baseline-muted); }
+.lp-light .lp-lane.actual  { background: var(--plan-actual-muted); }
+.lp-light .fill.baseline { background: var(--plan-baseline); }
+.lp-light .fill.actual   { background: var(--plan-actual); }
+.lp-light .fill.closed   { background: var(--plan-closed); }
+
+/* ---------- HUD triple — TIME / COST / SCOPE ---------- */
+
+.lp-hud { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; max-width: 460px; }
+.lp-hud .cell { display: flex; flex-direction: column; gap: 6px; border-top: 2px solid var(--lp-cream-40); padding-top: 10px; }
+.lp-hud .cell.baseline { border-top-color: var(--plan-baseline-on-dark, #6e85a7); }
+.lp-hud .cell.actual   { border-top-color: var(--plan-actual-on-dark, #bb714d); }
+.lp-hud .cell.closed   { border-top-color: var(--plan-closed-on-dark, #4e9074); }
+.lp-hud .k { color: var(--lp-cream-60); font-size: 10px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; }
+.lp-hud .v { font-family: var(--lp-display, var(--display)); font-size: 22px; font-weight: 700;
+  font-variant-numeric: tabular-nums; line-height: 1; color: var(--lp-cream); }
+.lp-hud .v.baseline { color: var(--plan-baseline-on-dark, #6e85a7); }
+.lp-hud .v.actual   { color: var(--plan-actual-on-dark, #bb714d); }
+.lp-hud .v.closed   { color: var(--plan-closed-on-dark, #4e9074); }
+
+/* ---------- Keyframe sequence — the pinned scroll section ---------- */
+
+.lp-kf { position: relative; border-radius: 8px; overflow: hidden; }
+.lp-kf .kf-frame {
+  position: relative; display: flex; flex-direction: column; gap: 14px;
+  padding: 22px; background: var(--lp-ink); min-height: 0;
+}
+.lp-kf .kf-still {
+  position: relative; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden;
+  background: linear-gradient(150deg, #d8d2c6 0%, #8d8578 55%, #2a2b31 100%);
+  display: flex; align-items: flex-end; justify-content: flex-start;
+}
+.lp-kf .kf-still__scrim { position: absolute; inset: 0;
+  background: linear-gradient(180deg, #16181d00 0%, #16181dbf 62%, #16181df2 100%); }
+.lp-kf .kf-still .kf-hud { position: absolute; left: 18px; bottom: 16px; right: 18px; }
+.lp-kf .kf-bars { position: absolute; inset: 14px; display: grid; gap: 5px; pointer-events: none; }
+.lp-kf .kf-bar { position: relative; height: 6px; border-radius: 0; }
+.lp-kf .kf-bar .in { position: absolute; top: 0; bottom: 0; left: 0; }
+.lp-kf .kf-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--lp-cream-60);
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+.lp-kf .kf-meta b { color: var(--lp-cream); font-weight: 600; }
+
+/* ---------- Chip ---------- */
+
+.lp-chip {
+  display: inline-flex; align-items: center; gap: 7px; border-radius: 999px;
+  padding: 5px 11px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; border: 1px solid;
+}
+.lp-chip::before { content: ""; width: 6px; height: 6px; border-radius: 2px; flex: 0 0 auto; }
+/* -fg is the type, the base tone is the marker. --plan-actual as text is 4.20:1. */
+.lp-chip.baseline { color: var(--plan-baseline-fg); background: var(--plan-baseline-muted); border-color: var(--plan-baseline-line); }
+.lp-chip.baseline::before { background: var(--plan-baseline); }
+.lp-chip.actual { color: var(--plan-actual-fg); background: var(--plan-actual-muted); border-color: var(--plan-actual-line); }
+.lp-chip.actual::before { background: var(--plan-actual); }
+.lp-chip.closed { color: var(--plan-closed-fg); background: var(--plan-closed-muted); border-color: var(--plan-closed-line); }
+.lp-chip.closed::before { background: var(--plan-closed); }
+
+/* ---------- Keyframe sequence — clothesline specimens ---------- */
+
+.kf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.kf-frame {
+  display: flex; flex-direction: column; gap: 12px; padding: 14px;
+  background: var(--lp-ink); border-radius: 10px; min-width: 0;
+}
+.kf-still {
+  position: relative; aspect-ratio: 32 / 22; border-radius: 6px; overflow: hidden;
+  background: linear-gradient(150deg, #d8d2c6 0%, #8d8578 55%, #2a2b31 100%);
+  display: flex; align-items: flex-end;
+  box-shadow: inset 0 0 0 1px var(--lp-cream-20);
+}
+.kf-placeholder {
+  position: absolute; inset: 0; margin: 0; display: flex; align-items: center; justify-content: center;
+  color: var(--lp-cream-60); font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.kf-hud { position: relative; z-index: 1; width: 100%; padding: 10px 12px;
+  background: linear-gradient(to top, var(--lp-ink-94, #16181df0), var(--lp-ink-60, #16181d99)); }
+.kf-hud .hud-cell { display: grid; grid-template-columns: 3.2em 1fr; gap: 8px; align-items: baseline;
+  font-size: 10px; }
+.kf-hud .hud-cell .k { color: var(--lp-cream-60); font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
+.kf-hud .hud-cell .v { font-family: var(--lp-display, var(--display)); font-weight: 700; font-variant-numeric: tabular-nums; }
+.kf-hud .hud-cell .v.baseline { color: var(--plan-baseline-on-dark, #6e85a7); }
+.kf-hud .hud-cell .v.actual   { color: var(--plan-actual-on-dark, #bb714d); }
+.kf-hud .hud-cell .v.closed   { color: var(--plan-closed-on-dark, #4e9074); }
+.kf-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0;
+  color: var(--lp-cream-60); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; }
+.kf-meta b { color: var(--lp-cream); font-weight: 600; }
+
+/* ---------- Storybook scaffolding for these specimens ---------- */
+
+.lp-demo { display: grid; gap: 10px; }
+.lp-demo > .cap { font-size: 12px; color: var(--muted); }
+.lp-stage-demo { background: var(--lp-ink); border-radius: 8px; overflow: hidden; }
+.lp-note { font-size: 12px; line-height: 1.6; color: var(--muted); max-width: 62ch; }
+.lp-note b { color: var(--ink); }
