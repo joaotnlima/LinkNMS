@@ -9,14 +9,16 @@ import { SectionWho } from '@/components/landing/SectionWho';
 import { SectionCta } from '@/components/landing/SectionCta';
 import { SiteFooter } from '@/components/landing/SiteFooter';
 import { SectionViewTracker } from '@/components/landing/SectionViewTracker';
+import { ScrollSequence } from '@/components/landing/ScrollSequence';
 
 /*
  * The landing page (LINA-83).
  *
  * The Scroll Reel (the founder's "fade-in of the images with the scrolling")
- * and the gantt bars live inside <SectionRecord /> as inline content — there
- * is no pinned section anymore (LINA-98). <LandingHeader /> stays a SIBLING of
- * every section; see the comment at the top of LandingHeader.tsx.
+ * and the gantt bars live inside <SectionRecord /> as inline content. THE
+ * PINNED scroll sequence (LINA-113) sits directly after it, additive — the
+ * inline reel stays. <LandingHeader /> stays a SIBLING of every section,
+ * including the pinned one; see the comment at the top of LandingHeader.tsx.
  */
 
 export default async function Home({
@@ -54,6 +56,7 @@ export default async function Home({
         <Hero />
         <SectionArgument locale={locale} />
         <SectionRecord locale={locale} />
+        <ScrollSequence locale={locale} />
         <SectionPlanIn locale={locale} />
         <SectionMaterials locale={locale} />
         <SectionWho />

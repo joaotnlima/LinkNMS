@@ -33,3 +33,19 @@ export const SHOW_PRICING_NAV = false;
  * report "static" for visitors who were, in fact, animated.
  */
 export const ANIMATION_ENABLED = true;
+
+/**
+ * How stage 1 hands off to stage 2 (LINA-110 §1.7).
+ *
+ * The current stage-1 still is the LINA-85 re-render from the stage-4 camera
+ * (`2b90e5a`), and the site's stage-1 derivatives were re-encoded from it
+ * (`526020c`). The matched camera is what makes a plain cross-fade correct.
+ *
+ * The flag still defaults to `cut` — the architecture's safe default: stage-1
+ * holds until the KF-B commit (t = 0.5), then stage-2 takes over instantly, the
+ * two stills never sharing the screen. Flipping this to `crossfade` is the
+ * entire 1→2 change (the whole handoff is isolated behind `applyStage1To2()` in
+ * `SequenceMotion.tsx`), and it should only be flipped after a human confirms
+ * the LINA-85 plate visually on the page.
+ */
+export const STAGE_1_TO_2: 'crossfade' | 'cut' = 'cut';

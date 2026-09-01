@@ -337,6 +337,55 @@
         "scrollNote": "La construcción avanza en imágenes mientras el gant se cierra del azul al naranja y al verde."
       }
     },
+    "sequence": {
+      "label": "El dibujo se convierte en la casa",
+      "barsHead": "Previsto · Real",
+      "rows": {
+        "foundations": "Cimentación",
+        "structure": "Estructura",
+        "envelope": "Envolvente",
+        "finishes": "Acabados"
+      },
+      "captions": {
+        "A": {
+          "micro": "p 0,00 → 0,15 · Las líneas se dibujan solas",
+          "line": "Al principio, solo es un dibujo."
+        },
+        "B": {
+          "micro": "p 0,15 → 0,40 · Cimentación y estructura cierran",
+          "line": "Cada acuerdo levanta un muro."
+        },
+        "C": {
+          "micro": "p 0,40 → 0,70 · La desviación aparece y se resuelve",
+          "line": "Las cosas cambian. Queda registrado."
+        },
+        "D": {
+          "micro": "p 0,70 → 1,00 · Todo cierra",
+          "line": "La casa. En plazo, en presupuesto, en alcance."
+        }
+      },
+      "hud": {
+        "time": "Plazo",
+        "timeValue": "0 días de retraso",
+        "cost": "Coste",
+        "scope": "Alcance",
+        "scopeValue": "100%",
+        "readings": {
+          "B": {
+            "time": "8 meses",
+            "scope": "100%"
+          },
+          "C": {
+            "time": "+ 9 días",
+            "scope": "98%"
+          },
+          "D": {
+            "time": "0 días de retraso",
+            "scope": "100%"
+          }
+        }
+      }
+    },
     "planIn": {
       "label": "Meter el plan dentro",
       "labelRight": "Excel, PDF, o hecho aquí mismo",

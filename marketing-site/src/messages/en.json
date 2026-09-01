@@ -337,6 +337,55 @@
         "scrollNote": "The construction advances in images while the gant closes from blue to orange to green."
       }
     },
+    "sequence": {
+      "label": "The drawing becomes the house",
+      "barsHead": "Planned · Actual",
+      "rows": {
+        "foundations": "Foundations",
+        "structure": "Structure",
+        "envelope": "Envelope",
+        "finishes": "Finishes"
+      },
+      "captions": {
+        "A": {
+          "micro": "p 0.00 → 0.15 · The lines draw themselves",
+          "line": "At the start, it's only a drawing."
+        },
+        "B": {
+          "micro": "p 0.15 → 0.40 · Foundations and structure close",
+          "line": "Every agreement raises a wall."
+        },
+        "C": {
+          "micro": "p 0.40 → 0.70 · The slip appears and resolves",
+          "line": "Things change. It gets recorded."
+        },
+        "D": {
+          "micro": "p 0.70 → 1.00 · Everything closes",
+          "line": "The house. On time, on budget, on scope."
+        }
+      },
+      "hud": {
+        "time": "Time",
+        "timeValue": "0 days slipped",
+        "cost": "Cost",
+        "scope": "Scope",
+        "scopeValue": "100%",
+        "readings": {
+          "B": {
+            "time": "8 months",
+            "scope": "100%"
+          },
+          "C": {
+            "time": "+ 9 days",
+            "scope": "98%"
+          },
+          "D": {
+            "time": "0 days slipped",
+            "scope": "100%"
+          }
+        }
+      }
+    },
     "planIn": {
       "label": "Getting the plan in",
       "labelRight": "Excel, PDF, or built right here",
