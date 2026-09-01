@@ -6,8 +6,8 @@
 // imported. Copy strings in `messages/*.json` carry ICU placeholders and are
 // filled from these values — never with a literal number.
 //
-// Ground truth: `landing-page-redesign-spec` §1 and the `landing-page` frame
-// of `cowork/pen/linkNMS.pen`.
+// Ground truth: `landing-page-redesign-spec` §1 and the `landing-page` /
+// `key-frames` frames of `cowork/pen/linkNMS.pen`.
 
 /** Contract total after every signed change. Appears in S3, S4, S5 and the phone preview. */
 export const CONTRACT_TOTAL = 97_100;
@@ -174,6 +174,142 @@ export const PLAN_STATE_FILL: Record<PlanState, string> = {
   actual: 'var(--plan-actual)',
   closed: 'var(--plan-closed)'
 };
+
+/**
+ * The pinned scroll sequence (`key-frames` frame of the pen, LINA-110).
+ *
+ * Four rows on a 320-unit track with 7-unit lanes, planned above actual. The
+ * geometry per keyframe is the KF A–D table from the pen, wired literally so
+ * the animation reads the table rather than eyeballing timings. `p` is recorded
+ * here for the keyframe *boundaries* only (0.15 / 0.40 / 0.70 / 1.00 — these
+ * are the sequence's own numbers, NOT the inline reel's 0.72) — the visible
+ * stage is derived from bar state, never from `p`.
+ */
+export const SEQUENCE_TRACK_UNITS = 320;
+export const SEQUENCE_LANE_HEIGHT = 7;
+/** Gap between the planned lane and the actual lane, in track units. */
+export const SEQUENCE_LANE_GAP = 3;
+
+export type SequenceRowKey = 'foundations' | 'structure' | 'envelope' | 'finishes';
+
+export const SEQUENCE_ROW_KEYS: readonly SequenceRowKey[] = [
+  'foundations',
+  'structure',
+  'envelope',
+  'finishes'
+];
+
+/** Planned (baseline) lane geometry. Fixed for the whole sequence — the baseline never moves. */
+export const SEQUENCE_PLANNED: Record<SequenceRowKey, { offset: number; width: number }> = {
+  foundations: { offset: 0, width: 60 },
+  structure: { offset: 60, width: 80 },
+  envelope: { offset: 140, width: 80 },
+  finishes: { offset: 220, width: 100 }
+};
+
+export type SequenceKeyframe = {
+  id: 'A' | 'B' | 'C' | 'D';
+  p: number;
+  stage: 1 | 2 | 3 | 4;
+  rows: Record<SequenceRowKey, { offset: number; width: number; state: PlanState }>;
+  hud: { tone: PlanState };
+};
+
+/** The KF A–D table, straight off the pen's `key-frames` frame (e.g. KF B at
+ *  p=0.40: Foundations + Structure green, the rest still blue). */
+export const SEQUENCE_KEYFRAMES: readonly SequenceKeyframe[] = [
+  {
+    id: 'A',
+    p: 0.15,
+    stage: 1,
+    rows: {
+      foundations: { offset: 0, width: 60, state: 'actual' },
+      structure: { offset: 60, width: 100, state: 'actual' },
+      envelope: { offset: 160, width: 80, state: 'actual' },
+      finishes: { offset: 240, width: 80, state: 'actual' }
+    },
+    hud: { tone: 'baseline' }
+  },
+  {
+    id: 'B',
+    p: 0.4,
+    stage: 2,
+    rows: {
+      foundations: { offset: 0, width: 60, state: 'closed' },
+      structure: { offset: 60, width: 80, state: 'closed' },
+      envelope: { offset: 160, width: 80, state: 'actual' },
+      finishes: { offset: 240, width: 80, state: 'actual' }
+    },
+    hud: { tone: 'baseline' }
+  },
+  {
+    id: 'C',
+    p: 0.7,
+    stage: 3,
+    rows: {
+      foundations: { offset: 0, width: 60, state: 'closed' },
+      structure: { offset: 60, width: 80, state: 'closed' },
+      envelope: { offset: 140, width: 80, state: 'closed' },
+      finishes: { offset: 240, width: 80, state: 'actual' }
+    },
+    hud: { tone: 'actual' }
+  },
+  {
+    id: 'D',
+    p: 1,
+    stage: 4,
+    rows: {
+      foundations: { offset: 0, width: 60, state: 'closed' },
+      structure: { offset: 60, width: 80, state: 'closed' },
+      envelope: { offset: 140, width: 80, state: 'closed' },
+      finishes: { offset: 220, width: 100, state: 'closed' }
+    },
+    hud: { tone: 'closed' }
+  }
+];
+
+/** The keyframe the server renders. Per the technical plan: the default HTML *is* p=1. */
+export const SEQUENCE_FINAL_KEYFRAME = SEQUENCE_KEYFRAMES[SEQUENCE_KEYFRAMES.length - 1];
+
+/** Baseline lane opacity once every row has closed (KF D: "blue baseline at 35%"). */
+export const SEQUENCE_CLOSED_BASELINE_OPACITY = 0.35;
+
+/**
+ * HUD cost reading per keyframe, straight off the KF A–D table.
+ *
+ * B and D read the flat contract total; C carries the signed materials movement
+ * ("+ € 3,200") that is the slip in progress. Charged to one record here so the
+ * three keyframes can never disagree with CONTRACT_TOTAL / MATERIALS_DELTA_SINCE_MARCH.
+ */
+export type SequenceHudKey = 'B' | 'C' | 'D';
+
+export const SEQUENCE_HUD_COST: Record<SequenceHudKey, { value?: number; delta?: number }> = {
+  B: { value: CONTRACT_TOTAL },
+  C: { delta: MATERIALS_DELTA_SINCE_MARCH },
+  D: { value: CONTRACT_TOTAL }
+};
+
+export function formatSequenceHudCost(key: SequenceHudKey, locale: string): string {
+  const entry = SEQUENCE_HUD_COST[key];
+  if (entry.delta != null) return formatEurDelta(entry.delta, locale);
+  return formatEur(entry.value ?? CONTRACT_TOTAL, locale);
+}
+
+/** The four stage stills, in order. Served from /images as AVIF → WebP → PNG. */
+export const SEQUENCE_STAGES = [
+  { stage: 1, slug: 'stage-1-design' },
+  { stage: 2, slug: 'stage-2-structure' },
+  { stage: 3, slug: 'stage-3-finishing' },
+  { stage: 4, slug: 'stage-4-house-built' }
+] as const;
+
+/**
+ * Native pixel size of the stage sources. Do not upscale past this: the cap is
+ * 1400w for both the 1402w natively and the AVIF/WebP descriptors (plan D2).
+ */
+export const SEQUENCE_IMAGE_WIDTH = 1402;
+export const SEQUENCE_IMAGE_HEIGHT = 1122;
+
 export const PHONE_PREVIEW = {
   buildName: 'Casa do Vale',
   week: 14,
