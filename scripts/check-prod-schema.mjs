@@ -145,11 +145,66 @@ const hasLedgerSchema =
 if (!hasLedgerSchema) {
   console.log('  skip  ledger.budget_event does not exist yet (see the drift failure above)');
 } else {
-  // (a) change_order_app's UPDATE on budget_event is column-scoped to the
+  // (a) The FULL budget_event grant matrix, straight from the migrations that
+  // own it — asserted for every role, not just change_order_app. LINA-115: a
+  // whole-table `REVOKE ALL` (or a drop/recreate) wiped every grantee at once
+  // in production, but the old checker only asserted change_order_app, so it
+  // reported two rows for a five-role wipe and under-stated the blast radius.
+  // Driving off this table means a recurrence surfaces every missing role, and
+  // a role that SHOULD hold grants but holds NONE fails loudly (the zero-grant
+  // case that reads as "table wiped", not "one privilege changed").
+  //
+  //   0002_ledger_roles                 ledger_app       → SELECT, INSERT, UPDATE
+  //   0004_ledger_change_order_..grant   change_order_app → SELECT, INSERT
+  //                                                        + UPDATE(audit_event_id)
+  //   0006_decision_ledger_grant         identity_app     → SELECT
+  //                                       decision_app     → SELECT
+  //   0007_schedule_ledger_grant         schedule_app     → SELECT
+  //
+  // Column-scoped UPDATE does NOT appear in table_privileges, so change_order_app
+  // shows only INSERT, SELECT here — its UPDATE(audit_event_id) is asserted
+  // separately and loudly in (b), the one property the ledger exists to protect.
+  const BUDGET_EVENT_MATRIX = {
+    ledger_app: ['INSERT', 'SELECT', 'UPDATE'],
+    change_order_app: ['INSERT', 'SELECT'],
+    identity_app: ['SELECT'],
+    decision_app: ['SELECT'],
+    schedule_app: ['SELECT'],
+  };
+  const budgetTable = query(
+    `select grantee, privilege_type from information_schema.table_privileges
+      where table_schema = 'ledger' and table_name = 'budget_event'
+        and grantee in (${Object.keys(BUDGET_EVENT_MATRIX).map((r) => `'${r}'`).join(', ')})
+      order by grantee, privilege_type`,
+  );
+  const budgetByRole = new Map();
+  for (const [g, p] of budgetTable) {
+    if (!budgetByRole.has(g)) budgetByRole.set(g, []);
+    budgetByRole.get(g).push(p);
+  }
+  for (const [role, want] of Object.entries(BUDGET_EVENT_MATRIX)) {
+    const got = (budgetByRole.get(role) ?? []).sort();
+    if (got.join(',') !== [...want].sort().join(',')) {
+      fail(
+        `${role} table-level privileges on ledger.budget_event do not match the migrations`,
+        `got: [${got.join(', ') || '(none)'}], expected: [${want.join(', ')}]\n\n` +
+          (got.length === 0
+            ? 'This role holds NO grants on budget_event — the signature of a whole-\n' +
+              'table REVOKE or a drop/recreate applied out-of-tree (ADR-0006 §1).\n' +
+              'Re-run the grant statements from the migration named above, as the owner.'
+            : 'A widening here (esp. UPDATE on change_order_app) voids the column\n' +
+              'scope checked next. Never fix a privilege error by widening — fix the query.'),
+      );
+    } else {
+      ok(`${role} holds exactly [${want.join(', ')}] at table level on budget_event`);
+    }
+  }
+
+  // (b) change_order_app's UPDATE on budget_event is column-scoped to the
   // audit_event_id back-link. A table-wide GRANT UPDATE would let it rewrite
   // delta_cents or project_id on any existing row — moving a project's budget
   // with no audit_event behind it. That is the one property the ledger exists
-  // to make impossible, so it is checked first and phrased loudly.
+  // to make impossible, so it is phrased loudly and checked on its own.
   const updCols = query(
     `select column_name from information_schema.column_privileges
       where grantee = 'change_order_app' and table_schema = 'ledger'
@@ -161,29 +216,11 @@ if (!hasLedgerSchema) {
       'change_order_app UPDATE on ledger.budget_event is not column-scoped to audit_event_id',
       `got: [${updCols.join(', ') || '(none)'}], expected: [audit_event_id]\n\n` +
         'If this is wider, the budget can be moved with no audit event behind it.\n' +
+        'If this is empty, the column grant was wiped with the rest (see LINA-115).\n' +
         'Never fix a privilege error here by widening the grant — fix the query.',
     );
   } else {
     ok('change_order_app UPDATE on budget_event is column-scoped to audit_event_id');
-  }
-
-  // (b) No table-wide UPDATE and no DELETE. A column-scoped grant does NOT
-  // appear in table_privileges, so seeing UPDATE here means someone widened it.
-  const coTable = query(
-    `select privilege_type from information_schema.table_privileges
-      where grantee = 'change_order_app' and table_schema = 'ledger'
-        and table_name = 'budget_event'
-      order by privilege_type`,
-  ).map(([p]) => p);
-  const expected = ['INSERT', 'SELECT'];
-  if (coTable.join(',') !== expected.join(',')) {
-    fail(
-      'change_order_app table-level privileges on ledger.budget_event have changed',
-      `got: [${coTable.join(', ') || '(none)'}], expected: [${expected.join(', ')}]\n\n` +
-        'A table-wide UPDATE here voids the column scope checked above.',
-    );
-  } else {
-    ok('change_order_app holds only INSERT, SELECT at table level on budget_event');
   }
 
   // (c) ledger.audit_event stays write-locked to EVERY app role. The only
