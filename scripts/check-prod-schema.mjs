@@ -209,24 +209,34 @@ if (!hasLedgerSchema) {
 
   // (d) The grant matrix only means anything if a role cannot inherit past it.
   // neon_superuser members bypass append_event entirely (LINA-35 finding).
-  // `migrator` IS a member and is expected to be — it is not an *_app role.
+  // `migrator` IS a member and is expected to be — it is not an app role.
+  //
+  // Covers the split-DB service roles (`%_app`) AND the marketing waitlist role
+  // (`landing_app%`). The latter is watched by name because that is exactly the
+  // role this check missed the first time: `landing_app` was created in the Neon
+  // console (auto-granted neon_superuser) and, being outside the `%_app` net,
+  // could have slipped a superuser regression past this guard. Its SQL-created
+  // replacement `landing_app_v2` does not end in `_app`, so match the prefix
+  // (LINA-96). `neondb_owner` is deliberately NOT matched — it is a superuser
+  // member by design and is not an app credential.
   const superMembers = query(
     `select r2.rolname, r.rolname from pg_auth_members m
        join pg_roles r2 on r2.oid = m.member
        join pg_roles r  on r.oid = m.roleid
-      where r2.rolname like '%\\_app'
+      where (r2.rolname like '%\\_app' or r2.rolname like 'landing\\_app%')
         and r.rolname in ('neon_superuser', 'postgres', 'cloud_admin', 'rds_superuser')
       order by r2.rolname`,
   ).map(([member, role]) => `  - ${member} inherits ${role}`);
   if (superMembers.length) {
     fail(
-      'an *_app role inherits a superuser role',
+      'an app role inherits a superuser role',
       superMembers.join('\n') +
         '\n\nA superuser-inheriting app role bypasses every grant above, including\n' +
-        'append_event. Revoke it (LINA-35).',
+        'append_event. It cannot be fixed by a REVOKE (neon_superuser is not\n' +
+        'revocable) — replace it with a SQL-created role (LINA-96 / LINA-35).',
     );
   } else {
-    ok('no *_app role inherits a superuser role');
+    ok('no app role inherits a superuser role');
   }
 }
 
