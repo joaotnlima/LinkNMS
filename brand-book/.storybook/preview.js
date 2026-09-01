@@ -1,5 +1,6 @@
 import "../src/styles/tokens.css";
 import "../src/styles/brand.css";
+import "../src/styles/landing.css";
 
 /** @type { import('@storybook/html').Preview } */
 const preview = {
