@@ -40,11 +40,20 @@ const mapMembership = (r) => r && {
   partyId: r.party_id,
   role: r.role,
   joinedAt: r.joined_at instanceof Date ? r.joined_at.toISOString() : r.joined_at,
+  // Present only where the query joins identity.party (listMemberships). The UI
+  // must render "who decided this" as a NAME, and party ids never leave this
+  // schema — decision and change_order live in their own schemas and cannot join
+  // to it. Every decision author and change-order proposer is by construction a
+  // project member, so the membership list is the one place that lookup can and
+  // should exist. Spread conditionally so the field is simply absent (rather
+  // than an misleading explicit null) on the queries that do not join.
+  ...(r.display_name === undefined ? {} : { displayName: r.display_name }),
 };
 const mapInvitation = (r) => r && {
   id: r.id,
   projectId: r.project_id,
   tokenHash: r.token_hash,
+  email: r.email ?? null, // LINA-84: null on the out-of-band (token-only) path
   role: r.role,
   status: r.status,
   invitedByPartyId: r.invited_by_party_id,
@@ -77,8 +86,11 @@ export function createPgStore({ pool = getPool(), ledger }) {
   }
   async function listMemberships(projectId) {
     const { rows } = await pool.query(
-      `select * from identity.membership where project_id = $1
-        order by (role <> 'owner'), joined_at, id`,
+      `select m.*, p.display_name
+         from identity.membership m
+         left join identity.party p on p.id = m.party_id
+        where m.project_id = $1
+        order by (m.role <> 'owner'), m.joined_at, m.id`,
       [projectId],
     );
     return rows.map(mapMembership);
@@ -124,9 +136,9 @@ export function createPgStore({ pool = getPool(), ledger }) {
           try {
             const { rows } = await client.query(
               `insert into identity.invitation
-                 (id, project_id, token_hash, role, status, invited_by_party_id, created_at)
-               values ($1, $2, $3, $4, $5, $6, $7) returning *`,
-              [i.id, i.projectId, i.tokenHash, i.role, i.status, i.invitedByPartyId, i.createdAt],
+                 (id, project_id, token_hash, email, role, status, invited_by_party_id, created_at)
+               values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
+              [i.id, i.projectId, i.tokenHash, i.email ?? null, i.role, i.status, i.invitedByPartyId, i.createdAt],
             );
             return mapInvitation(rows[0]);
           } catch (e) { throw asConflict(e); }

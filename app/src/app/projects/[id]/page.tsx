@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { getProject } from '@/lib/api';
 import { PillarPanel } from '@/components/PillarPanel';
-import { TopBar, BottomNav, DemoBanner } from '@/components/chrome';
+import { TopBar, BottomNav } from '@/components/chrome';
 import { Check } from '@/components/icons';
 import { money, moneyPrecise, delta } from '@/lib/format';
 
@@ -21,7 +21,6 @@ export default async function DashboardPage({ params }: { params: Promise<{ id: 
     <>
       <TopBar />
       <main className="screen">
-        <DemoBanner />
         <div>
           <div className="crumbs">Shared record</div>
           <h1 className="scr">{p.name}</h1>
@@ -29,6 +28,17 @@ export default async function DashboardPage({ params }: { params: Promise<{ id: 
             {p.members.map((m) => `${m.name} (${m.role === 'owner' ? 'Owner' : 'GC'})`).join(' · ')}
           </p>
         </div>
+
+        {/* FR1 is not finished until the second party is actually on the record —
+            a "shared" record with one member shares nothing. Surfaced here as a
+            live prompt rather than buried in a settings screen, and only for the
+            owner, who is the only party allowed to invite. */}
+        {p.actingRole === 'owner' && !p.members.some((m) => m.role === 'counterparty') ? (
+          <Link className="card row" href={`/projects/${id}/invite`}>
+            <span style={{ fontWeight: 600 }}>👷 Invite your general contractor</span>
+            <span className="cap">no GC on this record yet →</span>
+          </Link>
+        ) : null}
 
         <section aria-labelledby="status-h" className="stack">
           <h2 id="status-h" className="grp">Project status</h2>

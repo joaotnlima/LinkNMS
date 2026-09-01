@@ -14,18 +14,22 @@
 -- matrix stays in one place (ADR-0002 §4, ADR-0006 §1). schedule_app is created
 -- up-front by db/roles.sql, so it already exists here.
 --
--- NOTE what is deliberately ABSENT: no GRANT of any kind on ledger.budget_event to
--- schedule_app. Schedule & Progress must be structurally incapable of moving the
--- budget (spec §2 Q2, AC-P5 / AC-P12); the money gate stays the change order. Only
--- change_order_app holds the budget-move grants (0004).
+-- NOTE what is deliberately ABSENT: no budget-MOVE grant (INSERT / UPDATE / DELETE)
+-- on ledger.budget_event to schedule_app — only the read-only SELECT below. Schedule
+-- & Progress must be structurally incapable of moving the budget (spec §2 Q2,
+-- AC-P5 / AC-P12); reading the authoritative number for the FR-P6 hint cannot move
+-- it. The money gate stays the change order: only change_order_app holds the
+-- budget-move (write) grants (0004).
 
 GRANT USAGE ON SCHEMA ledger TO schedule_app;
 GRANT EXECUTE ON FUNCTION
   ledger.append_event(uuid, text, uuid, timestamptz, jsonb, text) TO schedule_app;
 
 -- The current-budget summary the plan surface shows as a read-only allocation hint
--- (FR-P6) is the ledger's authoritative number, read through the Ledger port's own
--- pool — Schedule never re-sums it. schedule_app therefore needs to SELECT the same
--- rows change_order_app/identity_app already read for their budget summaries.
+-- (FR-P6) is the ledger's authoritative number — Schedule never re-sums it. Schedule
+-- reads it through its Ledger binding, which runs on schedule_app's OWN pool (see
+-- services/gateway/container.mjs: ledgerFor(pools.schedule)), so schedule_app itself
+-- needs SELECT on the same rows change_order_app/identity_app read for their budget
+-- summaries.
 GRANT SELECT ON ledger.project_audit TO schedule_app;
 GRANT SELECT ON ledger.budget_event  TO schedule_app;

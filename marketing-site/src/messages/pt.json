@@ -23,7 +23,12 @@
       "O mesmo registo, para todos em obra.",
       "Previsto contra real, num só lugar."
     ],
-    "personas": ["Dono de obra", "Empreiteiro", "Especialidade", "Arquiteto"],
+    "personas": [
+      "Dono de obra",
+      "Empreiteiro",
+      "Especialidade",
+      "Arquiteto"
+    ],
     "lede": "O LinkNMS é o registo partilhado e verificável de uma obra — o terreno neutro onde o dono da obra e todos os que nela trabalham discutem a partir do registo, não da memória.",
     "cta": "Entrar na lista de espera",
     "link": "Ver como funciona"
@@ -31,25 +36,52 @@
   "tamper": {
     "h": "Revela adulterações. Não as impede.",
     "b": "Mostra que um registo foi alterado depois — não impede a alteração. Nunca confundimos as duas coisas.",
-    "slogan": { "a": "Trust", "b": "built-in." }
+    "slogan": {
+      "a": "Trust",
+      "b": "built-in."
+    }
   },
   "audience": {
     "eyebrow": "O mesmo registo, os dois lados",
     "h2": "Feito para todos na obra.",
     "cards": [
-      { "t": "Dono de obra", "b": "Vê o orçamento, o calendário e cada decisão — sem uma segunda contabilidade privada." },
-      { "t": "Empreiteiro / construtor", "b": "Cada alteração que registas fica no registo: quem a acordou, quando e em quanto." },
-      { "t": "Especialidade / subcontratado", "b": "As mesmas tarefas e âmbito que todos veem — sem versões divergentes, sem fios trocados." },
-      { "t": "Arquiteto", "b": "O modelo anexado ao registo, o previsto contra o que aconteceu em obra." }
+      {
+        "t": "Dono de obra",
+        "b": "Vê o orçamento, o calendário e cada decisão — sem uma segunda contabilidade privada."
+      },
+      {
+        "t": "Empreiteiro / construtor",
+        "b": "Cada alteração que registas fica no registo: quem a acordou, quando e em quanto."
+      },
+      {
+        "t": "Especialidade / subcontratado",
+        "b": "As mesmas tarefas e âmbito que todos veem — sem versões divergentes, sem fios trocados."
+      },
+      {
+        "t": "Arquiteto",
+        "b": "O modelo anexado ao registo, o previsto contra o que aconteceu em obra."
+      }
     ]
   },
   "how": {
     "eyebrow": "Como funciona",
     "h2": "Três passos, um registo.",
     "steps": [
-      { "n": "01", "t": "Abre o registo", "b": "Cria a obra. Convida o dono, o empreiteiro e cada especialidade para o mesmo registo partilhado." },
-      { "n": "02", "t": "Regista cada alteração", "b": "Tarefas, orçamento e âmbito mudam à medida que a obra avança. Cada edição guarda quem, quando e em quanto." },
-      { "n": "03", "t": "Lê previsto vs. real", "b": "Vê o que foi acordado contra o que aconteceu em obra — legível num relance, com etiqueta para ler sem cor." }
+      {
+        "n": "01",
+        "t": "Abre o registo",
+        "b": "Cria a obra. Convida o dono, o empreiteiro e cada especialidade para o mesmo registo partilhado."
+      },
+      {
+        "n": "02",
+        "t": "Regista cada alteração",
+        "b": "Tarefas, orçamento e âmbito mudam à medida que a obra avança. Cada edição guarda quem, quando e em quanto."
+      },
+      {
+        "n": "03",
+        "t": "Lê previsto vs. real",
+        "b": "Vê o que foi acordado contra o que aconteceu em obra — legível num relance, com etiqueta para ler sem cor."
+      }
     ]
   },
   "feat": {
@@ -80,20 +112,47 @@
     "is": {
       "t": "O que o LinkNMS é",
       "items": [
-        { "b": "O registo partilhado e verificável", "s": "de uma obra." },
-        { "b": "Terreno neutro", "s": "para dono, empreiteiro e cada especialidade." },
-        { "b": "Tempo, dinheiro, âmbito e histórico", "s": "num só lugar." },
-        { "b": "Todas as tuas obras num só lugar", "s": "— alterna entre elas, um painel de portfólio." },
-        { "b": "Upload e pré-visualização de BIM", "s": "— o modelo, anexado ao registo." }
+        {
+          "b": "O registo partilhado e verificável",
+          "s": "de uma obra."
+        },
+        {
+          "b": "Terreno neutro",
+          "s": "para dono, empreiteiro e cada especialidade."
+        },
+        {
+          "b": "Tempo, dinheiro, âmbito e histórico",
+          "s": "num só lugar."
+        },
+        {
+          "b": "Todas as tuas obras num só lugar",
+          "s": "— alterna entre elas, um painel de portfólio."
+        },
+        {
+          "b": "Upload e pré-visualização de BIM",
+          "s": "— o modelo, anexado ao registo."
+        }
       ]
     },
     "isnt": {
       "t": "O que o LinkNMS não é",
       "items": [
-        { "b": "Não é inviolável", "s": "— revela as alterações, não as impede." },
-        { "b": "Não é uma ferramenta de autoria ou análise BIM", "s": "— não substitui o Revit nem o ArchiCAD." },
-        { "b": "Não é uma integração de licenciamento", "s": "— marca as fases, não comunica com as câmaras." },
-        { "b": "Não é o teu back office", "s": "— as tuas obras e o seu registo, não a contabilidade, salários ou CRM." }
+        {
+          "b": "Não é inviolável",
+          "s": "— revela as alterações, não as impede."
+        },
+        {
+          "b": "Não é uma ferramenta de autoria ou análise BIM",
+          "s": "— não substitui o Revit nem o ArchiCAD."
+        },
+        {
+          "b": "Não é uma integração de licenciamento",
+          "s": "— marca as fases, não comunica com as câmaras."
+        },
+        {
+          "b": "Não é o teu back office",
+          "s": "— as tuas obras e o seu registo, não a contabilidade, salários ou CRM."
+        }
       ]
     }
   },
@@ -102,9 +161,18 @@
     "h2": "Preço para a obra toda, não por utilizador.",
     "note": "Direção, não números finais. O preço chega com o produto.",
     "columns": [
-      { "t": "Obra individual", "b": "Um dono a gerir uma obra com o seu empreiteiro. O registo essencial, gratuito enquanto estamos em desenvolvimento." },
-      { "t": "Obra ativa", "b": "A obra a decorrer com cada especialidade no mesmo registo — previsto vs. real, aprovações, pré-visualização BIM." },
-      { "t": "Portfólio", "b": "Várias obras ao mesmo tempo num painel de portfólio, para empreiteiros e donos com mais do que uma." }
+      {
+        "t": "Obra individual",
+        "b": "Um dono a gerir uma obra com o seu empreiteiro. O registo essencial, gratuito enquanto estamos em desenvolvimento."
+      },
+      {
+        "t": "Obra ativa",
+        "b": "A obra a decorrer com cada especialidade no mesmo registo — previsto vs. real, aprovações, pré-visualização BIM."
+      },
+      {
+        "t": "Portfólio",
+        "b": "Várias obras ao mesmo tempo num painel de portfólio, para empreiteiros e donos com mais do que uma."
+      }
     ]
   },
   "faq": {
@@ -140,6 +208,7 @@
     "email": "Email",
     "emailPh": "tu@exemplo.com",
     "role": "De que lado estás?",
+    "rolePlaceholder": "Selecione uma opção…",
     "roleOptions": {
       "homeowner": "Dono de obra",
       "contractor": "Empreiteiro / construtor",
@@ -166,5 +235,251 @@
     "privacy": "Privacidade",
     "contact": "Contacto",
     "fine": "O LinkNMS é um produto em desenvolvimento. Nada nesta página é garantia de disponibilidade, adoção ou funcionalidade já lançada — o histórico de alterações revela adulterações, não é inviolável."
+  },
+  "lp": {
+    "skip": "Saltar para o conteúdo",
+    "header": {
+      "status": "Feito para chave na mão. Feito para confiar.",
+      "navLabel": "Principal",
+      "langLabel": "Idioma",
+      "cta": "Pedir acesso",
+      "nav": {
+        "problem": "O problema",
+        "how": "Como funciona",
+        "builders": "Para construtores",
+        "pricing": "Preços"
+      }
+    },
+    "hero": {
+      "lede": "Todas as obras chave na mão acabam na mesma discussão. Disseste que custava €X, agora são €Y. O linkNMS guarda o plano, o preço e a prova num só registo — a resposta demora dez segundos, não duas reuniões.",
+      "meta": "Plano · Preço · Prova",
+      "primary": "Pedir acesso",
+      "secondary": "Ver como funciona",
+      "reassure": "Grátis enquanto acompanhamos a sua primeira obra · Sem cartão",
+      "platforms": {
+        "head": "Disponível em",
+        "ios": "App iOS",
+        "mobileWeb": "Web no telemóvel",
+        "desktopWeb": "Web no computador",
+        "note": "O construtor responde do andaime. O dono confirma do escritório. Mesma obra, mesmo registo."
+      },
+      "card": {
+        "title": "Um registo do\nprimeiro orçamento\nà chave final.",
+        "body": "Tarefas, dependências, dinheiro e cada alteração — assinada por quem a fez."
+      }
+    },
+    "argument": {
+      "label": "A discussão",
+      "labelRight": "Acontece em todas as obras",
+      "headline": "Disseste que custava {quote}.",
+      "headlineAccent": "Agora são {total}.",
+      "sub": "Ninguém está a mentir. A cozinha mudou de sítio, os azulejos foram trocados, a estrutura atrasou duas semanas. Aconteceu tudo no WhatsApp, em obra, ao telefone — e nada disso está escrito num sítio que os dois lados possam ler.",
+      "thread1": "João, o orçamento que enviaste em março dizia {quote}. A fatura diz {total}.",
+      "thread2": "Sim, mas mudou o pavimento e a casa de banho mudou de sítio. Eu disse-lhe na altura.",
+      "thread3": "Disse-me quando? Mostre-me.",
+      "threadCaption": "É para este momento que o linkNMS existe"
+    },
+    "record": {
+      "label": "O registo",
+      "labelRight": "Três cores, uma verdade",
+      "agreed": "Azul é o que ficou acordado.",
+      "changed": "Laranja é o que mudou.",
+      "closed": "Verde é o que fechou.",
+      "explainer": "O scroll faz avançar as imagens da obra enquanto o gant acompanha o contrato. O azul fica fixo, o laranja marca o desvio, o verde fecha a linha.",
+      "explainerMobile": "Uma linha do tempo guarda os três estados ao mesmo tempo. As imagens avançam com o scroll, a linha de base fica azul, a mudança vem a laranja e o trabalho fechado fica verde.",
+      "note": "Imagem + gantt, não um slideshow",
+      "tableCaption": "Capítulos de trabalho face à linha de base acordada, com o valor de cada um.",
+      "colPackage": "Capítulo de trabalho",
+      "colValue": "Valor",
+      "months": {
+        "MAR": "Mar",
+        "APR": "Abr",
+        "MAY": "Mai",
+        "JUN": "Jun",
+        "JUL": "Jul",
+        "AUG": "Ago",
+        "SEP": "Set",
+        "OCT": "Out"
+      },
+      "packages": {
+        "foundations": "Terreno e fundações",
+        "structure": "Estrutura",
+        "envelope": "Cobertura e envolvente",
+        "cladding": "Janelas e revestimento",
+        "mep": "Eletricidade e canalização",
+        "finishes": "Acabamentos e pavimentos"
+      },
+      "legend": {
+        "baseline": "Linha de base acordada",
+        "actual": "Alterado · mudança assinada",
+        "closed": "Fechado · ambas as leituras guardadas",
+        "audit": "Cada barra guarda quem a mudou, quando e porquê"
+      },
+      "reel": {
+        "index": "03",
+        "indexMobile": "02.1",
+        "title": "Construção em scroll  ·  Imagem + gantt",
+        "titleMobile": "Construção em scroll · Mobile",
+        "note": "A imagem e o gráfico movem-se juntos.",
+        "noteMobile": "Move-se com o gant.",
+        "labels": {
+          "1": "Design",
+          "2": "Estrutura",
+          "3": "Acabamento",
+          "4": "Construída"
+        },
+        "alt": {
+          "1": "Fase de design: a casa no primeiro desenho.",
+          "2": "Fase de estrutura: o esqueleto está de pé.",
+          "3": "Fase de acabamento: cobertura e envolvente fechadas.",
+          "4": "Fase de construção: a casa terminada."
+        },
+        "scrollNote": "A construção avança em imagens enquanto o gant fecha do azul para o laranja e o verde."
+      }
+    },
+    "planIn": {
+      "label": "Meter o plano lá dentro",
+      "labelRight": "Excel, PDF, ou feito aqui mesmo",
+      "headline": "Carregue o que já tem.",
+      "sub": "Ninguém refaz o orçamento de raiz. Largue a folha de cálculo com que orçamentou e o linkNMS lê-a em capítulos de trabalho, subtarefas e preços.",
+      "steps": {
+        "01": {
+          "t": "Largue o ficheiro",
+          "d": "XLSX, CSV ou PDF. Direto do orçamentista, sem modelo para preencher."
+        },
+        "02": {
+          "t": "Confirme as colunas",
+          "d": "Mapeia preço, quantidade e datas uma vez. Fica a saber o seu formato."
+        },
+        "03": {
+          "t": "Os dois lados assinam",
+          "d": "No momento em que ambos aceitam, esse plano passa a ser a linha de base azul."
+        }
+      },
+      "rowsRead": "{rows} linhas lidas",
+      "columnsMapped": "Colunas mapeadas",
+      "tableCaption": "A folha de cálculo carregada, lida em capítulos de trabalho e subtarefas.",
+      "colPackage": "Capítulo de trabalho",
+      "colQty": "Qtd",
+      "colUnit": "Un.",
+      "colUnitPrice": "Preço unitário",
+      "colTotal": "Total",
+      "packages": {
+        "structure": "Estrutura",
+        "cladding": "Janelas e revestimento"
+      },
+      "rows": {
+        "slab": "Laje de betão, piso térreo",
+        "timber": "Estrutura de madeira + painéis",
+        "steel": "Ligações metálicas",
+        "brick": "Tijolo + ETICS, fachada norte",
+        "glazing": "Caixilhos de alumínio, vidro triplo"
+      },
+      "foot": "Total do contrato · {packages} capítulos de trabalho · {subTasks} subtarefas",
+      "band": "Não tem folha de cálculo? Os parceiros especializados constroem o plano dentro do linkNMS e exportam-no. O plano pertence sempre a quem faz o trabalho — e a prova de aceitação é igual nos dois casos.",
+      "bandLink": "Ver o aperto de mão"
+    },
+    "materials": {
+      "label": "Materiais e dinheiro",
+      "labelRight": "Onde o orçamento se mexe mesmo",
+      "headline": "Metade do orçamento é uma decisão de material.",
+      "body": "Madeira ou cerâmica. Tijolo, ou betão com ETICS. Cada linha do plano carrega os materiais em que assenta, com quantidades e preços unitários. Troque um e a visão geral redesenha-se — vê exatamente que fatia do orçamento se mexeu, quanto, e quem a aprovou.",
+      "body2": "Quando um fornecedor sobe o preço do tijolo em março, isso não é uma alteração ao contrato. É um movimento de preço, e o linkNMS regista-o como um tipo de evento próprio.",
+      "swap": {
+        "title": "Piso térreo · Pavimento",
+        "chip": "Material alterado",
+        "from": "Soalho de carvalho multicamada",
+        "to": "Porcelânico, grande formato",
+        "unitLine": "{price} / {unit} × {area} {unit}",
+        "approved": "Aprovado por {name} — {when}"
+      },
+      "composition": {
+        "head": "Como se compõem {total}",
+        "headRight": "Os materiais pesam {pct}% — e toda a volatilidade",
+        "aria": "Composição do orçamento de {total}. Os materiais são {materials}, {pct}% do contrato.",
+        "sinceMarch": "{delta} desde março",
+        "slices": {
+          "structure": "Estrutura",
+          "envelope": "Envolvente",
+          "materials": "Materiais",
+          "mep": "Redes",
+          "finishes": "Acabamentos"
+        }
+      }
+    },
+    "who": {
+      "label": "Para quem é",
+      "labelRight": "Duas pessoas que ainda não confiam uma na outra",
+      "marta": {
+        "quote": "“Só quero saber se ainda estamos dentro do orçamento — sem sentir que estou a acusar alguém de alguma coisa.”",
+        "name": "Marta",
+        "role": "Primeira obra · Porto",
+        "traits": {
+          "t1": "Só telemóvel",
+          "t2": "Sessões curtas",
+          "t3": "Precisa de garantias"
+        }
+      },
+      "joao": {
+        "quote": "“Não estou a esconder nada. Só não tenho duas horas todas as noites para escrever o que já sei.”",
+        "name": "João",
+        "role": "Mestre de obras · 31 anos em obra",
+        "traits": {
+          "t1": "Só telemóvel",
+          "t2": "Pouco à vontade com tecnologia",
+          "t3": "10 segundos, não 2 minutos"
+        }
+      }
+    },
+    "cta": {
+      "kicker": "Pedir acesso · Portugal primeiro, 3.º trimestre de 2026",
+      "headline": "Deixe de discutir de memória.",
+      "sub": "Um plano, um preço, um registo que os dois lados conseguem ler. Os donos deixam de adivinhar. Os construtores deixam de se defender. A obra simplesmente faz-se."
+    },
+    "phone": {
+      "aria": "A aplicação linkNMS a mostrar o planeamento e o total do contrato de uma obra em curso.",
+      "week": "Semana {week} de {total} · Dentro do prazo",
+      "tabs": {
+        "schedule": "Plano",
+        "money": "Dinheiro",
+        "history": "Histórico"
+      },
+      "rows": {
+        "foundations": "Fundações",
+        "structure": "Estrutura",
+        "envelope": "Envolvente",
+        "finishes": "Acabamentos"
+      },
+      "contractTotal": "Total do contrato",
+      "sinceMarch": "{delta} desde março"
+    },
+    "footer": {
+      "tagline": "Gestão de obra para construção chave na mão. Feito em Portugal, para a forma como as casas se constroem cá.",
+      "copyright": "© {year} linkNMS, Lda · Porto",
+      "privacy": "Privacidade",
+      "terms": "Termos",
+      "product": {
+        "head": "Produto",
+        "record": "O registo",
+        "plan": "Plano e prazos",
+        "money": "Dinheiro",
+        "materials": "Materiais",
+        "history": "Histórico de alterações"
+      },
+      "for": {
+        "head": "Para",
+        "homeowners": "Donos de obra",
+        "contractors": "Empreiteiros gerais",
+        "partners": "Parceiros especializados",
+        "architects": "Arquitetos"
+      },
+      "company": {
+        "head": "Empresa",
+        "about": "Sobre",
+        "research": "Personas e investigação",
+        "privacy": "Privacidade",
+        "contact": "Contacto"
+      }
+    }
   }
 }

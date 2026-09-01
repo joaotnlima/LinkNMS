@@ -2,7 +2,7 @@
 // revised carries an "edited · rev N" badge that opens the full revision history
 // with authors + timestamps — history is never lost. (design §7, FR2/FR7)
 import { getDecisions } from '@/lib/api';
-import { TopBar, BottomNav, DemoBanner } from '@/components/chrome';
+import { TopBar, BottomNav } from '@/components/chrome';
 import { PencilEdit } from '@/components/icons';
 import { formatDateTime, roleLabel } from '@/lib/format';
 import type { Decision } from '@/lib/types';
@@ -62,7 +62,6 @@ export default async function DecisionsPage({ params }: { params: Promise<{ id: 
     <>
       <TopBar back={{ href: `/projects/${id}`, label: 'Home' }} />
       <main className="screen">
-        <DemoBanner />
         <div>
           <h1 className="scr">Decision log</h1>
           <p className="sub">Everything agreed, in order. Corrections append a revision — the original is always kept.</p>

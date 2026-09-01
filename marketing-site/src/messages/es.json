@@ -23,7 +23,12 @@
       "El mismo registro, para todos en la obra.",
       "Previsto contra real, en un solo lugar."
     ],
-    "personas": ["Propietario", "Contratista", "Gremio", "Arquitecto"],
+    "personas": [
+      "Propietario",
+      "Contratista",
+      "Gremio",
+      "Arquitecto"
+    ],
     "lede": "LinkNMS es el registro compartido y verificable de una obra — el terreno neutral donde el propietario y todos los que trabajan en ella discuten desde el registro, no desde la memoria.",
     "cta": "Únete a la lista de espera",
     "link": "Ver cómo funciona"
@@ -31,25 +36,52 @@
   "tamper": {
     "h": "Revela las alteraciones. No las impide.",
     "b": "Muestra que un registro se alteró después — no impide la alteración. Nunca confundimos las dos cosas.",
-    "slogan": { "a": "Trust", "b": "built-in." }
+    "slogan": {
+      "a": "Trust",
+      "b": "built-in."
+    }
   },
   "audience": {
     "eyebrow": "El mismo registro, los dos lados",
     "h2": "Hecho para todos en la obra.",
     "cards": [
-      { "t": "Propietario", "b": "Ve el presupuesto, el calendario y cada decisión — sin una segunda contabilidad privada." },
-      { "t": "Contratista / constructor", "b": "Cada cambio que registras queda en el registro: quién lo acordó, cuándo y por cuánto." },
-      { "t": "Gremio / subcontratista", "b": "Las mismas tareas y alcance que ven los demás — sin versiones divergentes, sin malentendidos." },
-      { "t": "Arquitecto", "b": "El modelo adjunto al registro, lo previsto contra lo que ocurrió en obra." }
+      {
+        "t": "Propietario",
+        "b": "Ve el presupuesto, el calendario y cada decisión — sin una segunda contabilidad privada."
+      },
+      {
+        "t": "Contratista / constructor",
+        "b": "Cada cambio que registras queda en el registro: quién lo acordó, cuándo y por cuánto."
+      },
+      {
+        "t": "Gremio / subcontratista",
+        "b": "Las mismas tareas y alcance que ven los demás — sin versiones divergentes, sin malentendidos."
+      },
+      {
+        "t": "Arquitecto",
+        "b": "El modelo adjunto al registro, lo previsto contra lo que ocurrió en obra."
+      }
     ]
   },
   "how": {
     "eyebrow": "Cómo funciona",
     "h2": "Tres pasos, un registro.",
     "steps": [
-      { "n": "01", "t": "Abre el registro", "b": "Crea la obra. Invita al propietario, al contratista y a cada especialidad al mismo registro compartido." },
-      { "n": "02", "t": "Registra cada cambio", "b": "Tareas, presupuesto y alcance cambian a medida que avanza la obra. Cada edición guarda quién, cuándo y por cuánto." },
-      { "n": "03", "t": "Lee previsto vs. real", "b": "Ve lo acordado contra lo que ocurrió en obra — legible de un vistazo, etiquetado para leerse sin color." }
+      {
+        "n": "01",
+        "t": "Abre el registro",
+        "b": "Crea la obra. Invita al propietario, al contratista y a cada especialidad al mismo registro compartido."
+      },
+      {
+        "n": "02",
+        "t": "Registra cada cambio",
+        "b": "Tareas, presupuesto y alcance cambian a medida que avanza la obra. Cada edición guarda quién, cuándo y por cuánto."
+      },
+      {
+        "n": "03",
+        "t": "Lee previsto vs. real",
+        "b": "Ve lo acordado contra lo que ocurrió en obra — legible de un vistazo, etiquetado para leerse sin color."
+      }
     ]
   },
   "feat": {
@@ -80,20 +112,47 @@
     "is": {
       "t": "Lo que LinkNMS es",
       "items": [
-        { "b": "El registro compartido y verificable", "s": "de una obra." },
-        { "b": "Terreno neutral", "s": "para propietario, contratista y cada especialidad." },
-        { "b": "Tiempo, dinero, alcance e historial", "s": "en un solo lugar." },
-        { "b": "Todas tus obras en un solo lugar", "s": "— alterna entre ellas, un panel de cartera." },
-        { "b": "Carga y previsualización de BIM", "s": "— el modelo, adjunto al registro." }
+        {
+          "b": "El registro compartido y verificable",
+          "s": "de una obra."
+        },
+        {
+          "b": "Terreno neutral",
+          "s": "para propietario, contratista y cada especialidad."
+        },
+        {
+          "b": "Tiempo, dinero, alcance e historial",
+          "s": "en un solo lugar."
+        },
+        {
+          "b": "Todas tus obras en un solo lugar",
+          "s": "— alterna entre ellas, un panel de cartera."
+        },
+        {
+          "b": "Carga y previsualización de BIM",
+          "s": "— el modelo, adjunto al registro."
+        }
       ]
     },
     "isnt": {
       "t": "Lo que LinkNMS no es",
       "items": [
-        { "b": "No es inviolable", "s": "— revela las alteraciones, no las impide." },
-        { "b": "No es una herramienta de autoría o análisis BIM", "s": "— no sustituye a Revit ni a ArchiCAD." },
-        { "b": "No es una integración de licencias", "s": "— marca las fases, no se comunica con los ayuntamientos." },
-        { "b": "No es tu back office", "s": "— tus obras y su registro, no la contabilidad, nóminas o CRM." }
+        {
+          "b": "No es inviolable",
+          "s": "— revela las alteraciones, no las impide."
+        },
+        {
+          "b": "No es una herramienta de autoría o análisis BIM",
+          "s": "— no sustituye a Revit ni a ArchiCAD."
+        },
+        {
+          "b": "No es una integración de licencias",
+          "s": "— marca las fases, no se comunica con los ayuntamientos."
+        },
+        {
+          "b": "No es tu back office",
+          "s": "— tus obras y su registro, no la contabilidad, nóminas o CRM."
+        }
       ]
     }
   },
@@ -102,9 +161,18 @@
     "h2": "Precio por obra completa, no por usuario.",
     "note": "Dirección, no cifras finales. El precio llega con el producto.",
     "columns": [
-      { "t": "Obra individual", "b": "Un propietario gestionando una obra con su contratista. El registro esencial, gratis mientras estamos en desarrollo." },
-      { "t": "Obra activa", "b": "La obra en curso con cada especialidad en el mismo registro — previsto vs. real, aprobaciones, previsualización BIM." },
-      { "t": "Cartera", "b": "Varias obras a la vez en un panel de cartera, para contratistas y propietarios con más de una." }
+      {
+        "t": "Obra individual",
+        "b": "Un propietario gestionando una obra con su contratista. El registro esencial, gratis mientras estamos en desarrollo."
+      },
+      {
+        "t": "Obra activa",
+        "b": "La obra en curso con cada especialidad en el mismo registro — previsto vs. real, aprobaciones, previsualización BIM."
+      },
+      {
+        "t": "Cartera",
+        "b": "Varias obras a la vez en un panel de cartera, para contratistas y propietarios con más de una."
+      }
     ]
   },
   "faq": {
@@ -140,6 +208,7 @@
     "email": "Email",
     "emailPh": "tu@ejemplo.com",
     "role": "¿De qué lado estás?",
+    "rolePlaceholder": "Selecciona una opción…",
     "roleOptions": {
       "homeowner": "Propietario de una obra",
       "contractor": "Contratista / constructor",
@@ -166,5 +235,251 @@
     "privacy": "Privacidad",
     "contact": "Contacto",
     "fine": "LinkNMS es un producto en desarrollo. Nada en esta página es una garantía de disponibilidad, adopción o función ya lanzada — el historial de cambios revela alteraciones, no es inviolable."
+  },
+  "lp": {
+    "skip": "Saltar al contenido",
+    "header": {
+      "status": "Hecho para llave en mano. Hecho para confiar.",
+      "navLabel": "Principal",
+      "langLabel": "Idioma",
+      "cta": "Solicitar acceso",
+      "nav": {
+        "problem": "El problema",
+        "how": "Cómo funciona",
+        "builders": "Para constructores",
+        "pricing": "Precios"
+      }
+    },
+    "hero": {
+      "lede": "Toda obra llave en mano acaba en la misma discusión. Dijiste que costaba €X, ahora son €Y. linkNMS guarda el plan, el precio y la prueba en un solo registro — así la respuesta tarda diez segundos, no dos reuniones.",
+      "meta": "Plan · Precio · Prueba",
+      "primary": "Solicitar acceso",
+      "secondary": "Ver cómo funciona",
+      "reassure": "Gratis mientras ponemos en marcha tu primera obra · Sin tarjeta",
+      "platforms": {
+        "head": "Disponible en",
+        "ios": "App iOS",
+        "mobileWeb": "Web móvil",
+        "desktopWeb": "Web de escritorio",
+        "note": "El constructor responde desde el andamio. El propietario lo comprueba desde la oficina. Misma obra, mismo registro."
+      },
+      "card": {
+        "title": "Un registro desde\nel primer presupuesto\nhasta la llave final.",
+        "body": "Tareas, dependencias, dinero y cada cambio — firmado por quien lo hizo."
+      }
+    },
+    "argument": {
+      "label": "La discusión",
+      "labelRight": "Pasa en todas las obras",
+      "headline": "Dijiste que costaba {quote}.",
+      "headlineAccent": "Ahora son {total}.",
+      "sub": "Nadie miente. La cocina se movió, se cambiaron los azulejos, la estructura se retrasó dos semanas. Todo ocurrió en WhatsApp, en obra, por teléfono — y nada de eso está escrito en un sitio que ambas partes puedan leer.",
+      "thread1": "João, el presupuesto que enviaste en marzo decía {quote}. La factura dice {total}.",
+      "thread2": "Sí, pero cambiaste el suelo y el baño se movió. Te lo dije en su momento.",
+      "thread3": "¿Cuándo me lo dijiste? Enséñamelo.",
+      "threadCaption": "Para este momento existe linkNMS"
+    },
+    "record": {
+      "label": "El registro",
+      "labelRight": "Tres colores, una verdad",
+      "agreed": "Azul es lo que acordasteis.",
+      "changed": "Naranja es lo que cambió.",
+      "closed": "Verde es lo que se cerró.",
+      "explainer": "El scroll hace avanzar las imágenes de la obra mientras el gant sigue el contrato. El azul se mantiene fijo, el naranja marca la desviación, el verde cierra la fila.",
+      "explainerMobile": "Una línea de tiempo guarda los tres estados a la vez. Las imágenes avanzan con el scroll, la línea base se mantiene azul, el cambio viene en naranja y el trabajo cerrado se pone verde.",
+      "note": "Imagen + gantt, no un pase de diapositivas",
+      "tableCaption": "Capítulos de obra frente a la línea base acordada, con el valor de cada uno.",
+      "colPackage": "Capítulo de obra",
+      "colValue": "Valor",
+      "months": {
+        "MAR": "Mar",
+        "APR": "Abr",
+        "MAY": "May",
+        "JUN": "Jun",
+        "JUL": "Jul",
+        "AUG": "Ago",
+        "SEP": "Sep",
+        "OCT": "Oct"
+      },
+      "packages": {
+        "foundations": "Terreno y cimentación",
+        "structure": "Estructura",
+        "envelope": "Cubierta y envolvente",
+        "cladding": "Ventanas y revestimiento",
+        "mep": "Electricidad y fontanería",
+        "finishes": "Acabados y pavimentos"
+      },
+      "legend": {
+        "baseline": "Línea base acordada",
+        "actual": "Movido · cambio firmado",
+        "closed": "Cerrado · ambas lecturas guardadas",
+        "audit": "Cada barra guarda quién la movió, cuándo y por qué"
+      },
+      "reel": {
+        "index": "03",
+        "indexMobile": "02.1",
+        "title": "Construcción en scroll  ·  Imagen + gantt",
+        "titleMobile": "Construcción en scroll · Mobile",
+        "note": "La imagen y el gráfico avanzan juntos.",
+        "noteMobile": "Se mueve con el gant.",
+        "labels": {
+          "1": "Diseño",
+          "2": "Estructura",
+          "3": "Acabado",
+          "4": "Construida"
+        },
+        "alt": {
+          "1": "Fase de diseño: la casa en su primer dibujo.",
+          "2": "Fase de estructura: la estructura está levantada.",
+          "3": "Fase de acabado: cubierta y envolvente cerradas.",
+          "4": "Fase de obra: la casa terminada."
+        },
+        "scrollNote": "La construcción avanza en imágenes mientras el gant se cierra del azul al naranja y al verde."
+      }
+    },
+    "planIn": {
+      "label": "Meter el plan dentro",
+      "labelRight": "Excel, PDF, o hecho aquí mismo",
+      "headline": "Sube lo que ya tienes.",
+      "sub": "Nadie rehace su presupuesto desde cero. Suelta la hoja de cálculo con la que presupuestaste y linkNMS la lee en capítulos de obra, subtareas y precios.",
+      "steps": {
+        "01": {
+          "t": "Suelta el archivo",
+          "d": "XLSX, CSV o PDF. Directo del presupuestador, sin plantilla que rellenar."
+        },
+        "02": {
+          "t": "Confirma las columnas",
+          "d": "Asignas precio, cantidad y fechas una vez. Recuerda tu formato."
+        },
+        "03": {
+          "t": "Ambas partes lo firman",
+          "d": "En cuanto los dos aceptáis, ese plan pasa a ser la línea base azul."
+        }
+      },
+      "rowsRead": "{rows} filas leídas",
+      "columnsMapped": "Columnas asignadas",
+      "tableCaption": "La hoja de cálculo subida, leída en capítulos de obra y subtareas.",
+      "colPackage": "Capítulo de obra",
+      "colQty": "Cant.",
+      "colUnit": "Ud.",
+      "colUnitPrice": "Precio unitario",
+      "colTotal": "Total",
+      "packages": {
+        "structure": "Estructura",
+        "cladding": "Ventanas y revestimiento"
+      },
+      "rows": {
+        "slab": "Losa de hormigón, planta baja",
+        "timber": "Estructura de madera + tableros",
+        "steel": "Uniones metálicas",
+        "brick": "Ladrillo + SATE, fachada norte",
+        "glazing": "Carpintería de aluminio, triple vidrio"
+      },
+      "foot": "Total del contrato · {packages} capítulos de obra · {subTasks} subtareas",
+      "band": "¿Sin hoja de cálculo? Los socios especializados construyen el plan dentro de linkNMS y lo exportan. El plan siempre pertenece a quien hace el trabajo — y la prueba de aceptación es idéntica en ambos casos.",
+      "bandLink": "Ver el apretón de manos"
+    },
+    "materials": {
+      "label": "Materiales y dinero",
+      "labelRight": "Donde el presupuesto se mueve de verdad",
+      "headline": "La mitad del presupuesto es una decisión de material.",
+      "body": "Madera o cerámica. Ladrillo, u hormigón con SATE. Cada línea del plan lleva los materiales sobre los que se apoya, con cantidades y precios unitarios. Cambia uno y el resumen se redibuja — ves exactamente qué parte del presupuesto se movió, cuánto, y quién lo aprobó.",
+      "body2": "Cuando un proveedor sube el precio del ladrillo en marzo, eso no es una modificación de contrato. Es un movimiento de precio, y linkNMS lo registra como un tipo de evento propio.",
+      "swap": {
+        "title": "Planta baja · Pavimento",
+        "chip": "Material cambiado",
+        "from": "Tarima de roble multicapa",
+        "to": "Porcelánico, gran formato",
+        "unitLine": "{price} / {unit} × {area} {unit}",
+        "approved": "Aprobado por {name} — {when}"
+      },
+      "composition": {
+        "head": "Cómo se componen {total}",
+        "headRight": "Los materiales pesan un {pct}% — y toda la volatilidad",
+        "aria": "Composición del presupuesto de {total}. Los materiales son {materials}, un {pct}% del contrato.",
+        "sinceMarch": "{delta} desde marzo",
+        "slices": {
+          "structure": "Estructura",
+          "envelope": "Envolvente",
+          "materials": "Materiales",
+          "mep": "Instalaciones",
+          "finishes": "Acabados"
+        }
+      }
+    },
+    "who": {
+      "label": "Para quién es",
+      "labelRight": "Dos personas que todavía no se fían la una de la otra",
+      "marta": {
+        "quote": "“Solo quiero saber si seguimos dentro del presupuesto — sin sentir que estoy acusando a nadie de nada.”",
+        "name": "Marta",
+        "role": "Primera obra · Oporto",
+        "traits": {
+          "t1": "Solo móvil",
+          "t2": "Sesiones cortas",
+          "t3": "Necesita tranquilidad"
+        }
+      },
+      "joao": {
+        "quote": "“No estoy escondiendo nada. Simplemente no tengo dos horas cada noche para escribir lo que ya sé.”",
+        "name": "João",
+        "role": "Maestro de obra · 31 años a pie de obra",
+        "traits": {
+          "t1": "Solo móvil",
+          "t2": "Poca soltura digital",
+          "t3": "10 segundos, no 2 minutos"
+        }
+      }
+    },
+    "cta": {
+      "kicker": "Solicitar acceso · Portugal primero, T3 2026",
+      "headline": "Deja de discutir de memoria.",
+      "sub": "Un plan, un precio, un registro que ambas partes pueden leer. Los propietarios dejan de adivinar. Los constructores dejan de defenderse. La obra simplemente se hace."
+    },
+    "phone": {
+      "aria": "La aplicación linkNMS mostrando la planificación y el total del contrato de una obra en curso.",
+      "week": "Semana {week} de {total} · En plazo",
+      "tabs": {
+        "schedule": "Plan",
+        "money": "Dinero",
+        "history": "Historial"
+      },
+      "rows": {
+        "foundations": "Cimentación",
+        "structure": "Estructura",
+        "envelope": "Envolvente",
+        "finishes": "Acabados"
+      },
+      "contractTotal": "Total del contrato",
+      "sinceMarch": "{delta} desde marzo"
+    },
+    "footer": {
+      "tagline": "Gestión de obra para construcción llave en mano. Hecho en Portugal, para la forma en que aquí se construyen las casas.",
+      "copyright": "© {year} linkNMS, Lda · Oporto",
+      "privacy": "Privacidad",
+      "terms": "Términos",
+      "product": {
+        "head": "Producto",
+        "record": "El registro",
+        "plan": "Plan y plazos",
+        "money": "Dinero",
+        "materials": "Materiales",
+        "history": "Historial de cambios"
+      },
+      "for": {
+        "head": "Para",
+        "homeowners": "Propietarios",
+        "contractors": "Contratistas generales",
+        "partners": "Socios especializados",
+        "architects": "Arquitectos"
+      },
+      "company": {
+        "head": "Empresa",
+        "about": "Quiénes somos",
+        "research": "Personas e investigación",
+        "privacy": "Privacidad",
+        "contact": "Contacto"
+      }
+    }
   }
 }

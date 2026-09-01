@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinkNMS — R0 Surface 5 · Plan timeline (light + dark, mobile + desktop)</title>
+<!--
+  LINA-70 · Design delta on the LINA-27 R0 hi-fi mockups: a FIFTH surface, not a redesign.
+  Spec of record: docs/product/r0-plan-progress-functional-spec.md rev 2
+  (§2 Q1–Q3 · §3 FR-P1…FR-P7 · §4 AC-P1…AC-P7 · §5 edge cases · §8.1–§8.3 state machine + rollup).
+  Tokens, components, type scale and party encoding are inherited unchanged from
+  r0-mockups-hifi.html. Only the status set (4 stage statuses) and the plan-allocation
+  treatment are new — both documented in the spec box at the foot of this board.
+  Colour is NEVER the only signal: every status carries colour + label + icon + shape.
+-->
+<style>
+  /* ===================== TOKENS (inherited from LINA-27) ===================== */
+  :root{
+    --owner:#2a78d6; --builder:#eb6834;
+    --fg:#0b0b0b; --paper:#fcfcfb; --sunken:#f4f3f0; --raised:#ffffff;
+    --outline:#dcdbd7; --outline-strong:#9b9a95; --muted:#5b5b58;
+    --owner-muted:#e2edfb; --owner-ink:#1a5296;
+    --builder-muted:#fce3d8; --builder-ink:#a8451c;
+    --success:#2e7d54; --warning:#b7791f; --danger:#c0392b;
+    --ok-fg:#2e7d54; --ok-bg:#e8f3ec; --ok-bd:#b7d8c4;
+    --warn-fg:#8a5a12; --warn-bg:#fbf3e2; --warn-bd:#e6cfa0;
+    --bad-fg:#a5271b; --bad-bg:#f7e7e5; --bad-bd:#e2b4ae;
+    /* NEW in LINA-70 — the two status slots the trust core didn't need */
+    --info-fg:#1a5296; --info-bg:#e8f0fb; --info-bd:#bcd4f2;   /* in_progress  */
+    --idle-fg:#5b5b58; --idle-bg:#f1f0ec; --idle-bd:#dcdbd7;   /* not_started  */
+    --shadow:0 1px 2px rgba(11,11,11,.06), 0 4px 12px rgba(11,11,11,.08);
+    --shadow-lg:0 8px 24px rgba(11,11,11,.14);
+    --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s6:24px;--s8:32px;--s12:48px;
+    --r-ctrl:6px;--r-overlay:10px;
+    --font:system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  [data-theme="dark"]{
+    --owner:#6aa6ef; --builder:#f38b53;
+    --fg:#f3f2ec; --paper:#17170f; --sunken:#100f0a; --raised:#211f19;
+    --outline:#34322b; --outline-strong:#57554c; --muted:#a7a59c;
+    --owner-muted:#1c2a3a; --owner-ink:#a9cbf5;
+    --builder-muted:#34241b; --builder-ink:#f3b58f;
+    --success:#4bb47e; --warning:#dca63a; --danger:#e46b5c;
+    --ok-fg:#63c491; --ok-bg:#16281f; --ok-bd:#2c5f43;
+    --warn-fg:#e2b455; --warn-bg:#2c2413; --warn-bd:#5c4a1e;
+    --bad-fg:#ef8375; --bad-bg:#2e1a17; --bad-bd:#5f3029;
+    --info-fg:#a9cbf5; --info-bg:#17232f; --info-bd:#2f4a68;
+    --idle-fg:#a7a59c; --idle-bg:#1d1c16; --idle-bd:#34322b;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 6px 18px rgba(0,0,0,.55);
+    --shadow-lg:0 10px 30px rgba(0,0,0,.6);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);color:#1a1a17;background:#e9e8e3;line-height:1.45;
+       -webkit-font-smoothing:antialiased;padding:var(--s8) var(--s6) var(--s12)}
+  a{text-decoration:none;color:inherit}
+  .data{font-variant-numeric:tabular-nums}
+
+  /* ===================== BOARD CHROME ===================== */
+  .board-head{max-width:1600px;margin:0 auto var(--s8)}
+  .board-head h1{font-size:26px;font-weight:700;letter-spacing:-.6px}
+  .board-head .sub{color:#44443e;font-size:14px;margin-top:6px;max-width:1080px}
+  .board-head .meta{color:#6b6a63;font-size:12px;margin-top:var(--s3)}
+  .logo{height:40px;margin-bottom:var(--s3)}
+  .legend{display:flex;flex-wrap:wrap;gap:var(--s4);align-items:center;background:#fff;
+          border:1px solid #d9d8d3;border-radius:8px;padding:10px var(--s4);margin-top:var(--s4);
+          font-size:12px;color:#44443e}
+  .legend .sw{display:flex;align-items:center;gap:7px}
+  .legend .dot{width:12px;height:12px;border-radius:3px;border:1px solid #c9c8c3}
+  .section-cap{max-width:1600px;margin:var(--s12) auto var(--s4);display:flex;align-items:baseline;
+               gap:12px;flex-wrap:wrap}
+  .section-cap .n{background:#0b0b0b;color:#fff;font-size:11px;font-weight:700;letter-spacing:.6px;
+                  padding:3px 9px;border-radius:4px;text-transform:uppercase}
+  .section-cap h2{font-size:18px;font-weight:650;letter-spacing:-.3px}
+  .section-cap span{font-size:12px;color:#6b6a63}
+  .rail{display:flex;align-items:flex-start;gap:var(--s2);max-width:1600px;margin:0 auto;
+        overflow-x:auto;padding-bottom:var(--s6)}
+  .rail.dark-strip{background:#111;border-radius:16px;padding:var(--s6);gap:var(--s2)}
+  .step{display:flex;flex-direction:column;gap:10px;flex:0 0 auto}
+  .cap{font-size:12px;color:var(--muted)}
+  .step>.cap{color:#6b6a63;display:flex;flex-direction:column;gap:1px}
+  .rail.dark-strip .step>.cap{color:#9b9a95}
+  .step>.cap b{color:#1a1a17;font-size:13px}
+  .rail.dark-strip .step>.cap b{color:#efeee9}
+  .arrow{align-self:center;color:#a3a29c;font-size:22px;padding:0 2px;flex:0 0 auto}
+
+  /* ===================== PHONE SHELL ===================== */
+  .phone{width:360px;background:var(--paper);color:var(--fg);border:10px solid #101010;
+         border-radius:38px;overflow:hidden;box-shadow:var(--shadow-lg)}
+  .statusbar{height:30px;display:flex;align-items:center;justify-content:space-between;
+             padding:0 20px;font-size:13px;font-weight:600;color:var(--fg);background:var(--paper)}
+  .topbar{display:flex;align-items:center;gap:var(--s2);padding:10px var(--s4);
+          border-bottom:1px solid var(--outline);background:var(--raised)}
+  .brand{display:flex;align-items:center;gap:7px;font-weight:650;font-size:14px;color:var(--fg)}
+  .brand .mk{width:19px;height:19px}
+  .switcher,.back,.title-c{font-size:13px}
+  .switcher{margin-left:auto;display:flex;align-items:center;gap:6px;font-weight:600;
+            color:var(--fg);border:1px solid var(--outline);border-radius:var(--r-ctrl);
+            padding:5px 9px;background:var(--paper)}
+  .switcher .health{width:8px;height:8px;border-radius:50%}
+  .back{display:flex;align-items:center;gap:4px;color:var(--owner);font-weight:600}
+  .title-c{margin:0 auto;font-weight:650;font-size:15px;color:var(--fg)}
+  .screen{padding:var(--s4);display:flex;flex-direction:column;gap:var(--s3);min-height:640px;
+          background:var(--paper)}
+  h2.scr{font-size:20px;font-weight:650;letter-spacing:-.3px;color:var(--fg)}
+  h3.grp{font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+  .lede{font-size:13px;color:var(--muted)}
+  .spacer{flex:1}
+  .col{display:flex;flex-direction:column}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:var(--s2)}
+  .botnav{display:flex;border-top:1px solid var(--outline);background:var(--raised);padding-bottom:6px}
+  .botnav a{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+            padding:9px 0 4px;font-size:11px;font-weight:500;color:var(--muted)}
+  .botnav svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8}
+  .botnav a.active{color:var(--owner);font-weight:650}
+
+  .card{background:var(--raised);border:1px solid var(--outline);border-radius:var(--r-ctrl);padding:var(--s3)}
+  .btn{min-height:44px;display:flex;align-items:center;justify-content:center;gap:7px;
+       border-radius:var(--r-ctrl);font-size:14px;font-weight:650;border:1px solid var(--outline-strong);
+       background:var(--raised);color:var(--fg);padding:0 14px}
+  .btn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2.2}
+  .btn.primary{background:var(--owner);border-color:var(--owner);color:#fff}
+  .btn.sm{min-height:34px;font-size:12.5px;padding:0 11px;border-radius:var(--r-ctrl)}
+  .btn-row{display:flex;gap:var(--s2)}
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;border-radius:20px;
+       padding:3px 9px;white-space:nowrap}
+  .tag .pd{width:8px;height:8px;border-radius:50%}
+  .tag.owner{background:var(--owner-muted);color:var(--owner-ink)} .tag.owner .pd{background:var(--owner)}
+  .tag.builder{background:var(--builder-muted);color:var(--builder-ink)} .tag.builder .pd{background:var(--builder)}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:12px;font-weight:650;color:var(--fg)}
+  .input{min-height:44px;border:1px solid var(--outline);border-radius:var(--r-ctrl);background:var(--raised);
+         display:flex;align-items:center;padding:0 12px;font-size:14px;color:var(--fg)}
+  .input.ph{color:var(--muted)}
+  .input.focus{border-color:var(--owner);box-shadow:0 0 0 3px color-mix(in srgb,var(--owner) 30%,transparent)}
+
+  /* ============ NEW · STAGE STATUS CHIP (colour + icon + label) ============ */
+  .st{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;
+      border-radius:var(--r-ctrl);padding:3px 9px;border:1px solid;white-space:nowrap;letter-spacing:.1px}
+  .st svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.3}
+  .st.idle{color:var(--idle-fg);border-color:var(--idle-bd);background:var(--idle-bg)}
+  .st.run {color:var(--info-fg);border-color:var(--info-bd);background:var(--info-bg)}
+  .st.done{color:var(--ok-fg);  border-color:var(--ok-bd);  background:var(--ok-bg)}
+  /* blocked is deliberately heavier: filled, not tinted — it must win the screen */
+  .st.block{color:#fff;border-color:var(--danger);background:var(--danger);
+            box-shadow:0 1px 0 rgba(0,0,0,.12)}
+  [data-theme="dark"] .st.block{color:#1a0f0d}
+  /* advisory percent — texture, never a headline. Muted, small, always after the word. */
+  .pct{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;font-weight:600}
+  .pct .hair{display:inline-block;width:34px;height:3px;border-radius:2px;background:var(--idle-bg);
+             border:1px solid var(--idle-bd);position:relative;vertical-align:middle;margin-left:5px}
+  .pct .hair>i{position:absolute;left:0;top:0;bottom:0;background:var(--info-fg);border-radius:2px;opacity:.65}
+
+  /* ============ NEW · STAGE ROW ============ */
+  .stages{display:flex;flex-direction:column;gap:var(--s2)}
+  .stage{border:1px solid var(--outline);border-radius:var(--r-ctrl);background:var(--raised);
+         padding:11px 12px 11px 13px;display:flex;flex-direction:column;gap:7px;
+         border-left:3px solid var(--idle-bd);position:relative}
+  .stage.s-run  {border-left-color:var(--info-fg)}
+  .stage.s-done {border-left-color:var(--success)}
+  .stage.s-block{border-left-color:var(--danger);border-left-width:5px;background:var(--bad-bg);
+                 border-color:var(--bad-bd);box-shadow:0 0 0 1px var(--bad-bd) inset}
+  .stage .s-top{display:flex;align-items:flex-start;justify-content:space-between;gap:9px}
+  .stage .s-name{font-size:14.5px;font-weight:650;color:var(--fg);line-height:1.3}
+  .stage.s-done .s-name{color:var(--muted)}
+  .stage .s-ord{font-size:11px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;
+                letter-spacing:.4px}
+  .stage .s-dates{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .stage .s-note{font-size:12px;color:var(--muted);line-height:1.45}
+  .stage .s-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;
+                 border-top:1px dashed var(--outline);padding-top:7px;margin-top:1px}
+  .stage.s-block .s-foot{border-top-color:var(--bad-bd)}
+  /* planned cost is an ALLOCATION — never typeset like the budget metric */
+  .alloc{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;
+         font-variant-numeric:tabular-nums}
+  .alloc svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2}
+  .alloc b{font-weight:650;color:var(--fg);opacity:.8}
+  /* blocked reason — the loudest inline element on the screen */
+  .blockmsg{display:flex;gap:7px;align-items:flex-start;background:var(--raised);
+            border:1px solid var(--bad-bd);border-radius:var(--r-ctrl);padding:8px 10px;
+            font-size:12px;color:var(--bad-fg);line-height:1.45}
+  .blockmsg svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.2;flex:0 0 auto;margin-top:1px}
+  .blockmsg b{color:var(--bad-fg)}
+  .nowchip{position:absolute;top:-8px;right:10px;font-size:10px;font-weight:800;letter-spacing:.6px;
+           text-transform:uppercase;background:var(--fg);color:var(--paper);border-radius:20px;padding:2px 8px}
+
+  /* ============ NEW · PLAN HEADLINE (R1 + R2) ============ */
+  .headline{border:1px solid var(--outline);border-radius:var(--r-ctrl);background:var(--raised);
+            padding:12px;display:flex;flex-direction:column;gap:9px;border-left:4px solid var(--outline-strong)}
+  .headline.h-att {border-left-color:var(--danger);background:var(--bad-bg);border-color:var(--bad-bd)}
+  .headline.h-run {border-left-color:var(--info-fg)}
+  .headline.h-done{border-left-color:var(--success)}
+  .headline .h-lbl{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+  .headline .h-main{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+  .headline .h-word{font-size:21px;font-weight:700;letter-spacing:-.4px;color:var(--fg);
+                    display:inline-flex;align-items:center;gap:8px}
+  .headline.h-att .h-word{color:var(--bad-fg)}
+  .headline .h-word svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2.3}
+  /* percent is SUBORDINATE: smaller, muted, separated by a middot, never alone */
+  .headline .h-pct{font-size:13px;font-weight:650;color:var(--muted);font-variant-numeric:tabular-nums}
+  .headline .h-sub{font-size:12px;color:var(--muted)}
+  .headline.h-att .h-sub{color:var(--bad-fg)}
+  /* stage pips — shape + colour, readable without hue */
+  .pips{display:flex;gap:4px;align-items:center}
+  .pips i{height:7px;flex:1;border-radius:2px;background:var(--idle-bg);border:1px solid var(--idle-bd)}
+  .pips i.p-done{background:var(--success);border-color:var(--success)}
+  .pips i.p-run{background:var(--info-fg);border-color:var(--info-fg);opacity:.55}
+  .pips i.p-block{background:var(--danger);border-color:var(--danger);height:11px;border-radius:3px}
+
+  /* ============ NEW · ALLOCATION HINT (must not read as budget) ============ */
+  .allocbar{border:1px dashed var(--outline-strong);border-radius:var(--r-ctrl);background:var(--sunken);
+            padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+  .allocbar .a-lbl{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+                   color:var(--muted);display:flex;align-items:center;gap:6px}
+  .allocbar .a-lbl svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2}
+  .allocbar .a-main{font-size:13px;color:var(--fg);font-variant-numeric:tabular-nums;line-height:1.5}
+  .allocbar .a-main b{font-weight:700}
+  .allocbar .a-fine{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .allocbar .a-link{font-size:12px;font-weight:650;color:var(--owner);display:flex;align-items:center;gap:5px;
+                    border-top:1px solid var(--outline);padding-top:7px;margin-top:1px}
+
+  /* ============ response path / empty state / misc ============ */
+  .respond{border:1px solid var(--owner-muted);background:var(--owner-muted);border-radius:var(--r-ctrl);
+           padding:11px 12px;display:flex;flex-direction:column;gap:9px}
+  .respond .r-t{font-size:13px;font-weight:650;color:var(--owner-ink)}
+  .respond .r-s{font-size:11.5px;color:var(--owner-ink);opacity:.85;line-height:1.45}
+  .empty{border:1px dashed var(--outline-strong);border-radius:var(--r-overlay);background:var(--sunken);
+         padding:26px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+  .empty svg{width:46px;height:46px;stroke:var(--outline-strong);fill:none;stroke-width:1.5}
+  .empty .e-t{font-size:15px;font-weight:650;color:var(--fg)}
+  .empty .e-s{font-size:12.5px;color:var(--muted);line-height:1.55;max-width:250px}
+  .readonly{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;color:var(--muted);
+            border:1px solid var(--outline);border-radius:20px;padding:3px 9px;background:var(--sunken)}
+  .readonly svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.2}
+  .sheet{border-top:1px solid var(--outline);background:var(--raised);border-radius:var(--r-overlay) var(--r-overlay) 0 0;
+         padding:var(--s4);display:flex;flex-direction:column;gap:var(--s3);box-shadow:0 -8px 24px rgba(0,0,0,.12)}
+  .grabber{width:38px;height:4px;border-radius:3px;background:var(--outline-strong);margin:0 auto 2px}
+  .stpick{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2)}
+  .stpick .opt{border:1px solid var(--outline);border-radius:var(--r-ctrl);padding:10px;display:flex;
+               align-items:center;gap:7px;font-size:13px;font-weight:650;color:var(--fg);min-height:46px}
+  .stpick .opt.on{border-color:var(--danger);border-width:2px;background:var(--bad-bg);color:var(--bad-fg)}
+  .stpick .opt svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.3}
+  .req{border:1px solid var(--warn-bd);background:var(--warn-bg);border-radius:var(--r-ctrl);
+       padding:9px 11px;font-size:11.5px;color:var(--warn-fg);line-height:1.5;display:flex;gap:7px}
+  .req svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.2;flex:0 0 auto;margin-top:1px}
+  .hist{border:1px solid var(--outline);border-radius:var(--r-ctrl);overflow:hidden;background:var(--raised)}
+  .hist .h{padding:10px 12px;border-bottom:1px solid var(--outline);display:flex;flex-direction:column;gap:5px}
+  .hist .h:last-child{border-bottom:0}
+  .hist .h.cur{background:var(--sunken)}
+  .hist .hm{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .gcbar{display:flex;gap:var(--s2);align-items:center;border:1px solid var(--builder-muted);
+         background:var(--builder-muted);border-radius:var(--r-ctrl);padding:8px 10px}
+  .gcbar .g-t{font-size:11.5px;font-weight:650;color:var(--builder-ink);line-height:1.4}
+  .handle{color:var(--outline-strong);font-size:15px;letter-spacing:-2px;font-weight:700;cursor:grab}
+
+  /* designer note */
+  .note{width:360px;background:#fff;border:1px solid #ddd;border-left:3px solid var(--owner);
+        border-radius:8px;padding:11px 13px;font-size:12px;color:#44443e;line-height:1.55}
+  .note.on-dark{background:#1c1c1c;border-color:#333;color:#c9c8c2}
+  .note b{color:#1a1a17} .note.on-dark b{color:#efeee9}
+  .note .ac{font-weight:700;color:var(--owner)}
+  .note.wide{width:auto;max-width:760px}
+
+  /* desktop */
+  .desk{width:1180px;background:var(--paper);color:var(--fg);border:1px solid #cfcec8;border-radius:14px;
+        overflow:hidden;box-shadow:var(--shadow-lg)}
+  [data-theme="dark"].desk{border-color:#000}
+  .desk-top{display:flex;align-items:center;gap:var(--s4);padding:12px var(--s6);
+            border-bottom:1px solid var(--outline);background:var(--raised)}
+  .desk-body{display:grid;grid-template-columns:236px 1fr 344px;min-height:700px}
+  .rail-l{border-right:1px solid var(--outline);background:var(--paper);padding:var(--s4) var(--s3);
+          display:flex;flex-direction:column;gap:6px}
+  .navlink{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r-ctrl);
+           font-size:14px;font-weight:550;color:var(--fg)}
+  .navlink svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8}
+  .navlink .ct{margin-left:auto;font-size:12px;color:var(--muted)}
+  .navlink.active{background:var(--owner-muted);color:var(--owner-ink);font-weight:650}
+  .navlink.active svg{stroke:var(--owner)}
+  .navlink .alert{margin-left:auto;font-size:11px;font-weight:800;color:#fff;background:var(--danger);
+                  border-radius:20px;padding:1px 7px}
+  .main{padding:var(--s6);display:flex;flex-direction:column;gap:var(--s4);overflow:hidden}
+  .drawer{border-left:1px solid var(--outline);background:var(--raised);padding:var(--s4);
+          display:flex;flex-direction:column;gap:var(--s3);box-shadow:var(--shadow)}
+
+  /* component spec strip */
+  .swatchgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s3);background:var(--paper);
+              padding:var(--s4);border-radius:10px;border:1px solid var(--outline)}
+  .sw-cell{display:flex;flex-direction:column;gap:7px;align-items:flex-start}
+  .sw-cell .k{font-size:11px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .dodont{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4);max-width:1600px;margin:0 auto}
+  .dd{background:#fff;border:1px solid #d9d8d3;border-radius:10px;padding:var(--s4);display:flex;
+      flex-direction:column;gap:10px}
+  .dd .dd-h{font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .dd.no .dd-h{color:#a5271b} .dd.yes .dd-h{color:#2e7d54}
+  .dd .dd-s{font-size:12px;color:#5b5b58;line-height:1.55}
+  .dd .demo{border:1px solid #e3e2dd;border-radius:8px;padding:12px;background:#fcfcfb}
+
+  .specbox{max-width:1600px;margin:var(--s6) auto 0;background:#fff;border:1px solid #d9d8d3;border-radius:10px;padding:var(--s6)}
+  .specbox h3{font-size:15px;margin-bottom:8px} .specbox h3:not(:first-child){margin-top:var(--s6)}
+  .specbox ul{margin:0 0 0 18px;font-size:13px;color:#3a3a34} .specbox li{margin-bottom:6px}
+  .specbox code{background:#f2f1ec;border:1px solid #e3e2dd;border-radius:4px;padding:1px 5px;font-size:12px}
+  .specbox table{border-collapse:collapse;font-size:12.5px;margin-top:6px;width:100%;max-width:1000px}
+  .specbox th,.specbox td{border:1px solid #e3e2dd;padding:7px 10px;text-align:left;vertical-align:top}
+  .specbox th{background:#f6f5f1;font-weight:700}
+  .foot{max-width:1600px;margin:var(--s8) auto 0;font-size:11px;color:#6b6a63;line-height:1.7}
+</style>
+</head>
+<body>
+
+<div class="board-head">
+  <img class="logo" alt="LinkNMS — Trust built-in." src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 120'><g transform='translate(8,28)'><rect x='12' y='26' width='40' height='30' rx='2' fill='%23fcfcfb' stroke='%230b0b0b' stroke-width='2'/><path d='M32 6 L8 26 L32 26 Z' fill='%232a78d6'/><path d='M32 6 L56 26 L32 26 Z' fill='%23eb6834'/><rect x='18' y='34' width='28' height='6' rx='3' fill='%232a78d6'/><rect x='18' y='44' width='17' height='6' rx='3' fill='%23eb6834'/></g><text x='92' y='56' font-family='system-ui,sans-serif' font-size='40' font-weight='700' letter-spacing='-1.5' fill='%230b0b0b'>LinkNMS</text><text x='93' y='80' font-family='system-ui,sans-serif' font-size='15' font-weight='500' fill='%230b0b0b'>Trust</text><text x='138' y='80' font-family='system-ui,sans-serif' font-size='15' font-weight='500' fill='%239a9a9a'>built-in.</text></svg>">
+  <h1>Surface 5 — the plan timeline</h1>
+  <div class="sub"><b>LINA-70</b> · a <b>delta</b> on the LINA-27 R0 mockups, not a redesign: one new surface that adds the
+    forward-looking half of the record — <b>“what is my build doing right now, and where does it stand?”</b> — without
+    ever becoming a second source of budget truth. Built against
+    <code>r0-plan-progress-functional-spec.md</code> <b>rev 2</b> (§2 Q1–Q3 · FR-P1…FR-P7 · AC-P1…AC-P7 · §5 · §8.1–8.3).
+    Shown in <b>light + dark</b>, <b>mobile + desktop</b>, in both roles.</div>
+  <div class="meta">Scenario (continuous with LINA-27): <b>Maple Street Renovation</b> · owner <b>Dana Okafor</b> · GC <b>Ridgeline Builders</b> ·
+    baseline $240,000 · current budget $240,950 · <b>6 stages</b> · 2 <code>done</code>, 1 <code>blocked</code>, 1 <code>in_progress</code>, 2 <code>not_started</code>
+    → rollup <b>Attention needed · 33%</b> (§8.3 R1/R2) · plan allocates <b>$246,400</b> (over-allocated by $6,400 — information only).</div>
+
+  <div class="legend">
+    <span class="sw"><b>The four stage statuses:</b></span>
+    <span class="sw"><span class="st idle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/></svg>Not started</span></span>
+    <span class="sw"><span class="st run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</span></span>
+    <span class="sw"><span class="st block"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</span></span>
+    <span class="sw"><span class="st done"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Done</span></span>
+    <span class="sw">· Every status = <b>colour + label + icon + shape</b> (AC-P7). <b>Blocked is the only filled chip</b> — it must win the screen.</span>
+  </div>
+</div>
+
+<!-- ================================================================= -->
+<!-- ============== A · MOBILE LIGHT — HOMEOWNER ===================== -->
+<!-- ================================================================= -->
+<div class="section-cap">
+  <span class="n">A · Mobile · Homeowner</span><h2>Light theme — view-only plan, blocked stage present</h2>
+  <span>375&nbsp;px phone · status is the headline, percent is texture</span>
+</div>
+<div class="rail" id="a-mobile-light">
+
+  <!-- ---------- 5.1 · PLAN TIMELINE (homeowner) ---------- -->
+  <div class="step">
+   <div class="cap">Surface 5 · a<b>Plan timeline — homeowner</b></div>
+   <div class="phone">
+     <div class="statusbar"><span>9:41</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar">
+       <span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="var(--paper)" stroke="currentColor" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/></svg>LinkNMS</span>
+       <span class="switcher"><span class="health" style="background:var(--danger)"></span> Maple Street ▾</span>
+     </div>
+     <div class="screen">
+       <div class="col" style="gap:3px">
+         <h2 class="scr">Construction plan</h2>
+         <div class="cap">You are <span class="tag owner"><span class="pd"></span>Owner · Dana</span>
+           <span class="readonly"><svg viewBox="0 0 24 24"><path d="M5 11V8a7 7 0 0 1 14 0v3" stroke-linecap="round"/><rect x="4" y="11" width="16" height="9" rx="2"/></svg>View only · your GC owns the plan</span></div>
+       </div>
+
+       <!-- R1 headline + R2 percent (subordinate) -->
+       <div class="headline h-att">
+         <div class="h-lbl">Plan status</div>
+         <div class="h-main">
+           <span class="h-word"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Attention needed</span>
+           <span class="h-pct">· 33% of stages done</span>
+         </div>
+         <div class="pips" aria-label="6 stages">
+           <i class="p-done"></i><i class="p-done"></i><i class="p-block"></i><i class="p-run"></i><i></i><i></i>
+         </div>
+         <div class="h-sub"><b>Framing &amp; roof structure</b> is blocked — reported by Ridgeline, Aug&nbsp;27.</div>
+       </div>
+
+       <h3 class="grp">Stages · 6</h3>
+       <div class="stages">
+
+         <div class="stage s-done">
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord">STAGE 1</span><span class="s-name">Site prep &amp; demolition</span></div>
+             <span class="st done"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Done</span>
+           </div>
+           <div class="s-dates">Mar 3 → Mar 14, 2026</div>
+           <div class="s-foot">
+             <span class="alloc"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" stroke-linejoin="round"/><path d="M9 12h7M9 16h5" stroke-linecap="round"/></svg>Planned allocation <b>$18,000</b></span>
+             <span class="cap">History ›</span>
+           </div>
+         </div>
+
+         <div class="stage s-done">
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord">STAGE 2</span><span class="s-name">Foundation &amp; slab</span></div>
+             <span class="st done"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Done</span>
+           </div>
+           <div class="s-dates">Mar 17 → Apr 4, 2026</div>
+           <div class="s-foot">
+             <span class="alloc"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" stroke-linejoin="round"/><path d="M9 12h7M9 16h5" stroke-linecap="round"/></svg>Planned allocation <b>$46,500</b></span>
+             <span class="cap">History ›</span>
+           </div>
+         </div>
+
+         <!-- THE BLOCKED STAGE — loudest thing on the screen -->
+         <div class="stage s-block">
+           <span class="nowchip">Happening now</span>
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord">STAGE 3</span><span class="s-name">Framing &amp; roof structure</span></div>
+             <span class="st block"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</span>
+           </div>
+           <div class="s-dates">Apr 7 → May 2, 2026</div>
+           <div class="blockmsg">
+             <svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>
+             <span><b>“Steel beam delivery pushed — supplier confirms Sep 8.”</b><br>
+               <span class="tag builder" style="margin-top:5px"><span class="pd"></span>Reported · Ridgeline (GC)</span>
+               <span class="cap data" style="margin-left:6px">Aug 27, 2026 · 16:40</span></span>
+           </div>
+           <div class="s-foot">
+             <span class="alloc"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" stroke-linejoin="round"/><path d="M9 12h7M9 16h5" stroke-linecap="round"/></svg>Planned allocation <b>$72,000</b></span>
+             <span class="cap" style="font-weight:650;color:var(--bad-fg)">History ›</span>
+           </div>
+         </div>
+
+         <div class="stage s-run">
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord">STAGE 4</span><span class="s-name">Roughing — electrical &amp; plumbing</span></div>
+             <div class="col" style="gap:4px;align-items:flex-end">
+               <span class="st run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</span>
+               <span class="pct">· 40% <span class="hair"><i style="width:40%"></i></span></span>
+             </div>
+           </div>
+           <div class="s-dates">May 5 → May 23, 2026</div>
+           <div class="s-note">First-fix electrical in the rear extension only.</div>
+           <div class="s-foot">
+             <span class="alloc"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" stroke-linejoin="round"/><path d="M9 12h7M9 16h5" stroke-linecap="round"/></svg>Planned allocation <b>$38,400</b></span>
+             <span class="cap">History ›</span>
+           </div>
+         </div>
+
+         <div class="stage">
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord">STAGE 5</span><span class="s-name">Kitchen &amp; interior fit-out</span></div>
+             <span class="st idle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/></svg>Not started</span>
+           </div>
+           <div class="s-dates">May 26 → Jun 27, 2026</div>
+           <div class="s-foot">
+             <span class="alloc"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" stroke-linejoin="round"/><path d="M9 12h7M9 16h5" stroke-linecap="round"/></svg>Planned allocation <b>$52,000</b></span>
+             <span class="cap">History ›</span>
+           </div>
+         </div>
+
+         <div class="stage">
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord">STAGE 6</span><span class="s-name">Finishes &amp; handover</span></div>
+             <span class="st idle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/></svg>Not started</span>
+           </div>
+           <div class="s-dates">Jun 30 → Jul 18, 2026</div>
+           <div class="s-foot">
+             <span class="alloc"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" stroke-linejoin="round"/><path d="M9 12h7M9 16h5" stroke-linecap="round"/></svg>Planned allocation <b>$19,500</b></span>
+             <span class="cap">History ›</span>
+           </div>
+         </div>
+       </div>
+
+       <!-- allocation hint — deliberately unlike the budget metric -->
+       <div class="allocbar">
+         <div class="a-lbl"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5" stroke-linecap="round"/><circle cx="12" cy="7.8" r=".5" fill="currentColor"/></svg>Plan allocation · information only</div>
+         <div class="a-main">This plan allocates <b>$246,400</b> of the <b>$240,000</b> baseline — <b>$6,400 over</b>.</div>
+         <div class="a-fine">These are your GC’s planning figures. They do <b>not</b> change what you owe.
+           Only an <b>approved change order</b> moves your budget.</div>
+         <a class="a-link">Your current budget: $240,950 →</a>
+       </div>
+
+       <!-- FR-P7 response path, one step away, no acknowledge/comment primitive -->
+       <div class="respond">
+         <div class="r-t">Concerned about a stage?</div>
+         <div class="r-s">The plan is your GC’s to maintain. To put something on the record — or to change money or scope — use the record you already have.</div>
+         <div class="btn-row">
+           <button class="btn sm" style="flex:1"><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Log a decision</button>
+           <button class="btn sm" style="flex:1"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6M20 12a8 8 0 0 1-13.7 5.6" stroke-linecap="round"/><path d="M17 3v4h-4M7 21v-4h4" stroke-linecap="round" stroke-linejoin="round"/></svg>Change order</button>
+         </div>
+       </div>
+
+       <a class="cap" style="text-align:center;font-weight:650;color:var(--owner)">📎 Plan document · plan-v3.pdf · verified ✓</a>
+     </div>
+     <div class="botnav">
+       <a><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Home</a>
+       <a class="active"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg>Plan</a>
+       <a><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decisions</a>
+       <a><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget</a>
+     </div>
+   </div>
+   <div class="note"><b>Status is the headline; percent is texture.</b> The homeowner reads a <b>word</b> — “Attention needed” — at 21&nbsp;px;
+     “· 33% of stages done” sits at 13&nbsp;px muted and can never appear without it (§8.3 R2). Per-stage advisory % is smaller still
+     and only ever renders on <code>in_progress</code> (§5). <b>Blocked wins the screen</b> by five stacked signals — filled chip, 5&nbsp;px rail,
+     tinted card, inline reason quote, and the red project health dot in the top bar. <span class="ac">FR-P4 · AC-P7 · §8.3 R1–R3</span></div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ---------- 5.2 · STAGE HISTORY (homeowner, view-only) ---------- -->
+  <div class="step">
+   <div class="cap">Surface 5 · b<b>Stage history — append-only, view-only</b></div>
+   <div class="phone">
+     <div class="statusbar"><span>9:43</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar"><span class="back">‹ Plan</span><span class="title-c">Stage 3</span><span class="switcher">Share ▾</span></div>
+     <div class="screen">
+       <div class="col" style="gap:5px">
+         <h2 class="scr">Framing &amp; roof structure</h2>
+         <div class="row" style="justify-content:flex-start;gap:8px">
+           <span class="st block"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</span>
+           <span class="cap data">since Aug 27</span>
+         </div>
+       </div>
+       <div class="s-dates cap">Planned Apr 7 → May 2, 2026 · <span class="alloc">allocation <b>$72,000</b></span></div>
+
+       <h3 class="grp">Progress reports · newest first</h3>
+       <div class="hist">
+         <div class="h cur">
+           <div class="row"><span class="st block"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</span><span class="cap" style="font-weight:700">CURRENT</span></div>
+           <div class="s-note">“Steel beam delivery pushed — supplier confirms Sep 8.”</div>
+           <div class="hm"><span class="tag builder"><span class="pd"></span>Ridgeline (GC)</span> Aug 27, 2026 · 16:40</div>
+         </div>
+         <div class="h">
+           <div class="row"><span class="st run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</span><span class="pct">· 25%</span></div>
+           <div class="s-note">“Wall plates set on the east elevation.”</div>
+           <div class="hm"><span class="tag builder"><span class="pd"></span>Ridgeline (GC)</span> Aug 21, 2026 · 07:55</div>
+         </div>
+         <div class="h">
+           <div class="row"><span class="st run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</span><span class="pct">· 10%</span></div>
+           <div class="hm"><span class="tag builder"><span class="pd"></span>Ridgeline (GC)</span> Aug 18, 2026 · 08:02</div>
+         </div>
+       </div>
+       <div class="cap" style="display:flex;gap:6px;align-items:flex-start">
+         <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--success);fill:none;stroke-width:2;flex:0 0 auto;margin-top:2px"><path d="M12 3l7 3v6c0 4.4-3 8.2-7 9-4-.8-7-4.6-7-9V6z" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+         Every report above is a permanent, attributed entry in the same ledger as your decisions and change orders. Nothing here was overwritten.
+       </div>
+
+       <div class="spacer"></div>
+       <div class="respond">
+         <div class="r-t">This is view-only</div>
+         <div class="r-s">There is no “acknowledge” here on purpose — a tap with no consequence isn’t a record. If you want your view on the record, log it.</div>
+         <div class="btn-row">
+           <button class="btn sm" style="flex:1">Log a decision</button>
+           <button class="btn sm" style="flex:1">Change order</button>
+         </div>
+       </div>
+     </div>
+     <div class="botnav">
+       <a><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Home</a>
+       <a class="active"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg>Plan</a>
+       <a><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decisions</a>
+       <a><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget</a>
+     </div>
+   </div>
+   <div class="note"><b>The append-only promise, made visible.</b> Reports read newest-first with <b>CURRENT</b> named explicitly, so “latest report wins”
+     (§8.1) is legible rather than assumed. The 25% and 10% entries stay on the record after the stage went <code>blocked</code> — proving
+     nothing was overwritten. Percent renders here as history texture; it never becomes the stage’s headline.
+     <span class="ac">FR-P3 · FR-P5 · AC-P3 · §2 Q3</span></div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ---------- 5.3 · EMPTY STATE ---------- -->
+  <div class="step">
+   <div class="cap">Surface 5 · c<b>Empty state — no plan yet (§5)</b></div>
+   <div class="phone">
+     <div class="statusbar"><span>9:12</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar">
+       <span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="var(--paper)" stroke="currentColor" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/></svg>LinkNMS</span>
+       <span class="switcher"><span class="health" style="background:var(--outline-strong)"></span> Maple Street ▾</span>
+     </div>
+     <div class="screen">
+       <div class="col" style="gap:3px">
+         <h2 class="scr">Construction plan</h2>
+         <div class="cap">You are <span class="tag owner"><span class="pd"></span>Owner · Dana</span></div>
+       </div>
+
+       <div class="empty">
+         <svg viewBox="0 0 48 48"><path d="M10 40V12l8-6h20v34z" stroke-linejoin="round"/><path d="M18 6v6h-8" stroke-linejoin="round"/><path d="M17 21h14M17 27h14M17 33h8" stroke-linecap="round" stroke-dasharray="2 4"/></svg>
+         <div class="e-t">Your GC hasn’t added the construction plan yet</div>
+         <div class="e-s">When <b>Ridgeline Builders</b> adds stages, you’ll see each one here with its dates, scope and progress — and every update will be on the record.</div>
+       </div>
+
+       <div class="card" style="display:flex;flex-direction:column;gap:7px">
+         <div class="cap" style="font-weight:650;color:var(--fg)">While you wait, the record is already live</div>
+         <div class="cap">Your decision log, change orders and budget trail work with or without a plan. Nothing here is waiting on the GC.</div>
+         <div class="btn-row" style="margin-top:3px">
+           <button class="btn sm" style="flex:1">Decision log</button>
+           <button class="btn sm" style="flex:1">Budget trail</button>
+         </div>
+       </div>
+
+       <div class="spacer"></div>
+       <div class="cap" style="text-align:center">We’ll notify you the moment the plan lands.</div>
+     </div>
+     <div class="botnav">
+       <a><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Home</a>
+       <a class="active"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg>Plan</a>
+       <a><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decisions</a>
+       <a><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget</a>
+     </div>
+   </div>
+   <div class="note"><b>No headline, no percent, no ghost stage.</b> Zero stages means the R1 ladder produces <b>no headline at all</b> (§8.3 R1&nbsp;·5) —
+     so this screen shows neither “Not started” nor “0% complete”, both of which would be false claims about a plan that doesn’t exist.
+     The project health dot in the top bar is neutral grey, not green. The empty state <b>names the party we’re waiting on</b>, which is the
+     honest answer to “why is this blank?”. <span class="ac">§5 empty plan · §8.3 R1·5</span></div>
+  </div>
+</div>
+
+<!-- ================================================================= -->
+<!-- ================ B · MOBILE LIGHT — GC ========================== -->
+<!-- ================================================================= -->
+<div class="section-cap">
+  <span class="n">B · Mobile · GC</span><h2>Same timeline, plus the authoring affordances</h2>
+  <span>one surface, two roles — §8.2 · FR-P1/P2/P3</span>
+</div>
+<div class="rail" id="b-mobile-gc">
+
+  <!-- ---------- 5.4 · GC PLAN ---------- -->
+  <div class="step">
+   <div class="cap">Surface 5 · d<b>Plan timeline — GC (authoring)</b></div>
+   <div class="phone">
+     <div class="statusbar"><span>7:32</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar">
+       <span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="var(--paper)" stroke="currentColor" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/></svg>LinkNMS</span>
+       <span class="switcher"><span class="health" style="background:var(--danger)"></span> Maple Street ▾</span>
+     </div>
+     <div class="screen">
+       <div class="col" style="gap:3px">
+         <h2 class="scr">Construction plan</h2>
+         <div class="cap">You are <span class="tag builder"><span class="pd"></span>GC · Ridgeline</span></div>
+       </div>
+
+       <div class="gcbar">
+         <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:var(--builder-ink);fill:none;stroke-width:2;flex:0 0 auto"><path d="M12 3l7 3v6c0 4.4-3 8.2-7 9-4-.8-7-4.6-7-9V6z" stroke-linejoin="round"/></svg>
+         <span class="g-t">You own this plan. Dana sees every edit and report, attributed to you, the moment you save.</span>
+       </div>
+
+       <div class="headline h-att">
+         <div class="h-lbl">Plan status</div>
+         <div class="h-main">
+           <span class="h-word"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Attention needed</span>
+           <span class="h-pct">· 33% of stages done</span>
+         </div>
+         <div class="pips"><i class="p-done"></i><i class="p-done"></i><i class="p-block"></i><i class="p-run"></i><i></i><i></i></div>
+       </div>
+
+       <div class="row"><h3 class="grp">Stages · 6</h3><span class="cap" style="font-weight:650;color:var(--owner)">Reorder</span></div>
+       <div class="stages">
+         <div class="stage s-block">
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord"><span class="handle">⠿</span> STAGE 3</span><span class="s-name">Framing &amp; roof structure</span></div>
+             <span class="st block"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</span>
+           </div>
+           <div class="s-dates">Apr 7 → May 2, 2026 · <span class="alloc">allocation <b>$72,000</b></span></div>
+           <div class="btn-row">
+             <button class="btn sm" style="flex:1;border-color:var(--builder);color:var(--builder-ink)">Report progress</button>
+             <button class="btn sm" style="flex:0 0 auto">Edit</button>
+           </div>
+         </div>
+         <div class="stage s-run">
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord"><span class="handle">⠿</span> STAGE 4</span><span class="s-name">Roughing — electrical &amp; plumbing</span></div>
+             <div class="col" style="gap:4px;align-items:flex-end">
+               <span class="st run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</span>
+               <span class="pct">· 40% <span class="hair"><i style="width:40%"></i></span></span>
+             </div>
+           </div>
+           <div class="s-dates">May 5 → May 23, 2026 · <span class="alloc">allocation <b>$38,400</b></span></div>
+           <div class="btn-row">
+             <button class="btn sm" style="flex:1;border-color:var(--builder);color:var(--builder-ink)">Report progress</button>
+             <button class="btn sm" style="flex:0 0 auto">Edit</button>
+           </div>
+         </div>
+         <div class="stage">
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord"><span class="handle">⠿</span> STAGE 5</span><span class="s-name">Kitchen &amp; interior fit-out</span></div>
+             <span class="st idle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/></svg>Not started</span>
+           </div>
+           <div class="s-dates">May 26 → Jun 27, 2026 · <span class="alloc">allocation <b>$52,000</b></span></div>
+           <div class="btn-row">
+             <button class="btn sm" style="flex:1;border-color:var(--builder);color:var(--builder-ink)">Report progress</button>
+             <button class="btn sm" style="flex:0 0 auto">Edit</button>
+           </div>
+         </div>
+       </div>
+
+       <div class="allocbar">
+         <div class="a-lbl"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5" stroke-linecap="round"/><circle cx="12" cy="7.8" r=".5" fill="currentColor"/></svg>Plan allocation · information only</div>
+         <div class="a-main">Allocated <b>$246,400</b> of the <b>$240,000</b> baseline — <b>$6,400 over</b>.</div>
+         <div class="a-fine">Nothing here needs to balance, and nothing here bills. To move the budget, raise a change order.</div>
+       </div>
+
+       <div class="btn-row">
+         <button class="btn primary" style="flex:1"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>Add stage</button>
+         <button class="btn" style="flex:0 0 auto"><svg viewBox="0 0 24 24"><path d="M12 16V4m-5 5l5-5 5 5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v3h16v-3" stroke-linecap="round"/></svg>Plan doc</button>
+       </div>
+     </div>
+     <div class="botnav">
+       <a><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Home</a>
+       <a class="active" style="color:var(--builder)"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg>Plan</a>
+       <a><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decisions</a>
+       <a><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget</a>
+     </div>
+   </div>
+   <div class="note"><b>Same timeline, additive affordances.</b> The GC gets the identical stage component plus drag handles, per-stage
+     <b>Report progress</b>/<b>Edit</b>, <b>Add stage</b> and <b>Plan doc</b> — nothing about the read layout changes between roles, so the GC always
+     knows exactly what Dana is seeing. Authoring controls use <b>Builder Orange</b>, keeping the LINA-27 party encoding intact.
+     The homeowner never renders these controls (they are <b>absent</b>, and server-side any attempt is a <b>denial</b>, not a 500).
+     <span class="ac">FR-P1 · FR-P2 · §8.2 · AC-P6/AC-P10</span></div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ---------- 5.5 · REPORT PROGRESS SHEET ---------- -->
+  <div class="step">
+   <div class="cap">Surface 5 · e<b>Report progress — incl. the ⚠️ correction rule</b></div>
+   <div class="phone">
+     <div class="statusbar"><span>7:34</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar"><span class="back">‹ Plan</span><span class="title-c">Report progress</span><span class="switcher">Cancel</span></div>
+     <div class="screen" style="gap:var(--s3);background:var(--sunken)">
+       <div class="card" style="display:flex;flex-direction:column;gap:5px">
+         <span class="s-ord">STAGE 3</span>
+         <span class="s-name" style="font-size:15px;font-weight:650">Framing &amp; roof structure</span>
+         <div class="row" style="justify-content:flex-start;gap:7px">
+           <span class="cap">Currently</span>
+           <span class="st block"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</span>
+         </div>
+       </div>
+       <div class="spacer"></div>
+     </div>
+     <div class="sheet">
+       <div class="grabber"></div>
+       <div class="field">
+         <label>New status <span class="cap" style="font-weight:400">· required</span></label>
+         <div class="stpick">
+           <div class="opt on"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/></svg>Not started</div>
+           <div class="opt"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</div>
+           <div class="opt"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</div>
+           <div class="opt"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Done</div>
+         </div>
+       </div>
+
+       <div class="req">
+         <svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>
+         <span><b>Going back to “Not started” needs a note.</b> Work was already reported on this stage, so the record has to say why
+           you’re walking it back. This is the only status that asks for one.</span>
+       </div>
+
+       <div class="field">
+         <label>Why? <span class="cap" style="font-weight:400">· required for this change</span></label>
+         <div class="input focus" style="min-height:66px;align-items:flex-start;padding-top:11px">Tapped the wrong stage on Aug 21 — framing hasn’t begun.</div>
+       </div>
+
+       <div class="field" style="opacity:.45">
+         <label>Percent complete <span class="cap" style="font-weight:400">· only while In progress</span></label>
+         <div class="input ph">—  not available for this status</div>
+       </div>
+
+       <div class="cap" style="display:flex;gap:6px;align-items:flex-start">
+         <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--muted);fill:none;stroke-width:2;flex:0 0 auto;margin-top:2px"><path d="M12 3l7 3v6c0 4.4-3 8.2-7 9-4-.8-7-4.6-7-9V6z" stroke-linejoin="round"/></svg>
+         This adds a new entry. Your earlier reports stay on the record exactly as you filed them.
+       </div>
+       <button class="btn primary" style="background:var(--builder);border-color:var(--builder)">Save report</button>
+     </div>
+   </div>
+   <div class="note"><b>The one conditional transition, designed as a nudge — not a wall.</b> Every ✅ and ● transition in §8.1 saves with no
+     friction at all; only <code>→ not_started</code> asks for a note, and the copy says <i>why</i> rather than scolding. <b>Percent is disabled,
+     not hidden</b>, when the status isn’t <code>in_progress</code> — the GC learns the rule instead of hunting for a missing field (§5).
+     No transition is ever refused: <code>done → in_progress</code> is a first-class “rework” path.
+     <span class="ac">§8.1 · FR-P3 · AC-P8</span></div>
+  </div>
+</div>
+
+<!-- ================================================================= -->
+<!-- ===================== C · MOBILE DARK =========================== -->
+<!-- ================================================================= -->
+<div class="section-cap">
+  <span class="n">C · Mobile · Dark</span><h2>Dark theme — the same five signals still make <code>blocked</code> loudest</h2>
+  <span>on-site, low light · contrast re-tuned, hierarchy unchanged</span>
+</div>
+<div class="rail dark-strip" id="c-mobile-dark">
+
+  <div class="step">
+   <div class="cap">Surface 5 · a (dark)<b>Plan timeline — homeowner</b></div>
+   <div class="phone" data-theme="dark">
+     <div class="statusbar"><span>19:41</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar">
+       <span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="var(--paper)" stroke="currentColor" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#6aa6ef"/><path d="M32 6 L56 26 L32 26 Z" fill="#f38b53"/></svg>LinkNMS</span>
+       <span class="switcher"><span class="health" style="background:var(--danger)"></span> Maple Street ▾</span>
+     </div>
+     <div class="screen">
+       <div class="col" style="gap:3px">
+         <h2 class="scr">Construction plan</h2>
+         <div class="cap">You are <span class="tag owner"><span class="pd"></span>Owner · Dana</span>
+           <span class="readonly"><svg viewBox="0 0 24 24"><path d="M5 11V8a7 7 0 0 1 14 0v3" stroke-linecap="round"/><rect x="4" y="11" width="16" height="9" rx="2"/></svg>View only</span></div>
+       </div>
+       <div class="headline h-att">
+         <div class="h-lbl">Plan status</div>
+         <div class="h-main">
+           <span class="h-word"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Attention needed</span>
+           <span class="h-pct">· 33% of stages done</span>
+         </div>
+         <div class="pips"><i class="p-done"></i><i class="p-done"></i><i class="p-block"></i><i class="p-run"></i><i></i><i></i></div>
+         <div class="h-sub"><b>Framing &amp; roof structure</b> is blocked — reported by Ridgeline, Aug&nbsp;27.</div>
+       </div>
+
+       <h3 class="grp">Stages · 6</h3>
+       <div class="stages">
+         <div class="stage s-done">
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord">STAGE 2</span><span class="s-name">Foundation &amp; slab</span></div>
+             <span class="st done"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Done</span>
+           </div>
+           <div class="s-dates">Mar 17 → Apr 4, 2026</div>
+           <div class="s-foot"><span class="alloc"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" stroke-linejoin="round"/><path d="M9 12h7M9 16h5" stroke-linecap="round"/></svg>Planned allocation <b>$46,500</b></span><span class="cap">History ›</span></div>
+         </div>
+         <div class="stage s-block">
+           <span class="nowchip">Happening now</span>
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord">STAGE 3</span><span class="s-name">Framing &amp; roof structure</span></div>
+             <span class="st block"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</span>
+           </div>
+           <div class="s-dates">Apr 7 → May 2, 2026</div>
+           <div class="blockmsg">
+             <svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>
+             <span><b>“Steel beam delivery pushed — supplier confirms Sep 8.”</b><br>
+               <span class="tag builder" style="margin-top:5px"><span class="pd"></span>Reported · Ridgeline (GC)</span>
+               <span class="cap data" style="margin-left:6px">Aug 27 · 16:40</span></span>
+           </div>
+           <div class="s-foot"><span class="alloc"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" stroke-linejoin="round"/><path d="M9 12h7M9 16h5" stroke-linecap="round"/></svg>Planned allocation <b>$72,000</b></span><span class="cap" style="color:var(--bad-fg);font-weight:650">History ›</span></div>
+         </div>
+         <div class="stage s-run">
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord">STAGE 4</span><span class="s-name">Roughing — electrical &amp; plumbing</span></div>
+             <div class="col" style="gap:4px;align-items:flex-end">
+               <span class="st run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</span>
+               <span class="pct">· 40% <span class="hair"><i style="width:40%"></i></span></span>
+             </div>
+           </div>
+           <div class="s-dates">May 5 → May 23, 2026</div>
+           <div class="s-foot"><span class="alloc"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" stroke-linejoin="round"/><path d="M9 12h7M9 16h5" stroke-linecap="round"/></svg>Planned allocation <b>$38,400</b></span><span class="cap">History ›</span></div>
+         </div>
+         <div class="stage">
+           <div class="s-top">
+             <div class="col" style="gap:3px"><span class="s-ord">STAGE 5</span><span class="s-name">Kitchen &amp; interior fit-out</span></div>
+             <span class="st idle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/></svg>Not started</span>
+           </div>
+           <div class="s-dates">May 26 → Jun 27, 2026</div>
+           <div class="s-foot"><span class="alloc"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" stroke-linejoin="round"/><path d="M9 12h7M9 16h5" stroke-linecap="round"/></svg>Planned allocation <b>$52,000</b></span><span class="cap">History ›</span></div>
+         </div>
+       </div>
+
+       <div class="allocbar">
+         <div class="a-lbl"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5" stroke-linecap="round"/><circle cx="12" cy="7.8" r=".5" fill="currentColor"/></svg>Plan allocation · information only</div>
+         <div class="a-main">This plan allocates <b>$246,400</b> of the <b>$240,000</b> baseline — <b>$6,400 over</b>.</div>
+         <div class="a-fine">Your GC’s planning figures. Only an <b>approved change order</b> moves your budget.</div>
+         <a class="a-link">Your current budget: $240,950 →</a>
+       </div>
+     </div>
+     <div class="botnav">
+       <a><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Home</a>
+       <a class="active"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg>Plan</a>
+       <a><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decisions</a>
+       <a><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget</a>
+     </div>
+   </div>
+   <div class="note on-dark"><b>Dark isn’t a re-skin, it’s a re-balance.</b> On dark, a red <i>tint</i> nearly disappears — so <code>blocked</code>
+     keeps its <b>filled</b> chip (dark ink on <code>--danger</code>) and gains the 5&nbsp;px rail, while the card tint does less work.
+     <code>done</code> deliberately recedes (muted stage name) so the eye lands on the live stages first, in both themes.
+     <span class="ac">AC-P7 in dark</span></div>
+  </div>
+
+  <div class="step">
+   <div class="cap">Surface 5 · c (dark)<b>Empty state</b></div>
+   <div class="phone" data-theme="dark">
+     <div class="statusbar"><span>19:12</span><span class="sig">●●● 5G ▮</span></div>
+     <div class="topbar">
+       <span class="brand"><svg class="mk" viewBox="0 0 64 64"><rect x="12" y="26" width="40" height="30" rx="2" fill="var(--paper)" stroke="currentColor" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#6aa6ef"/><path d="M32 6 L56 26 L32 26 Z" fill="#f38b53"/></svg>LinkNMS</span>
+       <span class="switcher"><span class="health" style="background:var(--outline-strong)"></span> Maple Street ▾</span>
+     </div>
+     <div class="screen">
+       <div class="col" style="gap:3px">
+         <h2 class="scr">Construction plan</h2>
+         <div class="cap">You are <span class="tag owner"><span class="pd"></span>Owner · Dana</span></div>
+       </div>
+       <div class="empty">
+         <svg viewBox="0 0 48 48"><path d="M10 40V12l8-6h20v34z" stroke-linejoin="round"/><path d="M18 6v6h-8" stroke-linejoin="round"/><path d="M17 21h14M17 27h14M17 33h8" stroke-linecap="round" stroke-dasharray="2 4"/></svg>
+         <div class="e-t">Your GC hasn’t added the construction plan yet</div>
+         <div class="e-s">When <b>Ridgeline Builders</b> adds stages, you’ll see each one here with its dates, scope and progress.</div>
+       </div>
+       <div class="spacer"></div>
+       <div class="cap" style="text-align:center">We’ll notify you the moment the plan lands.</div>
+     </div>
+     <div class="botnav">
+       <a><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Home</a>
+       <a class="active"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg>Plan</a>
+       <a><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decisions</a>
+       <a><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget</a>
+     </div>
+   </div>
+   <div class="note on-dark"><b>Same rule in the dark.</b> No headline, no percent, no fabricated stage — and the health dot stays neutral.
+     <span class="ac">§5 · §8.3 R1·5</span></div>
+  </div>
+</div>
+
+<!-- ================================================================= -->
+<!-- ====================== D · DESKTOP ============================== -->
+<!-- ================================================================= -->
+<div class="section-cap">
+  <span class="n">D · Desktop</span><h2>Homeowner workspace — plan in the centre, stage history in the drawer</h2>
+  <span>1180&nbsp;px · the phone layout scaled up, not a different information model</span>
+</div>
+<div class="rail" id="d-desktop">
+ <div class="step">
+  <div class="cap">Surface 5 · f<b>Plan timeline — desktop, homeowner</b></div>
+  <div class="desk">
+    <div class="desk-top">
+      <span class="brand"><svg class="mk" viewBox="0 0 64 64" style="width:22px;height:22px"><rect x="12" y="26" width="40" height="30" rx="2" fill="var(--paper)" stroke="currentColor" stroke-width="3"/><path d="M32 6 L8 26 L32 26 Z" fill="#2a78d6"/><path d="M32 6 L56 26 L32 26 Z" fill="#eb6834"/></svg>LinkNMS</span>
+      <span class="switcher" style="margin-left:0"><span class="health" style="background:var(--danger)"></span> Maple Street Renovation ▾</span>
+      <span style="margin-left:auto" class="tag owner"><span class="pd"></span>Owner · Dana Okafor</span>
+    </div>
+    <div class="desk-body">
+      <div class="rail-l">
+        <div class="navlink"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round"/></svg>Overview</div>
+        <div class="navlink active"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/></svg>Plan<span class="alert">1</span></div>
+        <div class="navlink"><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4" stroke-linecap="round"/></svg>Decision log<span class="ct">7</span></div>
+        <div class="navlink"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6M20 12a8 8 0 0 1-13.7 5.6" stroke-linecap="round"/></svg>Change orders<span class="ct">1</span></div>
+        <div class="navlink"><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke-linecap="round"/></svg>Budget trail</div>
+        <div class="navlink"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.4-3 8.2-7 9-4-.8-7-4.6-7-9V6z" stroke-linejoin="round"/></svg>Audit &amp; verify</div>
+        <div style="margin-top:auto;border-top:1px solid var(--outline);padding-top:10px" class="cap">📎 plan-v3.pdf · verified ✓<br>uploaded by Ridgeline · Aug 12</div>
+      </div>
+
+      <div class="main">
+        <div class="row" style="align-items:flex-start">
+          <div class="col" style="gap:4px">
+            <h2 class="scr">Construction plan</h2>
+            <span class="readonly"><svg viewBox="0 0 24 24"><path d="M5 11V8a7 7 0 0 1 14 0v3" stroke-linecap="round"/><rect x="4" y="11" width="16" height="9" rx="2"/></svg>View only · Ridgeline Builders owns and maintains this plan</span>
+          </div>
+        </div>
+
+        <div class="headline h-att">
+          <div class="col" style="gap:5px">
+            <div class="h-lbl">Plan status</div>
+            <div class="h-main">
+              <span class="h-word" style="font-size:24px"><svg viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Attention needed</span>
+              <span class="h-pct">· 33% of stages done (2 of 6)</span>
+            </div>
+          </div>
+          <div class="col" style="gap:7px">
+            <div class="pips"><i class="p-done"></i><i class="p-done"></i><i class="p-block"></i><i class="p-run"></i><i></i><i></i></div>
+            <div class="h-sub"><b>Stage 3 · Framing &amp; roof structure</b> is blocked — reported by Ridgeline, Aug 27 · 16:40.</div>
+          </div>
+        </div>
+
+        <div class="stages">
+          <div class="stage s-done">
+            <div class="s-top">
+              <div class="col" style="gap:3px"><span class="s-ord">STAGE 1</span><span class="s-name">Site prep &amp; demolition</span>
+                <span class="s-dates">Mar 3 → Mar 14, 2026</span></div>
+              <div class="col" style="gap:6px;align-items:flex-end">
+                <span class="st done"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Done</span>
+                <span class="alloc">allocation <b>$18,000</b></span>
+              </div>
+            </div>
+          </div>
+          <div class="stage s-done">
+            <div class="s-top">
+              <div class="col" style="gap:3px"><span class="s-ord">STAGE 2</span><span class="s-name">Foundation &amp; slab</span>
+                <span class="s-dates">Mar 17 → Apr 4, 2026</span></div>
+              <div class="col" style="gap:6px;align-items:flex-end">
+                <span class="st done"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Done</span>
+                <span class="alloc">allocation <b>$46,500</b></span>
+              </div>
+            </div>
+          </div>
+          <div class="stage s-block">
+            <span class="nowchip">Happening now</span>
+            <div class="s-top">
+              <div class="col" style="gap:3px"><span class="s-ord">STAGE 3</span><span class="s-name">Framing &amp; roof structure</span>
+                <span class="s-dates">Apr 7 → May 2, 2026</span></div>
+              <div class="col" style="gap:6px;align-items:flex-end">
+                <span class="st block"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</span>
+                <span class="alloc">allocation <b>$72,000</b></span>
+              </div>
+            </div>
+            <div class="blockmsg"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>
+              <span><b>“Steel beam delivery pushed — supplier confirms Sep 8.”</b>
+              <span class="tag builder" style="margin-left:8px"><span class="pd"></span>Ridgeline (GC)</span>
+              <span class="cap data" style="margin-left:6px">Aug 27, 2026 · 16:40</span></span></div>
+          </div>
+          <div class="stage s-run">
+            <div class="s-top">
+              <div class="col" style="gap:3px"><span class="s-ord">STAGE 4</span><span class="s-name">Roughing — electrical &amp; plumbing</span>
+                <span class="s-dates">May 5 → May 23, 2026 · first-fix, rear extension only</span></div>
+              <div class="col" style="gap:6px;align-items:flex-end">
+                <div style="display:flex;gap:7px;align-items:center">
+                  <span class="st run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</span>
+                  <span class="pct">· 40% <span class="hair"><i style="width:40%"></i></span></span>
+                </div>
+                <span class="alloc">allocation <b>$38,400</b></span>
+              </div>
+            </div>
+          </div>
+          <div class="stage">
+            <div class="s-top">
+              <div class="col" style="gap:3px"><span class="s-ord">STAGE 5</span><span class="s-name">Kitchen &amp; interior fit-out</span>
+                <span class="s-dates">May 26 → Jun 27, 2026</span></div>
+              <div class="col" style="gap:6px;align-items:flex-end">
+                <span class="st idle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/></svg>Not started</span>
+                <span class="alloc">allocation <b>$52,000</b></span>
+              </div>
+            </div>
+          </div>
+          <div class="stage">
+            <div class="s-top">
+              <div class="col" style="gap:3px"><span class="s-ord">STAGE 6</span><span class="s-name">Finishes &amp; handover</span>
+                <span class="s-dates">Jun 30 → Jul 18, 2026</span></div>
+              <div class="col" style="gap:6px;align-items:flex-end">
+                <span class="st idle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/></svg>Not started</span>
+                <span class="alloc">allocation <b>$19,500</b></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="allocbar" style="flex-direction:row;align-items:center;gap:var(--s6)">
+          <div class="col" style="gap:5px;flex:1">
+            <div class="a-lbl"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5" stroke-linecap="round"/><circle cx="12" cy="7.8" r=".5" fill="currentColor"/></svg>Plan allocation · information only</div>
+            <div class="a-main">This plan allocates <b>$246,400</b> of the <b>$240,000</b> baseline — <b>$6,400 over</b>.
+              <span class="a-fine">Planning figures from your GC. They do not change what you owe; only an approved change order moves your budget.</span></div>
+          </div>
+          <a class="a-link" style="border:0;padding:0;margin:0;flex:0 0 auto">Your current budget: $240,950 →</a>
+        </div>
+      </div>
+
+      <div class="drawer">
+        <div class="row"><span style="font-weight:700;font-size:14px">Stage 3 · history</span><span class="cap">✕</span></div>
+        <div class="cap">Framing &amp; roof structure · append-only</div>
+        <div class="hist">
+          <div class="h cur">
+            <div class="row"><span class="st block"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</span><span class="cap" style="font-weight:700">CURRENT</span></div>
+            <div class="s-note">“Steel beam delivery pushed — supplier confirms Sep 8.”</div>
+            <div class="hm"><span class="tag builder"><span class="pd"></span>Ridgeline</span> Aug 27 · 16:40</div>
+          </div>
+          <div class="h">
+            <div class="row"><span class="st run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</span><span class="pct">· 25%</span></div>
+            <div class="s-note">“Wall plates set on the east elevation.”</div>
+            <div class="hm"><span class="tag builder"><span class="pd"></span>Ridgeline</span> Aug 21 · 07:55</div>
+          </div>
+          <div class="h">
+            <div class="row"><span class="st run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</span><span class="pct">· 10%</span></div>
+            <div class="hm"><span class="tag builder"><span class="pd"></span>Ridgeline</span> Aug 18 · 08:02</div>
+          </div>
+          <div class="h">
+            <div class="row"><span class="cap" style="font-weight:650">Stage added to the plan</span></div>
+            <div class="hm"><span class="tag builder"><span class="pd"></span>Ridgeline</span> Aug 12 · 11:20</div>
+          </div>
+        </div>
+        <div class="cap" style="display:flex;gap:6px;align-items:flex-start">
+          <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--success);fill:none;stroke-width:2;flex:0 0 auto;margin-top:2px"><path d="M12 3l7 3v6c0 4.4-3 8.2-7 9-4-.8-7-4.6-7-9V6z" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Chain-verified with your decisions and change orders.
+        </div>
+        <div class="spacer"></div>
+        <div class="respond">
+          <div class="r-t">Concerned about this stage?</div>
+          <div class="r-s">Put it on the record, or move money and scope through the gate you control.</div>
+          <div class="btn-row"><button class="btn sm" style="flex:1">Log a decision</button><button class="btn sm" style="flex:1">Change order</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="note wide"><b>Desktop adds room, not a new model.</b> The stage component is identical — only the internal layout goes two-column, so a
+    homeowner who learns the plan on their phone reads the same objects on a laptop. The drawer is where <b>“who / when / how much”</b> lands for a
+    single stage, matching the LINA-27 decision/change-order drawers. Left rail carries a <b>red count badge on Plan</b>, so <code>blocked</code> is
+    discoverable from any screen — the one status that chases the user. The allocation strip stays dashed, sunken and captioned
+    <i>information only</i> at every breakpoint. <span class="ac">FR-P4 · FR-P5 · FR-P6 · FR-P7</span></div>
+ </div>
+</div>
+
+<!-- ================================================================= -->
+<!-- ============= E · COMPONENT SPEC + DO / DON'T ==================== -->
+<!-- ================================================================= -->
+<div class="section-cap">
+  <span class="n">E · Handoff</span><h2>Status component, and the two ways this surface can fail</h2>
+  <span>build-ready redlines for LINA-69</span>
+</div>
+
+<div class="rail" style="gap:var(--s4)">
+  <div class="step">
+    <div class="cap">Component<b>Stage status chip · light</b></div>
+    <div class="swatchgrid" style="width:560px">
+      <div class="sw-cell"><span class="st idle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/></svg>Not started</span><span class="k">not_started<br>--idle-*</span></div>
+      <div class="sw-cell"><span class="st run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</span><span class="k">in_progress<br>--info-*</span></div>
+      <div class="sw-cell"><span class="st block"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</span><span class="k">blocked<br>--danger (FILLED)</span></div>
+      <div class="sw-cell"><span class="st done"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Done</span><span class="k">done<br>--ok-*</span></div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="cap">Component<b>Stage status chip · dark</b></div>
+    <div class="swatchgrid" data-theme="dark" style="width:560px;background:var(--paper);border-color:var(--outline)">
+      <div class="sw-cell"><span class="st idle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/></svg>Not started</span><span class="k">not_started</span></div>
+      <div class="sw-cell"><span class="st run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>In progress</span><span class="k">in_progress</span></div>
+      <div class="sw-cell"><span class="st block"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Blocked</span><span class="k">blocked</span></div>
+      <div class="sw-cell"><span class="st done"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Done</span><span class="k">done</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="dodont" style="margin-top:var(--s4)">
+  <div class="dd no">
+    <div class="dd-h">✕ Failure 1 — the percent becomes the headline</div>
+    <div class="demo">
+      <div style="font-size:30px;font-weight:700;letter-spacing:-.8px">33%</div>
+      <div style="font-size:12px;color:#5b5b58">complete · 1 stage blocked</div>
+    </div>
+    <div class="dd-s">A big number reads as a computed, authoritative measure of the build. The blocked stage — the only thing the homeowner
+      may need to act on — becomes a footnote. Never render the percent alone, never above 13&nbsp;px, and never without its status word (§8.3 R2).</div>
+  </div>
+  <div class="dd yes">
+    <div class="dd-h">✓ Correct — status word first, percent subordinate</div>
+    <div class="demo">
+      <div style="font-size:21px;font-weight:700;letter-spacing:-.4px;color:#a5271b;display:flex;align-items:center;gap:8px">
+        <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2.3"><path d="M12 3l9 16H3z" stroke-linejoin="round"/><path d="M12 9v4.5" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".4" fill="currentColor"/></svg>Attention needed</div>
+      <div style="font-size:13px;color:#5b5b58;font-weight:650">· 33% of stages done</div>
+    </div>
+    <div class="dd-s">The word carries the meaning; the number is texture underneath it. This is the only permitted pairing — including on an
+      otherwise-finished plan, where <b>Attention needed</b> still outranks <b>Complete</b> (§8.3 R1·1).</div>
+  </div>
+  <div class="dd no">
+    <div class="dd-h">✕ Failure 2 — allocation typeset as budget</div>
+    <div class="demo">
+      <div style="font-size:12px;color:#5b5b58">Plan total</div>
+      <div style="font-size:26px;font-weight:650;letter-spacing:-.6px">$246,400</div>
+      <div style="font-size:12px;color:#c0392b;font-weight:650">▲ +$6,400 over budget</div>
+    </div>
+    <div class="dd-s">This is the exact typography of the <b>Cost pillar</b> metric in LINA-27 — so the homeowner reads “I now owe $246,400,” which is
+      false. Planned cost must never use <code>.metric-val</code>, never use the red <code>.delta.up</code> treatment, and never say
+      “over budget.”</div>
+  </div>
+  <div class="dd yes">
+    <div class="dd-h">✓ Correct — allocation is a dashed, sunken hint</div>
+    <div class="demo">
+      <div class="allocbar">
+        <div class="a-lbl"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5" stroke-linecap="round"/><circle cx="12" cy="7.8" r=".5" fill="currentColor"/></svg>Plan allocation · information only</div>
+        <div class="a-main">This plan allocates <b>$246,400</b> of the <b>$240,000</b> baseline — <b>$6,400 over</b>.</div>
+        <div class="a-fine">Only an <b>approved change order</b> moves your budget.</div>
+        <a class="a-link">Your current budget: $240,950 →</a>
+      </div>
+    </div>
+    <div class="dd-s">Different container (dashed + sunken, never a raised card), different type scale (13&nbsp;px body, never 26&nbsp;px numerals),
+      neutral colour even when over-allocated, an explicit “information only” label, and a link that sends the homeowner to the
+      <b>one</b> authoritative number. Over-allocation is stated plainly — it just isn’t alarmed (§2 Q2 · FR-P6 · AC-P5).</div>
+  </div>
+</div>
+
+<div class="specbox">
+  <h3>Build notes for LINA-69 — what this surface must and must not do</h3>
+  <ul>
+    <li><b>Status → token map.</b> <code>not_started</code> → <code>--idle-*</code> (dashed circle) · <code>in_progress</code> →
+      <code>--info-*</code> (half-filled circle) · <code>blocked</code> → <b>filled</b> <code>--danger</code> (triangle) ·
+      <code>done</code> → <code>--ok-*</code> (check circle). <code>--info-*</code> and <code>--idle-*</code> are the only two new token
+      groups; everything else is inherited from LINA-27. Amber (<code>--warn-*</code>) stays reserved for <i>change order pending</i> — do not
+      reuse it for a stage.</li>
+    <li><b>Blocked carries five signals, not one hue</b> (AC-P7): filled chip + label + triangle icon + 5&nbsp;px left rail + tinted card, plus the
+      inline reason quote, the plan-level headline, the red health dot in the switcher, and a count badge on the desktop <i>Plan</i> nav item.
+      Removing any one of these must still leave <code>blocked</code> unmistakable in greyscale.</li>
+    <li><b>Percent rules.</b> Render only when <code>status === 'in_progress'</code>; max 13&nbsp;px; always muted; always preceded by
+      <code>·</code> and the status word; never in a heading element. In the report form, the percent field is <b>disabled and captioned</b>, not
+      removed. Reporting <code>done</code> drops percent from the headline entirely (§5).</li>
+    <li><b>Plan headline.</b> Compute per §8.3 R1 in exact order; the percent string is always suffixed to the word and never rendered on its own.
+      <b>Zero stages ⇒ no headline node at all</b> — render the empty state instead. Do not emit “0%”, and keep the project health dot neutral.</li>
+    <li><b>Allocation vs budget.</b> Stage cost uses the <code>.alloc</code> label pattern (“Planned allocation $X”), never a bare currency
+      figure. The plan-level hint uses <code>.allocbar</code> — dashed border, <code>--sunken</code> ground, “information only” eyebrow, and a link
+      out to the Cost pillar. Over-allocation is neutral text, not red, and never uses the word “over budget”.</li>
+    <li><b>Roles.</b> Homeowner: identical read layout with <b>zero</b> authoring controls rendered, plus the <code>.readonly</code> pill so the
+      absence is explained rather than mysterious. GC: same components + drag handle, Report progress / Edit / Add stage / Plan doc, all in Builder
+      Orange. A homeowner write attempt is an authorization <b>denial</b> surfaced as a denial (§8.2, LINA-56 finding — never a 500).</li>
+    <li><b>No acknowledge, no comment box anywhere on this surface</b> (§2 Q3). The response path is the <code>.respond</code> card — present on the
+      plan, in the stage history, and in the desktop drawer — routing to <b>Log a decision</b> or <b>Raise a change order</b> in one tap.</li>
+    <li><b>Out of scope, visually enforced (§7):</b> no bars-across-time, no dependency lines, no critical path, no “N days late”, no photo
+      attachments. Dates render as plain planned ranges; a stage past its planned start while <code>not_started</code> renders unchanged and
+      un-annotated (AC-P13).</li>
+  </ul>
+
+  <h3>Coverage against the spec</h3>
+  <table>
+    <tr><th>Spec rule</th><th>Where it shows up</th></tr>
+    <tr><td>FR-P4 · ordered stage timeline, phone-legible</td><td>5·a mobile, 5·f desktop — same components, 375&nbsp;px first</td></tr>
+    <tr><td>FR-P3 / AC-P3 · append-only progress, nothing overwritten</td><td>5·b history (CURRENT + superseded 25% / 10% entries), desktop drawer</td></tr>
+    <tr><td>FR-P6 / AC-P5 · allocation ≠ budget, over-allocation informational</td><td><code>.alloc</code> + <code>.allocbar</code>; Failure 2 do/don’t</td></tr>
+    <tr><td>FR-P7 / §2 Q3 · view-only, response path one step away</td><td><code>.respond</code> card ×3 surfaces; no acknowledge primitive anywhere</td></tr>
+    <tr><td>AC-P7 · never colour-only</td><td>Chip = colour + label + icon; E component strip in light and dark</td></tr>
+    <tr><td>§5 · empty plan</td><td>5·c light + dark — exact copy, no headline, no 0%</td></tr>
+    <tr><td>§8.1 / AC-P8 · transitions, ⚠️ correction needs a note</td><td>5·e report sheet — note required only for <code>→ not_started</code></td></tr>
+    <tr><td>§8.2 / AC-P6 · GC writes, homeowner reads</td><td>5·d GC affordances vs 5·a read-only pill</td></tr>
+    <tr><td>§8.3 R1–R3 · headline, subordinate percent, current stage</td><td>Headline card + pips + “Happening now” chip on the blocked stage</td></tr>
+  </table>
+
+  <h3>Open questions back to the PM (LINA-43) — none are blockers</h3>
+  <ul>
+    <li><b>“Happening now” label.</b> §8.3 R3 defines a current-stage pointer but doesn’t name it in the UI. I’ve used <b>Happening now</b> rather
+      than “Current stage” because it is plainer for a non-technical homeowner. Confirm the wording, or give me yours.</li>
+    <li><b>Blocked recency.</b> The headline names the blocked stage and its report date. If two stages are blocked at once, I show the
+      <b>first in plan order</b> (consistent with R3) and a “+1 more” affordance. Flagging in case you want most-recent instead.</li>
+    <li><b>Notification wording.</b> The empty state promises “we’ll notify you the moment the plan lands”, and blocked is the natural push
+      candidate. Notifications aren’t in the R0 spec — if there is no notification channel in R0, I’ll drop that line rather than promise it.</li>
+  </ul>
+</div>
+
+<div class="foot">
+  <b>LINA-70 · Surface 5 — plan timeline.</b> Delta on LINA-27 (surfaces 1–4), which remains the visual target for the trust core.
+  Spec of record: <code>docs/product/r0-plan-progress-functional-spec.md</code> rev 2 (§2 · §3 · §4 · §5 · §8).
+  Tokens and components inherited from <code>r0-mockups-hifi.html</code>; new this delta: the four stage-status chips
+  (<code>--info-*</code>, <code>--idle-*</code>), the stage row, the plan headline, and the allocation hint.
+  Out of R0 per §7: Gantt, dependencies, critical path, “days late”, photo evidence.
+  Build owner: LINA-69 (Founding Engineer) · design questions: LINA-43 (PM).
+</div>
+
+</body>
+</html>

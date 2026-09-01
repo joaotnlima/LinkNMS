@@ -8,9 +8,11 @@
 # (Python 3, zero dependencies) and must stay runnable even when the app or
 # service toolchain is mid-change. See qa/README.md.
 #
-# Today it runs against the golden fixture. When the domain HTTP surface lands
-# (LINA-56), a second step exports the same JSON shape from the live API and
-# points the checker at it too — see qa/README.md "Graduating the gate".
+# This workflow runs the checker against the golden FIXTURE (and its tamper
+# variants). The LIVE half graduated in LINA-64: the `gateway-integration` job in
+# ci.yml seeds the golden build through the real mounted API and points the same
+# checker at the export — see qa/README.md "Live-data gate". Kept separate so this
+# stack-agnostic gate stays runnable when the service toolchain is mid-change.
 name: quality-gate
 
 on:

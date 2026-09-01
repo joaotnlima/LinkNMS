@@ -152,6 +152,12 @@ jobs:
           cache: npm
           cache-dependency-path: services/package-lock.json
 
+      # For the live trust-invariant gate below: the checker is stack-agnostic
+      # Python 3 (same one quality-gate.yml runs against the static fixture).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       # See the ledger job: `npm ci` mirrors the Vercel deploy install exactly,
       # so lockfile drift fails here instead of at deploy time (LINA-66).
       - name: Install dependencies
@@ -173,6 +179,27 @@ jobs:
           VERIFY_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
           DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
         run: npm run test:gateway
+
+      # LINA-64 — graduate the trust-invariant gate from fixture to LIVE data.
+      # The exporter seeds the golden homeowner+GC build through the SAME mounted
+      # handlers exercised above and reads it back over Postgres, normalising the
+      # live field names to the checker's canonical shape (the fixture is left
+      # untouched — run_gate.py's tamper mutators key off its field names). The
+      # checker then runs against BOTH the live export AND the static fixture, so
+      # the gate proves the real system upholds the invariants, not only the seed.
+      # Budget math is the load-bearing one: `expected` is sourced from the live
+      # ledger's status endpoint, so any drift between the CO projection and the
+      # authoritative ledger total fails this step.
+      - name: Export live golden record + run trust-invariant checker
+        working-directory: services
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
+        run: |
+          node gateway/export-live-record.mjs "$RUNNER_TEMP/live_record.json"
+          echo "== checker against the LIVE export =="
+          python3 ../qa/checks/audit_budget_invariants.py "$RUNNER_TEMP/live_record.json"
+          echo "== checker against the static golden fixture (regression anchor) =="
+          python3 ../qa/checks/audit_budget_invariants.py ../qa/fixtures/r0_shared_record.json
 
   analytics-tests:
     name: Analytics — event contract + composition root

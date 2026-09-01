@@ -4,12 +4,12 @@
 export function mark(size = 72, variant = "light") {
   const body =
     variant === "reversed"
-      ? 'fill="none" stroke="#fcfcfb"'
-      : 'fill="#fcfcfb" stroke="#0b0b0b"';
-  const roofL = variant === "mono" ? "#0b0b0b" : "#2a78d6";
-  const roofR = variant === "mono" ? "#5b5b58" : "#eb6834";
-  const barP = variant === "mono" ? "#0b0b0b" : "#2a78d6";
-  const barA = variant === "mono" ? "#5b5b58" : "#eb6834";
+      ? 'fill="none" stroke="#fbfaf7"'
+      : 'fill="#fbfaf7" stroke="#16181d"';
+  const roofL = variant === "mono" ? "#16181d" : "#3e5c8a";
+  const roofR = variant === "mono" ? "#5b5b58" : "#b4633b";
+  const barP = variant === "mono" ? "#16181d" : "#3e5c8a";
+  const barA = variant === "mono" ? "#5b5b58" : "#b4633b";
   return `<svg class="mark" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">
     <rect x="12" y="26" width="40" height="30" rx="2" ${body} stroke-width="2"/>
     <path d="M32 6 L8 26 L32 26 Z" fill="${roofL}"/>

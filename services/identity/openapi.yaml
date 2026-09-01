@@ -281,6 +281,11 @@ components:
           enum:
             - pending
             - accepted
+        email:
+          type:
+            - string
+            - null
+          description: 'The address the invitation was mailed to; null on the out-of-band path.'
         createdAt:
           type: string
     InvitationCreated:
@@ -293,6 +298,9 @@ components:
           '$ref': '#/components/schemas/Invitation'
         token:
           type: string
+        emailed:
+          type: boolean
+          description: 'True only when the invitation was actually handed to the mailer. The raw token is returned either way, so a delivery failure never strands the inviter.'
     MembershipCreated:
       type: object
       required:
@@ -318,3 +326,9 @@ components:
           type: string
           enum:
             - counterparty
+        email:
+          type:
+            - string
+            - null
+          format: email
+          description: 'Optional (LINA-84). Supplied, the invitation link is emailed to this address and the response reports `emailed`. Omitted, nothing is sent and the caller delivers the raw token out of band. Lower-cased server-side, same normalisation as sign-in.'

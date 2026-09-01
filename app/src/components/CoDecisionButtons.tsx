@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-type State = 'idle' | 'sending' | 'demo' | string;
+type State = 'idle' | 'sending' | string;
 
 export function CoDecisionButtons({ id, canDecide }: { id: string; canDecide: boolean }) {
   const router = useRouter();
@@ -29,18 +29,20 @@ export function CoDecisionButtons({ id, canDecide }: { id: string; canDecide: bo
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ decision }),
       });
-      if (res.status === 404 || res.status === 501) {
-        setState('demo');
-        return;
-      }
+      // Every non-2xx is a FAILURE, including 404 (LINA-57). This used to treat
+      // 404/501/network as "demo mode" and reassure the user about what the
+      // ledger *would* have done — so a decision that never persisted looked
+      // like one that had. Approving a change order is the single most
+      // consequential action in the product; it either moved the budget or it
+      // did not, and the UI must not be the thing that blurs that.
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        setState(j?.error?.message ?? `Request failed (${res.status})`);
+        setState(j?.error?.message ?? `The decision was not recorded (${res.status}). Nothing has changed.`);
         return;
       }
       router.refresh();
     } catch {
-      setState('demo');
+      setState('The decision could not be sent, so nothing was recorded. Check your connection and try again.');
     }
   }
 
@@ -54,14 +56,7 @@ export function CoDecisionButtons({ id, canDecide }: { id: string; canDecide: bo
           Reject
         </button>
       </div>
-      {state === 'demo' && (
-        <div className="demo-banner" role="status">
-          <strong>Demo mode.</strong> This would call <code>POST /api/v1/change-orders/{id}/decision</code>; on
-          approve the Ledger &amp; Budget service moves the budget exactly once and appends the audit event. The
-          Change-Order API (Slice 4) isn&apos;t wired to this deployment yet.
-        </div>
-      )}
-      {state !== 'idle' && state !== 'sending' && state !== 'demo' && (
+      {state !== 'idle' && state !== 'sending' && (
         <div className="integrity bad" role="alert">{state}</div>
       )}
     </div>
