@@ -296,43 +296,51 @@
         "foundations": "Cimentación",
         "structure": "Estructura",
         "envelope": "Envolvente",
+        "windows": "Ventanas",
+        "mep": "Instalaciones",
         "finishes": "Acabados"
       },
       "captions": {
         "A": {
-          "micro": "p 0,00 → 0,15 · Las líneas se dibujan solas",
-          "line": "Al principio, solo es un dibujo."
+          "micro": "El plan está dibujado",
+          "line": "Al principio, solo es el plan."
         },
         "B": {
-          "micro": "p 0,15 → 0,40 · Cimentación y estructura cierran",
-          "line": "Cada acuerdo levanta un muro."
+          "micro": "Empiezan a levantarse los muros",
+          "line": "Cierran las primeras barras. Se vierte el hormigón."
         },
         "C": {
-          "micro": "p 0,40 → 0,70 · La desviación aparece y se resuelve",
-          "line": "Las cosas cambian. Queda registrado."
+          "micro": "Ajustes finales",
+          "line": "Estanco. Entran los gremios."
         },
         "D": {
-          "micro": "p 0,70 → 1,00 · Todo cierra",
-          "line": "La casa. En plazo, en presupuesto, en alcance."
+          "micro": "¿Listo para mudarte a tu nueva casa?",
+          "line": "Construida en plazo, en presupuesto y con la calidad que merece."
         }
       },
       "hud": {
         "time": "Plazo",
-        "timeValue": "0 días de retraso",
-        "cost": "Coste",
         "scope": "Alcance",
-        "scopeValue": "100%",
+        "cost": {
+          "budget": "Presupuesto",
+          "spent": "Gastado",
+          "final": "Final"
+        },
         "readings": {
+          "A": {
+            "time": "Previsto",
+            "scope": "100%"
+          },
           "B": {
-            "time": "8 meses",
+            "time": "En plazo",
             "scope": "100%"
           },
           "C": {
-            "time": "+ 9 días",
-            "scope": "98%"
+            "time": "+3 días",
+            "scope": "100%"
           },
           "D": {
-            "time": "0 días de retraso",
+            "time": "Completado",
             "scope": "100%"
           }
         }
@@ -419,7 +427,8 @@
           "t1": "Solo móvil",
           "t2": "Sesiones cortas",
           "t3": "Necesita tranquilidad"
-        }
+        },
+        "alt": "Marta, propietaria primeriza en Oporto, retrato"
       },
       "joao": {
         "quote": "“No estoy escondiendo nada. Simplemente no tengo dos horas cada noche para escribir lo que ya sé.”",
@@ -429,7 +438,8 @@
           "t1": "Solo móvil",
           "t2": "Poca soltura digital",
           "t3": "10 segundos, no 2 minutos"
-        }
+        },
+        "alt": "João, maestro de obra con 31 años en obra, retrato"
       }
     },
     "cta": {

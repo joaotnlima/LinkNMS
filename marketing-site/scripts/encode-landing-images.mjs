@@ -47,4 +47,34 @@ for (const slug of SLUGS) {
   }
 }
 
+// The two persona portraits of `S6 Who It Is For`, sized by width at the 2x/1x
+// of the pen's 320pt column — 640 and 320.
+//
+// SOURCE: the founder named these on LINA-117 as `marta.png` and `joao.png`,
+// and those are the portraits currently on the page. The pen frame still fills
+// the slot from the older `generated-1787956648904/650899.png` renders; where
+// the two disagree the founder's named files win, because they are the ones
+// that were reviewed. Both 320w and 640w are derived here from the SAME source
+// per persona — deriving the two descriptors of one <img> from two different
+// photographs is what this loop exists to prevent.
+const PORTRAITS = [
+  { src: 'marta.png', slug: 'persona-marta' },
+  { src: 'joao.png', slug: 'persona-joao' }
+];
+
+for (const { src: file, slug } of PORTRAITS) {
+  const src = join(SRC, file);
+  for (const width of [640, 320]) {
+    for (const [ext, quality] of [['avif', AVIF_QUALITY], ['webp', WEBP_QUALITY]]) {
+      const out = join(OUT, `${slug}-${width}.${ext}`);
+      const info = await sharp(src)
+        .resize({ width, withoutEnlargement: true })
+        [ext]({ quality })
+        .toFile(out);
+      total += info.size;
+      console.log(`${slug}-${width}.${ext}  ${(info.size / 1024).toFixed(1)} KB`);
+    }
+  }
+}
+
 console.log(`\nTOTAL (q${AVIF_QUALITY} avif / q${WEBP_QUALITY} webp): ${(total / 1024).toFixed(1)} KB`);

@@ -296,43 +296,51 @@
         "foundations": "Fundações",
         "structure": "Estrutura",
         "envelope": "Envolvente",
+        "windows": "Janelas",
+        "mep": "Instalações",
         "finishes": "Acabamentos"
       },
       "captions": {
         "A": {
-          "micro": "p 0,00 → 0,15 · As linhas desenham-se sozinhas",
-          "line": "No início, é só um desenho."
+          "micro": "O plano está desenhado",
+          "line": "No início, é só o plano."
         },
         "B": {
-          "micro": "p 0,15 → 0,40 · Fundações e estrutura fecham",
-          "line": "Cada acordo levanta uma parede."
+          "micro": "As paredes começam a surgir",
+          "line": "As primeiras barras fecham. Entra o betão."
         },
         "C": {
-          "micro": "p 0,40 → 0,70 · O desvio aparece e resolve-se",
-          "line": "As coisas mudam. Fica registado."
+          "micro": "Ajustes finais",
+          "line": "Estanque. Entram as especialidades."
         },
         "D": {
-          "micro": "p 0,70 → 1,00 · Fecha tudo",
-          "line": "A casa. No prazo, no orçamento, no âmbito."
+          "micro": "Pronto para se mudar para a sua casa nova?",
+          "line": "Construída no prazo, no orçamento e com a qualidade que merece."
         }
       },
       "hud": {
         "time": "Prazo",
-        "timeValue": "0 dias de atraso",
-        "cost": "Custo",
         "scope": "Âmbito",
-        "scopeValue": "100%",
+        "cost": {
+          "budget": "Orçamento",
+          "spent": "Gasto",
+          "final": "Final"
+        },
         "readings": {
+          "A": {
+            "time": "Previsto",
+            "scope": "100%"
+          },
           "B": {
-            "time": "8 meses",
+            "time": "No prazo",
             "scope": "100%"
           },
           "C": {
-            "time": "+ 9 dias",
-            "scope": "98%"
+            "time": "+3 dias",
+            "scope": "100%"
           },
           "D": {
-            "time": "0 dias de atraso",
+            "time": "Concluído",
             "scope": "100%"
           }
         }
@@ -419,7 +427,8 @@
           "t1": "Só telemóvel",
           "t2": "Sessões curtas",
           "t3": "Precisa de garantias"
-        }
+        },
+        "alt": "Marta, dona de obra pela primeira vez, no Porto, retrato"
       },
       "joao": {
         "quote": "“Não estou a esconder nada. Só não tenho duas horas todas as noites para escrever o que já sei.”",
@@ -429,7 +438,8 @@
           "t1": "Só telemóvel",
           "t2": "Pouco à vontade com tecnologia",
           "t3": "10 segundos, não 2 minutos"
-        }
+        },
+        "alt": "João, mestre de obras com 31 anos de estaleiro, retrato"
       }
     },
     "cta": {
