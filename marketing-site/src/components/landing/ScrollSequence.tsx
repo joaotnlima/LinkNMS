@@ -1,20 +1,17 @@
 import { getTranslations } from 'next-intl/server';
 import { hasLandingImage } from '@/lib/landing-assets';
 import {
-  SEQUENCE_CLOSED_BASELINE_OPACITY,
   SEQUENCE_FINAL_KEYFRAME,
   SEQUENCE_IMAGE_HEIGHT,
   SEQUENCE_IMAGE_WIDTH,
   SEQUENCE_KEYFRAMES,
-  SEQUENCE_LANE_HEIGHT,
-  SEQUENCE_PLANNED,
   SEQUENCE_ROW_KEYS,
   SEQUENCE_STAGES,
-  SEQUENCE_TRACK_UNITS,
   formatSequenceHudCost
 } from '@/lib/landing-numbers';
-import { PlanTrack } from './PlanTrack';
+import { sequenceStateAt } from '@/lib/landing-sequence';
 import { SequenceMotion } from './SequenceMotion';
+import { SequenceTrack } from './SequenceTrack';
 
 /**
  * The pinned scroll sequence — server-rendered at p = 1 (LINA-113).
@@ -43,6 +40,10 @@ const AVIF_SIZES = '(min-width: 1400px) 1400px, 100vw';
 export async function ScrollSequence({ locale }: { locale: string }) {
   const t = await getTranslations('lp.sequence');
   const kf = SEQUENCE_FINAL_KEYFRAME;
+  // The p=1 state, resolved by the same pure module the animation runs on, so
+  // the server's HTML and the animation's last frame cannot describe the row
+  // differently. Every closed row's check sits at the x this state gives it.
+  const final = sequenceStateAt(1);
 
   return (
     <section className="lp-sequence" id="the-sequence" aria-label={t('label')}>
@@ -93,79 +94,72 @@ export async function ScrollSequence({ locale }: { locale: string }) {
           layer above stays full-bleed and runs behind the translucent header,
           which is the intended look (technical plan D1). */}
       <div className="lp-sequence__content lp-wrap">
-        <div className="lp-sequence__caption">
-          {/* All four captions are server-rendered; the final one (KF D) is
-              visible. <SequenceMotion /> swaps which one shows as p advances —
-              the copy itself lives here once, on the server, never re-authored. */}
-          {SEQUENCE_KEYFRAMES.map((k) => (
-            <div
-              key={k.id}
-              className="lp-sequence__caption-block"
-              data-caption={k.id}
-              data-visible={k.id === kf.id ? 'true' : 'false'}
-            >
-              <p className="micro lp-micro">{t(`captions.${k.id}.micro`)}</p>
-              <p className="line">{t(`captions.${k.id}.line`)}</p>
-            </div>
-          ))}
-        </div>
+        {/* Caption, bars and HUD share one row. The pen's KF Body is 1440×260
+            with the caption at x 72, the gantt at x 530 and the HUD at x 1170 —
+            three columns on the stage's bottom edge, not a caption stacked above
+            a panel row. */}
+        <div className="lp-sequence__body">
+          <div className="lp-sequence__caption">
+            {/* All four captions are server-rendered; the final one (KF D) is
+                visible. <SequenceMotion /> swaps which one shows as p advances —
+                the copy itself lives here once, on the server, never re-authored. */}
+            {SEQUENCE_KEYFRAMES.map((k) => (
+              <div
+                key={k.id}
+                className="lp-sequence__caption-block"
+                data-caption={k.id}
+                data-visible={k.id === kf.id ? 'true' : 'false'}
+              >
+                <p className="micro lp-micro">{t(`captions.${k.id}.micro`)}</p>
+                <p className="line">{t(`captions.${k.id}.line`)}</p>
+              </div>
+            ))}
+          </div>
 
-        <div className="lp-sequence__panels">
           <div className="lp-bars">
             <p className="lp-bars__head lp-micro">{t('barsHead')}</p>
             {SEQUENCE_ROW_KEYS.map((rowKey) => {
-              const row = kf.rows[rowKey];
-              const closed = row.state === 'closed';
+              const row = final.rows[rowKey];
               return (
-                <div className="lp-bars__row" key={rowKey} data-closed={closed ? 'true' : 'false'}>
+                <div
+                  className="lp-bars__row"
+                  key={rowKey}
+                  data-closed={row.phase === 'closed' ? 'true' : 'false'}
+                >
                   <span className="name">{t(`rows.${rowKey}`)}</span>
-                  <PlanTrack
-                    rowKey={rowKey}
-                    trackUnits={SEQUENCE_TRACK_UNITS}
-                    laneHeight={SEQUENCE_LANE_HEIGHT}
-                    planned={SEQUENCE_PLANNED[rowKey]}
-                    actual={row}
-                    // KF D: once every row has closed the blue baseline drops
-                    // back to 35% — the agreed plan is still on the record, it
-                    // is just no longer the thing being read.
-                    baselineOpacity={closed ? SEQUENCE_CLOSED_BASELINE_OPACITY : 1}
-                  />
+                  <SequenceTrack rowKey={rowKey} row={row} checkX={row.checkX} />
                 </div>
               );
             })}
           </div>
 
+          {/* Three readings, all four keyframes' worth server-rendered and
+              stacked. The LABEL moves with the value — the pen relabels the
+              middle cell BUDGET → SPENT → FINAL as the build goes from a
+              forecast to a running total to a closed one — so the label is a
+              per-keyframe span too, not a fixed heading with a swapping value
+              underneath it. */}
           <dl className="lp-hud" data-tone={kf.hud.tone}>
-            <div className="lp-hud__cell">
-              <dt className="label lp-micro">{t('hud.time')}</dt>
-              <dd className="value">
-                {(['B', 'C', 'D'] as const).map((r) => (
-                  <span key={r} data-kf={r} data-visible={r === 'D' ? 'true' : 'false'}>
-                    {t(`hud.readings.${r}.time`)}
-                  </span>
-                ))}
-              </dd>
-            </div>
-            <div className="lp-hud__cell">
-              <dt className="label lp-micro">{t('hud.cost')}</dt>
-              <dd className="value">
-                {(['B', 'C', 'D'] as const).map((r) => (
-                  <span key={r} data-kf={r} data-visible={r === 'D' ? 'true' : 'false'}>
-                    {formatSequenceHudCost(r, locale)}
-                  </span>
-                ))}
-              </dd>
-            </div>
-            <div className="lp-hud__cell">
-              <dt className="label lp-micro">{t('hud.scope')}</dt>
-              <dd className="value">
-                {(['B', 'C', 'D'] as const).map((r) => (
-                  <span key={r} data-kf={r} data-visible={r === 'D' ? 'true' : 'false'}>
-                    {t(`hud.readings.${r}.scope`)}
-                  </span>
-                ))}
-              </dd>
-            </div>
+            {(['time', 'cost', 'scope'] as const).map((cell) => (
+              <div className="lp-hud__cell" key={cell}>
+                <dt className="label lp-micro">
+                  {SEQUENCE_KEYFRAMES.map((k) => (
+                    <span key={k.id} data-kf={k.id} data-visible={k.id === kf.id ? 'true' : 'false'}>
+                      {cell === 'cost' ? t(`hud.cost.${k.hud.cost.label}`) : t(`hud.${cell}`)}
+                    </span>
+                  ))}
+                </dt>
+                <dd className="value">
+                  {SEQUENCE_KEYFRAMES.map((k) => (
+                    <span key={k.id} data-kf={k.id} data-visible={k.id === kf.id ? 'true' : 'false'}>
+                      {cell === 'cost'
+                        ? formatSequenceHudCost(k.id, locale)
+                        : t(`hud.readings.${k.id}.${cell}`)}
+                    </span>
+                  ))}
+                </dd>
+              </div>
+            ))}
           </dl>
         </div>
       </div>

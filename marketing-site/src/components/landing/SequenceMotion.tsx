@@ -23,14 +23,7 @@
 import { useLayoutEffect } from 'react';
 import { resolveRenderPath } from '@/lib/landing-render-path';
 import { track } from '@/lib/analytics-client';
-import {
-  SEQUENCE_LANE_GAP,
-  SEQUENCE_LANE_HEIGHT,
-  SEQUENCE_KEYFRAMES,
-  SEQUENCE_ROW_KEYS,
-  PLAN_STATE_FILL,
-  type SequenceRowKey
-} from '@/lib/landing-numbers';
+import { SEQUENCE_KEYFRAMES, SEQUENCE_ROW_KEYS, type SequenceRowKey } from '@/lib/landing-numbers';
 import {
   sequenceStateAt,
   laneTransform,
@@ -67,20 +60,20 @@ const PROGRESS_POINTS = SEQUENCE_KEYFRAMES.map((kf) => ({
 }));
 
 const round3 = (n: number): number => Math.round(n * 1000) / 1000;
-const ACTUAL_LANE_Y = SEQUENCE_LANE_HEIGHT + SEQUENCE_LANE_GAP;
 
 type RowRefs = {
   row: HTMLElement | null;
-  actual: SVGGElement | null;
+  lane: SVGGElement | null;
   planned: SVGGElement | null;
-  rect: SVGRectElement | null;
+  actual: SVGGElement | null;
+  check: HTMLElement | null;
 };
 
 type Refs = {
   root: HTMLElement;
   stages: Record<StageNumber, HTMLElement | null>;
   captionBlocks: HTMLElement[];
-  hudValueSpans: HTMLElement[];
+  hudSpans: HTMLElement[];
   hud: HTMLElement | null;
   bars: HTMLElement | null;
   rows: Record<SequenceRowKey, RowRefs>;
@@ -94,30 +87,31 @@ function buildRefs(root: HTMLElement): Refs {
   const captionBlocks = Array.from(
     root.querySelectorAll<HTMLElement>('.lp-sequence__caption-block')
   );
-  const hudValueSpans = Array.from(
-    root.querySelectorAll<HTMLElement>('.lp-hud__cell .value [data-kf]')
-  );
+  // Labels AND values: the pen relabels the middle cell as the build advances,
+  // so both swap on the same keyframe.
+  const hudSpans = Array.from(root.querySelectorAll<HTMLElement>('.lp-hud__cell [data-kf]'));
   const hud = root.querySelector<HTMLElement>('.lp-hud');
   const bars = root.querySelector<HTMLElement>('.lp-bars');
   const rows = {} as Refs['rows'];
   for (const key of SEQUENCE_ROW_KEYS) {
-    const track = root.querySelector<SVGSVGElement>(`.lp-track[data-row="${key}"]`);
-    const actual = track?.querySelector<SVGGElement>('g[data-lane="actual"]') ?? null;
+    const track = root.querySelector<SVGSVGElement>(`.lp-seqtrack__bars[data-row="${key}"]`);
     rows[key] = {
       row: track?.closest<HTMLElement>('.lp-bars__row') ?? null,
-      actual,
+      lane: track?.querySelector<SVGGElement>('g[data-lane-group]') ?? null,
       planned: track?.querySelector<SVGGElement>('g[data-lane="planned"]') ?? null,
-      rect: actual?.querySelector<SVGRectElement>('rect') ?? null
+      actual: track?.querySelector<SVGGElement>('g[data-lane="actual"]') ?? null,
+      check: root.querySelector<HTMLElement>(`.lp-seqtrack__check[data-check="${key}"]`)
     };
   }
-  return { root, stages, captionBlocks, hudValueSpans, hud, bars, rows };
+  return { root, stages, captionBlocks, hudSpans, hud, bars, rows };
 }
 
 /**
  * Write one `SequenceState` onto the cached DOM nodes. Only `opacity` and
- * `transform` (on the actual-lane groups) change per frame; colour, HUD tone and
- * the caption/HUD swaps are discrete state changes that a browser trivially
- * absorbs. Nothing here forces layout on the scrub path.
+ * `transform` change per frame; the HUD tone and the caption/HUD swaps are
+ * discrete state changes a browser trivially absorbs. Nothing here forces
+ * layout on the scrub path — in particular the check mark's x never moves, so
+ * it is opacity alone.
  */
 function render(refs: Refs, state: SequenceState): void {
   for (let s = 1 as StageNumber; s <= 4; s++) {
@@ -131,18 +125,22 @@ function render(refs: Refs, state: SequenceState): void {
   for (const key of SEQUENCE_ROW_KEYS) {
     const r = state.rows[key];
     const ref = refs.rows[key];
-    if (ref.actual) {
-      ref.actual.setAttribute('transform', laneTransform(r.offset, r.width, ACTUAL_LANE_Y));
+    if (ref.planned) {
+      ref.planned.setAttribute('transform', laneTransform(r.plannedOffset, r.plannedWidth));
     }
-    if (ref.planned) ref.planned.setAttribute('opacity', String(round3(state.baselineOpacity)));
-    if (ref.rect) ref.rect.setAttribute('fill', PLAN_STATE_FILL[r.state]);
-    if (ref.row) ref.row.dataset.closed = r.state === 'closed' ? 'true' : 'false';
+    if (ref.actual) {
+      ref.actual.setAttribute('transform', laneTransform(r.actualOffset, r.actualWidth, r.actualY));
+      ref.actual.setAttribute('opacity', String(round3(r.actualOpacity)));
+    }
+    if (ref.lane) ref.lane.setAttribute('opacity', String(round3(r.laneOpacity)));
+    if (ref.check) ref.check.style.opacity = String(round3(r.checkOpacity));
+    if (ref.row) ref.row.dataset.closed = r.phase === 'closed' ? 'true' : 'false';
   }
 
   for (const block of refs.captionBlocks) {
     block.dataset.visible = block.dataset.caption === state.captionId ? 'true' : 'false';
   }
-  for (const span of refs.hudValueSpans) {
+  for (const span of refs.hudSpans) {
     span.dataset.visible = span.dataset.kf === state.captionId ? 'true' : 'false';
   }
   if (refs.hud) refs.hud.dataset.tone = state.hudTone;

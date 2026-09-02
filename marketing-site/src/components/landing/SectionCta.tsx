@@ -6,7 +6,7 @@ import {
   MATERIALS_DELTA_SINCE_MARCH,
   PHONE_PREVIEW,
   PHONE_TRACK_UNITS,
-  SEQUENCE_CLOSED_BASELINE_OPACITY,
+  PHONE_CLOSED_BASELINE_OPACITY,
   TRACK_LANE_HEIGHT,
   formatEur,
   formatEurDelta
@@ -115,7 +115,7 @@ export async function SectionCta({ locale, source }: { locale: string; source: s
                     // blue baseline drops to 35% — still on the record, no longer
                     // the thing being read. The open row keeps its baseline full,
                     // because that is the bar the slip is measured against.
-                    baselineOpacity={open ? 1 : SEQUENCE_CLOSED_BASELINE_OPACITY}
+                    baselineOpacity={open ? 1 : PHONE_CLOSED_BASELINE_OPACITY}
                   />
                 </div>
               );

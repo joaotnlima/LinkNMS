@@ -1,4 +1,5 @@
-// The pinned scroll sequence, as arithmetic (LINA-89, restored for LINA-113).
+// The pinned scroll sequence, as arithmetic (LINA-89, restored for LINA-113,
+// re-tabled against the refreshed pen for LINA-117).
 //
 // This module is pure: no DOM, no gsap, no React. It answers one question —
 // "at scroll progress `p`, what does the sequence look like?" — from the KF A–D
@@ -15,25 +16,49 @@
 // bars say, never of a second set of timings that could drift from the first.
 
 import {
-  SEQUENCE_CLOSED_BASELINE_OPACITY,
+  SEQUENCE_CHECK_GAP,
+  SEQUENCE_CLOSED_LANE_OPACITY,
   SEQUENCE_KEYFRAMES,
+  SEQUENCE_LANE_GAP,
+  SEQUENCE_LANE_HEIGHT,
+  SEQUENCE_ROW_GEOMETRY,
   SEQUENCE_ROW_KEYS,
-  type PlanState,
   type SequenceKeyframe,
-  type SequenceRowKey
+  type SequenceRowKey,
+  type SequenceRowPhase
 } from './landing-numbers';
 
 export type KeyframeId = SequenceKeyframe['id'];
 export type StageNumber = 1 | 2 | 3 | 4;
 
-export type SequenceRow = { offset: number; width: number; state: PlanState };
+/** Where the actual bar waits while its row is still only a plan. */
+export const PARKED_LANE_Y = SEQUENCE_LANE_HEIGHT + SEQUENCE_LANE_GAP;
+
+/**
+ * One row, fully resolved to what gets drawn. Every field is a number the
+ * renderer writes straight onto an attribute — no phase is re-interpreted
+ * downstream, which is why `phase` rides along for labelling only.
+ */
+export type SequenceRow = {
+  plannedOffset: number;
+  plannedWidth: number;
+  actualOffset: number;
+  actualWidth: number;
+  /** 0 once the actual bar has joined the planned lane; PARKED_LANE_Y before that. */
+  actualY: number;
+  actualOpacity: number;
+  /** Whole-lane opacity — both bars. Drops to 45% when the row closes. */
+  laneOpacity: number;
+  checkX: number;
+  checkOpacity: number;
+  phase: SequenceRowPhase;
+};
+
 export type SequenceRows = Record<SequenceRowKey, SequenceRow>;
 
 export type SequenceState = {
   rows: SequenceRows;
-  /** Opacity of the planned (blue) lane. Falls to 35% once every row has closed. */
-  baselineOpacity: number;
-  hudTone: PlanState;
+  hudTone: 'cream' | 'closed';
   /** Which of the four captions is on screen. Captions label the approach to a keyframe. */
   captionId: KeyframeId;
   /** Bars, caption and HUD as a block. 0 at p=0 — the drawing arrives before the reading of it. */
@@ -45,42 +70,56 @@ export type SequenceState = {
 };
 
 /**
+ * Resolve one row at one keyframe into the numbers above.
+ *
+ * This is where the pen's three phases become geometry, and it is the only
+ * place that knows the rule. The important line is `actualOffset`: once a row is
+ * revealed, the orange bar is drawn immediately after the blue one rather than
+ * at an offset of its own. That is not a simplification — it is what the frame
+ * draws, and it is what makes the pair read as "agreed, then what it took".
+ */
+function resolveRow(key: SequenceRowKey, kf: SequenceKeyframe): SequenceRow {
+  const geometry = SEQUENCE_ROW_GEOMETRY[key];
+  const phase = kf.phases[key];
+  const plannedOffset = kf.plannedOffsets?.[key] ?? geometry.plannedOffset;
+  const { plannedWidth, actualWidth } = geometry;
+
+  const parked = phase === 'planned';
+  const closed = phase === 'closed';
+  const actualOffset = parked ? geometry.parkedOffset : plannedOffset + plannedWidth;
+
+  return {
+    plannedOffset,
+    plannedWidth,
+    actualOffset,
+    actualWidth,
+    actualY: parked ? PARKED_LANE_Y : 0,
+    actualOpacity: parked ? 0 : 1,
+    laneOpacity: closed ? SEQUENCE_CLOSED_LANE_OPACITY : 1,
+    checkX: plannedOffset + plannedWidth + actualWidth + SEQUENCE_CHECK_GAP,
+    checkOpacity: closed ? 1 : 0,
+    phase
+  };
+}
+
+function rowsFor(kf: SequenceKeyframe): SequenceRows {
+  return SEQUENCE_ROW_KEYS.reduce((acc, key) => {
+    acc[key] = resolveRow(key, kf);
+    return acc;
+  }, {} as SequenceRows);
+}
+
+/**
  * A node is a keyframe the timeline interpolates through. The four from the
  * table, plus a synthetic zero node at p = 0.
  *
- * The zero node is not invented geometry: it is KF A with every actual bar at
- * zero width, so `p 0.00 → 0.15` grows the bars out of nothing into A. It sits
- * behind the chrome fade-in, so the drawing phase reads as caption A describes
- * it ("the lines draw themselves") and the plan readout materialises later.
- * Nothing about it is a free parameter.
+ * The zero node is not invented geometry: it is KF A with every bar at zero
+ * width, so `p 0.00 → 0.15` grows the planned bars out of nothing into A. It
+ * sits behind the chrome fade-in, so the drawing phase reads as caption A
+ * describes it and the plan readout materialises later. Nothing about it is a
+ * free parameter.
  */
-type Node = {
-  id: KeyframeId;
-  p: number;
-  rows: SequenceRows;
-  baselineOpacity: number;
-  hudTone: PlanState;
-};
-
-/**
- * The baseline lane's opacity is a *consequence* of the rows, not a fifth column
- * of the table: it drops the moment nothing is left to compare against.
- */
-function baselineOpacityFor(rows: SequenceRows): number {
-  return SEQUENCE_ROW_KEYS.every((key) => rows[key].state === 'closed')
-    ? SEQUENCE_CLOSED_BASELINE_OPACITY
-    : 1;
-}
-
-function toNode(kf: SequenceKeyframe): Node {
-  return {
-    id: kf.id,
-    p: kf.p,
-    rows: { ...kf.rows },
-    baselineOpacity: baselineOpacityFor(kf.rows),
-    hudTone: kf.hud.tone
-  };
-}
+type Node = { id: KeyframeId; p: number; rows: SequenceRows };
 
 const FIRST_KEYFRAME = SEQUENCE_KEYFRAMES[0];
 
@@ -88,17 +127,41 @@ const ZERO_NODE: Node = {
   id: FIRST_KEYFRAME.id,
   p: 0,
   rows: SEQUENCE_ROW_KEYS.reduce((acc, key) => {
-    const row = FIRST_KEYFRAME.rows[key];
-    acc[key] = { offset: row.offset, width: 0, state: row.state };
+    const row = resolveRow(key, FIRST_KEYFRAME);
+    acc[key] = { ...row, plannedWidth: 0, actualWidth: 0 };
     return acc;
-  }, {} as SequenceRows),
-  baselineOpacity: 1,
-  hudTone: FIRST_KEYFRAME.hud.tone
+  }, {} as SequenceRows)
 };
 
-const NODES: readonly Node[] = [ZERO_NODE, ...SEQUENCE_KEYFRAMES.map(toNode)];
+const NODES: readonly Node[] = [
+  ZERO_NODE,
+  ...SEQUENCE_KEYFRAMES.map((kf) => ({ id: kf.id, p: kf.p, rows: rowsFor(kf) }))
+];
+
+/**
+ * How many rows have closed at each keyframe: [0, 2, 3, 6] off the table.
+ * `stageFor` reads this and nothing else, so adding a row to the pen's frame
+ * moves the stage boundaries automatically rather than silently disagreeing
+ * with a hand-maintained second list.
+ */
+const CLOSED_COUNT_AT_KEYFRAME: readonly number[] = SEQUENCE_KEYFRAMES.map(
+  (kf) => SEQUENCE_ROW_KEYS.filter((key) => kf.phases[key] === 'closed').length
+);
 
 export const EMPTY_STAGE_BLEND: Record<StageNumber, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+
+/** Numeric fields of a row, interpolated frame by frame. */
+const LERPED = [
+  'plannedOffset',
+  'plannedWidth',
+  'actualOffset',
+  'actualWidth',
+  'actualY',
+  'actualOpacity',
+  'laneOpacity',
+  'checkX',
+  'checkOpacity'
+] as const;
 
 function clamp01(value: number): number {
   // Not a Number is not a scroll position — fail safe to the start of the
@@ -109,6 +172,13 @@ function clamp01(value: number): number {
 }
 
 function lerp(from: number, to: number, t: number): number {
+  // Snap the endpoints. `from + (to - from) * 1` is not exactly `to` in binary
+  // floating point (1 + (0.45 - 1) * 1 is 0.44999999999999996), and the endpoints
+  // are exactly where this module promises to reproduce the pen's table. Every
+  // keyframe sits at a segment boundary, so this is the difference between
+  // landing on the table and landing next to it.
+  if (t <= 0) return from;
+  if (t >= 1) return to;
   return from + (to - from) * t;
 }
 
@@ -136,11 +206,11 @@ function segmentAt(p: number): { prev: Node; next: Node; index: number; t: numbe
 /**
  * `p → bar state`.
  *
- * Geometry interpolates across the segment; semantics (bar colour, HUD tone) do
- * not — a row is agreed or it is not, and a half-green bar would be a lie about
- * the record. Semantics therefore step at the segment midpoint, which is also
- * where the image cross-fade crosses 50%, so the wall going up and the bar
- * turning green land on the same frame rather than a beat apart.
+ * Geometry interpolates across the segment; semantics (the row's phase, the HUD
+ * tone) do not — a row is closed or it is not, and a half-closed row would be a
+ * lie about the record. Semantics therefore step at the segment midpoint, which
+ * is also where the image cross-fade crosses 50%, so the wall going up and the
+ * row closing land on the same frame rather than a beat apart.
  */
 export function sequenceStateAt(p: number): SequenceState {
   const { prev, next, index, t } = segmentAt(p);
@@ -148,11 +218,11 @@ export function sequenceStateAt(p: number): SequenceState {
   const committedIndex = t < 0.5 ? index - 1 : index;
 
   const rows = SEQUENCE_ROW_KEYS.reduce((acc, key) => {
-    acc[key] = {
-      offset: lerp(prev.rows[key].offset, next.rows[key].offset, t),
-      width: lerp(prev.rows[key].width, next.rows[key].width, t),
-      state: committed.rows[key].state
-    };
+    const from = prev.rows[key];
+    const to = next.rows[key];
+    const row = { phase: committed.rows[key].phase } as SequenceRow;
+    for (const field of LERPED) row[field] = lerp(from[field], to[field], t);
+    acc[key] = row;
     return acc;
   }, {} as SequenceRows);
 
@@ -172,18 +242,22 @@ export function sequenceStateAt(p: number): SequenceState {
     stageBlend[toStage] = t;
   }
 
+  const committedKeyframe =
+    SEQUENCE_KEYFRAMES.find((kf) => kf.id === NODES[Math.max(0, committedIndex)].id) ??
+    FIRST_KEYFRAME;
+
   return {
     rows,
-    baselineOpacity: lerp(prev.baselineOpacity, next.baselineOpacity, t),
-    hudTone: committed.hudTone,
-    // Captions label the *approach* to a keyframe ("p 0.15 → 0.40 · Foundations
-    // and structure close"), so the caption on screen is the one being earned.
+    hudTone: committedKeyframe.hud.tone,
+    // Captions label the *approach* to a keyframe, so the caption on screen is
+    // the one being earned.
     captionId: next.id,
-    // The pen's key-frames spec holds the chrome (`bars`, `hud`) at opacity 0
-    // through KF A (STATE AT p = 0.15: bars opacity 0 · hud opacity 0) and only
-    // shows it for KF B onward. The plan readout therefore fades in across the
+    // The pen holds the chrome (bars, HUD) at opacity 0 through KF A and only
+    // shows it from KF B onward. The plan readout therefore fades in across the
     // A → B segment and is fully on the moment KF B's values land.
-    chromeOpacity: clamp01((clamp01(p) - FIRST_KEYFRAME.p) / (SEQUENCE_KEYFRAMES[1].p - FIRST_KEYFRAME.p)),
+    chromeOpacity: clamp01(
+      (clamp01(p) - FIRST_KEYFRAME.p) / (SEQUENCE_KEYFRAMES[1].p - FIRST_KEYFRAME.p)
+    ),
     stageBlend,
     keyframeId: NODES[Math.max(0, committedIndex)].id
   };
@@ -193,9 +267,9 @@ export function sequenceStateAt(p: number): SequenceState {
  * `bar state → stage`. The single expression that picks the visible stage.
  *
  * Read it against the table: KF A has nothing closed and shows stage 1, B has
- * two closed and shows 2, C three and 3, D four and 4. `Math.max(1, …)` is what
- * covers the opening, where no row has closed yet but the drawing is already on
- * screen.
+ * two closed and shows 2, C three and 3, D all six and 4. The boundaries are
+ * the table's own closed-counts, so the stage is literally "the last keyframe
+ * whose closed-count the record has reached".
  *
  * `p` is deliberately not a parameter here. If this ever needs `p` to be
  * correct, the table and the animation have diverged and the table wins.
@@ -203,12 +277,16 @@ export function sequenceStateAt(p: number): SequenceState {
 export function stageFor(rows: SequenceRows): StageNumber {
   let closed = 0;
   for (const key of SEQUENCE_ROW_KEYS) {
-    if (rows[key].state === 'closed') closed++;
+    if (rows[key].phase === 'closed') closed++;
   }
-  return Math.max(1, closed) as StageNumber;
+  let stage: StageNumber = 1;
+  for (let i = 0; i < CLOSED_COUNT_AT_KEYFRAME.length; i++) {
+    if (closed >= CLOSED_COUNT_AT_KEYFRAME[i]) stage = (i + 1) as StageNumber;
+  }
+  return stage;
 }
 
-/** SVG transform for one lane, matching what `PlanTrack` renders on the server. */
+/** SVG transform for one lane, matching what `SequenceTrack` renders on the server. */
 export function laneTransform(offset: number, width: number, y = 0): string {
   // A zero scale collapses the rect and some engines drop the node entirely;
   // clamping keeps it paintable while still reading as "not started".

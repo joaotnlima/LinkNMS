@@ -1,5 +1,6 @@
 // Executable proof that the scroll sequence's timeline obeys the rules the
-// issue says are expensive to get wrong (LINA-89, restored for LINA-113).
+// issue says are expensive to get wrong (LINA-89, restored for LINA-113,
+// re-tabled against the refreshed pen for LINA-117).
 //
 // The timeline is a pure function, so it can be checked without a browser, a
 // scroll, or an animation library — which is the main reason it was written as
@@ -8,15 +9,20 @@
 // This is not a substitute for looking at the thing; it is the part of the
 // acceptance criteria that a machine can hold: stage derives from bar state (via
 // `stageFor`, which takes no `p`), p=0 and p=1 are what acceptance says they
-// are, the stage never runs backwards, and reverse scroll reverts exactly.
+// are, the stage never runs backwards, a row never re-opens, and reverse scroll
+// reverts exactly.
 
 import {
-  SEQUENCE_CLOSED_BASELINE_OPACITY,
+  SEQUENCE_CHECK_GAP,
+  SEQUENCE_CLOSED_LANE_OPACITY,
   SEQUENCE_KEYFRAMES,
+  SEQUENCE_ROW_GEOMETRY,
   SEQUENCE_ROW_KEYS,
-  type PlanState
+  SEQUENCE_TRACK_UNITS,
+  type SequenceRowPhase
 } from '../src/lib/landing-numbers';
 import {
+  PARKED_LANE_Y,
   sequenceStateAt,
   stageFor,
   type SequenceRows,
@@ -41,18 +47,51 @@ function near(label: string, actual: number, expected: number, eps = 1e-9): void
   check(label, Math.abs(actual - expected) <= eps, `expected ≈${expected}, got ${actual}`);
 }
 
-function rowsWithStates(rows: SequenceRows, states: Record<string, PlanState>) {
-  for (const key of SEQUENCE_ROW_KEYS) rows[key].state = states[key] as PlanState;
-  return rows;
-}
-
-const baselineRows = (): SequenceRows => {
+/** A row set built by hand, for exercising `stageFor` away from the table. */
+function rowsWithPhases(phases: Record<string, SequenceRowPhase>): SequenceRows {
   const out = {} as SequenceRows;
   for (const key of SEQUENCE_ROW_KEYS) {
-    out[key] = { offset: 0, width: 1, state: 'actual' };
+    out[key] = {
+      plannedOffset: 0,
+      plannedWidth: 1,
+      actualOffset: 1,
+      actualWidth: 1,
+      actualY: 0,
+      actualOpacity: 1,
+      laneOpacity: 1,
+      checkX: 2,
+      checkOpacity: 0,
+      phase: phases[key]
+    };
   }
   return out;
-};
+}
+
+// --- The table is the pen's, and it has six rows ----------------------------
+
+console.log('the refreshed pen table');
+{
+  eq('six rows', SEQUENCE_ROW_KEYS.length, 6);
+  for (const key of ['foundations', 'structure', 'envelope', 'windows', 'mep', 'finishes']) {
+    check(`row ${key} is in the table`, SEQUENCE_ROW_KEYS.includes(key as never));
+  }
+  // The four keyframes' own p values, off the frame titles.
+  const expected = [0.15, 0.4, 0.7, 1];
+  for (let i = 0; i < expected.length; i++) {
+    eq(`KF ${SEQUENCE_KEYFRAMES[i].id} p = ${expected[i]}`, SEQUENCE_KEYFRAMES[i].p, expected[i]);
+  }
+  // Nothing may be drawn outside the viewBox, or the pen's own geometry clips.
+  for (const key of SEQUENCE_ROW_KEYS) {
+    const g = SEQUENCE_ROW_GEOMETRY[key];
+    const closedOffset = SEQUENCE_KEYFRAMES[3].plannedOffsets?.[key] ?? g.plannedOffset;
+    const extent = closedOffset + g.plannedWidth + g.actualWidth + SEQUENCE_CHECK_GAP;
+    check(
+      `${key} closed row fits the viewBox`,
+      extent <= SEQUENCE_TRACK_UNITS,
+      `extent ${extent} > ${SEQUENCE_TRACK_UNITS}`
+    );
+  }
+}
 
 // --- Acceptance: the two endpoints -----------------------------------------
 
@@ -64,7 +103,13 @@ console.log('endpoints');
   eq('p=0 → stage 2/3/4 hidden', a.stageBlend[2] + a.stageBlend[3] + a.stageBlend[4], 0);
   eq('p=0 → bars/HUD hidden', a.chromeOpacity, 0);
   eq('p=0 → caption A', a.captionId, 'A');
-  check('p=0 → no row closed', SEQUENCE_ROW_KEYS.every((k) => a.rows[k].state !== 'closed'));
+  check('p=0 → no row closed', SEQUENCE_ROW_KEYS.every((k) => a.rows[k].phase !== 'closed'));
+  check('p=0 → no check showing', SEQUENCE_ROW_KEYS.every((k) => a.rows[k].checkOpacity === 0));
+  check(
+    'p=0 → every actual bar is parked and invisible',
+    SEQUENCE_ROW_KEYS.every((k) => a.rows[k].actualY === PARKED_LANE_Y && a.rows[k].actualOpacity === 0)
+  );
+  check('p=0 → nothing is drawn yet', SEQUENCE_ROW_KEYS.every((k) => a.rows[k].plannedWidth === 0));
 
   const d = sequenceStateAt(1);
   eq('p=1 → stage 4 visible', d.stageBlend[4], 1);
@@ -72,17 +117,13 @@ console.log('endpoints');
   eq('p=1 → bars/HUD visible', d.chromeOpacity, 1);
   eq('p=1 → caption D', d.captionId, 'D');
   eq('p=1 → HUD closed tone', d.hudTone, 'closed');
-  check('p=1 → all four rows closed', SEQUENCE_ROW_KEYS.every((k) => d.rows[k].state === 'closed'));
-  eq('p=1 → baseline drops to 35%', d.baselineOpacity, SEQUENCE_CLOSED_BASELINE_OPACITY);
-
-  // The server renders p=1. If these disagree, the wind-back is a visible jump
-  // on first paint — the exact artefact "render the final state, wind back" exists
-  // to avoid.
-  const final = SEQUENCE_KEYFRAMES[SEQUENCE_KEYFRAMES.length - 1];
-  for (const key of SEQUENCE_ROW_KEYS) {
-    near(`p=1 ${key} offset matches KF D`, d.rows[key].offset, final.rows[key].offset);
-    near(`p=1 ${key} width matches KF D`, d.rows[key].width, final.rows[key].width);
-  }
+  check('p=1 → all six rows closed', SEQUENCE_ROW_KEYS.every((k) => d.rows[k].phase === 'closed'));
+  check(
+    'p=1 → every lane at 45% with its check on',
+    SEQUENCE_ROW_KEYS.every(
+      (k) => d.rows[k].laneOpacity === SEQUENCE_CLOSED_LANE_OPACITY && d.rows[k].checkOpacity === 1
+    )
+  );
 }
 
 // --- The KF A–D table is wired, not eyeballed -------------------------------
@@ -90,52 +131,115 @@ console.log('endpoints');
 console.log('keyframe table');
 for (const kf of SEQUENCE_KEYFRAMES) {
   const state = sequenceStateAt(kf.p);
-  // geometry lands exactly on the table at its keyframe
   for (const key of SEQUENCE_ROW_KEYS) {
-    near(`KF ${kf.id} ${key} offset`, state.rows[key].offset, kf.rows[key].offset);
-    near(`KF ${kf.id} ${key} width`, state.rows[key].width, kf.rows[key].width);
-    eq(`KF ${kf.id} ${key} state`, state.rows[key].state, kf.rows[key].state);
+    const g = SEQUENCE_ROW_GEOMETRY[key];
+    const phase = kf.phases[key];
+    const plannedOffset = kf.plannedOffsets?.[key] ?? g.plannedOffset;
+    const row = state.rows[key];
+
+    eq(`KF ${kf.id} ${key} phase`, row.phase, phase);
+    near(`KF ${kf.id} ${key} planned offset`, row.plannedOffset, plannedOffset);
+    near(`KF ${kf.id} ${key} planned width`, row.plannedWidth, g.plannedWidth);
+    near(`KF ${kf.id} ${key} actual width`, row.actualWidth, g.actualWidth);
+
+    if (phase === 'planned') {
+      // Parked below, invisible, at its own offset — the pen's `AL` lane.
+      near(`KF ${kf.id} ${key} parked offset`, row.actualOffset, g.parkedOffset);
+      near(`KF ${kf.id} ${key} parked lane`, row.actualY, PARKED_LANE_Y);
+      near(`KF ${kf.id} ${key} parked invisible`, row.actualOpacity, 0);
+    } else {
+      // Revealed or closed: the actual bar sits immediately after the planned
+      // bar, in the planned bar's own lane. This is the shape of the refresh.
+      near(`KF ${kf.id} ${key} actual follows planned`, row.actualOffset, plannedOffset + g.plannedWidth);
+      near(`KF ${kf.id} ${key} actual in the planned lane`, row.actualY, 0);
+      near(`KF ${kf.id} ${key} actual visible`, row.actualOpacity, 1);
+    }
+
+    const closed = phase === 'closed';
+    near(`KF ${kf.id} ${key} lane opacity`, row.laneOpacity, closed ? SEQUENCE_CLOSED_LANE_OPACITY : 1);
+    near(`KF ${kf.id} ${key} check`, row.checkOpacity, closed ? 1 : 0);
+    near(
+      `KF ${kf.id} ${key} check x`,
+      row.checkX,
+      plannedOffset + g.plannedWidth + g.actualWidth + SEQUENCE_CHECK_GAP
+    );
   }
+
   // The visible stage at that keyframe is the table's stage, via stageFor.
-  const stage = stageFor(state.rows);
-  eq(`KF ${kf.id} → stage ${kf.stage}`, stage, kf.stage);
+  eq(`KF ${kf.id} → stage ${kf.stage}`, stageFor(state.rows), kf.stage);
   // And the blend agrees with the stage: the keyframe's own stage is the one on.
   eq(`KF ${kf.id} → blend on the table stage`, state.stageBlend[kf.stage], 1);
+  // The HUD reading is the keyframe's own.
+  eq(`KF ${kf.id} → HUD tone`, state.hudTone, kf.hud.tone);
+}
+
+// --- A closed bar is NOT recoloured -----------------------------------------
+
+console.log('the record survives closing');
+{
+  // The whole point of the refreshed idiom: closing dims the row and adds a
+  // check. It does not repaint the agreed bar, because what was agreed and what
+  // it took are both still the record. Nothing in the state names a colour, so
+  // the strongest available assertion is that the two bars keep their widths and
+  // their relative order at every p.
+  const STEPS = 400;
+  for (let i = 0; i <= STEPS; i += 1) {
+    const p = i / STEPS;
+    const s = sequenceStateAt(p);
+    for (const key of SEQUENCE_ROW_KEYS) {
+      const g = SEQUENCE_ROW_GEOMETRY[key];
+      const row = s.rows[key];
+      if (p > 0.15) {
+        near(`${key} keeps its agreed width at p=${p.toFixed(3)}`, row.plannedWidth, g.plannedWidth);
+        near(`${key} keeps its actual width at p=${p.toFixed(3)}`, row.actualWidth, g.actualWidth);
+      }
+      check(
+        `${key} lane opacity in range at p=${p.toFixed(3)}`,
+        row.laneOpacity >= SEQUENCE_CLOSED_LANE_OPACITY - 1e-9 && row.laneOpacity <= 1 + 1e-9
+      );
+    }
+  }
 }
 
 // --- The chrome fade matches the pen ----------------------------------------
 
 console.log('chrome fade (pen: opacity 0 through KF A, on for KF B)');
 {
-  // The keyframes are the sequence's own: 0.15 / 0.40 / 0.70 / 1.00. (The inline
-  // reel chip uses 0.72 — that is a different component's number, never here.)
-  const expected = [0.15, 0.4, 0.7, 1];
-  for (let i = 0; i < expected.length; i++) {
-    eq(`KF ${SEQUENCE_KEYFRAMES[i].id} p = ${expected[i]}`, SEQUENCE_KEYFRAMES[i].p, expected[i]);
-  }
-
   const a = sequenceStateAt(SEQUENCE_KEYFRAMES[0].p);
   eq('bars/HUD hidden at KF A (pen)', a.chromeOpacity, 0);
   const b = sequenceStateAt(SEQUENCE_KEYFRAMES[1].p);
   eq('bars/HUD on at KF B (pen)', b.chromeOpacity, 1);
   near('bars/HUD half at the A→B midpoint', sequenceStateAt(0.275).chromeOpacity, 0.5);
-  const d = sequenceStateAt(1);
-  eq('bars/HUD fully on at p=1', d.chromeOpacity, 1);
+  eq('bars/HUD fully on at p=1', sequenceStateAt(1).chromeOpacity, 1);
 }
 
 // --- Rule 2: the stage selector reads bar state and nothing else ------------
 
 console.log('stage derives from bar state');
 {
-  const A = 'actual' as const;
+  const P = 'planned' as const;
+  const R = 'revealed' as const;
   const C = 'closed' as const;
-  const rows = (states: Record<string, PlanState>) => rowsWithStates(baselineRows(), states);
+  const at = (...phases: SequenceRowPhase[]) =>
+    stageFor(
+      rowsWithPhases(
+        Object.fromEntries(SEQUENCE_ROW_KEYS.map((k, i) => [k, phases[i]]))
+      )
+    );
 
-  eq('nothing closed → 1', stageFor(rows({ foundations: A, structure: A, envelope: A, finishes: A })), 1);
-  eq('foundations only → 1', stageFor(rows({ foundations: C, structure: A, envelope: A, finishes: A })), 1);
-  eq('foundations + structure → 2', stageFor(rows({ foundations: C, structure: C, envelope: A, finishes: A })), 2);
-  eq('+ envelope → 3', stageFor(rows({ foundations: C, structure: C, envelope: C, finishes: A })), 3);
-  eq('+ finishes → 4', stageFor(rows({ foundations: C, structure: C, envelope: C, finishes: C })), 4);
+  // The four rows of the table: 0 / 2 / 3 / 6 closed → stage 1 / 2 / 3 / 4.
+  eq('nothing closed → 1', at(P, P, P, P, P, P), 1);
+  eq('KF B shape (2 closed) → 2', at(C, C, R, P, P, P), 2);
+  eq('KF C shape (3 closed) → 3', at(C, C, C, R, R, P), 3);
+  eq('KF D shape (6 closed) → 4', at(C, C, C, C, C, C), 4);
+
+  // Between the table's boundaries the stage holds rather than jumping.
+  eq('one closed → still 1', at(C, P, P, P, P, P), 1);
+  eq('four closed → still 3', at(C, C, C, C, P, P), 3);
+  eq('five closed → still 3', at(C, C, C, C, C, P), 3);
+
+  // Revealing a row is not closing it: the house does not advance on a reading.
+  eq('revealing does not advance the stage', at(R, R, R, R, R, R), 1);
 
   // Same bar state ⇒ same stage, always. `stageFor` takes no `p`, so a leaked p
   // could not be called at all.
@@ -147,6 +251,7 @@ console.log('stage derives from bar state');
 console.log('monotonic advance and continuity');
 {
   const STEPS = 2000;
+  const RANK: Record<SequenceRowPhase, number> = { planned: 0, revealed: 1, closed: 2 };
   let prevStage = 1;
   let prev = sequenceStateAt(0);
   let maxJump = 0;
@@ -164,8 +269,6 @@ console.log('monotonic advance and continuity');
     // visible at blend >= 0.5, so that is what we assert against `stageFor`.
     // Without this, `stageFor` could be correct and still be dead code while
     // the blend was driven off a second, drift-prone stage table.
-    // The dominant stage in the blend — ties break to the later stage, the same
-    // way row semantics commit at the segment midpoint.
     const painted = ([1, 2, 3, 4] as const).reduce((best, n) =>
       s.stageBlend[n] >= s.stageBlend[best] ? n : best
     );
@@ -177,20 +280,26 @@ console.log('monotonic advance and continuity');
     );
 
     for (const key of SEQUENCE_ROW_KEYS) {
-      const wasClosed = prev.rows[key].state === 'closed';
-      check(`${key} stays closed at p=${p.toFixed(4)}`, !wasClosed || s.rows[key].state === 'closed');
+      // A row only ever moves forward: planned → revealed → closed.
+      check(
+        `${key} phase never regresses at p=${p.toFixed(4)}`,
+        RANK[s.rows[key].phase] >= RANK[prev.rows[key].phase],
+        `${prev.rows[key].phase} → ${s.rows[key].phase}`
+      );
 
       maxJump = Math.max(
         maxJump,
-        Math.abs(s.rows[key].offset - prev.rows[key].offset),
-        Math.abs(s.rows[key].width - prev.rows[key].width)
+        Math.abs(s.rows[key].plannedOffset - prev.rows[key].plannedOffset),
+        Math.abs(s.rows[key].actualOffset - prev.rows[key].actualOffset),
+        Math.abs(s.rows[key].plannedWidth - prev.rows[key].plannedWidth),
+        Math.abs(s.rows[key].actualWidth - prev.rows[key].actualWidth)
       );
-      check(`${key} width non-negative at p=${p.toFixed(4)}`, s.rows[key].width >= 0);
+      check(`${key} widths non-negative at p=${p.toFixed(4)}`, s.rows[key].plannedWidth >= 0 && s.rows[key].actualWidth >= 0);
     }
     prev = s;
   }
 
-  check('geometry is continuous', maxJump < 0.5, `largest single-step move was ${maxJump.toFixed(4)} units`);
+  check('geometry is continuous', maxJump < 1, `largest single-step move was ${maxJump.toFixed(4)} units`);
 }
 
 // --- Reverse scroll reverts exactly -----------------------------------------

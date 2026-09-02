@@ -757,9 +757,44 @@
    stacked; only the p=1 keyframe (KF D) is visible by default. <SequenceMotion />
    swaps which one shows as p advances. Positioning the blocks absolutely keeps
    the caption area's height stable so a swap never nudges the bars below. */
+/* Caption | bars | HUD on one row, in the pen's proportions: the KF Body puts
+   the caption at x 72 (w 400), the gantt at x 530 and the HUD at x 1170 of a
+   1440 frame. Below 1100px there is no honest way to hold three columns, so it
+   stacks caption-over-bars with the HUD beside the bars. */
+.lp-sequence__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(20px, 3vw, 36px);
+  align-items: end;
+}
+@media (min-width: 700px) {
+  .lp-sequence__body {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .lp-sequence__caption {
+    grid-column: 1 / -1;
+  }
+}
+@media (min-width: 1100px) {
+  .lp-sequence__body {
+    grid-template-columns: minmax(0, 400fr) minmax(0, 630fr) auto;
+    gap: clamp(24px, 3vw, 58px);
+    /* The pen tops the three columns out together (caption y 24, gantt y 14,
+       HUD y 24 of a 260-tall body) rather than sitting them on a shared
+       baseline. */
+    align-items: start;
+  }
+  .lp-sequence__caption {
+    grid-column: auto;
+  }
+}
+/* The caption blocks are absolutely stacked so swapping one for another cannot
+   nudge the bars. That makes the reserved height load-bearing: it has to clear
+   the LONGEST caption (KF D runs to three lines in every locale) or the tallest
+   one spills out of the section. */
 .lp-sequence__caption {
   position: relative;
-  min-height: clamp(78px, 11vh, 110px);
+  min-height: clamp(104px, 13vh, 136px);
 }
 .lp-sequence__caption-block {
   position: absolute;
@@ -768,28 +803,20 @@
   top: 0;
 }
 .lp-sequence__caption-block[data-visible='false'],
-.lp-hud__cell .value [data-kf][data-visible='false'] {
+.lp-hud__cell [data-kf][data-visible='false'] {
   display: none;
 }
 .lp-sequence__caption .micro {
   color: var(--lp-cream);
 }
+/* Pen: 30px / 800 / line-height 1.1 / tracking −0.9px, in a 400px column
+   (28px at KF D, whose line is the longest). */
 .lp-sequence__caption .line {
   margin-top: 10px;
-  font-size: clamp(20px, 2.6vw, 34px);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-.lp-sequence__panels {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: clamp(24px, 3vw, 48px);
-  align-items: end;
-}
-@media (min-width: 900px) {
-  .lp-sequence__panels {
-    grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
-  }
+  font-size: clamp(20px, 2.1vw, 30px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
 }
 .lp-bars__head {
   color: var(--lp-cream-60);
@@ -809,10 +836,44 @@
 .lp-bars__row[data-closed='true'] .name {
   color: var(--lp-cream);
 }
+
+/* One sequence row's track: the bars as a stretched SVG, the check as HTML
+   beside them. The check is NOT in the SVG — that viewBox is scaled
+   non-uniformly to fit the column, which would squash a round glyph into an
+   ellipse. It sits at `--check-x`, the row's fraction of the track, and only
+   ever animates opacity. */
+.lp-seqtrack {
+  position: relative;
+}
+.lp-seqtrack__bars {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.lp-seqtrack__check {
+  position: absolute;
+  top: 0;
+  left: calc(var(--check-x) * 100%);
+  display: block;
+  /* --plan-closed-line, not --plan-closed: the pen fills this glyph with the
+     light mint because the ground here is ink. The dark green would measure
+     ~1.6:1 against #16181d. */
+  color: var(--plan-closed-line);
+  line-height: 0;
+}
+
 .lp-hud {
   display: flex;
   flex-wrap: wrap;
   gap: clamp(24px, 4vw, 56px);
+}
+@media (min-width: 1100px) {
+  .lp-hud {
+    /* Three stacked readings at the right edge, as the pen's HUD frame draws
+       them — a vertical column, not a row of three. */
+    flex-direction: column;
+    gap: 12px;
+  }
 }
 .lp-hud__cell .label {
   /* Design specifies 40% cream here; raised to 60% because 40% cream over the
@@ -820,22 +881,27 @@
      Flagged on LINA-83 for the contrast audit. */
   color: var(--lp-cream-60);
 }
+/* The pen's HUD is a quiet readout, not a headline: 9px label over a 15px/600
+   value. It is the corner of the frame that reports, while the caption carries
+   the voice — so it is sized against the bars beside it, not against the
+   caption. */
 .lp-hud__cell .value {
-  margin-top: 8px;
-  font-family: var(--lp-display, var(--lp-sans, var(--font)));
-  font-weight: 800;
-  font-size: clamp(22px, 2.4vw, 32px);
+  margin-top: 4px;
+  font-weight: 600;
+  font-size: clamp(15px, 1.15vw, 17px);
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
-.lp-hud[data-tone='baseline'] .value {
-  color: var(--plan-baseline);
+/* Two tones only, as the refreshed pen has them: cream while the build is
+   running, and the whole cell — label included — in the light mint once it has
+   closed. --plan-closed-line rather than --plan-closed for the same reason as
+   the check mark: this sits on ink. */
+.lp-hud[data-tone='cream'] .value {
+  color: var(--lp-cream);
 }
-.lp-hud[data-tone='actual'] .value {
-  color: var(--plan-actual);
-}
-.lp-hud[data-tone='closed'] .value {
-  color: var(--plan-closed);
+.lp-hud[data-tone='closed'] .value,
+.lp-hud[data-tone='closed'] .label {
+  color: var(--plan-closed-line);
 }
 
 /* ---------- Scroll reveal shells (LINA-98) ----------
