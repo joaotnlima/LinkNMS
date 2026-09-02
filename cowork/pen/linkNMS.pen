@@ -87695,7 +87695,7 @@
           "type": "frame",
           "id": "GTOjk",
           "name": "S6 Who It Is For",
-          "rotation": 2.5444437451708134e-14,
+          "rotation": 2.5444437451708134E-14,
           "width": "fill_container",
           "fill": "$lp-cream",
           "layout": "vertical",
@@ -108585,6 +108585,771 @@
                   "fontFamily": "$font",
                   "fontSize": 10,
                   "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "OnboardW1",
+      "name": "D1 Waitlist landing / email capture",
+      "x": 6000,
+      "y": 0,
+      "width": 390,
+      "height": 844,
+      "fill": "#FFFFFF",
+      "clip": true,
+      "layout": "vertical",
+      "gap": 0,
+      "padding": 0,
+      "children": [
+        {
+          "type": "frame",
+          "id": "OnboardW1H",
+          "name": "Header",
+          "width": "fill_container",
+          "height": 120,
+          "fill": "#FFFFFF",
+          "layout": "vertical",
+          "gap": 16,
+          "padding": 24,
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardW1HT",
+              "name": "Headline",
+              "content": "Join the build",
+              "fontSize": 28,
+              "fontWeight": "700",
+              "fill": "#17181C",
+              "width": "fill_container"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "OnboardW1C",
+          "name": "Content",
+          "width": "fill_container",
+          "fill": "transparent",
+          "flex": 1,
+          "layout": "vertical",
+          "gap": 24,
+          "padding": 24,
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardW1CD",
+              "name": "Description",
+              "content": "Enter your email to reserve a seat on the LinkNMS waitlist",
+              "fontSize": 16,
+              "fontWeight": "normal",
+              "fill": "#6A6A70",
+              "width": "fill_container",
+              "lineHeight": 1.5
+            },
+            {
+              "type": "frame",
+              "id": "OnboardW1CF",
+              "name": "Form",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "OnboardW1CFI",
+                  "name": "Email Input",
+                  "width": "fill_container",
+                  "height": 48,
+                  "fill": "#F5F5F3",
+                  "cornerRadius": 8,
+                  "layout": "horizontal",
+                  "padding": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "OnboardW1CFIP",
+                      "name": "Placeholder",
+                      "content": "your@email.com",
+                      "fontSize": 16,
+                      "fill": "#B0B0B8"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "OnboardW1CFB",
+                  "name": "Submit Button",
+                  "width": "fill_container",
+                  "height": 48,
+                  "fill": "#16181D",
+                  "cornerRadius": 8,
+                  "layout": "horizontal",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "OnboardW1CFBT",
+                      "name": "Text",
+                      "content": "Join waitlist",
+                      "fontSize": 16,
+                      "fontWeight": "600",
+                      "fill": "#FFFFFF"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "OnboardW2",
+      "name": "D1b Waitlist confirmation state",
+      "x": 6450,
+      "y": 0,
+      "width": 390,
+      "height": 844,
+      "fill": "#FFFFFF",
+      "clip": true,
+      "layout": "vertical",
+      "gap": 0,
+      "padding": 0,
+      "children": [
+        {
+          "type": "frame",
+          "id": "OnboardW2C",
+          "name": "Content",
+          "width": "fill_container",
+          "flex": 1,
+          "layout": "vertical",
+          "gap": 24,
+          "padding": 24,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardW2CT",
+              "name": "Title",
+              "content": "You're on the list",
+              "fontSize": 28,
+              "fontWeight": "700",
+              "fill": "#17181C",
+              "textAlign": "center"
+            },
+            {
+              "type": "text",
+              "id": "OnboardW2CD",
+              "name": "Description",
+              "content": "Check your email for next steps",
+              "fontSize": 16,
+              "fontWeight": "normal",
+              "fill": "#6A6A70",
+              "textAlign": "center",
+              "width": "fill_container",
+              "lineHeight": 1.5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "OnboardE1",
+      "name": "E1 Welcome email template",
+      "x": 6900,
+      "y": 0,
+      "width": 520,
+      "height": 600,
+      "fill": "#FFFFFF",
+      "clip": true,
+      "layout": "vertical",
+      "gap": 0,
+      "padding": 0,
+      "children": [
+        {
+          "type": "frame",
+          "id": "OnboardE1H",
+          "name": "Header",
+          "width": "fill_container",
+          "height": 200,
+          "fill": "#F5F5F3",
+          "layout": "vertical",
+          "gap": 0,
+          "padding": 32,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardE1HT",
+              "name": "Welcome",
+              "content": "Welcome to LinkNMS",
+              "fontSize": 24,
+              "fontWeight": "700",
+              "fill": "#17181C"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "OnboardE1C",
+          "name": "Content",
+          "width": "fill_container",
+          "flex": 1,
+          "layout": "vertical",
+          "gap": 24,
+          "padding": 32,
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardE1CD",
+              "name": "Body",
+              "content": "You've joined the waitlist! We'll send you an email when your account is ready.",
+              "fontSize": 16,
+              "fontWeight": "normal",
+              "fill": "#6A6A70",
+              "width": "fill_container",
+              "lineHeight": 1.6
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "OnboardE2",
+      "name": "E2 Onboarding access email template",
+      "x": 7500,
+      "y": 0,
+      "width": 520,
+      "height": 600,
+      "fill": "#FFFFFF",
+      "clip": true,
+      "layout": "vertical",
+      "gap": 0,
+      "padding": 0,
+      "children": [
+        {
+          "type": "frame",
+          "id": "OnboardE2H",
+          "name": "Header",
+          "width": "fill_container",
+          "height": 200,
+          "fill": "#F5F5F3",
+          "layout": "vertical",
+          "gap": 0,
+          "padding": 32,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardE2HT",
+              "name": "Heading",
+              "content": "Your LinkNMS account is ready",
+              "fontSize": 24,
+              "fontWeight": "700",
+              "fill": "#17181C"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "OnboardE2C",
+          "name": "Content",
+          "width": "fill_container",
+          "flex": 1,
+          "layout": "vertical",
+          "gap": 24,
+          "padding": 32,
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardE2CD",
+              "name": "Body",
+              "content": "Your account is now active. Click below to log in and start building.",
+              "fontSize": 16,
+              "fontWeight": "normal",
+              "fill": "#6A6A70",
+              "width": "fill_container",
+              "lineHeight": 1.6
+            },
+            {
+              "type": "frame",
+              "id": "OnboardE2CB",
+              "name": "CTA Button",
+              "width": "fill_container",
+              "height": 48,
+              "fill": "#16181D",
+              "cornerRadius": 8,
+              "layout": "horizontal",
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "OnboardE2CBT",
+                  "name": "Text",
+                  "content": "Go to LinkNMS",
+                  "fontSize": 16,
+                  "fontWeight": "600",
+                  "fill": "#FFFFFF"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "OnboardD2",
+      "name": "D2 Sign-up / Account creation screen",
+      "x": 8100,
+      "y": 0,
+      "width": 390,
+      "height": 844,
+      "fill": "#FFFFFF",
+      "clip": true,
+      "layout": "vertical",
+      "gap": 0,
+      "padding": 0,
+      "children": [
+        {
+          "type": "frame",
+          "id": "OnboardD2H",
+          "name": "Header",
+          "width": "fill_container",
+          "height": 120,
+          "fill": "#FFFFFF",
+          "layout": "vertical",
+          "gap": 16,
+          "padding": 24,
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardD2HT",
+              "name": "Headline",
+              "content": "Create your account",
+              "fontSize": 28,
+              "fontWeight": "700",
+              "fill": "#17181C",
+              "width": "fill_container"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "OnboardD2C",
+          "name": "Content",
+          "width": "fill_container",
+          "flex": 1,
+          "layout": "vertical",
+          "gap": 24,
+          "padding": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "OnboardD2CF",
+              "name": "Form",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "OnboardD2CFE",
+                  "name": "Email Input",
+                  "width": "fill_container",
+                  "height": 48,
+                  "fill": "#F5F5F3",
+                  "cornerRadius": 8,
+                  "layout": "horizontal",
+                  "padding": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "OnboardD2CFEP",
+                      "name": "Placeholder",
+                      "content": "your@email.com",
+                      "fontSize": 16,
+                      "fill": "#B0B0B8"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "OnboardD2CFP",
+                  "name": "Password Input",
+                  "width": "fill_container",
+                  "height": 48,
+                  "fill": "#F5F5F3",
+                  "cornerRadius": 8,
+                  "layout": "horizontal",
+                  "padding": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "OnboardD2CFPP",
+                      "name": "Placeholder",
+                      "content": "••••••••",
+                      "fontSize": 16,
+                      "fill": "#B0B0B8"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "OnboardD2CFB",
+                  "name": "Submit Button",
+                  "width": "fill_container",
+                  "height": 48,
+                  "fill": "#16181D",
+                  "cornerRadius": 8,
+                  "layout": "horizontal",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "OnboardD2CFBT",
+                      "name": "Text",
+                      "content": "Create account",
+                      "fontSize": 16,
+                      "fontWeight": "600",
+                      "fill": "#FFFFFF"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "OnboardD3",
+      "name": "D3 Magic link / check-your-email state",
+      "x": 8550,
+      "y": 0,
+      "width": 390,
+      "height": 844,
+      "fill": "#FFFFFF",
+      "clip": true,
+      "layout": "vertical",
+      "gap": 0,
+      "padding": 0,
+      "children": [
+        {
+          "type": "frame",
+          "id": "OnboardD3C",
+          "name": "Content",
+          "width": "fill_container",
+          "flex": 1,
+          "layout": "vertical",
+          "gap": 24,
+          "padding": 24,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardD3CT",
+              "name": "Title",
+              "content": "Check your email",
+              "fontSize": 28,
+              "fontWeight": "700",
+              "fill": "#17181C",
+              "textAlign": "center"
+            },
+            {
+              "type": "text",
+              "id": "OnboardD3CD",
+              "name": "Description",
+              "content": "We've sent you a link to sign in. Check your inbox for the next step.",
+              "fontSize": 16,
+              "fontWeight": "normal",
+              "fill": "#6A6A70",
+              "textAlign": "center",
+              "width": "fill_container",
+              "lineHeight": 1.5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "OnboardD4",
+      "name": "D4 Account setup / Role selection",
+      "x": 9000,
+      "y": 0,
+      "width": 390,
+      "height": 844,
+      "fill": "#FFFFFF",
+      "clip": true,
+      "layout": "vertical",
+      "gap": 0,
+      "padding": 0,
+      "children": [
+        {
+          "type": "frame",
+          "id": "OnboardD4H",
+          "name": "Header",
+          "width": "fill_container",
+          "height": 120,
+          "fill": "#FFFFFF",
+          "layout": "vertical",
+          "gap": 16,
+          "padding": 24,
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardD4HT",
+              "name": "Headline",
+              "content": "Tell us about you",
+              "fontSize": 28,
+              "fontWeight": "700",
+              "fill": "#17181C",
+              "width": "fill_container"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "OnboardD4C",
+          "name": "Content",
+          "width": "fill_container",
+          "flex": 1,
+          "layout": "vertical",
+          "gap": 24,
+          "padding": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "OnboardD4CF",
+              "name": "Form",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "OnboardD4CFN",
+                  "name": "Name Input",
+                  "width": "fill_container",
+                  "height": 48,
+                  "fill": "#F5F5F3",
+                  "cornerRadius": 8,
+                  "layout": "horizontal",
+                  "padding": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "OnboardD4CFNP",
+                      "name": "Placeholder",
+                      "content": "Display name",
+                      "fontSize": 16,
+                      "fill": "#B0B0B8"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "OnboardD4CFR",
+                  "name": "Role Selection",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "OnboardD4CFRL",
+                      "name": "Label",
+                      "content": "Your role",
+                      "fontSize": 14,
+                      "fontWeight": "600",
+                      "fill": "#17181C"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "OnboardD4CFRO",
+                      "name": "Owner Option",
+                      "width": "fill_container",
+                      "height": 48,
+                      "fill": "#FFFFFF",
+                      "stroke": "#D0D0CC",
+                      "strokeWidth": 1,
+                      "cornerRadius": 8,
+                      "layout": "horizontal",
+                      "padding": 12,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "OnboardD4CFROT",
+                          "name": "Text",
+                          "content": "Homeowner",
+                          "fontSize": 16,
+                          "fill": "#17181C"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "OnboardD4CFRGC",
+                      "name": "GC Option",
+                      "width": "fill_container",
+                      "height": 48,
+                      "fill": "#FFFFFF",
+                      "stroke": "#D0D0CC",
+                      "strokeWidth": 1,
+                      "cornerRadius": 8,
+                      "layout": "horizontal",
+                      "padding": 12,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "OnboardD4CFRGCT",
+                          "name": "Text",
+                          "content": "General Contractor",
+                          "fontSize": 16,
+                          "fill": "#17181C"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "OnboardD4CFB",
+                  "name": "Continue Button",
+                  "width": "fill_container",
+                  "height": 48,
+                  "fill": "#16181D",
+                  "cornerRadius": 8,
+                  "layout": "horizontal",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "OnboardD4CFBT",
+                      "name": "Text",
+                      "content": "Continue",
+                      "fontSize": 16,
+                      "fontWeight": "600",
+                      "fill": "#FFFFFF"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "OnboardD5",
+      "name": "D5 First-time empty portal state",
+      "x": 9450,
+      "y": 0,
+      "width": 390,
+      "height": 844,
+      "fill": "#FFFFFF",
+      "clip": true,
+      "layout": "vertical",
+      "gap": 0,
+      "padding": 0,
+      "children": [
+        {
+          "type": "frame",
+          "id": "OnboardD5H",
+          "name": "Header",
+          "width": "fill_container",
+          "height": 64,
+          "fill": "#FFFFFF",
+          "borderBottomWidth": 1,
+          "borderBottomColor": "#E4E4E1",
+          "layout": "horizontal",
+          "padding": 16,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardD5HT",
+              "name": "Title",
+              "content": "Your builds",
+              "fontSize": 20,
+              "fontWeight": "700",
+              "fill": "#17181C"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "OnboardD5C",
+          "name": "Content",
+          "width": "fill_container",
+          "flex": 1,
+          "layout": "vertical",
+          "gap": 24,
+          "padding": 24,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "OnboardD5CT",
+              "name": "Title",
+              "content": "No builds yet",
+              "fontSize": 20,
+              "fontWeight": "600",
+              "fill": "#17181C",
+              "textAlign": "center"
+            },
+            {
+              "type": "text",
+              "id": "OnboardD5CD",
+              "name": "Description",
+              "content": "Start a new build to track your project and collaborate with your team.",
+              "fontSize": 14,
+              "fontWeight": "normal",
+              "fill": "#6A6A70",
+              "textAlign": "center",
+              "width": "fill_container",
+              "lineHeight": 1.5
+            },
+            {
+              "type": "frame",
+              "id": "OnboardD5CB",
+              "name": "CTA Button",
+              "width": "fill_container",
+              "height": 48,
+              "fill": "#16181D",
+              "cornerRadius": 8,
+              "layout": "horizontal",
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "OnboardD5CBT",
+                  "name": "Text",
+                  "content": "Start a build",
+                  "fontSize": 16,
+                  "fontWeight": "600",
+                  "fill": "#FFFFFF"
                 }
               ]
             }
