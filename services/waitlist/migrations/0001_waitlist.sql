@@ -32,7 +32,13 @@ BEGIN
     CREATE ROLE waitlist_app NOLOGIN;
   END IF;
 END $$;
-GRANT CONNECT ON DATABASE current_database() TO waitlist_app;
+-- `GRANT CONNECT ON DATABASE current_database()` is not valid SQL — the ON
+-- DATABASE clause needs a literal identifier, so the database name is resolved
+-- through format() inside the DO block (same pattern as db/roles.sql).
+DO $$
+BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO waitlist_app', current_database());
+END $$;
 GRANT USAGE ON SCHEMA waitlist TO waitlist_app;
 
 CREATE TABLE IF NOT EXISTS waitlist.signup (
