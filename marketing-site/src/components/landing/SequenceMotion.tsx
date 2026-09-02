@@ -45,9 +45,10 @@ import { STAGE_1_TO_2 } from '@/lib/landing-flags';
  * Only this one handoff is special. With `STAGE_1_TO_2 === 'cut'` the two
  * stills never share the screen: stage 1 holds until the commit (KF B, t = 0.5)
  * and then stage 2 takes over instantly. 2 → 3 and 3 → 4 are camera dissolves
- * and always stay blends. The stage-1 asset is already the LINA-85 re-render
- * from the stage-4 camera; once that plate is confirmed visually on the page,
- * flipping the flag to `crossfade` is the whole change.
+ * and always stay blends. Stage 1 is the exception because its plate is shot
+ * from a different camera than 2-4 (LINA-117 restored the golden-hour
+ * wireframe render), so there is no shared framing to dissolve through — see
+ * `STAGE_1_TO_2` in `landing-flags.ts`.
  */
 function applyStage1To2(_p: number, state: SequenceState): SequenceState {
   if (STAGE_1_TO_2 !== 'cut') return state;
