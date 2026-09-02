@@ -285,7 +285,7 @@
       "agreed": "Azul é o que ficou acordado.",
       "changed": "Laranja é o que mudou.",
       "closed": "Verde é o que fechou.",
-      "explainer": "O scroll faz avançar as imagens da obra enquanto o gant acompanha o contrato. O azul fica fixo, o laranja marca o desvio, o verde fecha a linha.",
+      "explainer": "O scroll faz avançar as imagens da obra enquanto o gantt acompanha o contrato. O azul fica fixo, o laranja marca o desvio, o verde fecha a linha.",
       "explainerMobile": "Uma linha do tempo guarda os três estados ao mesmo tempo. As imagens avançam com o scroll, a linha de base fica azul, a mudança vem a laranja e o trabalho fechado fica verde.",
       "note": "Imagem + gantt, não um slideshow",
       "tableCaption": "Capítulos de trabalho face à linha de base acordada, com o valor de cada um.",
@@ -321,7 +321,7 @@
         "title": "Construção em scroll  ·  Imagem + gantt",
         "titleMobile": "Construção em scroll · Mobile",
         "note": "A imagem e o gráfico movem-se juntos.",
-        "noteMobile": "Move-se com o gant.",
+        "noteMobile": "Move-se com o gantt.",
         "labels": {
           "1": "Design",
           "2": "Estrutura",
@@ -334,7 +334,7 @@
           "3": "Fase de acabamento: cobertura e envolvente fechadas.",
           "4": "Fase de construção: a casa terminada."
         },
-        "scrollNote": "A construção avança em imagens enquanto o gant fecha do azul para o laranja e o verde."
+        "scrollNote": "A construção avança em imagens enquanto o gantt fecha do azul para o laranja e o verde."
       }
     },
     "sequence": {

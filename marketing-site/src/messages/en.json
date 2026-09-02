@@ -285,7 +285,7 @@
       "agreed": "Blue is what you agreed.",
       "changed": "Orange is what changed.",
       "closed": "Green is what closed.",
-      "explainer": "The scroll advances the build images while the gant tracks the contract. Blue stays fixed, orange marks drift, green closes the row.",
+      "explainer": "The scroll advances the build images while the gantt tracks the contract. Blue stays fixed, orange marks drift, green closes the row.",
       "explainerMobile": "One timeline holds all three states at once. The images advance with the scroll, the baseline stays blue, the change comes in orange, and closed work turns green.",
       "note": "Image + gantt, not a slideshow",
       "tableCaption": "Work packages against the agreed baseline, with the value of each.",
@@ -321,7 +321,7 @@
         "title": "Scroll build  ·  Image + gantt",
         "titleMobile": "Scroll build · Mobile",
         "note": "The image and the chart move together.",
-        "noteMobile": "Moves with the gant.",
+        "noteMobile": "Moves with the gantt.",
         "labels": {
           "1": "Design",
           "2": "Structure",
@@ -334,7 +334,7 @@
           "3": "Finish stage: the roof and envelope are closed.",
           "4": "Built stage: the finished house."
         },
-        "scrollNote": "The construction advances in images while the gant closes from blue to orange to green."
+        "scrollNote": "The construction advances in images while the gantt closes from blue to orange to green."
       }
     },
     "sequence": {

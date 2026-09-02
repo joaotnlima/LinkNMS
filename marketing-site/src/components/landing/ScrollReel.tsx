@@ -7,7 +7,7 @@ import { hasLandingImage } from '@/lib/landing-assets';
  * The Scroll Reel (S3 of `landing-page`): four stage cards, each showing the
  * build photo at its stage, a `p` chip (0.15 / 0.40 / 0.72 / 1.00 — the same
  * progress the gantt tracks), and a caption. One shared note per breakpoint:
- * "The image and the chart move together." on desktop, "Moves with the gant."
+ * "The image and the chart move together." on desktop, "Moves with the gantt."
  * on mobile.
  *
  * Cards stay server-rendered (no JS): when the still is in `public/images`
