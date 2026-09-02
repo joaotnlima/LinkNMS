@@ -83937,7 +83937,7 @@
               "fill": {
                 "type": "image",
                 "enabled": true,
-                "url": "images/stage-1-design.png",
+                "url": "design.png",
                 "mode": "fill"
               },
               "width": 1440,
@@ -85255,7 +85255,7 @@
                           "fill": {
                             "type": "image",
                             "enabled": true,
-                            "url": "images/stage-1-design.png",
+                            "url": "design.png",
                             "mode": "fill"
                           },
                           "width": 320,
@@ -87281,7 +87281,8 @@
                           "width": 340,
                           "content": "      Concrete slab, ground floor",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -87331,7 +87332,8 @@
                           "content": "€ 5,428",
                           "textAlign": "right",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -87360,7 +87362,8 @@
                           "width": 340,
                           "content": "      Timber frame + sheathing",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -87410,7 +87413,8 @@
                           "content": "€ 12,400",
                           "textAlign": "right",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -87439,7 +87443,8 @@
                           "width": 340,
                           "content": "      Steel connections",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -87489,7 +87494,8 @@
                           "content": "€ 6,272",
                           "textAlign": "right",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -87597,7 +87603,8 @@
                           "width": 340,
                           "content": "      Brick + ETICS, north face",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -87647,7 +87654,8 @@
                           "content": "€ 6,512",
                           "textAlign": "right",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -87676,7 +87684,8 @@
                           "width": 340,
                           "content": "      Aluminium frames, triple glaze",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -87726,7 +87735,8 @@
                           "content": "€ 6,088",
                           "textAlign": "right",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -88064,7 +88074,8 @@
                               "fill": "$lp-cream-60",
                               "content": "Oak engineered board",
                               "fontFamily": "$font",
-                              "fontSize": 14
+                              "fontSize": 14,
+                              "fontWeight": "normal"
                             },
                             {
                               "type": "text",
@@ -88604,7 +88615,7 @@
                           "fill": {
                             "type": "image",
                             "enabled": true,
-                            "url": "./images/generated-1787956648904.png",
+                            "url": "images/generated-1787956648904.png",
                             "mode": "fill"
                           },
                           "width": 640,
@@ -88838,7 +88849,7 @@
                           "fill": {
                             "type": "image",
                             "enabled": true,
-                            "url": "./images/generated-1787956650899.png",
+                            "url": "images/generated-1787956650899.png",
                             "mode": "fill"
                           },
                           "width": 640,
@@ -90367,7 +90378,7 @@
                           "fill": {
                             "type": "image",
                             "enabled": true,
-                            "url": "images/stage-1-design.png",
+                            "url": "design.png",
                             "mode": "fill"
                           },
                           "width": 1440,
@@ -94998,7 +95009,8 @@
                           "width": "fill_container",
                           "content": "English",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -95045,7 +95057,8 @@
                           "width": "fill_container",
                           "content": "Español",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -95092,7 +95105,8 @@
                           "width": "fill_container",
                           "content": "Français",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -95139,7 +95153,8 @@
                           "width": "fill_container",
                           "content": "Deutsch",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -95186,7 +95201,8 @@
                           "width": "fill_container",
                           "content": "Italiano",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -95233,7 +95249,8 @@
                           "width": "fill_container",
                           "content": "Polski",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -95280,7 +95297,8 @@
                           "width": "fill_container",
                           "content": "Українська",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -95327,7 +95345,8 @@
                           "width": "fill_container",
                           "content": "Română",
                           "fontFamily": "$font",
-                          "fontSize": 13.5
+                          "fontSize": 13.5,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
@@ -95569,7 +95588,7 @@
               "fill": {
                 "type": "image",
                 "enabled": true,
-                "url": "images/stage-1-design.png",
+                "url": "design.png",
                 "mode": "fill"
               },
               "width": 390,
@@ -96429,7 +96448,7 @@
                           "fill": {
                             "type": "image",
                             "enabled": true,
-                            "url": "images/stage-1-design.png",
+                            "url": "design.png",
                             "mode": "fill"
                           },
                           "width": 170,
@@ -98334,7 +98353,8 @@
                       "width": "fill_container",
                       "content": "   Concrete slab, ground floor",
                       "fontFamily": "$font",
-                      "fontSize": 12.5
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -98346,7 +98366,8 @@
                       "content": "€ 5,428",
                       "textAlign": "right",
                       "fontFamily": "$font",
-                      "fontSize": 12.5
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -98375,7 +98396,8 @@
                       "width": "fill_container",
                       "content": "   Timber frame + sheathing",
                       "fontFamily": "$font",
-                      "fontSize": 12.5
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -98387,7 +98409,8 @@
                       "content": "€ 12,400",
                       "textAlign": "right",
                       "fontFamily": "$font",
-                      "fontSize": 12.5
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -98416,7 +98439,8 @@
                       "width": "fill_container",
                       "content": "   Steel connections",
                       "fontFamily": "$font",
-                      "fontSize": 12.5
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -98428,7 +98452,8 @@
                       "content": "€ 6,272",
                       "textAlign": "right",
                       "fontFamily": "$font",
-                      "fontSize": 12.5
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -98501,7 +98526,8 @@
                       "width": "fill_container",
                       "content": "   Brick + ETICS, north face",
                       "fontFamily": "$font",
-                      "fontSize": 12.5
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -98513,7 +98539,8 @@
                       "content": "€ 6,512",
                       "textAlign": "right",
                       "fontFamily": "$font",
-                      "fontSize": 12.5
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -98542,7 +98569,8 @@
                       "width": "fill_container",
                       "content": "   Aluminium frames",
                       "fontFamily": "$font",
-                      "fontSize": 12.5
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -98554,7 +98582,8 @@
                       "content": "€ 6,088",
                       "textAlign": "right",
                       "fontFamily": "$font",
-                      "fontSize": 12.5
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -98834,7 +98863,8 @@
                           "width": "fill_container",
                           "content": "Oak engineered board",
                           "fontFamily": "$font",
-                          "fontSize": 13
+                          "fontSize": 13,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "text",
