@@ -605,9 +605,13 @@
     padding-top: 0;
     gap: 14px;
   }
-  .lp-record__explainer .copy,
-  .lp-record__explainer .note {
+  /* The note carries the PLAN → CHANGE → PROGRESS line, so it stays on mobile;
+     only the desktop copy paragraph swaps for the mobile body. */
+  .lp-record__explainer .copy {
     display: none;
+  }
+  .lp-record__explainer .note {
+    order: 2;
   }
   .lp-record__explainer .body--mobile {
     display: block;

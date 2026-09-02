@@ -285,9 +285,9 @@
       "agreed": "Azul es lo que acordasteis.",
       "changed": "Naranja es lo que cambió.",
       "closed": "Verde es lo que se cerró.",
-      "explainer": "El scroll hace avanzar las imágenes de la obra mientras el gantt sigue el contrato. El azul se mantiene fijo, el naranja marca la desviación, el verde cierra la fila.",
-      "explainerMobile": "Una línea de tiempo guarda los tres estados a la vez. Las imágenes avanzan con el scroll, la línea base se mantiene azul, el cambio viene en naranja y el trabajo cerrado se pone verde.",
-      "note": "Imagen + gantt, no un pase de diapositivas"
+      "explainer": "Sigue cada etapa de tu obra frente al plan original. Ve qué cambió, entiende el impacto y sabe exactamente qué está terminado.",
+      "explainerMobile": "Sigue cada etapa de tu obra frente al plan original. Ve qué cambió, entiende el impacto y sabe exactamente qué está terminado.",
+      "note": "Plan → Cambio → Progreso"
     },
     "sequence": {
       "label": "El dibujo se convierte en la casa",

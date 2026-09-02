@@ -285,9 +285,9 @@
       "agreed": "Blue is what you agreed.",
       "changed": "Orange is what changed.",
       "closed": "Green is what closed.",
-      "explainer": "The scroll advances the build images while the gantt tracks the contract. Blue stays fixed, orange marks drift, green closes the row.",
-      "explainerMobile": "One timeline holds all three states at once. The images advance with the scroll, the baseline stays blue, the change comes in orange, and closed work turns green.",
-      "note": "Image + gantt, not a slideshow"
+      "explainer": "Track every stage of your project against the original plan. See what changed, understand the impact, and know exactly what's complete.",
+      "explainerMobile": "Track every stage of your project against the original plan. See what changed, understand the impact, and know exactly what's complete.",
+      "note": "Plan → Change → Progress"
     },
     "sequence": {
       "label": "The drawing becomes the house",

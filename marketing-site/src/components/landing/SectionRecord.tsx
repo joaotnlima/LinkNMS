@@ -11,8 +11,8 @@ import { getTranslations } from 'next-intl/server';
 // be removed, it's already on the animation above". Everything they showed is
 // the pinned <ScrollSequence /> that immediately follows, scrubbed rather than
 // laid out flat. A second non-scrubbed copy below the pinned one read as a
-// slideshow, which is the one thing the note ("Image + gantt, not a slideshow")
-// argues against. The reel header was also the only source of the stray
+// slideshow, which is exactly what the pinned sequence exists to avoid.
+// The reel header was also the only source of the stray
 // "03 · Scroll build · Image + gantt" label, which the pen does not have.
 
 export async function SectionRecord() {
