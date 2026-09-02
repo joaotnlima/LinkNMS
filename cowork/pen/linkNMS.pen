@@ -104038,8 +104038,8 @@
         {
           "type": "frame",
           "id": "nTvPS",
-          "x": 154,
-          "y": 442,
+          "x": 47,
+          "y": 55,
           "name": "Email — Product launch",
           "clip": true,
           "width": 600,
@@ -104908,8 +104908,8 @@
         {
           "type": "frame",
           "id": "J8ouwA",
-          "x": 896,
-          "y": 442,
+          "x": 706,
+          "y": 55,
           "name": "Email — Waitlist welcome",
           "clip": true,
           "width": 600,
@@ -105500,8 +105500,8 @@
         {
           "type": "frame",
           "id": "V1Fo2N",
-          "x": 1684,
-          "y": 442,
+          "x": 1365,
+          "y": 55,
           "name": "Email — Oct 1 onboarding",
           "clip": true,
           "width": 600,
@@ -106494,5 +106494,5 @@
   "imports": {
     "h": "pencil:halo.lib.pen"
   },
-  "fileToken": "7a68d014-363d-42d6-89d2-9da4b0b29270"
+  "fileToken": "5b0934d2-dcbb-42b4-87f4-3fa079af8ebb"
 }
