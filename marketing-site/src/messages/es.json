@@ -467,7 +467,8 @@
           "t1": "Solo móvil",
           "t2": "Sesiones cortas",
           "t3": "Necesita tranquilidad"
-        }
+        },
+        "alt": "Marta, propietaria primeriza en Oporto, retrato"
       },
       "joao": {
         "quote": "“No estoy escondiendo nada. Simplemente no tengo dos horas cada noche para escribir lo que ya sé.”",
@@ -477,7 +478,8 @@
           "t1": "Solo móvil",
           "t2": "Poca soltura digital",
           "t3": "10 segundos, no 2 minutos"
-        }
+        },
+        "alt": "João, maestro de obra con 31 años en obra, retrato"
       }
     },
     "cta": {

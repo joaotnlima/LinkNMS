@@ -8,9 +8,13 @@ import { hasLandingImage } from '@/lib/landing-assets';
 // element and the persona set have both changed, and whether that event is
 // remapped or renamed is LINA-83 blocker (b). Guessing costs a rename.
 //
-// ASSET: /images/persona-marta-*, /images/persona-joao-* are not in the repo
-// yet (blocker (a)). Until they land the portraits render on the ink ground
-// with the scrim, so the quote and identity stay readable.
+// ASSET: the two portraits are the pen's `S6 Who It Is For / Row / {Marta,
+// João} / Portrait / Photo` fills, encoded by scripts/encode-landing-images.mjs
+// at 320w/640w. `hasLandingImage` still guards them: if the derived files are
+// ever missing the portrait falls back to the ink ground with the scrim, so the
+// quote and identity stay readable.
+
+const PORTRAIT_SIZES = '(min-width: 940px) 460px, 90vw';
 
 const PERSONAS = [
   { key: 'marta', slug: 'persona-marta', tick: 'var(--plan-baseline)', traits: ['t1', 't2', 't3'] },
@@ -36,9 +40,22 @@ export async function SectionWho() {
               <div className="lp-persona__portrait">
                 {hasLandingImage(`${p.slug}-640`) && (
                   <picture>
-                    <source type="image/avif" srcSet={`/images/${p.slug}-640.avif`} />
-                    <source type="image/webp" srcSet={`/images/${p.slug}-640.webp`} />
-                    <img src={`/images/${p.slug}-640.webp`} alt="" loading="lazy" decoding="async" />
+                    <source
+                      type="image/avif"
+                      srcSet={`/images/${p.slug}-320.avif 320w, /images/${p.slug}-640.avif 640w`}
+                      sizes={PORTRAIT_SIZES}
+                    />
+                    <source
+                      type="image/webp"
+                      srcSet={`/images/${p.slug}-320.webp 320w, /images/${p.slug}-640.webp 640w`}
+                      sizes={PORTRAIT_SIZES}
+                    />
+                    <img
+                      src={`/images/${p.slug}-640.webp`}
+                      alt={t(`${p.key}.alt`)}
+                      loading="lazy"
+                      decoding="async"
+                    />
                   </picture>
                 )}
                 <div className="scrim" aria-hidden="true" />

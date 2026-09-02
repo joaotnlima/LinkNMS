@@ -467,7 +467,8 @@
           "t1": "Só telemóvel",
           "t2": "Sessões curtas",
           "t3": "Precisa de garantias"
-        }
+        },
+        "alt": "Marta, dona de obra pela primeira vez, no Porto, retrato"
       },
       "joao": {
         "quote": "“Não estou a esconder nada. Só não tenho duas horas todas as noites para escrever o que já sei.”",
@@ -477,7 +478,8 @@
           "t1": "Só telemóvel",
           "t2": "Pouco à vontade com tecnologia",
           "t3": "10 segundos, não 2 minutos"
-        }
+        },
+        "alt": "João, mestre de obras com 31 anos de estaleiro, retrato"
       }
     },
     "cta": {

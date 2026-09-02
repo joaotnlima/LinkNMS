@@ -467,7 +467,8 @@
           "t1": "Mobile only",
           "t2": "Short sessions",
           "t3": "Needs reassurance"
-        }
+        },
+        "alt": "Marta, a first-time owner in Porto, portrait"
       },
       "joao": {
         "quote": "“I'm not hiding anything. I just don't have two hours every night to write down what I already know.”",
@@ -477,7 +478,8 @@
           "t1": "Phone only",
           "t2": "Low digital comfort",
           "t3": "10 seconds, not 2 minutes"
-        }
+        },
+        "alt": "João, a master builder with 31 years on site, portrait"
       }
     },
     "cta": {

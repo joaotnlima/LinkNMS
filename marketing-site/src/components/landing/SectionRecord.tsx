@@ -9,16 +9,27 @@ import {
 } from '@/lib/landing-numbers';
 import { PlanTrack } from './PlanTrack';
 import { RevealOnScroll } from './RevealOnScroll';
-import { ScrollReel } from './ScrollReel';
+import { ScrollSequence } from './ScrollSequence';
 
 // 02 · The Record — blue agreed / orange changed / green closed and the gantt
 // the whole encoding is about. The six package values sum to the contract
 // total by construction (see landing-numbers.ts).
 //
-// Order follows the pen's frame: encoding row, then the Scroll Reel (the
-// founder's "fade-in of the images with the scrolling"), then the gantt, with
-// the legend as a sibling after the card. The reel and the gantt each live in
-// a RevealOnScroll shell so the scroll story can animate.
+// Order follows the pen's frame: encoding row, then the Scroll Reel, then the
+// gantt, with the legend as a sibling after the card.
+//
+// The reel slot is the pinned scroll sequence, not a static four-up row. The
+// pen's `Scroll Reel` frame draws four cards because a static design file can
+// only draw the four stills side by side; `key-frames` is the frame that says
+// what those stills actually do — one pinned section, ~300vh mapped to
+// p ∈ [0,1], the four plates cross-fading under the bars and the HUD. Shipping
+// the row *and* the sequence gave the page the same four photographs twice and
+// turned the argument into the slideshow the coupling note warns about, so the
+// row is gone and the sequence lives here, in the reel's slot, between the
+// encoding row and the gantt it is coupled to.
+//
+// The sequence is a sibling of the two `.lp-wrap` blocks rather than a child:
+// its image layer is full-bleed, and ScrollTrigger pins it in place here.
 
 const LEGEND = ['baseline', 'actual', 'closed'] as const;
 const LEGEND_FILL: Record<(typeof LEGEND)[number], string> = {
@@ -53,10 +64,18 @@ export async function SectionRecord({ locale }: { locale: string }) {
           </div>
         </div>
 
-        <RevealOnScroll variant="reel">
-          <ScrollReel />
-        </RevealOnScroll>
+        <header className="lp-reel__head">
+          <span className="lp-reel__index lp-reel__index--desktop">{t('reel.index')}</span>
+          <span className="lp-reel__index lp-reel__index--mobile">{t('reel.indexMobile')}</span>
+          <span className="lp-reel__title lp-reel__title--desktop">{t('reel.title')}</span>
+          <span className="lp-reel__title lp-reel__title--mobile">{t('reel.titleMobile')}</span>
+          <span className="rule" aria-hidden="true" />
+        </header>
+      </div>
 
+      <ScrollSequence locale={locale} />
+
+      <div className="lp-wrap">
         <RevealOnScroll variant="gantt">
           <div className="lp-gantt">
             <table>

@@ -8,9 +8,16 @@ import { NavLink } from './NavLink';
 // Hero. The brand at rest is the 196px wordmark here — which is why the header
 // carries no lockup until it sticks (spec §2, "Why the lockup").
 //
-// ASSET: /images/hero-* is not in the repo yet (LINA-83 blocker (a)). Until it
-// lands the hero renders on the ink ground with the scrim — dark and legible,
-// not broken.
+// ASSET: the pen fills `landing-page / Hero / Hero Photo` with
+// `images/stage-1-design.png` — the same plate the sequence opens on, which is
+// the point: the page starts on the drawing and ends on the house. So the hero
+// reuses the already-encoded stage-1 derivatives rather than shipping a second
+// copy of the same photograph under a `hero-*` name. It is the LCP image, so it
+// loads eager at high priority; the sequence's own stage-1 <img> is the same
+// URL and comes free from cache.
+
+/** `Hero Photo` in the pen: the stage-1 plate, shared with the sequence. */
+const HERO_SLUG = 'stage-1-design';
 
 const PLATFORM_ICONS = {
   ios: PhoneIcon,
@@ -23,12 +30,27 @@ export async function Hero() {
 
   return (
     <section className="lp-hero" id="top">
-      {hasLandingImage('hero-1600') && (
+      {hasLandingImage(`${HERO_SLUG}-1400`) && (
         <div className="lp-hero__media" aria-hidden="true">
           <picture>
-            <source type="image/avif" srcSet="/images/hero-700.avif 700w, /images/hero-1600.avif 1600w" sizes="100vw" />
-            <source type="image/webp" srcSet="/images/hero-700.webp 700w, /images/hero-1600.webp 1600w" sizes="100vw" />
-            <img src="/images/hero-1600.webp" alt="" decoding="async" fetchPriority="high" />
+            <source
+              type="image/avif"
+              srcSet={`/images/${HERO_SLUG}-700.avif 700w, /images/${HERO_SLUG}-1400.avif 1400w`}
+              sizes="100vw"
+            />
+            <source
+              type="image/webp"
+              srcSet={`/images/${HERO_SLUG}-700.webp 700w, /images/${HERO_SLUG}-1400.webp 1400w`}
+              sizes="100vw"
+            />
+            <img
+              src={`/images/${HERO_SLUG}-1400.webp`}
+              alt=""
+              width={1402}
+              height={1122}
+              decoding="async"
+              fetchPriority="high"
+            />
           </picture>
         </div>
       )}

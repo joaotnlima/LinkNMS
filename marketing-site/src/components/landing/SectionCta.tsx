@@ -6,6 +6,7 @@ import {
   MATERIALS_DELTA_SINCE_MARCH,
   PHONE_PREVIEW,
   PHONE_TRACK_UNITS,
+  SEQUENCE_CLOSED_BASELINE_OPACITY,
   TRACK_LANE_HEIGHT,
   formatEur,
   formatEurDelta
@@ -86,7 +87,7 @@ export async function SectionCta({ locale, source }: { locale: string; source: s
           <div className="lp-phone__status">
             <span>9:41</span>
             <span className="lp-phone__island" aria-hidden="true" />
-            <span aria-hidden="true">▮</span>
+            <span className="lp-phone__battery" aria-hidden="true" />
           </div>
           <p className="lp-phone__build">{PHONE_PREVIEW.buildName}</p>
           <p className="lp-phone__week">
@@ -97,19 +98,29 @@ export async function SectionCta({ locale, source }: { locale: string; source: s
             <span>{tp('tabs.money')}</span>
             <span>{tp('tabs.history')}</span>
           </div>
-          {PHONE_ROWS.map((row) => (
-            <div className="lp-phone__row" key={row.key}>
-              <p className="n">{tp(`rows.${row.key}`)}</p>
-              <PlanTrack
-                rowKey={`phone-${row.key}`}
-                trackUnits={PHONE_TRACK_UNITS_160}
-                laneHeight={TRACK_LANE_HEIGHT - 1}
-                laneGap={2}
-                planned={row.planned}
-                actual={row.actual}
-              />
-            </div>
-          ))}
+          <div className="lp-phone__bars">
+            {PHONE_ROWS.map((row) => {
+              const open = row.actual.state !== 'closed';
+              return (
+                <div className="lp-phone__row" key={row.key} data-open={open ? 'true' : 'false'}>
+                  <p className="n">{tp(`rows.${row.key}`)}</p>
+                  <PlanTrack
+                    rowKey={`phone-${row.key}`}
+                    trackUnits={PHONE_TRACK_UNITS_160}
+                    // Pen: 6px lanes, 3px apart — the shared gap default.
+                    laneHeight={TRACK_LANE_HEIGHT - 1}
+                    planned={row.planned}
+                    actual={row.actual}
+                    // Same rule the sequence ends on: once a row has closed, the
+                    // blue baseline drops to 35% — still on the record, no longer
+                    // the thing being read. The open row keeps its baseline full,
+                    // because that is the bar the slip is measured against.
+                    baselineOpacity={open ? 1 : SEQUENCE_CLOSED_BASELINE_OPACITY}
+                  />
+                </div>
+              );
+            })}
+          </div>
           <div className="lp-phone__money">
             <span>
               <span className="ml lp-micro" style={{ display: 'block' }}>
