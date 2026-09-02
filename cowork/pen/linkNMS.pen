@@ -106201,6 +106201,2394 @@
               ]
             }
           ]
+        },
+        {
+          "type": "frame",
+          "id": "fN7eA",
+          "x": 2024,
+          "y": 55,
+          "name": "Email — Invite Owner",
+          "clip": true,
+          "width": 600,
+          "fill": "$lp-cream",
+          "cornerRadius": 14,
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "frame",
+              "id": "Ze96i",
+              "name": "Top Bar",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "padding": [
+                16,
+                32
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "ei7oi",
+                  "name": "Wordmark",
+                  "fill": "$lp-cream",
+                  "content": "LinkNMS",
+                  "fontFamily": "$lp-display",
+                  "fontSize": 17,
+                  "fontWeight": "800",
+                  "letterSpacing": -0.4
+                },
+                {
+                  "type": "text",
+                  "id": "UpjQ0",
+                  "name": "Kicker",
+                  "fill": "$lp-cream-40",
+                  "content": "YOU'RE INVITED",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.4
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "w0VHQ",
+              "name": "Invite Strip",
+              "width": "fill_container",
+              "fill": "#16181d",
+              "stroke": "#fbfaf714",
+              "strokeWidth": {
+                "bottom": 1
+              },
+              "gap": 14,
+              "padding": [
+                22,
+                40
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Pg60R",
+                  "name": "Avatar",
+                  "width": 42,
+                  "height": 42,
+                  "fill": "$plan-baseline",
+                  "cornerRadius": 999,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "SNzja",
+                      "name": "In",
+                      "fill": "$lp-cream",
+                      "content": "AC",
+                      "fontFamily": "$font",
+                      "fontSize": 15,
+                      "fontWeight": "800"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "i74Mu",
+                  "name": "Who",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 1,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "lTtPT",
+                      "name": "W1",
+                      "fill": "$lp-cream",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Alex Costa · Maple Street Builders",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "EfvUb",
+                      "name": "W2",
+                      "fill": "$lp-cream-60",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "invited you to the project “Maple Street House”",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "l0nuM",
+              "name": "Hero",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "layout": "vertical",
+              "gap": 18,
+              "padding": [
+                36,
+                40,
+                38,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "x86QW",
+                  "name": "Eyebrow",
+                  "fill": "$plan-closed-line",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "FOR THE HOMEOWNER",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "700",
+                  "letterSpacing": 1.5
+                },
+                {
+                  "type": "text",
+                  "id": "sNQLn",
+                  "name": "Headline",
+                  "fill": "$lp-cream",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Watch your build — without the phone calls.",
+                  "lineHeight": 1.05,
+                  "fontFamily": "$lp-display",
+                  "fontSize": 38,
+                  "fontWeight": "800",
+                  "letterSpacing": -1.4
+                },
+                {
+                  "type": "text",
+                  "id": "cCj6j",
+                  "name": "Subhead",
+                  "fill": "$lp-cream-60",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "You've been invited to follow your project on LinkNMS: one live timeline your builder keeps up to date, so you always know exactly where things stand.",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font",
+                  "fontSize": 16,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "oN3Fx",
+                  "name": "CTA Row",
+                  "gap": 12,
+                  "padding": [
+                    6,
+                    0,
+                    0,
+                    0
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "H26Rp1",
+                      "name": "CTA Accept invitation",
+                      "fill": "$lp-cream",
+                      "cornerRadius": 7,
+                      "padding": [
+                        15,
+                        26
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "o059M1",
+                          "name": "Label",
+                          "fill": "$lp-ink",
+                          "content": "Accept invitation",
+                          "fontFamily": "$font",
+                          "fontSize": 14,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.2
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "p0nAw",
+                      "name": "Sub",
+                      "fill": "$lp-cream-40",
+                      "content": "Takes about a minute",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "id": "dfEnG",
+              "name": "Image",
+              "fill": {
+                "type": "image",
+                "enabled": true,
+                "url": "images/stage-4-house-built.png",
+                "mode": "fill"
+              },
+              "width": 600,
+              "height": 210
+            },
+            {
+              "type": "frame",
+              "id": "u6NaPn",
+              "name": "Plain",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 10,
+              "padding": [
+                34,
+                40,
+                6,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "mTAG8",
+                  "name": "Sec",
+                  "fill": "#16181d99",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "IN PLAIN TERMS",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.5
+                },
+                {
+                  "type": "text",
+                  "id": "lhkG5",
+                  "name": "PlainBody",
+                  "fill": "$lp-ink",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "LinkNMS is a shared schedule for your build. Your builder updates it; you open it whenever you like and see real progress — not a promise.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 17,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "B9JEds",
+              "name": "Advantages",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 20,
+              "padding": [
+                22,
+                40,
+                36,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "fcnmL",
+                  "name": "Sec2",
+                  "fill": "#16181d99",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "WHY IT HELPS YOU",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.5
+                },
+                {
+                  "type": "frame",
+                  "id": "hNk9n",
+                  "name": "See progress live",
+                  "width": "fill_container",
+                  "gap": 13,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "iQNlW",
+                      "name": "IcoWrap",
+                      "fill": "#16181d0a",
+                      "cornerRadius": 8,
+                      "padding": 9,
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "r9RCzx",
+                          "name": "I",
+                          "width": 18,
+                          "height": 18,
+                          "icon": "eye",
+                          "library": "lucide",
+                          "fill": "$lp-ink"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "eU9aD",
+                      "name": "Txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "eLGaV",
+                          "name": "T",
+                          "fill": "$lp-ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "See progress live",
+                          "fontFamily": "$font",
+                          "fontSize": 15,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "KG1tK",
+                          "name": "D",
+                          "fill": "#16181d99",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "The plan is blue, approved changes are orange, finished work turns green. One glance tells you everything.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "GRi5B",
+                  "name": "No invoice surprises",
+                  "width": "fill_container",
+                  "gap": 13,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "yfliW",
+                      "name": "IcoWrap",
+                      "fill": "#16181d0a",
+                      "cornerRadius": 8,
+                      "padding": 9,
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "VDJhH",
+                          "name": "I",
+                          "width": 18,
+                          "height": 18,
+                          "icon": "receipt",
+                          "library": "lucide",
+                          "fill": "$lp-ink"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "CwOmF",
+                      "name": "Txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Eh4U9",
+                          "name": "T",
+                          "fill": "$lp-ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "No invoice surprises",
+                          "fontFamily": "$font",
+                          "fontSize": 15,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Lo6Pw",
+                          "name": "D",
+                          "fill": "#16181d99",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Every change is dated and priced before it happens, so the final bill matches what you agreed.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ceIfN",
+                  "name": "Everything in one place",
+                  "width": "fill_container",
+                  "gap": 13,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Qrci8",
+                      "name": "IcoWrap",
+                      "fill": "#16181d0a",
+                      "cornerRadius": 8,
+                      "padding": 9,
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "ysVVA",
+                          "name": "I",
+                          "width": 18,
+                          "height": 18,
+                          "icon": "image",
+                          "library": "lucide",
+                          "fill": "$lp-ink"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Im91U",
+                      "name": "Txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "kmej1",
+                          "name": "T",
+                          "fill": "$lp-ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Everything in one place",
+                          "fontFamily": "$font",
+                          "fontSize": 15,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "x2uLap",
+                          "name": "D",
+                          "fill": "#16181d99",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Photos, approvals and the timeline together — no scattered emails or group chats.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "hramH",
+              "name": "Colour Line",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "gap": 18,
+              "padding": [
+                20,
+                40
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "cfyrU",
+                  "name": "B",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 3,
+                      "id": "jzvxE",
+                      "name": "S",
+                      "fill": "$plan-baseline",
+                      "width": 12,
+                      "height": 12
+                    },
+                    {
+                      "type": "text",
+                      "id": "vJWM2",
+                      "name": "T",
+                      "fill": "$lp-cream-60",
+                      "content": "Plan",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "CtNbW",
+                  "name": "O",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 3,
+                      "id": "Z7Xw7",
+                      "name": "S",
+                      "fill": "$plan-actual",
+                      "width": 12,
+                      "height": 12
+                    },
+                    {
+                      "type": "text",
+                      "id": "gRbSI",
+                      "name": "T",
+                      "fill": "$lp-cream-60",
+                      "content": "Change",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Y4sBi",
+                  "name": "G",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "D2KAe",
+                      "name": "S",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "badge-check",
+                      "library": "lucide",
+                      "fill": "$plan-closed-line"
+                    },
+                    {
+                      "type": "text",
+                      "id": "vZbk8",
+                      "name": "T",
+                      "fill": "$lp-cream-60",
+                      "content": "Done",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "A3qPWY",
+              "name": "CTA Band",
+              "width": "fill_container",
+              "fill": "$lp-stone",
+              "layout": "vertical",
+              "gap": 14,
+              "padding": [
+                34,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "HAlgD",
+                  "name": "Big",
+                  "fill": "$lp-ink",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Follow your house, room by room.",
+                  "fontFamily": "$lp-display",
+                  "fontSize": 25,
+                  "fontWeight": "800",
+                  "letterSpacing": -0.7
+                },
+                {
+                  "type": "text",
+                  "id": "KSlUF",
+                  "name": "Small",
+                  "fill": "#16181d99",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Join free — your builder already set everything up. Just say yes.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "BoDVw",
+                  "name": "CTA Accept & open project",
+                  "fill": "$lp-ink",
+                  "cornerRadius": 7,
+                  "padding": [
+                    15,
+                    26
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Tn1ba",
+                      "name": "Label",
+                      "fill": "$lp-cream",
+                      "content": "Accept & open project",
+                      "fontFamily": "$font",
+                      "fontSize": 14,
+                      "fontWeight": "700",
+                      "letterSpacing": 0.2
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "HYwcX",
+              "name": "Footer",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "layout": "vertical",
+              "gap": 10,
+              "padding": [
+                32,
+                40,
+                36,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "C4sfDF",
+                  "name": "FBrand",
+                  "fill": "$lp-cream",
+                  "content": "LinkNMS",
+                  "fontFamily": "$lp-display",
+                  "fontSize": 15,
+                  "fontWeight": "800",
+                  "letterSpacing": -0.3
+                },
+                {
+                  "type": "text",
+                  "id": "CGx0f",
+                  "name": "FLine",
+                  "fill": "$lp-cream-40",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "One shared timeline for every build. Blue, orange, green.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "l21puR",
+                  "name": "FLinks",
+                  "gap": 16,
+                  "padding": [
+                    6,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Q8QfN",
+                      "name": "L1",
+                      "fill": "$lp-cream-60",
+                      "content": "Help centre",
+                      "fontFamily": "$font",
+                      "fontSize": 11,
+                      "fontWeight": "600",
+                      "letterSpacing": 0.3
+                    },
+                    {
+                      "type": "text",
+                      "id": "rO6T5",
+                      "name": "L2",
+                      "fill": "$lp-cream-60",
+                      "content": "Privacy",
+                      "fontFamily": "$font",
+                      "fontSize": 11,
+                      "fontWeight": "600",
+                      "letterSpacing": 0.3
+                    },
+                    {
+                      "type": "text",
+                      "id": "svqU1",
+                      "name": "L3",
+                      "fill": "$lp-cream-60",
+                      "content": "View in browser",
+                      "fontFamily": "$font",
+                      "fontSize": 11,
+                      "fontWeight": "600",
+                      "letterSpacing": 0.3
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "cKUIA",
+                  "name": "Addr",
+                  "fill": "#fbfaf740",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "LinkNMS · 12 Old Wharf, Lisbon · You received this because someone invited you to a project on LinkNMS.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "fRoJC",
+          "x": 2683,
+          "y": 55,
+          "name": "Email — Invite Contractor",
+          "clip": true,
+          "width": 600,
+          "fill": "$lp-cream",
+          "cornerRadius": 14,
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "frame",
+              "id": "xrklO",
+              "name": "Top Bar",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "padding": [
+                16,
+                32
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "enXwn",
+                  "name": "Wordmark",
+                  "fill": "$lp-cream",
+                  "content": "LinkNMS",
+                  "fontFamily": "$lp-display",
+                  "fontSize": 17,
+                  "fontWeight": "800",
+                  "letterSpacing": -0.4
+                },
+                {
+                  "type": "text",
+                  "id": "t5cCg",
+                  "name": "Kicker",
+                  "fill": "$lp-cream-40",
+                  "content": "YOU'RE INVITED",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.4
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "zdYvg",
+              "name": "Invite Strip",
+              "width": "fill_container",
+              "fill": "#16181d",
+              "stroke": "#fbfaf714",
+              "strokeWidth": {
+                "bottom": 1
+              },
+              "gap": 14,
+              "padding": [
+                22,
+                40
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "xbVQA",
+                  "name": "Avatar",
+                  "width": 42,
+                  "height": 42,
+                  "fill": "$plan-actual",
+                  "cornerRadius": 999,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "oCK6n",
+                      "name": "In",
+                      "fill": "$lp-cream",
+                      "content": "AC",
+                      "fontFamily": "$font",
+                      "fontSize": 15,
+                      "fontWeight": "800"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "eRc5h",
+                  "name": "Who",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 1,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "zA4SK",
+                      "name": "W1",
+                      "fill": "$lp-cream",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Alex Costa · Maple Street Builders",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "RlhA9",
+                      "name": "W2",
+                      "fill": "$lp-cream-60",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "invited you to the project “Maple Street House”",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Dpfe9",
+              "name": "Hero",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "layout": "vertical",
+              "gap": 18,
+              "padding": [
+                36,
+                40,
+                38,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "dQBYD",
+                  "name": "Eyebrow",
+                  "fill": "$plan-closed-line",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "FOR THE MAIN CONTRACTOR",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "700",
+                  "letterSpacing": 1.5
+                },
+                {
+                  "type": "text",
+                  "id": "HE8Ik",
+                  "name": "Headline",
+                  "fill": "$lp-cream",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Run the whole build from one timeline.",
+                  "lineHeight": 1.05,
+                  "fontFamily": "$lp-display",
+                  "fontSize": 38,
+                  "fontWeight": "800",
+                  "letterSpacing": -1.4
+                },
+                {
+                  "type": "text",
+                  "id": "TK6LI",
+                  "name": "Subhead",
+                  "fill": "$lp-cream-60",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "You've been invited to manage this project on LinkNMS. Update the schedule once and everyone — the owner and your trades — sees the same truth.",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font",
+                  "fontSize": 16,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "d6J6HP",
+                  "name": "CTA Row",
+                  "gap": 12,
+                  "padding": [
+                    6,
+                    0,
+                    0,
+                    0
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "N6gPKu",
+                      "name": "CTA Accept invitation",
+                      "fill": "$lp-cream",
+                      "cornerRadius": 7,
+                      "padding": [
+                        15,
+                        26
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "A2PCm",
+                          "name": "Label",
+                          "fill": "$lp-ink",
+                          "content": "Accept invitation",
+                          "fontFamily": "$font",
+                          "fontSize": 14,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.2
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "O9DV1",
+                      "name": "Sub",
+                      "fill": "$lp-cream-40",
+                      "content": "Takes about a minute",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "id": "l5niG",
+              "name": "Image",
+              "fill": {
+                "type": "image",
+                "enabled": true,
+                "url": "images/stage-2-structure.png",
+                "mode": "fill"
+              },
+              "width": 600,
+              "height": 210
+            },
+            {
+              "type": "frame",
+              "id": "P0ftwL",
+              "name": "Plain",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 10,
+              "padding": [
+                34,
+                40,
+                6,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "geMwx",
+                  "name": "Sec",
+                  "fill": "#16181d99",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "IN PLAIN TERMS",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.5
+                },
+                {
+                  "type": "text",
+                  "id": "PG1Nj",
+                  "name": "PlainBody",
+                  "fill": "$lp-ink",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "LinkNMS turns your programme into a shared, colour-coded timeline. It records the plan, the changes and what's actually done — automatically kept in sync.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 17,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "nsqcn",
+              "name": "Advantages",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 20,
+              "padding": [
+                22,
+                40,
+                36,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "ong0l",
+                  "name": "Sec2",
+                  "fill": "#16181d99",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "WHY IT HELPS YOU",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.5
+                },
+                {
+                  "type": "frame",
+                  "id": "O4Vb4",
+                  "name": "Cut the status meetings",
+                  "width": "fill_container",
+                  "gap": 13,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "mmhBf",
+                      "name": "IcoWrap",
+                      "fill": "#16181d0a",
+                      "cornerRadius": 8,
+                      "padding": 9,
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "STt4V",
+                          "name": "I",
+                          "width": 18,
+                          "height": 18,
+                          "icon": "calendar-off",
+                          "library": "lucide",
+                          "fill": "$lp-ink"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Kn6q1",
+                      "name": "Txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "kqSL7",
+                          "name": "T",
+                          "fill": "$lp-ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Cut the status meetings",
+                          "fontFamily": "$font",
+                          "fontSize": 15,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "K3OPSi",
+                          "name": "D",
+                          "fill": "#16181d99",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "The timeline answers “where are we?” for everyone, so you stop repeating yourself.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "nr2tx",
+                  "name": "Protect every variation",
+                  "width": "fill_container",
+                  "gap": 13,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "l5sj0a",
+                      "name": "IcoWrap",
+                      "fill": "#16181d0a",
+                      "cornerRadius": 8,
+                      "padding": 9,
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "iWhws",
+                          "name": "I",
+                          "width": 18,
+                          "height": 18,
+                          "icon": "file-signature",
+                          "library": "lucide",
+                          "fill": "$lp-ink"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "o9mdQ",
+                      "name": "Txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "d0jZiL",
+                          "name": "T",
+                          "fill": "$lp-ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Protect every variation",
+                          "fontFamily": "$font",
+                          "fontSize": 15,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "rh1qM",
+                          "name": "D",
+                          "fill": "#16181d99",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Log changes as they happen — dated, priced and signed. Drift becomes a record, not a dispute.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "U01Ab",
+                  "name": "Coordinate your trades",
+                  "width": "fill_container",
+                  "gap": 13,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ia1Ey",
+                      "name": "IcoWrap",
+                      "fill": "#16181d0a",
+                      "cornerRadius": 8,
+                      "padding": 9,
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "vCY2O",
+                          "name": "I",
+                          "width": 18,
+                          "height": 18,
+                          "icon": "users",
+                          "library": "lucide",
+                          "fill": "$lp-ink"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "RxEl9",
+                      "name": "Txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "M3cxV4",
+                          "name": "T",
+                          "fill": "$lp-ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Coordinate your trades",
+                          "fontFamily": "$font",
+                          "fontSize": 15,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "MbRxs",
+                          "name": "D",
+                          "fill": "#16181d99",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Assign rows to sub-contractors and watch them close. Nothing falls through the cracks.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "nksup",
+              "name": "Colour Line",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "gap": 18,
+              "padding": [
+                20,
+                40
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "BIyus",
+                  "name": "B",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 3,
+                      "id": "yg6dX",
+                      "name": "S",
+                      "fill": "$plan-baseline",
+                      "width": 12,
+                      "height": 12
+                    },
+                    {
+                      "type": "text",
+                      "id": "GOz0c",
+                      "name": "T",
+                      "fill": "$lp-cream-60",
+                      "content": "Plan",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "o1zCFZ",
+                  "name": "O",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 3,
+                      "id": "QoI04",
+                      "name": "S",
+                      "fill": "$plan-actual",
+                      "width": 12,
+                      "height": 12
+                    },
+                    {
+                      "type": "text",
+                      "id": "ImcHL",
+                      "name": "T",
+                      "fill": "$lp-cream-60",
+                      "content": "Change",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Lr70X",
+                  "name": "G",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "joxIH",
+                      "name": "S",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "badge-check",
+                      "library": "lucide",
+                      "fill": "$plan-closed-line"
+                    },
+                    {
+                      "type": "text",
+                      "id": "XawuR",
+                      "name": "T",
+                      "fill": "$lp-cream-60",
+                      "content": "Done",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "FX6YF",
+              "name": "CTA Band",
+              "width": "fill_container",
+              "fill": "$lp-stone",
+              "layout": "vertical",
+              "gap": 14,
+              "padding": [
+                34,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "vD6KM",
+                  "name": "Big",
+                  "fill": "$lp-ink",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "One programme. Everyone aligned.",
+                  "fontFamily": "$lp-display",
+                  "fontSize": 25,
+                  "fontWeight": "800",
+                  "letterSpacing": -0.7
+                },
+                {
+                  "type": "text",
+                  "id": "ZzbIF",
+                  "name": "Small",
+                  "fill": "#16181d99",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Join free — your builder already set everything up. Just say yes.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "AgOar",
+                  "name": "CTA Accept & open project",
+                  "fill": "$lp-ink",
+                  "cornerRadius": 7,
+                  "padding": [
+                    15,
+                    26
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "d3O61",
+                      "name": "Label",
+                      "fill": "$lp-cream",
+                      "content": "Accept & open project",
+                      "fontFamily": "$font",
+                      "fontSize": 14,
+                      "fontWeight": "700",
+                      "letterSpacing": 0.2
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "pCN5M",
+              "name": "Footer",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "layout": "vertical",
+              "gap": 10,
+              "padding": [
+                32,
+                40,
+                36,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "h2fvB",
+                  "name": "FBrand",
+                  "fill": "$lp-cream",
+                  "content": "LinkNMS",
+                  "fontFamily": "$lp-display",
+                  "fontSize": 15,
+                  "fontWeight": "800",
+                  "letterSpacing": -0.3
+                },
+                {
+                  "type": "text",
+                  "id": "S9t59j",
+                  "name": "FLine",
+                  "fill": "$lp-cream-40",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "One shared timeline for every build. Blue, orange, green.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "hXdAS",
+                  "name": "FLinks",
+                  "gap": 16,
+                  "padding": [
+                    6,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "l0g7cr",
+                      "name": "L1",
+                      "fill": "$lp-cream-60",
+                      "content": "Help centre",
+                      "fontFamily": "$font",
+                      "fontSize": 11,
+                      "fontWeight": "600",
+                      "letterSpacing": 0.3
+                    },
+                    {
+                      "type": "text",
+                      "id": "uHzCG",
+                      "name": "L2",
+                      "fill": "$lp-cream-60",
+                      "content": "Privacy",
+                      "fontFamily": "$font",
+                      "fontSize": 11,
+                      "fontWeight": "600",
+                      "letterSpacing": 0.3
+                    },
+                    {
+                      "type": "text",
+                      "id": "vtPcp",
+                      "name": "L3",
+                      "fill": "$lp-cream-60",
+                      "content": "View in browser",
+                      "fontFamily": "$font",
+                      "fontSize": 11,
+                      "fontWeight": "600",
+                      "letterSpacing": 0.3
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "GOxZz",
+                  "name": "Addr",
+                  "fill": "#fbfaf740",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "LinkNMS · 12 Old Wharf, Lisbon · You received this because someone invited you to a project on LinkNMS.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "I52nF",
+          "x": 3342,
+          "y": 55,
+          "name": "Email — Invite Sub-contractor",
+          "clip": true,
+          "width": 600,
+          "fill": "$lp-cream",
+          "cornerRadius": 14,
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "frame",
+              "id": "a633p",
+              "name": "Top Bar",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "padding": [
+                16,
+                32
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "FzDA7",
+                  "name": "Wordmark",
+                  "fill": "$lp-cream",
+                  "content": "LinkNMS",
+                  "fontFamily": "$lp-display",
+                  "fontSize": 17,
+                  "fontWeight": "800",
+                  "letterSpacing": -0.4
+                },
+                {
+                  "type": "text",
+                  "id": "n4dKm1",
+                  "name": "Kicker",
+                  "fill": "$lp-cream-40",
+                  "content": "YOU'RE INVITED",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.4
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "xeHHw",
+              "name": "Invite Strip",
+              "width": "fill_container",
+              "fill": "#16181d",
+              "stroke": "#fbfaf714",
+              "strokeWidth": {
+                "bottom": 1
+              },
+              "gap": 14,
+              "padding": [
+                22,
+                40
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "e1TDpe",
+                  "name": "Avatar",
+                  "width": 42,
+                  "height": 42,
+                  "fill": "$plan-closed",
+                  "cornerRadius": 999,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "n6ZOYE",
+                      "name": "In",
+                      "fill": "$lp-cream",
+                      "content": "AC",
+                      "fontFamily": "$font",
+                      "fontSize": 15,
+                      "fontWeight": "800"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ownvW",
+                  "name": "Who",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 1,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "dnQhE",
+                      "name": "W1",
+                      "fill": "$lp-cream",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Alex Costa · Maple Street Builders",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "OOdE6",
+                      "name": "W2",
+                      "fill": "$lp-cream-60",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "invited you to the project “Maple Street House”",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "G1cXld",
+              "name": "Hero",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "layout": "vertical",
+              "gap": 18,
+              "padding": [
+                36,
+                40,
+                38,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "W2Vm8",
+                  "name": "Eyebrow",
+                  "fill": "$plan-closed-line",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "FOR THE SUB-CONTRACTOR",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "700",
+                  "letterSpacing": 1.5
+                },
+                {
+                  "type": "text",
+                  "id": "qAXoi",
+                  "name": "Headline",
+                  "fill": "$lp-cream",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "See your tasks. Close them. Get paid.",
+                  "lineHeight": 1.05,
+                  "fontFamily": "$lp-display",
+                  "fontSize": 38,
+                  "fontWeight": "800",
+                  "letterSpacing": -1.4
+                },
+                {
+                  "type": "text",
+                  "id": "TwI1K",
+                  "name": "Subhead",
+                  "fill": "$lp-cream-60",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "You've been invited to a project on LinkNMS. It shows exactly which tasks are yours, when they're due, and what “done” looks like — no chasing drawings.",
+                  "lineHeight": 1.55,
+                  "fontFamily": "$font",
+                  "fontSize": 16,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "AoOLU",
+                  "name": "CTA Row",
+                  "gap": 12,
+                  "padding": [
+                    6,
+                    0,
+                    0,
+                    0
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "NGDT9",
+                      "name": "CTA Accept invitation",
+                      "fill": "$lp-cream",
+                      "cornerRadius": 7,
+                      "padding": [
+                        15,
+                        26
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "uCMjL",
+                          "name": "Label",
+                          "fill": "$lp-ink",
+                          "content": "Accept invitation",
+                          "fontFamily": "$font",
+                          "fontSize": 14,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.2
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "s6sRng",
+                      "name": "Sub",
+                      "fill": "$lp-cream-40",
+                      "content": "Takes about a minute",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "id": "WrSPp",
+              "name": "Image",
+              "fill": {
+                "type": "image",
+                "enabled": true,
+                "url": "images/stage-3-finishing.png",
+                "mode": "fill"
+              },
+              "width": 600,
+              "height": 210
+            },
+            {
+              "type": "frame",
+              "id": "gMqb5",
+              "name": "Plain",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 10,
+              "padding": [
+                34,
+                40,
+                6,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "QVSl6",
+                  "name": "Sec",
+                  "fill": "#16181d99",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "IN PLAIN TERMS",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.5
+                },
+                {
+                  "type": "text",
+                  "id": "aamJM",
+                  "name": "PlainBody",
+                  "fill": "$lp-ink",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "LinkNMS is a shared build schedule. You only see the rows assigned to you, mark them complete, and attach proof — so approvals and payments move faster.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 17,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "mNlbx",
+              "name": "Advantages",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 20,
+              "padding": [
+                22,
+                40,
+                36,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "o1FTx",
+                  "name": "Sec2",
+                  "fill": "#16181d99",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "WHY IT HELPS YOU",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.5
+                },
+                {
+                  "type": "frame",
+                  "id": "Tw7fM",
+                  "name": "Only your tasks",
+                  "width": "fill_container",
+                  "gap": 13,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "JxH9u",
+                      "name": "IcoWrap",
+                      "fill": "#16181d0a",
+                      "cornerRadius": 8,
+                      "padding": 9,
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "lXY11",
+                          "name": "I",
+                          "width": 18,
+                          "height": 18,
+                          "icon": "list-checks",
+                          "library": "lucide",
+                          "fill": "$lp-ink"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "i5JvGb",
+                      "name": "Txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "B3c888",
+                          "name": "T",
+                          "fill": "$lp-ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Only your tasks",
+                          "fontFamily": "$font",
+                          "fontSize": 15,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "KbSnp",
+                          "name": "D",
+                          "fill": "#16181d99",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "No noise. Just the work assigned to you, with clear dates and scope.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "m8MKqw",
+                  "name": "Prove it in seconds",
+                  "width": "fill_container",
+                  "gap": 13,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "BlZrt",
+                      "name": "IcoWrap",
+                      "fill": "#16181d0a",
+                      "cornerRadius": 8,
+                      "padding": 9,
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "lNgfU",
+                          "name": "I",
+                          "width": 18,
+                          "height": 18,
+                          "icon": "camera",
+                          "library": "lucide",
+                          "fill": "$lp-ink"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ijm0s",
+                      "name": "Txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "yOD4a",
+                          "name": "T",
+                          "fill": "$lp-ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Prove it in seconds",
+                          "fontFamily": "$font",
+                          "fontSize": 15,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "iand4",
+                          "name": "D",
+                          "fill": "#16181d99",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Mark a row done and upload a photo. Sign-off keeps both plan and actual on record.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "OeE2I",
+                  "name": "Faster approvals",
+                  "width": "fill_container",
+                  "gap": 13,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "iYrZ8",
+                      "name": "IcoWrap",
+                      "fill": "#16181d0a",
+                      "cornerRadius": 8,
+                      "padding": 9,
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "Eh28v",
+                          "name": "I",
+                          "width": 18,
+                          "height": 18,
+                          "icon": "clock",
+                          "library": "lucide",
+                          "fill": "$lp-ink"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "QNAjS",
+                      "name": "Txt",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        2,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "S5yjQ",
+                          "name": "T",
+                          "fill": "$lp-ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Faster approvals",
+                          "fontFamily": "$font",
+                          "fontSize": 15,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "l6TVlu",
+                          "name": "D",
+                          "fill": "#16181d99",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Clear scope and dated work means less back-and-forth and quicker sign-off.",
+                          "lineHeight": 1.5,
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "GGuv9",
+              "name": "Colour Line",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "gap": 18,
+              "padding": [
+                20,
+                40
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Fz3Ks",
+                  "name": "B",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 3,
+                      "id": "HnUVK",
+                      "name": "S",
+                      "fill": "$plan-baseline",
+                      "width": 12,
+                      "height": 12
+                    },
+                    {
+                      "type": "text",
+                      "id": "BP90a",
+                      "name": "T",
+                      "fill": "$lp-cream-60",
+                      "content": "Plan",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "lu5vS",
+                  "name": "O",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 3,
+                      "id": "F4SjA1",
+                      "name": "S",
+                      "fill": "$plan-actual",
+                      "width": 12,
+                      "height": 12
+                    },
+                    {
+                      "type": "text",
+                      "id": "q1QDfE",
+                      "name": "T",
+                      "fill": "$lp-cream-60",
+                      "content": "Change",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "K0JGur",
+                  "name": "G",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "e8Y1F",
+                      "name": "S",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "badge-check",
+                      "library": "lucide",
+                      "fill": "$plan-closed-line"
+                    },
+                    {
+                      "type": "text",
+                      "id": "NTgN1",
+                      "name": "T",
+                      "fill": "$lp-cream-60",
+                      "content": "Done",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "gsL36",
+              "name": "CTA Band",
+              "width": "fill_container",
+              "fill": "$lp-stone",
+              "layout": "vertical",
+              "gap": 14,
+              "padding": [
+                34,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "jyj7Y",
+                  "name": "Big",
+                  "fill": "$lp-ink",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Know your scope. Close your rows.",
+                  "fontFamily": "$lp-display",
+                  "fontSize": 25,
+                  "fontWeight": "800",
+                  "letterSpacing": -0.7
+                },
+                {
+                  "type": "text",
+                  "id": "A50nT",
+                  "name": "Small",
+                  "fill": "#16181d99",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Join free — your builder already set everything up. Just say yes.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 14,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "NenmS",
+                  "name": "CTA Accept & open project",
+                  "fill": "$lp-ink",
+                  "cornerRadius": 7,
+                  "padding": [
+                    15,
+                    26
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "mbnD1",
+                      "name": "Label",
+                      "fill": "$lp-cream",
+                      "content": "Accept & open project",
+                      "fontFamily": "$font",
+                      "fontSize": 14,
+                      "fontWeight": "700",
+                      "letterSpacing": 0.2
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "GqLn0",
+              "name": "Footer",
+              "width": "fill_container",
+              "fill": "$lp-ink",
+              "layout": "vertical",
+              "gap": 10,
+              "padding": [
+                32,
+                40,
+                36,
+                40
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "JFXu8",
+                  "name": "FBrand",
+                  "fill": "$lp-cream",
+                  "content": "LinkNMS",
+                  "fontFamily": "$lp-display",
+                  "fontSize": 15,
+                  "fontWeight": "800",
+                  "letterSpacing": -0.3
+                },
+                {
+                  "type": "text",
+                  "id": "f6Fjs",
+                  "name": "FLine",
+                  "fill": "$lp-cream-40",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "One shared timeline for every build. Blue, orange, green.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "Xd8ah",
+                  "name": "FLinks",
+                  "gap": 16,
+                  "padding": [
+                    6,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "gekft",
+                      "name": "L1",
+                      "fill": "$lp-cream-60",
+                      "content": "Help centre",
+                      "fontFamily": "$font",
+                      "fontSize": 11,
+                      "fontWeight": "600",
+                      "letterSpacing": 0.3
+                    },
+                    {
+                      "type": "text",
+                      "id": "HgVSa",
+                      "name": "L2",
+                      "fill": "$lp-cream-60",
+                      "content": "Privacy",
+                      "fontFamily": "$font",
+                      "fontSize": 11,
+                      "fontWeight": "600",
+                      "letterSpacing": 0.3
+                    },
+                    {
+                      "type": "text",
+                      "id": "O9Xer",
+                      "name": "L3",
+                      "fill": "$lp-cream-60",
+                      "content": "View in browser",
+                      "fontFamily": "$font",
+                      "fontSize": 11,
+                      "fontWeight": "600",
+                      "letterSpacing": 0.3
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "SbR2W",
+                  "name": "Addr",
+                  "fill": "#fbfaf740",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "LinkNMS · 12 Old Wharf, Lisbon · You received this because someone invited you to a project on LinkNMS.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
         }
       ]
     }
