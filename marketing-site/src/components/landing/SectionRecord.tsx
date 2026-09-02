@@ -1,33 +1,21 @@
 import { getTranslations } from 'next-intl/server';
-import type { CSSProperties } from 'react';
-import {
-  GANTT_MONTHS,
-  GANTT_TRACK_UNITS,
-  WORK_PACKAGE_ROWS,
-  formatEur,
-  formatEurDelta
-} from '@/lib/landing-numbers';
-import { PlanTrack } from './PlanTrack';
-import { RevealOnScroll } from './RevealOnScroll';
-import { ScrollReel } from './ScrollReel';
 
-// 02 · The Record — blue agreed / orange changed / green closed and the gantt
-// the whole encoding is about. The six package values sum to the contract
-// total by construction (see landing-numbers.ts).
+// 02 · The Record — blue agreed / orange changed / green closed.
 //
-// Order follows the pen's frame: encoding row, then the Scroll Reel (the
-// founder's "fade-in of the images with the scrolling"), then the gantt, with
-// the legend as a sibling after the card. The reel and the gantt each live in
-// a RevealOnScroll shell so the scroll story can animate.
+// This section is the pen's `new-key-frames > Intro` frame and nothing else:
+// label bar (02 · THE RECORD · THREE COLOURS, ONE TRUTH), the three-colour
+// encoding, the explainer body and the note.
+//
+// The four-card scroll reel and the static gantt table that used to sit here
+// were BOTH removed for LINA-117 — the founder's note: "this section needs to
+// be removed, it's already on the animation above". Everything they showed is
+// the pinned <ScrollSequence /> that immediately follows, scrubbed rather than
+// laid out flat. A second non-scrubbed copy below the pinned one read as a
+// slideshow, which is the one thing the note ("Image + gantt, not a slideshow")
+// argues against. The reel header was also the only source of the stray
+// "03 · Scroll build · Image + gantt" label, which the pen does not have.
 
-const LEGEND = ['baseline', 'actual', 'closed'] as const;
-const LEGEND_FILL: Record<(typeof LEGEND)[number], string> = {
-  baseline: 'var(--plan-baseline)',
-  actual: 'var(--plan-actual)',
-  closed: 'var(--plan-closed)'
-};
-
-export async function SectionRecord({ locale }: { locale: string }) {
+export async function SectionRecord() {
   const t = await getTranslations('lp.record');
 
   return (
@@ -52,70 +40,6 @@ export async function SectionRecord({ locale }: { locale: string }) {
             <p className="body body--mobile">{t('explainerMobile')}</p>
           </div>
         </div>
-
-        <RevealOnScroll variant="reel">
-          <ScrollReel />
-        </RevealOnScroll>
-
-        <RevealOnScroll variant="gantt">
-          <div className="lp-gantt">
-            <table>
-              <caption className="lp-skip">{t('tableCaption')}</caption>
-              <thead>
-                <tr>
-                  <th scope="col" className="lp-micro">
-                    {t('colPackage')}
-                  </th>
-                  <th scope="col" className="months">
-                    <div className="lp-gantt__months lp-micro">
-                      {GANTT_MONTHS.map((m) => (
-                        <span key={m}>{t(`months.${m}`)}</span>
-                      ))}
-                    </div>
-                  </th>
-                  <th scope="col" className="value lp-micro">
-                    {t('colValue')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {WORK_PACKAGE_ROWS.map((row, i) => (
-                  <tr key={row.key} style={{ '--delay': `${i * 150}ms` } as CSSProperties}>
-                    <th scope="row" className="name">
-                      {t(`packages.${row.key}`)}
-                    </th>
-                    <td>
-                      <PlanTrack
-                        rowKey={`gantt-${row.key}`}
-                        trackUnits={GANTT_TRACK_UNITS}
-                        laneHeight={9}
-                        laneGap={5}
-                        planned={{ offset: row.plannedOffset, width: row.plannedWidth }}
-                        actual={{ offset: row.actualOffset, width: row.actualWidth, state: row.state }}
-                      />
-                    </td>
-                    <td className="value">
-                      <b>{formatEur(row.value, locale)}</b>
-                      {row.delta !== undefined && (
-                        <span className="delta lp-micro">{formatEurDelta(row.delta, locale)}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <ul className="lp-gantt__legend lp-micro">
-            {LEGEND.map((key, i) => (
-              <li key={key} style={{ '--li': `${i * 160}ms` } as CSSProperties}>
-                <span className="swatch" style={{ background: LEGEND_FILL[key] }} aria-hidden="true" />
-                {t(`legend.${key}`)}
-              </li>
-            ))}
-            <li className="audit">{t('legend.audit')}</li>
-          </ul>
-        </RevealOnScroll>
       </div>
     </section>
   );

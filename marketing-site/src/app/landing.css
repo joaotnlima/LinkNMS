@@ -703,7 +703,12 @@
   position: relative;
   background: var(--lp-ink);
   color: var(--lp-cream);
-  min-height: min(900px, 100svh);
+  /* The pinned frame must BE the viewport: ScrollTrigger pins at `top top`, so
+     anything shorter than 100svh locks with a strip of the next section still
+     showing and the keyframe never reads as a full frame (LINA-117 note 2).
+     The pen's 1440×900 artboard is an aspect ratio, not a pixel height — the
+     web frame is whatever the viewport is. */
+  min-height: 100svh;
   display: flex;
   overflow: hidden;
 }
@@ -731,11 +736,24 @@
 .lp-sequence__stage[data-visible='true'] {
   opacity: 1;
 }
+/* The pen puts the scrim on a rectangle that starts at y=360 of the 900px
+   keyframe and runs to the bottom — the top 40% of the still is NOT dimmed, so
+   the render reads as the architect's drawing it is (sky, dimension lines,
+   annotations). Stretched over the full frame here, the pen's three stops
+   (0 → 0.55 → 1 of a 540px band) land at 40% / 73% / 100%.
+   The previous full-height version started ramping at 0% and hit #16181dd9 by
+   55%, which crushed the whole plate to near-black — LINA-117 note 1. */
 .lp-sequence__scrim {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: linear-gradient(180deg, #16181d00 0%, #16181dd9 55%, #16181df7 100%);
+  background: linear-gradient(
+    180deg,
+    #16181d00 0%,
+    #16181d00 40%,
+    #16181dd9 73%,
+    #16181df7 100%
+  );
 }
 .lp-sequence__content {
   position: relative;

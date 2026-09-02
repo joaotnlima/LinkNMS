@@ -287,55 +287,7 @@
       "closed": "Verde es lo que se cerró.",
       "explainer": "El scroll hace avanzar las imágenes de la obra mientras el gantt sigue el contrato. El azul se mantiene fijo, el naranja marca la desviación, el verde cierra la fila.",
       "explainerMobile": "Una línea de tiempo guarda los tres estados a la vez. Las imágenes avanzan con el scroll, la línea base se mantiene azul, el cambio viene en naranja y el trabajo cerrado se pone verde.",
-      "note": "Imagen + gantt, no un pase de diapositivas",
-      "tableCaption": "Capítulos de obra frente a la línea base acordada, con el valor de cada uno.",
-      "colPackage": "Capítulo de obra",
-      "colValue": "Valor",
-      "months": {
-        "MAR": "Mar",
-        "APR": "Abr",
-        "MAY": "May",
-        "JUN": "Jun",
-        "JUL": "Jul",
-        "AUG": "Ago",
-        "SEP": "Sep",
-        "OCT": "Oct"
-      },
-      "packages": {
-        "foundations": "Terreno y cimentación",
-        "structure": "Estructura",
-        "envelope": "Cubierta y envolvente",
-        "cladding": "Ventanas y revestimiento",
-        "mep": "Electricidad y fontanería",
-        "finishes": "Acabados y pavimentos"
-      },
-      "legend": {
-        "baseline": "Línea base acordada",
-        "actual": "Movido · cambio firmado",
-        "closed": "Cerrado · ambas lecturas guardadas",
-        "audit": "Cada barra guarda quién la movió, cuándo y por qué"
-      },
-      "reel": {
-        "index": "03",
-        "indexMobile": "02.1",
-        "title": "Construcción en scroll  ·  Imagen + gantt",
-        "titleMobile": "Construcción en scroll · Mobile",
-        "note": "La imagen y el gráfico avanzan juntos.",
-        "noteMobile": "Se mueve con el gantt.",
-        "labels": {
-          "1": "Diseño",
-          "2": "Estructura",
-          "3": "Acabado",
-          "4": "Construida"
-        },
-        "alt": {
-          "1": "Fase de diseño: la casa en su primer dibujo.",
-          "2": "Fase de estructura: la estructura está levantada.",
-          "3": "Fase de acabado: cubierta y envolvente cerradas.",
-          "4": "Fase de obra: la casa terminada."
-        },
-        "scrollNote": "La construcción avanza en imágenes mientras el gantt se cierra del azul al naranja y al verde."
-      }
+      "note": "Imagen + gantt, no un pase de diapositivas"
     },
     "sequence": {
       "label": "El dibujo se convierte en la casa",

@@ -14,10 +14,11 @@ import { ScrollSequence } from '@/components/landing/ScrollSequence';
 /*
  * The landing page (LINA-83).
  *
- * The Scroll Reel (the founder's "fade-in of the images with the scrolling")
- * and the gantt bars live inside <SectionRecord /> as inline content. THE
- * PINNED scroll sequence (LINA-113) sits directly after it, additive — the
- * inline reel stays. <LandingHeader /> stays a SIBLING of every section,
+ * <SectionRecord /> is the pen's Intro frame — label bar, encoding, explainer —
+ * and the pinned scroll sequence (LINA-113) that follows carries the build
+ * images AND the gantt. The inline reel and the static gantt table that used to
+ * sit inside <SectionRecord /> were removed for LINA-117; they duplicated the
+ * pinned sequence. <LandingHeader /> stays a SIBLING of every section,
  * including the pinned one; see the comment at the top of LandingHeader.tsx.
  */
 
@@ -55,7 +56,7 @@ export default async function Home({
       <main>
         <Hero />
         <SectionArgument locale={locale} />
-        <SectionRecord locale={locale} />
+        <SectionRecord />
         <ScrollSequence locale={locale} />
         <SectionPlanIn locale={locale} />
         <SectionMaterials locale={locale} />
