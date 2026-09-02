@@ -85332,7 +85332,7 @@
                                   "height": 12,
                                   "icon": "badge-check",
                                   "library": "lucide",
-                                  "fill": "$plan-closed-line"
+                                  "fill": "#2f7d5bff"
                                 }
                               ]
                             }
@@ -85410,7 +85410,7 @@
                                   "height": 12,
                                   "icon": "badge-check",
                                   "library": "lucide",
-                                  "fill": "$plan-closed-line"
+                                  "fill": "#2f7d5bff"
                                 }
                               ]
                             }
@@ -85488,7 +85488,7 @@
                                   "height": 12,
                                   "icon": "badge-check",
                                   "library": "lucide",
-                                  "fill": "$plan-closed-line"
+                                  "fill": "#2f7d5bff"
                                 }
                               ]
                             }
@@ -85566,7 +85566,7 @@
                                   "height": 12,
                                   "icon": "badge-check",
                                   "library": "lucide",
-                                  "fill": "$plan-closed-line"
+                                  "fill": "#2f7d5bff"
                                 }
                               ]
                             }
@@ -85644,7 +85644,7 @@
                                   "height": 12,
                                   "icon": "badge-check",
                                   "library": "lucide",
-                                  "fill": "$plan-closed-line"
+                                  "fill": "#2f7d5bff"
                                 }
                               ]
                             }
@@ -85722,9 +85722,85 @@
                                   "height": 12,
                                   "icon": "badge-check",
                                   "library": "lucide",
-                                  "fill": "$plan-closed-line"
+                                  "fill": "#2f7d5bff"
                                 }
                               ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "XPuOc",
+                          "name": "Legend",
+                          "gap": 16,
+                          "padding": [
+                            6,
+                            0,
+                            0,
+                            0
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 2,
+                              "id": "q5RmU",
+                              "name": "Swatch",
+                              "fill": "$plan-baseline",
+                              "width": 14,
+                              "height": 6
+                            },
+                            {
+                              "type": "text",
+                              "id": "KgYhN",
+                              "name": "L",
+                              "fill": "$lp-cream-40",
+                              "content": "PLANNED",
+                              "fontFamily": "$font",
+                              "fontSize": 9,
+                              "fontWeight": "600",
+                              "letterSpacing": 1.2
+                            },
+                            {
+                              "type": "rectangle",
+                              "cornerRadius": 2,
+                              "id": "Q7ab5x",
+                              "name": "Swatch",
+                              "fill": "$plan-actual",
+                              "width": 14,
+                              "height": 6
+                            },
+                            {
+                              "type": "text",
+                              "id": "f5yGg",
+                              "name": "L",
+                              "fill": "$lp-cream-40",
+                              "content": "ACTUAL",
+                              "fontFamily": "$font",
+                              "fontSize": 9,
+                              "fontWeight": "600",
+                              "letterSpacing": 1.2
+                            },
+                            {
+                              "type": "icon",
+                              "id": "pqjvh",
+                              "name": "Swatch",
+                              "width": 14,
+                              "height": 14,
+                              "icon": "badge-check",
+                              "library": "lucide",
+                              "fill": "#2f7d5bff"
+                            },
+                            {
+                              "type": "text",
+                              "id": "um4C1",
+                              "name": "L",
+                              "fill": "$lp-cream-40",
+                              "content": "CLOSED",
+                              "fontFamily": "$font",
+                              "fontSize": 9,
+                              "fontWeight": "600",
+                              "letterSpacing": 1.2
                             }
                           ]
                         }
@@ -85764,7 +85840,7 @@
                               "id": "JLWtF",
                               "name": "V",
                               "fill": "$plan-closed-line",
-                              "content": "complete",
+                              "content": "Complete",
                               "fontFamily": "$font",
                               "fontSize": 15,
                               "fontWeight": "600"
