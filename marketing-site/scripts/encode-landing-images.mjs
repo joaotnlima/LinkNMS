@@ -57,6 +57,14 @@ for (const slug of SLUGS) {
 // that were reviewed. Both 320w and 640w are derived here from the SAME source
 // per persona — deriving the two descriptors of one <img> from two different
 // photographs is what this loop exists to prevent.
+//
+// No crop step: `marta.png` and `joao.png` are already 640×470, which is
+// exactly the pen's Photo rect (640×470 at mode "fill", mirrored by
+// .lp-persona__portrait's `aspect-ratio: 640/470`). The generator frames are
+// tall full-body renders (768×1376, 928×1136) and needed a hand-placed face
+// crop to reach that box; the founder's exports are already framed, so a
+// width-only resize lands on the rect exactly and there is no focal point left
+// to guess at.
 const PORTRAITS = [
   { src: 'marta.png', slug: 'persona-marta' },
   { src: 'joao.png', slug: 'persona-joao' }
@@ -64,6 +72,7 @@ const PORTRAITS = [
 
 for (const { src: file, slug } of PORTRAITS) {
   const src = join(SRC, file);
+  // Both descriptors SectionWho declares: `${slug}-320` and `${slug}-640`.
   for (const width of [640, 320]) {
     for (const [ext, quality] of [['avif', AVIF_QUALITY], ['webp', WEBP_QUALITY]]) {
       const out = join(OUT, `${slug}-${width}.${ext}`);
