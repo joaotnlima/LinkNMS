@@ -32,6 +32,8 @@ import { createChangeOrderService } from './change_order/change-order.mjs';
 import { createChangeOrderHttp } from './change_order/http.mjs';
 import { createScheduleService } from './schedule/schedule.mjs';
 import { createScheduleHttp } from './schedule/http.mjs';
+import { createWaitlistService } from './waitlist/waitlist.mjs';
+import { createWaitlistHttp } from './waitlist/http.mjs';
 
 // ── The per-process analytics singleton ─────────────────────────────────────
 //
@@ -78,6 +80,8 @@ export function resetAnalyticsForTests() {
  * @param {Object} ports.changeOrderStore       Change Order store adapter
  * @param {Object} [ports.scheduleStore]        Schedule store adapter (omit → no schedule service)
  * @param {Object} [ports.decisionStore]        Decision store adapter (omit → no decision service)
+ * @param {Object} [ports.waitlistStore]        Waitlist store adapter (omit → no waitlist service)
+ * @param {Object} [ports.waitlistEmail]        Waitlist email port (D-2 welcome; omit → no-op no-send)
  * @param {Object|Function} [ports.decisionAuthz]  Decision authorizer, or a
  *   `(identity) => authz` factory for authorizers built over the Identity
  *   service this composition creates (the deployed target's case)
@@ -93,6 +97,8 @@ export function createServices({
   scheduleStore = null,
   decisionStore = null,
   decisionAuthz = null,
+  waitlistStore = null,
+  waitlistEmail = null,
   clock = undefined,
   ids = undefined,
   analytics = getAnalytics(),
@@ -148,14 +154,31 @@ export function createServices({
       })
     : null;
 
+  // Waitlist (LINA-127, Onboarding Plan v4 Phase 1). UNAUTHENTICATED prospect
+  // capture — it consumes NO Identity and NO Ledger: a waitlist signup is a
+  // prospect record, not a platform decision, and no budget/audit event is
+  // written on capture. Composed only when its store is supplied, so a target
+  // without one is loud at the route (no service to mount) — same discipline as
+  // schedule/decision. The D-2 welcome email is best-effort: `waitlistEmail`
+  // defaults to a no-op that reports `welcomeEmailSent: false` (a missed welcome
+  // email is a lost follow-up, not a security event).
+  const waitlist = waitlistStore
+    ? createWaitlistService({
+        store: waitlistStore,
+        email: waitlistEmail ?? { async sendWelcome() { return false; } },
+      })
+    : null;
+
   return {
     analytics,
     identity,
     decision,
     changeOrder,
     schedule,
+    waitlist,
     changeOrderHttp: createChangeOrderHttp({ service: changeOrder, identity }),
     scheduleHttp: schedule ? createScheduleHttp({ service: schedule }) : null,
+    waitlistHttp: waitlist ? createWaitlistHttp({ service: waitlist }) : null,
   };
 }
 
