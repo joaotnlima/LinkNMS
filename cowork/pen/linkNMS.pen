@@ -88335,6 +88335,1401 @@
         },
         {
           "type": "frame",
+          "id": "x2KYw",
+          "name": "S7 Pricing",
+          "width": "fill_container",
+          "fill": "$lp-ink",
+          "layout": "vertical",
+          "gap": 44,
+          "padding": [
+            110,
+            40
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "X5AdU",
+              "name": "Label Bar",
+              "width": "fill_container",
+              "gap": 20,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "b3N7x",
+                  "name": "Index",
+                  "fill": "$lp-cream",
+                  "content": "06",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.4
+                },
+                {
+                  "type": "text",
+                  "id": "qK2pE",
+                  "name": "Left",
+                  "fill": "$lp-cream",
+                  "content": "PRICING",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.4
+                },
+                {
+                  "type": "frame",
+                  "id": "qJ5P3",
+                  "name": "Rule",
+                  "width": "fill_container",
+                  "height": 1,
+                  "fill": "#fbfaf733"
+                },
+                {
+                  "type": "text",
+                  "id": "j9iv4j",
+                  "name": "Right",
+                  "fill": "$lp-cream-40",
+                  "content": "SIMPLE · PER PROJECT",
+                  "fontFamily": "$font",
+                  "fontSize": 10,
+                  "fontWeight": "600",
+                  "letterSpacing": 1.4
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ZBfxp",
+              "name": "Head",
+              "width": "fill_container",
+              "gap": 88,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "nOKrF",
+                  "name": "Title",
+                  "fill": "$lp-cream",
+                  "textGrowth": "fixed-width",
+                  "width": 700,
+                  "content": "Priced by how much you build.",
+                  "lineHeight": 1.02,
+                  "fontFamily": "$lp-display",
+                  "fontSize": 52,
+                  "fontWeight": "800",
+                  "letterSpacing": -2
+                },
+                {
+                  "type": "frame",
+                  "id": "C2hQDA",
+                  "name": "Sub",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 14,
+                  "padding": [
+                    8,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "puUSo",
+                      "name": "Body",
+                      "fill": "$lp-cream-60",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "One price per active project — no seat counting, no per-user fees. Add collaborators for free; pay only for the builds you're running.",
+                      "lineHeight": 1.6,
+                      "fontFamily": "$font",
+                      "fontSize": 17,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "lEFEQ",
+                      "name": "Note",
+                      "fill": "$lp-cream",
+                      "content": "CANCEL ANYTIME · VAT INCLUDED",
+                      "fontFamily": "$font",
+                      "fontSize": 10,
+                      "fontWeight": "600",
+                      "letterSpacing": 1.4
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "qs3nt",
+              "name": "Free Banner",
+              "width": "fill_container",
+              "fill": "$plan-closed",
+              "cornerRadius": 14,
+              "gap": 24,
+              "padding": [
+                26,
+                32
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "AvWxZ",
+                  "name": "Left",
+                  "gap": 16,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "e0fJau",
+                      "name": "IcoWrap",
+                      "fill": "#fbfaf71f",
+                      "cornerRadius": 999,
+                      "padding": 12,
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "W56iu7",
+                          "name": "I",
+                          "width": 22,
+                          "height": 22,
+                          "icon": "gift",
+                          "library": "lucide",
+                          "fill": "$lp-cream"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "C7IYRy",
+                      "name": "Txt",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "wG51w",
+                          "name": "Big",
+                          "fill": "$lp-cream",
+                          "content": "Free forever for the first 30 users.",
+                          "fontFamily": "$lp-display",
+                          "fontSize": 24,
+                          "fontWeight": "800",
+                          "letterSpacing": -0.8
+                        },
+                        {
+                          "type": "text",
+                          "id": "RLSMj",
+                          "name": "Small",
+                          "fill": "#fbfaf7cc",
+                          "content": "Join before launch and keep every feature — every tier — free, for life.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "A9Shk",
+                  "name": "Counter",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "alignItems": "end",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "newH4",
+                      "name": "C",
+                      "fill": "$lp-cream",
+                      "content": "18 / 30",
+                      "fontFamily": "$lp-display",
+                      "fontSize": 26,
+                      "fontWeight": "800",
+                      "letterSpacing": -1
+                    },
+                    {
+                      "type": "text",
+                      "id": "a20ta",
+                      "name": "CL",
+                      "fill": "#fbfaf7cc",
+                      "content": "SPOTS CLAIMED",
+                      "fontFamily": "$font",
+                      "fontSize": 9,
+                      "fontWeight": "600",
+                      "letterSpacing": 1.3
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "BrDxA",
+              "name": "Plans",
+              "width": "fill_container",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "aw4QM",
+                  "name": "Starter",
+                  "width": "fill_container",
+                  "height": 452,
+                  "fill": "#fbfaf708",
+                  "cornerRadius": 14,
+                  "stroke": "#fbfaf71f",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 20,
+                  "padding": 24,
+                  "justifyContent": "space_between",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "YWtpW",
+                      "name": "Top",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 16,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "dXGT6",
+                          "name": "Name",
+                          "fill": "$lp-cream",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Starter",
+                          "fontFamily": "$lp-display",
+                          "fontSize": 20,
+                          "fontWeight": "800",
+                          "letterSpacing": -0.4
+                        },
+                        {
+                          "type": "frame",
+                          "id": "J2k93z",
+                          "name": "Price",
+                          "gap": 4,
+                          "alignItems": "end",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "w6AE4",
+                              "name": "Num",
+                              "fill": "$lp-cream",
+                              "content": "€15",
+                              "fontFamily": "$lp-display",
+                              "fontSize": 38,
+                              "fontWeight": "800",
+                              "letterSpacing": -1.6
+                            },
+                            {
+                              "type": "frame",
+                              "id": "NtWOA",
+                              "name": "Per",
+                              "padding": [
+                                0,
+                                0,
+                                7,
+                                0
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "uBnY9",
+                                  "name": "P",
+                                  "fill": "$lp-cream-40",
+                                  "content": "/mês",
+                                  "fontFamily": "$font",
+                                  "fontSize": 14,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "WcIhQ",
+                          "name": "Obras",
+                          "fill": "#fbfaf70f",
+                          "cornerRadius": 999,
+                          "padding": [
+                            5,
+                            12
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "WyeKM",
+                              "name": "O",
+                              "fill": "$lp-cream",
+                              "content": "1 obra",
+                              "fontFamily": "$font",
+                              "fontSize": 12,
+                              "fontWeight": "700",
+                              "letterSpacing": 0.2
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "nyKI5",
+                          "name": "Rule",
+                          "width": "fill_container",
+                          "height": 1,
+                          "fill": "#fbfaf71f"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "gIBsy",
+                          "name": "Feats",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 10,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "w6s6oe",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "h6KJV",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "Q7nsv",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "1 active project",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "BElQN",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "uaL6V",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "zK9cr",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Owner + 3 collaborators",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "WNZyK",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "tDYSH",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "JI0v2",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Timeline, changes & close-outs",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "YZbrz",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "CU1i1",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "OXauu",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Email support",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "lgxVX",
+                      "name": "CTA",
+                      "width": "fill_container",
+                      "fill": "#fbfaf70f",
+                      "cornerRadius": 8,
+                      "stroke": "#fbfaf733",
+                      "strokeWidth": 1,
+                      "padding": [
+                        13,
+                        20
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "nSJY2",
+                          "name": "L",
+                          "fill": "$lp-cream",
+                          "content": "Start Starter",
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.2
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "GXkWq",
+                  "name": "Professional",
+                  "width": "fill_container",
+                  "height": 452,
+                  "fill": "$lp-cream",
+                  "cornerRadius": 14,
+                  "layout": "vertical",
+                  "gap": 20,
+                  "padding": 24,
+                  "justifyContent": "space_between",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Kbprs",
+                      "name": "Top",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 16,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "E1aq2",
+                          "name": "Tag",
+                          "fill": "$plan-closed",
+                          "cornerRadius": 999,
+                          "padding": [
+                            4,
+                            10
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "PXIO5",
+                              "name": "T",
+                              "fill": "$lp-cream",
+                              "content": "MOST POPULAR",
+                              "fontFamily": "$font",
+                              "fontSize": 9,
+                              "fontWeight": "700",
+                              "letterSpacing": 1.2
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "m49AvH",
+                          "name": "Name",
+                          "fill": "$lp-ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Professional",
+                          "fontFamily": "$lp-display",
+                          "fontSize": 20,
+                          "fontWeight": "800",
+                          "letterSpacing": -0.4
+                        },
+                        {
+                          "type": "frame",
+                          "id": "cgbow",
+                          "name": "Price",
+                          "gap": 4,
+                          "alignItems": "end",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "HmWKG",
+                              "name": "Num",
+                              "fill": "$lp-ink",
+                              "content": "€70",
+                              "fontFamily": "$lp-display",
+                              "fontSize": 38,
+                              "fontWeight": "800",
+                              "letterSpacing": -1.6
+                            },
+                            {
+                              "type": "frame",
+                              "id": "BRsIj",
+                              "name": "Per",
+                              "padding": [
+                                0,
+                                0,
+                                7,
+                                0
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "ZCvRv",
+                                  "name": "P",
+                                  "fill": "#16181d80",
+                                  "content": "/mês",
+                                  "fontFamily": "$font",
+                                  "fontSize": 14,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "HOB47",
+                          "name": "Obras",
+                          "fill": "#16181d0d",
+                          "cornerRadius": 999,
+                          "padding": [
+                            5,
+                            12
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "LnQy2",
+                              "name": "O",
+                              "fill": "$lp-ink",
+                              "content": "3–5 obras",
+                              "fontFamily": "$font",
+                              "fontSize": 12,
+                              "fontWeight": "700",
+                              "letterSpacing": 0.2
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "tGUtR",
+                          "name": "Rule",
+                          "width": "fill_container",
+                          "height": 1,
+                          "fill": "#16181d1a"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "n2EAYX",
+                          "name": "Feats",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 10,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "sObkZ",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "e8QOf",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "LJVdH",
+                                  "name": "T",
+                                  "fill": "#16181d99",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Up to 5 active projects",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "p7ubR",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "ZJdIG",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "OYDSf",
+                                  "name": "T",
+                                  "fill": "#16181d99",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Unlimited collaborators",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "r62ucY",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "U5GKp",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "FfYKi",
+                                  "name": "T",
+                                  "fill": "#16181d99",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Materials & money tracking",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "Bi2LP",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "pRTeC",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "X4sQS",
+                                  "name": "T",
+                                  "fill": "#16181d99",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Priority support",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "B2OqK",
+                      "name": "CTA",
+                      "width": "fill_container",
+                      "fill": "$lp-ink",
+                      "cornerRadius": 8,
+                      "padding": [
+                        13,
+                        20
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "m0diHJ",
+                          "name": "L",
+                          "fill": "$lp-cream",
+                          "content": "Choose Professional",
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.2
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Qi12T",
+                  "name": "Business",
+                  "width": "fill_container",
+                  "height": 452,
+                  "fill": "#fbfaf708",
+                  "cornerRadius": 14,
+                  "stroke": "#fbfaf71f",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 20,
+                  "padding": 24,
+                  "justifyContent": "space_between",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Lkp3v",
+                      "name": "Top",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 16,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "xydbz",
+                          "name": "Name",
+                          "fill": "$lp-cream",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Business",
+                          "fontFamily": "$lp-display",
+                          "fontSize": 20,
+                          "fontWeight": "800",
+                          "letterSpacing": -0.4
+                        },
+                        {
+                          "type": "frame",
+                          "id": "y4mfr",
+                          "name": "Price",
+                          "gap": 4,
+                          "alignItems": "end",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "IQ2aC",
+                              "name": "Num",
+                              "fill": "$lp-cream",
+                              "content": "€149",
+                              "fontFamily": "$lp-display",
+                              "fontSize": 38,
+                              "fontWeight": "800",
+                              "letterSpacing": -1.6
+                            },
+                            {
+                              "type": "frame",
+                              "id": "v5SK9x",
+                              "name": "Per",
+                              "padding": [
+                                0,
+                                0,
+                                7,
+                                0
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "gHNXV",
+                                  "name": "P",
+                                  "fill": "$lp-cream-40",
+                                  "content": "/mês",
+                                  "fontFamily": "$font",
+                                  "fontSize": 14,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "s3tV7",
+                          "name": "Obras",
+                          "fill": "#fbfaf70f",
+                          "cornerRadius": 999,
+                          "padding": [
+                            5,
+                            12
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Wx6aw",
+                              "name": "O",
+                              "fill": "$lp-cream",
+                              "content": "10–15 obras",
+                              "fontFamily": "$font",
+                              "fontSize": 12,
+                              "fontWeight": "700",
+                              "letterSpacing": 0.2
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "LTre8",
+                          "name": "Rule",
+                          "width": "fill_container",
+                          "height": 1,
+                          "fill": "#fbfaf71f"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "VLaMd",
+                          "name": "Feats",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 10,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "Gtjjs",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "kqmbN",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "EvwSr",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Up to 15 active projects",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "Dtx62",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "Y5eUs",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "fgc5d",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Team roles & permissions",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "HiS34",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "UDVus",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "Ynvdc",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Client portal access",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "r2xix",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "tvQsM",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "zODcT",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Export & reporting",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "tTZYg",
+                      "name": "CTA",
+                      "width": "fill_container",
+                      "fill": "#fbfaf70f",
+                      "cornerRadius": 8,
+                      "stroke": "#fbfaf733",
+                      "strokeWidth": 1,
+                      "padding": [
+                        13,
+                        20
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "iT6Nl",
+                          "name": "L",
+                          "fill": "$lp-cream",
+                          "content": "Choose Business",
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.2
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "NHCtm",
+                  "name": "Enterprise",
+                  "width": "fill_container",
+                  "height": 452,
+                  "fill": "#fbfaf708",
+                  "cornerRadius": 14,
+                  "stroke": "#fbfaf71f",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 20,
+                  "padding": 24,
+                  "justifyContent": "space_between",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "TKr78",
+                      "name": "Top",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 16,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Nc6DO",
+                          "name": "Name",
+                          "fill": "$lp-cream",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Enterprise",
+                          "fontFamily": "$lp-display",
+                          "fontSize": 20,
+                          "fontWeight": "800",
+                          "letterSpacing": -0.4
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ESkfG",
+                          "name": "Price",
+                          "gap": 4,
+                          "alignItems": "end",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "l1pD6",
+                              "name": "Num",
+                              "fill": "$lp-cream",
+                              "content": "€299+",
+                              "fontFamily": "$lp-display",
+                              "fontSize": 38,
+                              "fontWeight": "800",
+                              "letterSpacing": -1.6
+                            },
+                            {
+                              "type": "frame",
+                              "id": "zgcHQ",
+                              "name": "Per",
+                              "padding": [
+                                0,
+                                0,
+                                7,
+                                0
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "d8OeCR",
+                                  "name": "P",
+                                  "fill": "$lp-cream-40",
+                                  "content": "/mês",
+                                  "fontFamily": "$font",
+                                  "fontSize": 14,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "t4zoYl",
+                          "name": "Obras",
+                          "fill": "#fbfaf70f",
+                          "cornerRadius": 999,
+                          "padding": [
+                            5,
+                            12
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "alAJ4",
+                              "name": "O",
+                              "fill": "$lp-cream",
+                              "content": "Obras ilimitadas",
+                              "fontFamily": "$font",
+                              "fontSize": 12,
+                              "fontWeight": "700",
+                              "letterSpacing": 0.2
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "h5mB6",
+                          "name": "Rule",
+                          "width": "fill_container",
+                          "height": 1,
+                          "fill": "#fbfaf71f"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "tZHE1",
+                          "name": "Feats",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 10,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "oq9EN",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "oxDzZ",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "sGbHQ",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Unlimited projects",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "Y8zAcv",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "goxgJ",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "y2I0Y",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "SSO & audit log",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "FOBby",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "cWlsg",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "zIt0Z",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "API & integrations",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "rujsZ",
+                              "name": "F",
+                              "width": "fill_container",
+                              "gap": 9,
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "sYzjT",
+                                  "name": "I",
+                                  "width": 15,
+                                  "height": 15,
+                                  "icon": "check",
+                                  "library": "lucide",
+                                  "fill": "$plan-closed-line"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "UechC",
+                                  "name": "T",
+                                  "fill": "$lp-cream-60",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Dedicated success manager",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font",
+                                  "fontSize": 13,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "aoHk9",
+                      "name": "CTA",
+                      "width": "fill_container",
+                      "fill": "#fbfaf70f",
+                      "cornerRadius": 8,
+                      "stroke": "#fbfaf733",
+                      "strokeWidth": 1,
+                      "padding": [
+                        13,
+                        20
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "G78QaX",
+                          "name": "L",
+                          "fill": "$lp-cream",
+                          "content": "Talk to us",
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.2
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
           "id": "fzZW1",
           "name": "S7 CTA",
           "clip": true,
@@ -103482,8 +104877,8 @@
     {
       "type": "frame",
       "id": "n6gwXz",
-      "x": 617,
-      "y": 34475,
+      "x": -69,
+      "y": 35205,
       "name": "Phone Preview",
       "clip": true,
       "width": 300,
