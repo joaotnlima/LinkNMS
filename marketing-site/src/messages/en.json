@@ -285,57 +285,9 @@
       "agreed": "Blue is what you agreed.",
       "changed": "Orange is what changed.",
       "closed": "Green is what closed.",
-      "explainer": "The scroll advances the build images while the gantt tracks the contract. Blue stays fixed, orange marks drift, green closes the row.",
-      "explainerMobile": "One timeline holds all three states at once. The images advance with the scroll, the baseline stays blue, the change comes in orange, and closed work turns green.",
-      "note": "Image + gantt, not a slideshow",
-      "tableCaption": "Work packages against the agreed baseline, with the value of each.",
-      "colPackage": "Work package",
-      "colValue": "Value",
-      "months": {
-        "MAR": "Mar",
-        "APR": "Apr",
-        "MAY": "May",
-        "JUN": "Jun",
-        "JUL": "Jul",
-        "AUG": "Aug",
-        "SEP": "Sep",
-        "OCT": "Oct"
-      },
-      "packages": {
-        "foundations": "Site & foundations",
-        "structure": "Structure & frame",
-        "envelope": "Roof & envelope",
-        "cladding": "Windows & cladding",
-        "mep": "Electrical & plumbing",
-        "finishes": "Finishes & flooring"
-      },
-      "legend": {
-        "baseline": "Agreed baseline",
-        "actual": "Moved · signed change",
-        "closed": "Closed · both readings kept",
-        "audit": "Every bar carries who moved it, when, and why"
-      },
-      "reel": {
-        "index": "03",
-        "indexMobile": "02.1",
-        "title": "Scroll build  ·  Image + gantt",
-        "titleMobile": "Scroll build · Mobile",
-        "note": "The image and the chart move together.",
-        "noteMobile": "Moves with the gantt.",
-        "labels": {
-          "1": "Design",
-          "2": "Structure",
-          "3": "Finish",
-          "4": "Built"
-        },
-        "alt": {
-          "1": "Design stage: the house at its first drawing.",
-          "2": "Structure stage: the frame is up.",
-          "3": "Finish stage: the roof and envelope are closed.",
-          "4": "Built stage: the finished house."
-        },
-        "scrollNote": "The construction advances in images while the gantt closes from blue to orange to green."
-      }
+      "explainer": "Track every stage of your project against the original plan. See what changed, understand the impact, and know exactly what's complete.",
+      "explainerMobile": "Track every stage of your project against the original plan. See what changed, understand the impact, and know exactly what's complete.",
+      "note": "Plan → Change → Progress"
     },
     "sequence": {
       "label": "The drawing becomes the house",
@@ -344,43 +296,51 @@
         "foundations": "Foundations",
         "structure": "Structure",
         "envelope": "Envelope",
+        "windows": "Windows",
+        "mep": "M&E",
         "finishes": "Finishes"
       },
       "captions": {
         "A": {
-          "micro": "p 0.00 → 0.15 · The lines draw themselves",
-          "line": "At the start, it's only a drawing."
+          "micro": "The plan is drawn",
+          "line": "At the start, it's only the plan."
         },
         "B": {
-          "micro": "p 0.15 → 0.40 · Foundations and structure close",
-          "line": "Every agreement raises a wall."
+          "micro": "Walls start emerging",
+          "line": "The first bars close. Concrete is poured."
         },
         "C": {
-          "micro": "p 0.40 → 0.70 · The slip appears and resolves",
-          "line": "Things change. It gets recorded."
+          "micro": "Final adjustments",
+          "line": "Weathertight. The trades move in."
         },
         "D": {
-          "micro": "p 0.70 → 1.00 · Everything closes",
-          "line": "The house. On time, on budget, on scope."
+          "micro": "Ready to move to your new house?",
+          "line": "Built on time, on budget, with the quality it deserves."
         }
       },
       "hud": {
         "time": "Time",
-        "timeValue": "0 days slipped",
-        "cost": "Cost",
         "scope": "Scope",
-        "scopeValue": "100%",
+        "cost": {
+          "budget": "Budget",
+          "spent": "Spent",
+          "final": "Final"
+        },
         "readings": {
+          "A": {
+            "time": "Planned",
+            "scope": "100%"
+          },
           "B": {
-            "time": "8 months",
+            "time": "On track",
             "scope": "100%"
           },
           "C": {
-            "time": "+ 9 days",
-            "scope": "98%"
+            "time": "+3 days",
+            "scope": "100%"
           },
           "D": {
-            "time": "0 days slipped",
+            "time": "Complete",
             "scope": "100%"
           }
         }
@@ -467,7 +427,8 @@
           "t1": "Mobile only",
           "t2": "Short sessions",
           "t3": "Needs reassurance"
-        }
+        },
+        "alt": "Marta, a first-time owner in Porto, portrait"
       },
       "joao": {
         "quote": "“I'm not hiding anything. I just don't have two hours every night to write down what I already know.”",
@@ -477,7 +438,8 @@
           "t1": "Phone only",
           "t2": "Low digital comfort",
           "t3": "10 seconds, not 2 minutes"
-        }
+        },
+        "alt": "João, a master builder with 31 years on site, portrait"
       }
     },
     "cta": {

@@ -119,6 +119,21 @@ export function DotFilledIcon({ size = 16, className }: IconProps) {
 }
 
 /**
+ * The "row closed" mark of the pinned sequence — lucide `badge-check`, which is
+ * the glyph the pen's `new-key-frames` frame names on every closed row. Drawn
+ * inline for the same reason as the rest of this file rather than pulling in an
+ * icon dependency for one 12px mark.
+ */
+export function BadgeCheckIcon({ size = 12, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
+
+/**
  * The landing lockup mark. The product HouseMark is drawn in the app's
  * `--primary` / `--secondary`; on the landing surface the roof reads in the
  * plan semantics (baseline / actual) over an ink or cream ground.

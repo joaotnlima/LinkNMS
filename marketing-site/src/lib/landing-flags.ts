@@ -37,15 +37,16 @@ export const ANIMATION_ENABLED = true;
 /**
  * How stage 1 hands off to stage 2 (LINA-110 §1.7).
  *
- * The current stage-1 still is the LINA-85 re-render from the stage-4 camera
- * (`2b90e5a`), and the site's stage-1 derivatives were re-encoded from it
- * (`526020c`). The matched camera is what makes a plain cross-fade correct.
+ * `cut` is now load-bearing, not just the safe default. The LINA-85 re-render
+ * from the stage-4 camera (`2b90e5a`) was reverted on LINA-117 — the founder
+ * asked for the original golden-hour wireframe plate back — so stage-1 no
+ * longer shares stage-2's camera. A plain cross-fade between two different
+ * cameras dissolves one framing into another and reads as a mistake, which is
+ * exactly what `cut` avoids: stage-1 holds until the KF-B commit (t = 0.5),
+ * then stage-2 takes over instantly, the two stills never sharing the screen.
  *
- * The flag still defaults to `cut` — the architecture's safe default: stage-1
- * holds until the KF-B commit (t = 0.5), then stage-2 takes over instantly, the
- * two stills never sharing the screen. Flipping this to `crossfade` is the
- * entire 1→2 change (the whole handoff is isolated behind `applyStage1To2()` in
- * `SequenceMotion.tsx`), and it should only be flipped after a human confirms
- * the LINA-85 plate visually on the page.
+ * Do not flip this to `crossfade` while the stage-1 plate is off-camera. The
+ * whole handoff is isolated behind `applyStage1To2()` in `SequenceMotion.tsx`,
+ * so flipping it is a one-line change if the plates are ever matched again.
  */
 export const STAGE_1_TO_2: 'crossfade' | 'cut' = 'cut';

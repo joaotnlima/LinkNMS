@@ -47,51 +47,37 @@ for (const slug of SLUGS) {
   }
 }
 
-// The two persona portraits of `S6 Who It Is For` (LINA-83 blocker (a)).
-// SectionWho.tsx and .lp-persona__portrait are already on main and already ask
-// for these slugs behind hasLandingImage() — only the files were missing, so
-// this block adds them and changes nothing that ships.
+// The two persona portraits of `S6 Who It Is For`, sized by width at the 2x/1x
+// of the pen's 320pt column — 640 and 320.
 //
-// The pen references the portraits by their generator filenames; the web slugs
-// are the readable ones the section asks for. The pen's Photo rect is 640×470
-// at mode "fill" and the CSS mirrors it (aspect-ratio: 640/470, object-fit:
-// cover), so encode to that box rather than by width alone: a width-only
-// resize ships a ~1150px-tall frame the browser then crops to 470, paying for
-// pixels nobody sees.
+// SOURCE: the founder named these on LINA-117 as `marta.png` and `joao.png`,
+// and those are the portraits currently on the page. The pen frame still fills
+// the slot from the older `generated-1787956648904/650899.png` renders; where
+// the two disagree the founder's named files win, because they are the ones
+// that were reviewed. Both 320w and 640w are derived here from the SAME source
+// per persona — deriving the two descriptors of one <img> from two different
+// photographs is what this loop exists to prevent.
 //
-// The crop is placed by hand rather than by sharp's `attention` strategy: both
-// sources are full-body frames on a site, and attention scores the
-// high-contrast clutter (tools, scaffolding) over the face — it cropped Marta
-// to the torso with her head cut off. `focusY` is where the face actually sits
-// in each source, as a fraction of its height.
+// No crop step: `marta.png` and `joao.png` are already 640×470, which is
+// exactly the pen's Photo rect (640×470 at mode "fill", mirrored by
+// .lp-persona__portrait's `aspect-ratio: 640/470`). The generator frames are
+// tall full-body renders (768×1376, 928×1136) and needed a hand-placed face
+// crop to reach that box; the founder's exports are already framed, so a
+// width-only resize lands on the rect exactly and there is no focal point left
+// to guess at.
 const PORTRAITS = [
-  { src: 'generated-1787956648904.png', slug: 'persona-marta', focusY: 0.22 },
-  { src: 'generated-1787956650899.png', slug: 'persona-joao', focusY: 0.155 }
+  { src: 'marta.png', slug: 'persona-marta' },
+  { src: 'joao.png', slug: 'persona-joao' }
 ];
 
-// Land the face this far down the crop: clear of the top edge, and above the
-// scrim's dark half (it reaches #16181d99 at 52%) where the quote is set.
-const FACE_AT = 0.32;
-
-for (const { src: file, slug, focusY } of PORTRAITS) {
+for (const { src: file, slug } of PORTRAITS) {
   const src = join(SRC, file);
-  const meta = await sharp(src).metadata();
-
-  // Only the 640 set: SectionWho declares a single-URL srcSet at `-640`, so a
-  // `-320` file would ship unreferenced, and pointing the section at it means
-  // editing a component that is already on main. Encoded at the pen's 640×470.
-  for (const [width, height] of [[640, 470]]) {
-    const scaledHeight = Math.round((meta.height * width) / meta.width);
-    const top = Math.max(
-      0,
-      Math.min(scaledHeight - height, Math.round(focusY * scaledHeight - FACE_AT * height))
-    );
-
+  // Both descriptors SectionWho declares: `${slug}-320` and `${slug}-640`.
+  for (const width of [640, 320]) {
     for (const [ext, quality] of [['avif', AVIF_QUALITY], ['webp', WEBP_QUALITY]]) {
       const out = join(OUT, `${slug}-${width}.${ext}`);
       const info = await sharp(src)
         .resize({ width, withoutEnlargement: true })
-        .extract({ left: 0, top, width, height })
         [ext]({ quality })
         .toFile(out);
       total += info.size;
