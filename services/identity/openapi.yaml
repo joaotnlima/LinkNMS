@@ -6,6 +6,29 @@ info:
 servers:
   - url: /api/v1
 paths:
+  '/me':
+    get:
+      operationId: getMe
+      summary: 'The acting party’s own profile (identity.party): display name, email, role.'
+      responses:
+        '200':
+          description: The party’s profile
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/MeProfile'
+        '401':
+          description: No acting party in session
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '404':
+          description: Party not found
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
   '/projects':
     post:
       operationId: createProject
@@ -187,6 +210,26 @@ components:
                 - bad_request
             message:
               type: string
+    MeProfile:
+      type: object
+      required:
+        - partyId
+        - displayName
+      properties:
+        partyId:
+          type: string
+        displayName:
+          type: string
+        email:
+          type:
+            - string
+            - null
+        role:
+          type: string
+          enum:
+            - owner
+            - contractor
+            - viewer
     Member:
       type: object
       required:

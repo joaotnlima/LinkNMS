@@ -27,6 +27,13 @@ function asConflict(err) {
   return conflict('uniqueness constraint violated');
 }
 
+const mapParty = (r) => r && {
+  id: r.id,
+  displayName: r.display_name,
+  email: r.email ?? null,
+  role: r.role,
+};
+
 const mapProject = (r) => r && {
   id: r.id,
   name: r.name,
@@ -77,6 +84,12 @@ export function createPgStore({ pool = getPool(), ledger }) {
   // ── Reads ─────────────────────────────────────────────────────────────────
   async function getProject(id) {
     return mapProject(await one('select * from identity.project where id = $1', [id]));
+  }
+  // GET /me backbone — resolve a party UUID to its identity.party row
+  // (display_name, email, role). The party is the acting session's own, so this
+  // read is scoped to the authenticated caller; there is no list endpoint.
+  async function getParty(id) {
+    return mapParty(await one('select * from identity.party where id = $1', [id]));
   }
   async function getMembership(projectId, partyId) {
     return mapMembership(await one(
@@ -177,6 +190,7 @@ export function createPgStore({ pool = getPool(), ledger }) {
     listMemberships,
     getInvitationByTokenHash,
     listPendingInvitations,
+    getParty,
     transaction,
   };
 }

@@ -17,7 +17,7 @@ function makeHttp() {
   const ledger = createMemoryLedger();
   const store = createMemoryStore({ ledger });
   const service = createIdentityService({ store, ledger });
-  return { http: createIdentityHttp({ service }), ledger, service };
+  return { http: createIdentityHttp({ service }), ledger, store, service };
 }
 
 const session = (partyId) => ({ partyId });
@@ -228,4 +228,24 @@ test('invite without an email is unchanged: 201, a token, and nothing sent', asy
   assert.equal(invited.body.emailed, false);
   assert.equal(invited.body.invitation.email, null);
   assert.equal(sent.length, 0);
+});
+
+// ── GET /me (LINA-154) ───────────────────────────────────────────────────────
+test('getMe returns the acting party’s profile, never cached', async () => {
+  const { http, store } = makeHttp();
+  const me = party();
+  store.upsertParty({ id: me, displayName: 'Marta' });
+
+  const res = await http.getMe({ session: session(me), params: {}, body: undefined, headers: {} });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.partyId, me);
+  assert.equal(res.body.displayName, 'Marta');
+  assert.equal(res.headers['cache-control'], 'no-store');
+});
+
+test('getMe anonymous is a 401 in the uniform envelope', async () => {
+  const { http } = makeHttp();
+  const res = await http.getMe({ session: null, params: {}, body: undefined, headers: {} });
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error.code, 'unauthenticated');
 });

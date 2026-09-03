@@ -135,4 +135,24 @@ describe('Postgres identity (membership + authz + ledger seam)', { skip: DB ? fa
     // The GC already joined ⇒ inviting again is a clean 409 (no 2nd pending invite).
     await assert.rejects(svc.inviteCounterparty({ actorPartyId: owner, projectId: p.id }), (e) => e.status === 409);
   });
+
+  // GET /me (LINA-154): resolve a party UUID to its identity.party row. The party
+  // row is normally written by the Clerk bridge (app/src/server/session.ts), so we
+  // seed one here exactly the way that bridge does and read it through the service.
+  test('store.getParty resolves display name/email/role; unknown id is null', async () => {
+    const id = randomUUID();
+    await appPool.query(
+      `insert into identity.party (id, display_name, email, role)
+       values ($1, 'Marta', 'marta@example.com', 'owner')`,
+      [id],
+    );
+    const party = await svc.getMe({ actorPartyId: id });
+    assert.equal(party.partyId, id);
+    assert.equal(party.displayName, 'Marta');
+    assert.equal(party.email, 'marta@example.com');
+    assert.equal(party.role, 'owner');
+
+    // An unknown party is a 404, never a fabricated name.
+    await assert.rejects(svc.getMe({ actorPartyId: randomUUID() }), (e) => e.status === 404);
+  });
 });

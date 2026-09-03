@@ -356,6 +356,18 @@ export function createIdentityService({
     return { membership: shapeMembership(membership) };
   }
 
+  // GET /me — the acting party's own profile. No authorization beyond being
+  // authenticated: every signed-in party may read their own identity. Returns
+  // the authoritative display_name, email, and role from identity.party — the
+  // same record the setup screen (LINA-132) writes to. Never returns a list;
+  // there is exactly one answer per session.
+  async function getMe({ actorPartyId }) {
+    if (!actorPartyId) throw unauthenticated();
+    const party = await store.getParty(actorPartyId);
+    if (!party) throw notFound('party');
+    return { partyId: party.id, displayName: party.displayName, email: party.email, role: party.role };
+  }
+
   return {
     // authorizer (the sole gate)
     authorize,
@@ -367,6 +379,7 @@ export function createIdentityService({
     getProject,
     inviteCounterparty,
     acceptInvitation,
+    getMe,
   };
 }
 

@@ -21,6 +21,9 @@
 //   getParty(id) · upsertParty({id,displayName})
 //   getProject(id) · getMembership(projectId, partyId) · listMemberships(projectId)
 //   getInvitationByTokenHash(hash) · listPendingInvitations(projectId)
+//
+// getParty(id) returns the identity.party row for a party UUID, used by GET /me
+// to resolve session.partyId → { displayName, email, role }.
 // PORT — transaction(fn) → fn(tx), where tx provides:
 //   insertProject(row) · insertMembership(row) · insertInvitation(row)
 //   markInvitationAccepted(id) · appendEvent(event) -> {seq, entryHash}
