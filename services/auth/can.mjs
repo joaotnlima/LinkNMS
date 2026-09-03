@@ -34,6 +34,21 @@
 // predicate, the product's core trust promise breaks — LINA-143 is rejected at
 // merge without it.
 
+// PER-RESOURCE SCOPING (Architect LINA-142 §8.1 finding F1 — LINA-148):
+// Some verbs are granted to a role only WITHIN the actor's assignment — the
+// blanket role grant is necessary but NOT sufficient. Today this is the
+// subcontractor's `project.read` / `progress.report`: the seed grants them
+// role-wide, but the honest contract is "the project(s)/stage(s) you were
+// assigned to", not "any project in your org". This predicate makes that real,
+// same shape as the `change_order.decide` runtime rule.
+//
+// It is DORMANT until the resolver supplies an assignment scope: `can()` only
+// bites when `assignedResourceIds` is provided (an array). While it is
+// `undefined` — v1, where a subcontractor holds membership in exactly one
+// org/project, so there is no assignment source to resolve — the blanket grant
+// stands, which is the documented, ratified v1 behavior (§8.1 F1). See
+// docs/architecture/adr/0010-per-resource-scoping-subcontractor.md for the flip.
+
 // The canonical, namespaced verb catalogue (mirrors the `authz.permissions`
 // seed). A frozen enum (not free strings) so a typo'd action fails loudly here
 // instead of silently granting or denying.
@@ -55,6 +70,17 @@ export const PERMISSION = Object.freeze({
   TASK_ASSIGN: 'task.assign',
   PROGRESS_REPORT: 'progress.report',
   PLAN_UPLOAD: 'plan.upload',
+});
+
+// Verbs a role holds ONLY as a scoped capability, keyed by role. Reaching the
+// role-grant fallthrough for one of these means the actor has the blanket grant
+// but is being checked against a specific resource instance — the scoping
+// predicate then requires the actor to be assigned to that instance. (§8.1 F1.)
+const SCOPED_ROLE_VERBS = Object.freeze({
+  subcontractor: Object.freeze([
+    PERMISSION.PROJECT_READ,
+    PERMISSION.PROGRESS_REPORT,
+  ]),
 });
 
 /**
@@ -87,6 +113,9 @@ export const PERMISSION = Object.freeze({
  * @param {Array<{permissionId?:string,key?:string,effect:string}>} [ctx.resourceAcls]
  *                                                resource-level overrides for (actor, resource)
  * @param {string} [ctx.resourceType]             alias for resource.type when no resource object
+ * @param {string[]} [ctx.assignedResourceIds]    ids of `resource.type` this actor is assigned to,
+ *                                                for role-scoped verbs (§8.1 F1). `undefined` ⇒ no
+ *                                                assignment source (v1) ⇒ blanket grant stands.
  * @returns {{ allow: boolean, reason?: string }}
  */
 export function can({
@@ -96,6 +125,7 @@ export function can({
   membership = null,
   rolePermissions = [],
   resourceAcls = [],
+  assignedResourceIds = undefined,
 }) {
   if (!actor?.userId) return deny('no acting user');
   if (!Object.values(PERMISSION).includes(action)) {
@@ -138,6 +168,24 @@ export function can({
     }
     if (actor.userId === resource.proposedBy) {
       return deny('the proposer of a change order cannot decide it');
+    }
+  }
+
+  // ── Runtime predicate: per-resource scoping for role-scoped verbs (§8.1 F1) ──
+  // The actor's role grants this verb only within their assignment. We reach here
+  // via the blanket role grant (an explicit resource-ACL allow would have already
+  // returned at step 2). Enforcement is DORMANT until the resolver supplies an
+  // assignment scope: while `assignedResourceIds` is undefined (v1 — one project
+  // per org, no assignment source) the blanket grant stands. Once it is provided
+  // (multi-project era), an unassigned — or resource-less — request is denied,
+  // fail-closed, mirroring the two-sided rule above.
+  const scopedVerbs = SCOPED_ROLE_VERBS[membership.roleKey];
+  if (scopedVerbs?.includes(action) && assignedResourceIds !== undefined) {
+    if (!resource?.id) {
+      return deny(`${action} is scoped — a resource id is required`);
+    }
+    if (!assignedResourceIds.includes(resource.id)) {
+      return deny(`not assigned to ${resource.type ?? 'resource'} ${resource.id}`);
     }
   }
 

@@ -85,12 +85,20 @@ export function createAuthRequestPath({ store, sync, verifyToken, can }) {
 
     // Scoped verbs need a resource type to evaluate ACLs; the pure can() will
     // deny-before that if we pass nothing, but we resolve ACLs only when scoped.
-    const [membership, rolePermissions, resourceAcls] = await Promise.all([
+    const [membership, rolePermissions, resourceAcls, assignedResourceIds] = await Promise.all([
       orgId ? store.getMembership(actor.userId, orgId) : Promise.resolve(null),
       orgId ? resolveRolePermissions(store, actor, orgId) : Promise.resolve([]),
       resourceType
         ? store.getResourceAcls(actor.userId, resourceType, resource?.id ?? null)
         : Promise.resolve([]),
+      // Per-resource scoping (§8.1 F1 / LINA-148): resolve the assignment scope
+      // for role-scoped verbs. In v1 no store implements this hook, so it stays
+      // undefined and `can()`'s predicate is a documented no-op. The multi-project
+      // resolver will add `getAssignedResourceIds` and the predicate activates —
+      // see docs/architecture/adr/0010-per-resource-scoping-subcontractor.md.
+      orgId && resourceType && typeof store.getAssignedResourceIds === 'function'
+        ? store.getAssignedResourceIds(actor.userId, resourceType, orgId)
+        : Promise.resolve(undefined),
     ]);
 
     const decision = can(
@@ -101,6 +109,7 @@ export function createAuthRequestPath({ store, sync, verifyToken, can }) {
         membership,
         rolePermissions,
         resourceAcls,
+        assignedResourceIds,
       },
     );
 
