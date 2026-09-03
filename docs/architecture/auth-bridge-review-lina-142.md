@@ -106,11 +106,15 @@ Rationale:
   of hand-rolled session crypto (§8 "no shortcuts").
 - `authorization` and `cookie` are redacted from logs (`server.js` L36).
 
-**Legacy note.** `services/identity/session.mjs` still defines the self-managed
-magic-link session as an httpOnly HMAC cookie (`lnms_session`, ADR-0007). That is
-the **retiring** identity plane, not the Clerk bridge. Its retirement is a
-separate, Architect-gated migration (see §8.4); until then the two transports
-coexist and do not interact — the Clerk API plane never reads `lnms_session`.
+**Legacy note (RESOLVED — LINA-149, 2026-09-03).** At review time
+`services/identity/session.mjs` still defined the self-managed magic-link session
+as an httpOnly HMAC cookie (`lnms_session`, ADR-0007) — the **retiring** identity
+plane, not the Clerk bridge. That retirement is now complete: LINA-124 deleted the
+cookie/session/sign-in code and routes, and the Architect-gated forward-only
+migration scheduled by §8.2/§8.4 has landed as
+`services/identity/migrations/0008_identity.sql`, dropping the last remnant
+(`identity.sign_in_token`) once the Clerk cutover was proven in prod. No
+`lnms_session` transport remains.
 
 ---
 

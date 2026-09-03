@@ -28,9 +28,13 @@
 >   cutover is unbroken.
 > * **One authority for who is acting** (ADR-0004). Still true, now Clerk-backed.
 >
-> The tables this ADR created (`identity.sign_in_token`, migrations 0003/0005)
-> are left in place: migrations here are forward-only, and dropping them is a
-> separate, deliberate change. Nothing reads or writes them any more.
+> The token store this ADR created (`identity.sign_in_token`, migration 0003)
+> outlived the code by design — migrations here are forward-only, so LINA-124
+> deleted the readers but left the table. **LINA-149 (2026-09-03) retired it**:
+> `services/identity/migrations/0008_identity.sql` drops `identity.sign_in_token`
+> now that the Clerk cutover is proven in prod. It is not audit data (0003 writes
+> no ledger event), so the drop does not touch ADR-0002. The `identity.invitation`
+> reshaping (0005) is a live, separate concern and is **not** affected.
 
 ## Context
 
