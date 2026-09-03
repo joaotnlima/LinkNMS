@@ -5,11 +5,13 @@ Contract-first spec for the account-setup endpoint consumed by the D0a-setup scr
 ships against (`apps/web/src/onboarding/api.ts`) exactly; adds the formal detail the
 server must honour.
 
-> **Implementation status:** blocked on [LINA-123](/LINA/issues/LINA-123) (Neon RBAC
-> schema) and [LINA-136](/LINA/issues/LINA-136) (Fastify `apps/api` scaffold + Clerk
-> JWT verify) + Clerk key provisioning ([LINA-129](/LINA/issues/LINA-129) §7). This
-> document pins the contract so the frontend and QA can build against it now; the
-> endpoint is wire-ready when those land.
+> **Implementation status:** implemented. Ships with [LINA-123](/LINA/issues/LINA-123)
+> (Neon RBAC schema) and [LINA-136](/LINA/issues/LINA-136) (Fastify `apps/api` scaffold +
+> Clerk JWT verify) + Clerk key provisioning ([LINA-129](/LINA/issues/LINA-129) §7).
+> Code: `apps/api/server.js` (route + error handler), `services/auth/profile.mjs`
+> (domain service), `services/auth/pg-store.mjs` + `services/auth/store.mjs`
+> (`completeProfile`, atomic), `services/auth/migrations/0003_authz_profile.sql`
+> (`language`, `setup_complete`). Tests: `apps/api/server.test.mjs`.
 
 ---
 

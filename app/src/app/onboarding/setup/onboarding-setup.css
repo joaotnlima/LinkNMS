@@ -1,0 +1,211 @@
+/* D0a-setup design tokens (LINA-132). Scoped under .ob so the onboarding palette
+ * never leaks into the record surfaces, which run the globals.css system. Tokens
+ * are the ones the design brief fixes: Owner Blue, Builder Orange, Paper, Ink,
+ * Inter. */
+.ob {
+  --ob-owner: #3e5c8a;
+  --ob-builder: #b4633b;
+  --ob-paper: #fbfaf7;
+  --ob-ink: #16181d;
+  --ob-muted: #5c5f68;
+  --ob-line: #e4e1d9;
+  --ob-line-strong: #c9c5ba;
+  --ob-danger: #b4633b;
+  --ob-font: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  font-family: var(--ob-font);
+  color: var(--ob-ink);
+  background: var(--ob-paper);
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 20px;
+}
+
+.ob-card {
+  width: 100%;
+  max-width: 460px;
+  background: #fff;
+  border: 1px solid var(--ob-line);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.05), 0 12px 32px rgba(22, 24, 29, 0.08);
+  padding: 28px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.ob-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ob-brand {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ob-owner);
+}
+
+.ob-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.ob-sub {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ob-muted);
+}
+
+.ob-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.ob-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ob-ink);
+  padding: 0;
+}
+
+.ob-help {
+  font-size: 12px;
+  color: var(--ob-muted);
+}
+
+.ob-field input[type='text'],
+.ob-field select {
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--ob-ink);
+  background: var(--ob-paper);
+  border: 1px solid var(--ob-line-strong);
+  border-radius: 8px;
+  padding: 11px 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ob-field input[type='text']:focus,
+.ob-field select:focus,
+.ob-role:focus-visible {
+  outline: 2px solid var(--ob-owner);
+  outline-offset: 1px;
+  border-color: var(--ob-owner);
+}
+
+.ob-field input[aria-invalid='true'],
+.ob-field select[aria-invalid='true'] {
+  border-color: var(--ob-danger);
+}
+
+/* Role selector — two large radio cards, each carrying its persona colour. */
+.ob-rolegrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 420px) {
+  .ob-rolegrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.ob-role {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  background: var(--ob-paper);
+  border: 1.5px solid var(--ob-line-strong);
+  border-radius: 10px;
+  padding: 14px 14px;
+  transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.ob-role-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ob-ink);
+}
+
+.ob-role-blurb {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ob-muted);
+}
+
+.ob-role--owner.is-selected {
+  border-color: var(--ob-owner);
+  background: color-mix(in srgb, var(--ob-owner) 8%, #fff);
+  box-shadow: inset 0 0 0 1px var(--ob-owner);
+}
+
+.ob-role--builder.is-selected {
+  border-color: var(--ob-builder);
+  background: color-mix(in srgb, var(--ob-builder) 8%, #fff);
+  box-shadow: inset 0 0 0 1px var(--ob-builder);
+}
+
+.ob-role--owner.is-selected .ob-role-name {
+  color: var(--ob-owner);
+}
+
+.ob-role--builder.is-selected .ob-role-name {
+  color: var(--ob-builder);
+}
+
+.ob-submit {
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--ob-owner);
+  border: 0;
+  border-radius: 9px;
+  padding: 13px 16px;
+  cursor: pointer;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.ob-submit:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ob-owner) 88%, #000);
+}
+
+.ob-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ob-alert {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #fff;
+  background: var(--ob-danger);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.ob-fielderr {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ob-danger);
+}

@@ -1,0 +1,94 @@
+/* D0a — sign-up / account-creation screen (LINA-131). Front door of the
+ * onboarding flow; it shares the scoped onboarding palette with D0a-setup
+ * (onboarding-setup.css) so the sequence reads as one system. Tokens are the
+ * ones the design brief fixes: Owner Blue, Builder Orange, Paper, Ink, Inter.
+ * Scoped under .ob-auth so the onboarding palette never leaks into the record
+ * surfaces, which run the globals.css system. */
+.ob-auth {
+  --ob-owner: #3e5c8a;
+  --ob-builder: #b4633b;
+  --ob-paper: #fbfaf7;
+  --ob-ink: #16181d;
+  --ob-muted: #5c5f68;
+  --ob-line: #e4e1d9;
+  --ob-line-strong: #c9c5ba;
+  --ob-font: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  font-family: var(--ob-font);
+  color: var(--ob-ink);
+  background: var(--ob-paper);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 20px;
+  padding: 48px 20px;
+}
+
+.ob-auth-head {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ob-auth-brand {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ob-owner);
+}
+
+.ob-auth-sub {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ob-muted);
+}
+
+/* The Clerk <SignUp/> card carries the actual credential form (D0a) and its own
+ * email-verification "check your email" state (D0a-magic). We only host and
+ * brand it via the appearance prop; we never build a custom credential form
+ * (Clerk Integration spec, LINA-129 §6). */
+.ob-auth-card {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+/* Preview fallback when the publishable key is absent (build / misconfig).
+ * Mirrors components/providers.tsx: the app must boot, not crash, without Clerk
+ * — the same "boots in preview mode" contract the LINA-129 config records. */
+.ob-auth-preview {
+  width: 100%;
+  max-width: 400px;
+  background: #fff;
+  border: 1px solid var(--ob-line);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.05), 0 12px 32px rgba(22, 24, 29, 0.08);
+  padding: 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ob-auth-preview h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.ob-auth-preview p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ob-muted);
+}
+
+.ob-auth-preview a {
+  color: var(--ob-owner);
+  font-weight: 600;
+}
