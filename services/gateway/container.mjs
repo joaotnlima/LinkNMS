@@ -91,6 +91,13 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
     { role: roles[svc] ?? roleFor(roleVar) },
   );
   const pools = {
+    // identity doubles as the RBAC / Clerk-mirror client (Auth Bridge LINA-140):
+    // identity.users/orgs/memberships/roles/permissions/role_permissions/
+    // resource_acls all live in schema `identity` and are served through this
+    // pool, which runs as identity_app (0006 grants it DML, SELECT-only on the
+    // role/permission catalog). The can() authorizer and Clerk webhook/JIT sync
+    // (0A-impl-2) must source their client from here — never a separate pool
+    // that would bypass the per-role grant boundary (ADR-0006 §1).
     identity: pool('identity', 'IDENTITY_DATABASE_URL', 'IDENTITY_DATABASE_ROLE'),
     decision: pool('decision', 'DECISION_DATABASE_URL', 'DECISION_DATABASE_ROLE'),
     changeOrder: pool('changeOrder', 'CHANGE_ORDER_DATABASE_URL', 'CHANGE_ORDER_DATABASE_ROLE'),
