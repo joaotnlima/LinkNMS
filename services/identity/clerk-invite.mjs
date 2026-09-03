@@ -67,10 +67,12 @@ export function createClerkOrgInviter({ secretKey, orgId, role = 'basic_member' 
 /**
  * Activate the first `limit` WAITLISTED signups, ordered by signup_order, by:
  *   1. sending each a Clerk org invitation (via the injected `inviter`);
- *   2. granting each an active beta seat (identity.seat, ADR-0008) and flipping
- *      the waitlist row to `active` with `activated_at` — only when the invite
- *      succeeded, so a row is never marked active before it was offered access;
- *   3. recording the Clerk invitation id for audit.
+ *   2. granting each an active beta seat (identity.seat, ADR-0008) — the access
+ *      gate — BEFORE flipping the row, so an `active` row always has a seat;
+ *   3. flipping the waitlist row to `active` with `activated_at`, only after the
+ *      invite AND the seat succeeded, so a row is never marked active before it
+ *      was offered access AND could actually use it;
+ *   4. recording the Clerk invitation id for audit.
  *
  * Partial failure is contained: one address whose invite throws does NOT abort
  * the batch — it is reported `failed` and the rest proceed. Nothing rolls over an
@@ -121,9 +123,17 @@ export async function sendWaitlistInvitations({
     if (!dryRun) {
       try {
         const invitationId = await inviter(email);
+        // Order matters. Grant the seat (the access gate, ADR-0008) BEFORE the
+        // row is flipped to `active`. The seat is what turns a Clerk identity
+        // into a party (session.ts); an `active` row without a seat is a user
+        // who authenticates straight into /no-access. If the seat write fails we
+        // must leave the row `waitlisted` so a rerun retries it — promoting
+        // first would strand it: listByStatusOrder('waitlisted') skips active
+        // rows, so the batch could never seat it, and the row would be reported
+        // `failed` while sitting permanently locked out. Seat first, then flip.
+        await seats.grant(email, { source: 'beta' });
         await store.promoteToActive(email);
         await store.recordActivation(email, invitationId);
-        await seats.grant(email, { source: 'beta' });
         entry.outcome = 'invited';
         entry.clerkInvitationId = invitationId;
         invitedCount += 1;

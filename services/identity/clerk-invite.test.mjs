@@ -45,10 +45,13 @@ function seedStore({ n, extraActive = 2 } = {}) {
   return store;
 }
 
-function fakeSeats() {
+function fakeSeats({ failFor = new Set() } = {}) {
   const granted = [];
   return {
-    async grant(email) { granted.push(email); },
+    async grant(email) {
+      if (failFor.has(email)) throw new Error(`seat grant failed for ${email}`);
+      granted.push(email);
+    },
     _granted: granted,
   };
 }
@@ -133,6 +136,35 @@ test('a failed invite does not seat or activate that row, and does not abort the
   assert.equal(byEmail['user1@example.com'].outcome, 'invited');
   assert.equal(byEmail['user3@example.com'].outcome, 'invited');
   assert.equal(seats._granted.length, 2);
+});
+
+test('a failed SEAT grant leaves the row waitlisted so a rerun can recover it', async () => {
+  // The seat is the access gate (ADR-0008): an `active` row with no seat is a
+  // user who authenticates straight into /no-access. If the seat write fails,
+  // the row must NOT be promoted — otherwise listByStatusOrder('waitlisted')
+  // would skip it forever and the batch could never seat it.
+  const store = seedStore({ n: 3 });
+  const seats = fakeSeats({ failFor: new Set(['user2@example.com']) });
+  const inviter = fakeInviter();
+
+  const { invited, summary } = await sendWaitlistInvitations({ store, seats, inviter, limit: 3 });
+
+  assert.equal(summary.invited, 2);
+  assert.equal(summary.failed, 1);
+
+  const byEmail = Object.fromEntries(invited.map((e) => [e.email, e]));
+  // The seat-failed row is reported failed and — critically — NOT active.
+  assert.equal(byEmail['user2@example.com'].outcome, 'failed');
+  assert.equal(store.getByEmail('user2@example.com').status, 'waitlisted');
+  // Its activation was never recorded either.
+  assert.equal(store.getByEmail('user2@example.com').clerkInvitationId ?? null, null);
+  // A rerun (seat now succeeds) picks the row back up and completes it.
+  const seats2 = fakeSeats();
+  const rerun = await sendWaitlistInvitations({ store, seats: seats2, inviter, limit: 3 });
+  assert.equal(rerun.summary.total, 1);
+  assert.deepEqual(rerun.invited.map((e) => e.email), ['user2@example.com']);
+  assert.equal(store.getByEmail('user2@example.com').status, 'active');
+  assert.equal(seats2._granted.includes('user2@example.com'), true);
 });
 
 test('a rerun skips already-activated rows (no double invite)', async () => {
