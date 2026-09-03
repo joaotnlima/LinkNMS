@@ -103,9 +103,32 @@ export function createInMemoryStore() {
     return { applied: true, row: { ...r } };
   }
 
+  // D-1 activation (LINA-130): flip waitlisted → active (idempotent) and stamp
+  // activated_at, mirroring updateStatus with a status-safe default.
+  function promoteToActive(emailNorm) {
+    const r = rows.get(emailNorm);
+    if (!r) return { applied: false, row: null };
+    if (r.status !== 'active') {
+      r.status = 'active';
+      r.activated_at = r.activated_at ?? new Date().toISOString();
+    }
+    return { applied: true, row: { ...r } };
+  }
+
+  // D-1 activation (LINA-130): record the Clerk org-invitation id for audit
+  // (mirrors waitlist.waitlist_activation; idempotent on (signup, invitation)).
+  function recordActivation(emailNorm, clerkInvitationId) {
+    const r = rows.get(emailNorm);
+    if (!r) return { applied: false, row: null };
+    r.clerkInvitationId = clerkInvitationId;
+    r.invitedAt = new Date().toISOString();
+    return { applied: true, row: { ...r } };
+  }
+
   return {
     transaction,
-    insert, getByEmail, get, listByStatusOrder, updateStatus,
+    insert, getByEmail, get, listByStatusOrder,
+    updateStatus, promoteToActive, recordActivation,
     _rows: rows,
   };
 }
