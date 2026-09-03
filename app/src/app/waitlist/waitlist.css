@@ -1,0 +1,198 @@
+/* D-4 Waitlist landing + D-3 confirmation — LINA-126 (Onboarding Plan v4, Phase 1).
+ *
+ * These tokens are the NEW onboarding brand (Owner Blue #3e5c8a, Builder Orange
+ * #b4633b, Paper #fbfaf7, Ink #16181d, Inter). They are deliberately SCOPED under
+ * `.wl` rather than written into globals.css: the global palette swap is LINA-92's
+ * in-flight migration, and clobbering the R0 tokens here would collide with it.
+ * When LINA-92 lands, these can fold into the shared tokens.
+ */
+.wl {
+  --wl-owner: #3e5c8a;
+  --wl-owner-ink: #2c4368;
+  --wl-builder: #b4633b;
+  --wl-closed: #3f7d55;
+  --wl-paper: #fbfaf7;
+  --wl-raised: #ffffff;
+  --wl-ink: #16181d;
+  --wl-muted: #5c606b;
+  --wl-line: #e4e1d9;
+  --wl-line-strong: #c9c5ba;
+  --wl-danger: #b23a2c;
+  --wl-pad: 40px;
+  --wl-gap: 20px;
+
+  font-family: var(--wl-font, 'Inter'), system-ui, -apple-system, sans-serif;
+  color: var(--wl-ink);
+  background: var(--wl-paper);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--wl-pad);
+  text-align: center;
+}
+
+.wl__inner {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-gap);
+}
+
+/* Brand mark row */
+.wl__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  font-weight: 650;
+  font-size: 15px;
+  letter-spacing: -0.2px;
+}
+.wl__brand .wl__mk { width: 24px; height: 24px; color: var(--wl-owner); }
+
+.wl__eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--wl-builder);
+}
+
+.wl__title {
+  font-size: 32px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  margin: 0;
+}
+
+.wl__sub {
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--wl-muted);
+  margin: 0;
+}
+
+/* The blue / orange / green colour signature the whole product reads by. */
+.wl__swatches {
+  display: inline-flex;
+  gap: 6px;
+  justify-content: center;
+}
+.wl__swatch { width: 26px; height: 5px; border-radius: 999px; }
+.wl__swatch--blue { background: var(--wl-owner); }
+.wl__swatch--orange { background: var(--wl-builder); }
+.wl__swatch--green { background: var(--wl-closed); }
+
+/* ---- Form ---- */
+.wl__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  text-align: left;
+}
+.wl__field { display: flex; flex-direction: column; gap: 6px; }
+.wl__label { font-size: 13px; font-weight: 600; color: var(--wl-ink); }
+.wl__input {
+  font: inherit;
+  font-size: 16px;
+  padding: 13px 14px;
+  border: 1.5px solid var(--wl-line-strong);
+  border-radius: 10px;
+  background: var(--wl-raised);
+  color: var(--wl-ink);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.wl__input::placeholder { color: var(--wl-muted); opacity: 0.7; }
+.wl__input:focus {
+  outline: none;
+  border-color: var(--wl-owner);
+  box-shadow: 0 0 0 3px rgba(62, 92, 138, 0.18);
+}
+.wl__input[aria-invalid='true'] {
+  border-color: var(--wl-danger);
+  box-shadow: 0 0 0 3px rgba(178, 58, 44, 0.15);
+}
+
+.wl__btn {
+  font: inherit;
+  font-size: 16px;
+  font-weight: 650;
+  color: #fff;
+  background: var(--wl-owner);
+  border: 0;
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+.wl__btn:hover { background: var(--wl-owner-ink); }
+.wl__btn:disabled { opacity: 0.6; cursor: default; }
+
+.wl__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--wl-danger);
+  font-weight: 500;
+}
+
+.wl__note { font-size: 12px; color: var(--wl-muted); margin: 0; }
+
+/* ---- D-3 confirmation ---- */
+.wl__check {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: rgba(63, 125, 85, 0.12);
+  color: var(--wl-closed);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wl__check svg { width: 28px; height: 28px; }
+
+.wl__steps {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wl__step { display: flex; gap: 12px; align-items: flex-start; }
+.wl__step-num {
+  flex: 0 0 auto;
+  width: 24px; height: 24px;
+  border-radius: 999px;
+  background: var(--wl-owner);
+  color: #fff;
+  font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.wl__step-txt { font-size: 14px; line-height: 1.45; color: var(--wl-ink); }
+.wl__step-txt b { font-weight: 650; }
+
+.wl__launch {
+  border: 1px solid var(--wl-line);
+  border-radius: 12px;
+  background: var(--wl-raised);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wl__launch-lbl { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--wl-builder); }
+.wl__launch-date { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+
+@media (max-width: 480px) {
+  .wl { padding: 24px; }
+  .wl__title { font-size: 27px; }
+}
