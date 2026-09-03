@@ -24,6 +24,13 @@ import './onboarding-setup.css';
 // Where a completed setup lands: the first-time empty portal state (D1-new).
 const PORTAL_HOME = '/';
 
+// Inlined at build by Next. Absent ⇒ render the preview notice instead of
+// mounting the Clerk-hook body, which would otherwise crash the static prerender
+// with "useAuth can only be used within <ClerkProvider/>" when no key is
+// provisioned. Mirrors sign-up/page.tsx and components/providers.tsx: the app
+// boots in preview mode when Clerk keys are absent, and builds without them.
+const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
 const ROLES: { value: Role; label: string; blurb: string; accent: 'owner' | 'builder' }[] = [
   {
     value: 'owner',
@@ -45,7 +52,31 @@ const LANGUAGES: { value: Language; label: string }[] = [
   { value: 'es', label: 'Español' },
 ];
 
+// Default export: gate the Clerk-hook body behind the publishable key so the
+// page prerenders in preview / keyless CI builds. When the key is present (all
+// real environments, incl. Vercel) this renders <AccountSetupForm/> exactly as
+// before, inside the <ClerkProvider> wired in components/providers.tsx.
 export default function AccountSetupPage() {
+  if (!PUBLISHABLE_KEY) {
+    return (
+      <main className="ob" role="note">
+        <div className="ob-card">
+          <header className="ob-head">
+            <span className="ob-brand">LinkNMS</span>
+            <h1 className="ob-title">Account setup isn&rsquo;t available in this preview</h1>
+            <p className="ob-sub">
+              Authentication isn&rsquo;t configured in this environment yet. Once Clerk keys are
+              provisioned, account setup opens here after you sign up.
+            </p>
+          </header>
+        </div>
+      </main>
+    );
+  }
+  return <AccountSetupForm />;
+}
+
+function AccountSetupForm() {
   const router = useRouter();
   const { isLoaded, isSignedIn, getToken, signOut } = useAuth();
   const { user } = useUser();
