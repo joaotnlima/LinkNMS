@@ -105,7 +105,41 @@ export function createPgStore({ pool = getPool() } = {}) {
     return { applied: true, row: mapRow(rows[0]) };
   }
 
-  return { transaction, insert, getByEmail, get, listByStatusOrder, updateStatus };
+  // D-1 activation (LINA-130): flip waitlisted → active, stamp activated_at. Uses
+  // the pool's own connection (the batch runs as migrator, not waitlist_app).
+  // Idempotent: an already-active row is returned applied without re-stamping.
+  async function promoteToActive(emailNorm) {
+    const { rows } = await pool.query(
+      `update waitlist.signup
+          set status = 'active',
+              activated_at = coalesce(activated_at, now())
+        where email_norm = $1 and status = 'waitlisted'
+        returning *`,
+      [emailNorm],
+    );
+    if (rows.length === 0) return { applied: false, row: null };
+    return { applied: true, row: mapRow(rows[0]) };
+  }
+
+  // D-1 activation (LINA-130): record the Clerk org-invitation id for audit.
+  // Only migrator can write waitlist.waitlist_activation; idempotent on
+  // (signup, invitation) via UNIQUE. Never throws the batch for a missing row.
+  async function recordActivation(emailNorm, clerkInvitationId) {
+    const signup = await getByEmail(emailNorm);
+    if (!signup) return { applied: false, row: null };
+    await pool.query(
+      `insert into waitlist.waitlist_activation (signup_id, clerk_invitation_id)
+       values ($1, $2)
+       on conflict (signup_id, clerk_invitation_id) do nothing`,
+      [signup.id, clerkInvitationId ?? null],
+    );
+    return { applied: true };
+  }
+
+  return {
+    transaction, insert, getByEmail, get, listByStatusOrder, updateStatus,
+    promoteToActive, recordActivation,
+  };
 }
 
 export { DomainError };
