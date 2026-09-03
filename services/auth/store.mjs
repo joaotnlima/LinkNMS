@@ -13,12 +13,17 @@
 //   getMembership(userId, orgId)  -> { roleId, roleKey } | null
 //   getRolePermissions(roleId)    -> string[] (permission keys)
 //   getResourceAcls(userId, resourceType, resourceId) -> [{key,effect}]
+//   isSetupComplete(clerkUserId) -> boolean
 // PORT — sync writes (webhook + JIT):
 //   upsertUser({clerkUserId,email,displayName}) -> user
 //   upsertOrg({clerkOrgId,name}) -> org
 //   setUserStatus(userId, 'active'|'disabled') -> user
 //   setMembership({userId,orgId,roleKey}) -> member  (idempotent upsert)
 //   removeMembership({clerkUserId,clerkOrgId}) -> void
+// PORT — account-setup (LINA-137):
+//   completeProfile({clerkUserId,clerkOrgId,displayName,language,roleKey})
+//     -> { status: 'ok'|'already_setup'|'not_found'|'bad_role', roleId? }  
+//     Atomic: profile + membership in one unit of work.
 //
 // All rows are returned as fresh shallow copies so callers cannot mutate stored
 // state by holding a reference (the DB gives you copies too).
@@ -62,6 +67,30 @@ export function createMemoryAuthStore() {
     async getResourceAcls(userId, resourceType, resourceId) {
       return [...(acls.get(`${userId}|${resourceType}|${resourceId}`) ?? [])].map(copy);
     },
+    async isSetupComplete(clerkUserId) {
+      return users.get(clerkUserId)?.setupComplete ?? false;
+    },
+
+    // ── account-setup (LINA-137) ──
+    async completeProfile({ clerkUserId, clerkOrgId, displayName, language, roleKey }) {
+      const user = users.get(clerkUserId);
+      if (!user) return { status: 'not_found' };
+      if (user.setupComplete) return { status: 'already_setup' };
+      if (!rolePerms.has(roleKey)) return { status: 'bad_role' };
+
+      user.displayName = displayName;
+      user.language = language;
+      user.setupComplete = true;
+
+      let roleId = null;
+      if (clerkOrgId) {
+        const org = orgs.get(clerkOrgId) ?? (await this.upsertOrg({ clerkOrgId }));
+        const key = `${user.id}|${org.id}`;
+        memberships.set(key, { userId: user.id, orgId: org.id, roleId: roleKey, roleKey });
+        roleId = roleKey;
+      }
+      return { status: 'ok', roleId };
+    },
 
     // ── sync writes (webhook + JIT) ──
     async upsertUser({ clerkUserId, email, displayName }) {
@@ -72,6 +101,8 @@ export function createMemoryAuthStore() {
         email: (email ?? existing?.email ?? '').toLowerCase(),
         displayName: displayName ?? existing?.displayName ?? null,
         status: existing?.status ?? 'active',
+        language: existing?.language ?? 'en',
+        setupComplete: existing?.setupComplete ?? false,
       };
       users.set(clerkUserId, row);
       return copy(row);

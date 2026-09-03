@@ -38,7 +38,7 @@ async function main() {
   });
 
   // Build the auth service graph once at startup (lazy singleton).
-  const { authRequestPath, webhookHandler, pool } = await createAuthContainer();
+  const { authRequestPath, profileService, webhookHandler, pool } = await createAuthContainer();
 
   // ── Clerk JWT preHandler ────────────────────────────────────────────────
   //
@@ -113,15 +113,35 @@ async function main() {
     };
   });
 
+  // ── POST /api/me/profile ───────────────────────────────────────────────
+  //
+  // Persists the first-login account-setup form and grants the chosen role in
+  // the Neon RBAC model (LINA-137). Auth is the requireAuth preHandler;
+  // identity always comes from the verified Clerk token (ADR-0004), never the
+  // body. Responses per api-me-profile-contract.md:
+  //   200/201 -> profile stored + role granted
+  //   409     -> already set up (client continues to portal)
+  //   400/422 -> validation; { error: { field, message } }
+  //   401     -> session missing/expired
+  fastify.post('/api/me/profile', { preHandler: [requireAuth] }, async (request) => {
+    const profile = await profileService.completeProfile({
+      actor: request.auth,
+      input: request.body,
+    });
+    return { profile };
+  });
+
   // ── Error handler ───────────────────────────────────────────────────────
   //
-  // Maps AuthError (401/403/409) to structured JSON. Anything else is an
-  // infrastructure failure — log it, return a generic 500.
+  // Maps AuthError (401/403/409) to structured JSON. FieldError (a 400 that
+  // also names the offending field) includes `field` so the client can render
+  // the message inline under it. Anything else is an infrastructure failure —
+  // log it, return a generic 500.
   fastify.setErrorHandler((err, request, reply) => {
     if (err instanceof AuthError) {
-      return reply.code(err.status).send({
-        error: { code: err.code, message: err.message },
-      });
+      const body = { error: { code: err.code, message: err.message } };
+      if (err.field) body.error.field = err.field;
+      return reply.code(err.status).send(body);
     }
     // Fastify's 400s for malformed requests.
     if (err.statusCode && err.statusCode < 500) {

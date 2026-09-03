@@ -12,7 +12,7 @@
 //     so a replay / concurrent event converges on the latest role.
 // All queries are schema-qualified `authz.*`; there is deliberately no
 // cross-schema read anywhere (ADR-0006 §1).
-import { getPool } from '../ledger/db.mjs';
+import { getPool, withTransaction } from '../ledger/db.mjs';
 
 const mapUser = (r) => r && {
   id: r.id,
@@ -20,6 +20,8 @@ const mapUser = (r) => r && {
   email: r.email,
   displayName: r.display_name,
   status: r.status,
+  language: r.language ?? 'en',
+  setupComplete: r.setup_complete ?? false,
 };
 const mapOrg = (r) => r && { id: r.id, clerkOrgId: r.clerk_org_id, name: r.name };
 
@@ -73,6 +75,62 @@ export function createPgAuthStore({ pool = getPool() } = {}) {
         [userId, resourceType, resourceId ?? null],
       );
       return rows.map((r) => ({ key: r.key, effect: r.effect }));
+    },
+    async isSetupComplete(clerkUserId) {
+      const row = await one(
+        'select setup_complete from authz.users where clerk_user_id = $1',
+        [clerkUserId],
+      );
+      return row?.setup_complete ?? false;
+    },
+
+    // ── account-setup (LINA-137) ──
+    // Atomic: profile write + membership grant in one transaction.
+    async completeProfile({ clerkUserId, clerkOrgId, displayName, language, roleKey }) {
+      return withTransaction(async (client) => {
+        // Lock the user row to serialize concurrent setup attempts.
+        const { rows: userRows } = await client.query(
+          'select id, setup_complete from authz.users where clerk_user_id = $1 for update',
+          [clerkUserId],
+        );
+        if (userRows.length === 0) return { status: 'not_found' };
+        if (userRows[0].setup_complete) return { status: 'already_setup' };
+
+        // Resolve the system role id (fail closed if roleKey is not seeded).
+        const { rows: roleRows } = await client.query(
+          'select id from authz.roles where key = $1 and org_id is null',
+          [roleKey],
+        );
+        if (roleRows.length === 0) return { status: 'bad_role' };
+
+        const roleId = roleRows[0].id;
+
+        // Update the profile fields and flip the setup flag.
+        await client.query(
+          `update authz.users
+              set display_name = $2, language = $3, setup_complete = true, updated_at = now()
+            where clerk_user_id = $1`,
+          [clerkUserId, displayName, language],
+        );
+
+        // Grant membership on the active org when one exists.
+        let grantedRoleId = null;
+        if (clerkOrgId) {
+          const { rows: memRows } = await client.query(
+            `insert into authz.memberships (user_id, org_id, role_id)
+             select u.id, o.id, $3
+               from authz.users u, authz.orgs o
+              where u.clerk_user_id = $1 and o.clerk_org_id = $2
+             on conflict (user_id, org_id)
+             do update set role_id = excluded.role_id
+             returning role_id as "roleId"`,
+            [clerkUserId, clerkOrgId, roleId],
+          );
+          grantedRoleId = memRows[0]?.roleId ?? null;
+        }
+
+        return { status: 'ok', roleId: grantedRoleId };
+      }, pool);
     },
 
     async upsertUser({ clerkUserId, email, displayName }) {

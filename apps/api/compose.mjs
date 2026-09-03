@@ -12,6 +12,7 @@ import { createPgAuthStore } from '../../services/auth/pg-store.mjs';
 import { createAuthSyncService } from '../../services/auth/sync.mjs';
 import { createClerkVerifier } from '../../services/auth/clerk.mjs';
 import { createAuthRequestPath } from '../../services/auth/require-auth.mjs';
+import { createProfileService } from '../../services/auth/profile.mjs';
 import { createClerkWebhookHttp } from '../../services/auth/webhook.mjs';
 import { can } from '../../services/auth/can.mjs';
 
@@ -53,7 +54,7 @@ async function createSvixVerifier() {
  * Build the auth service graph against Postgres + Clerk SDK.
  * Returns the auth request path (JWT verify → authorize) and the webhook handler.
  *
- * @returns {Promise<{ authRequestPath: object, webhookHandler: object, pool: import('pg').Pool }>}
+ * @returns {Promise<{ authRequestPath: object, profileService: object, webhookHandler: object, pool: import('pg').Pool }>}
  */
 export async function createAuthContainer() {
   const pool = createPool(urlFor('AUTHZ_DATABASE_URL'), {
@@ -80,8 +81,9 @@ export async function createAuthContainer() {
   const verifyToken = createClerkVerifier({ secretKey }, clerkBackend);
 
   const authRequestPath = createAuthRequestPath({ store, sync, verifyToken, can });
+  const profileService = createProfileService({ store });
 
   const webhookHandler = createClerkWebhookHttp({ sync, verifier: await createSvixVerifier() });
 
-  return { authRequestPath, webhookHandler, pool };
+  return { authRequestPath, profileService, webhookHandler, pool };
 }

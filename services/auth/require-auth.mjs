@@ -30,7 +30,7 @@ export function createAuthRequestPath({ store, sync, verifyToken, can }) {
   /**
    * Verify a raw Bearer token and resolve (JIT-provisioning) the local actor.
    * Throws 401 when the token is invalid or the account is disabled; returns
-   * `{ userId, clerkUserId, activeOrgId }`.
+   * `{ userId, clerkUserId, activeOrgId, clerkOrgId }`.
    * @param {string} token  the raw `Authorization: Bearer …` value
    */
   async function requireAuth(token) {
@@ -55,13 +55,17 @@ export function createAuthRequestPath({ store, sync, verifyToken, can }) {
     // `authz` catalog purely in local id space (never mixing schemas). When the
     // org is not yet mirrored locally, activeOrgId stays null and `authorize`
     // refuses scoped work until the org is provisioned (fails closed).
+    // clerkOrgId is the raw Clerk org id — preserved for callers that need the
+    // source id (e.g. the account-setup endpoint granting a membership).
     let activeOrgId = null;
+    let clerkOrgId = null;
     if (claims.activeOrgId) {
+      clerkOrgId = claims.activeOrgId;
       const localOrg = await store.getOrgByClerkId(claims.activeOrgId);
       if (localOrg) activeOrgId = localOrg.id;
     }
 
-    return { userId: user.id, clerkUserId: user.clerkUserId, activeOrgId };
+    return { userId: user.id, clerkUserId: user.clerkUserId, activeOrgId, clerkOrgId };
   }
 
   /**

@@ -29,4 +29,24 @@ export const forbidden = (msg = 'not permitted') =>
 // membership, invalid webhook event). Distinct from 400.
 export const conflict = (msg) => new AuthError('conflict', 409, msg);
 
+// The account-setup endpoint has already run for this user (LINA-137 contract):
+// a 409 the client treats as success and continues to the portal. Its stable
+// code is `already_setup`, distinct from the generic `conflict`.
+export const alreadySetup = (msg = 'profile already set up') =>
+  new AuthError('already_setup', 409, msg);
+
 export const badRequest = (msg) => new AuthError('bad_request', 400, msg);
+
+// A field-level validation rejection (LINA-137 contract): a 400 that also names
+// the offending field so the client can render the message inline under it.
+// `field` is one of the setup form's fields (displayName | role | language).
+export class FieldError extends AuthError {
+  /** @param {string} field @param {string} message */
+  constructor(field, message) {
+    super('bad_request', 400, message);
+    this.name = 'FieldError';
+    this.field = field;
+  }
+}
+
+export const fieldError = (field, msg) => new FieldError(field, msg);
