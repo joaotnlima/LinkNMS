@@ -1,10 +1,36 @@
 # ADR-0007 — Magic-link sign-in (the proof half of the session)
 
-- **Status:** Proposed
+- **Status:** SUPERSEDED by the Clerk cutover (LINA-124, Auth Migration 0B, 2026-09-03)
 - **Date:** 2026-08-29
 - **Deciders:** Full-Stack Architect (implementation: Founding Engineer)
 - **Context issue:** LINA-75 (child of LINA-26)
 - **Supersedes:** nothing. **Completes:** the "Auth (R0)" line of ADR-0001.
+
+> ## ⚠️ SUPERSEDED — read this before implementing anything below
+>
+> LINA-124 (Auth Migration 0B, part of the LINA-118 onboarding plan) replaced
+> this entire mechanism with Clerk. **Authentication** — proving control of an
+> address, minting and expiring sessions — is Clerk's now; email code / email
+> link, single-use and expiry rules, and MFA are its concern, not ours. The code
+> this ADR specified is DELETED: `services/identity/sign-in.mjs`,
+> `sign-in-store.mjs`, `services/identity/session.mjs` (the HMAC cookie),
+> `POST /api/v1/sessions/request`, `POST /api/v1/sessions/consume`, and the
+> `/auth/callback` page.
+>
+> What SURVIVED this ADR, and why it is still worth reading:
+>
+> * **The seat gate (ADR-0008).** §4's "no membership oracle" reasoning and the
+>   allowlist it guards are intact — the gate simply moved to where a verified
+>   identity becomes a party (`app/src/server/session.ts` →
+>   `services/identity/seats.mjs`). Authenticated is still not admitted.
+> * **The email is the join key.** Clerk verifies the address; the address still
+>   resolves to the same `identity.party`, so attribution history predating the
+>   cutover is unbroken.
+> * **One authority for who is acting** (ADR-0004). Still true, now Clerk-backed.
+>
+> The tables this ADR created (`identity.sign_in_token`, migrations 0003/0005)
+> are left in place: migrations here are forward-only, and dropping them is a
+> separate, deliberate change. Nothing reads or writes them any more.
 
 ## Context
 

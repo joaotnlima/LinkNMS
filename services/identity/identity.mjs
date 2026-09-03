@@ -19,14 +19,15 @@ import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import { can, ACTION } from './authz.mjs';
 import { IdentityError, badRequest, conflict, forbidden, notFound, unauthenticated } from './errors.mjs';
 import { createNoopAnalytics } from '../analytics/analytics.mjs';
-// The SAME normaliser the sign-in path uses, so an address typed into the invite
-// form and the same address typed into the sign-in form are one key (LINA-84).
-import { normalizeEmail } from './sign-in.mjs';
+// The SAME normaliser every Identity path uses, so an address typed into the
+// invite form and the same address arriving from anywhere else are one key
+// (LINA-84). It moved out of the deleted sign-in service in LINA-124.
+import { normalizeEmail } from './email-normalize.mjs';
 import { sendEmail, isEmailConfigured } from '../email/sender.mjs';
 
 const sha256Hex = (s) => createHash('sha256').update(s).digest('hex');
 
-// The invitation email. Same visual language as the sign-in link (sign-in.mjs):
+// The invitation email. Same visual language the sign-in link used to carry:
 // inline-styled, self-contained, no tracking pixels and no external assets — an
 // invite that renders as a broken-image box in a jobsite mail client is worse
 // than plain text. `projectName` is the owner's own project name, so it is

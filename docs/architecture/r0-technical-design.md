@@ -293,7 +293,8 @@ budget only moves inside this transaction, only on approve, exactly once.
 
 ## 6. API contract (R0, versioned `/api/v1`)
 
-Auth: session cookie from an invite/magic-link; the acting party is derived
+Auth: a Clerk session (LINA-124 replaced the invite/magic-link cookie); the
+acting party is derived
 server-side (never from the body). All money is integer cents. Errors are
 `{ error: { code, message } }` with proper HTTP status.
 
@@ -422,7 +423,7 @@ The trust anchor gets adversarial tests, not just happy-path.
 - **Canonical-JSON discipline** is load-bearing for verification; mitigated by a
   single shared serializer + tests. A drift here is a correctness bug, treated as
   such.
-- **Auth is lightweight** (invite/magic-link) in R0; the permission *model* is
+- **Auth is delegated to Clerk** (was invite/magic-link — LINA-124); the permission *model* is
   the durable part. Full IdP is future work.
 - **No external notarization yet:** internal hash chain only. Publishing the head
   hash externally is a noted future seam, not built.

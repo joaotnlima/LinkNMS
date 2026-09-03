@@ -8,7 +8,7 @@
 // Clerk session token, then hands off to the first-time empty portal (D1-new).
 //
 // Why a client component: the Clerk session token lives in the browser
-// (@clerk/clerk-react), so the authenticated POST is made here, not in a server
+// (@clerk/nextjs), so the authenticated POST is made here, not in a server
 // action. The screen re-checks it has a live Clerk session and bounces to
 // sign-in if not — the server re-verifies regardless (identity comes from the
 // token, never trust the client), this is only a courtesy redirect.
@@ -16,7 +16,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth, useUser } from '@clerk/clerk-react';
+import { useAuth, useUser } from '@clerk/nextjs';
 
 import { submitProfile, type Language, type ProfileInput, type Role } from '@/lib/profile';
 import './onboarding-setup.css';

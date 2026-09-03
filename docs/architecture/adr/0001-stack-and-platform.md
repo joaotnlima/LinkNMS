@@ -24,7 +24,9 @@ to many houses and many parties, so today's core must not be a dead end.
   repo; a light query builder or `postgres.js`). No heavyweight ORM in R0 —
   the ledger rules are explicit SQL we want to read and audit.
 - **Language:** TypeScript end to end.
-- **Auth (R0):** magic-link / invite-token sessions scoped to a project. Full
+- **Auth (R0):** ~~magic-link / invite-token sessions~~ → **Clerk** since
+  LINA-124 (Auth Migration 0B); ADR-0007 is superseded. Sessions are still
+  scoped to a project by the same permission model. Full
   IdP is out of scope; the permission *model* (ADR-0004) is what matters now.
 
 ## The service-topology trade-off (for the CEO to rule on)

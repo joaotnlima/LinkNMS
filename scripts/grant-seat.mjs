@@ -5,8 +5,10 @@
 //   node scripts/grant-seat.mjs grant <email> [--note "Ana, GC at Oak Lane"] [--source beta|invite]
 //   node scripts/grant-seat.mjs revoke <email>
 //
-// A seat is what lets an address through the magic-link front door at all
-// (services/identity/sign-in.mjs). Ten of them are being given away by hand, so
+// A seat is what lets an address onto the record at all. Since LINA-124 the
+// front door is Clerk, and the gate it feeds is app/src/server/session.ts →
+// services/identity/seats.mjs: a Clerk account with no active seat here is
+// authenticated but never becomes a party. Ten seats are given away by hand, so
 // the "admin UI" for that is this file — a screen would be more code than the
 // thing it administers, and every grant is a deliberate, logged act by a human.
 //
@@ -33,8 +35,10 @@ if (!DB_URL) {
   process.exit(1);
 }
 
-// Same normalisation as services/identity/sign-in.mjs normalizeEmail, so a seat
-// granted here is a seat the gate will actually match. Kept deliberately shallow.
+// Same normalisation as services/identity/email-normalize.mjs normalizeEmail, so
+// a seat granted here is a seat the gate will actually match. Kept deliberately
+// shallow, and deliberately duplicated: this script has zero npm dependencies
+// and must run anywhere psql does.
 function normalizeEmail(email) {
   const clean = typeof email === 'string' ? email.trim().toLowerCase() : '';
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean) ? clean : null;
