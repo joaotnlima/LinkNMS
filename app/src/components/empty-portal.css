@@ -1,0 +1,262 @@
+/* D1-new — first-time empty portal (LINA-133).
+ *
+ * Tokens are scoped under `.onb`, not applied to `:root`. The palette this
+ * screen is specified in (Owner Blue #3E5C8A, Builder Orange #B4633B, Paper
+ * #FBFAF7, Ink #16181D, Inter) is the pen's; globals.css `:root` still carries
+ * the older LINA-27 set (#2A78D6 / #EB6834). Re-tokening `:root` from an
+ * onboarding ticket would repaint the four pillars and every RAG state, so the
+ * two systems are kept side by side until that migration is sequenced. Delete
+ * this block and switch to the globals once `:root` moves.
+ *
+ * Same scoping convention as onboarding/setup/onboarding-setup.css (`.ob`).
+ */
+.onb {
+  --onb-owner: #3e5c8a;
+  --onb-builder: #b4633b;
+  --onb-builder-ink: #8a4423;
+  --onb-paper: #fbfaf7;
+  --onb-ink: #16181d;
+  --onb-muted: #5c5f68;
+  --onb-line: #e4e1d9;
+  --onb-line-strong: #c9c5ba;
+  --onb-owner-muted: #e8edf5;
+  /* `--onb-font-inter` is set by next/font in EmptyPortal.tsx; the stack still
+     degrades cleanly if the self-hosted face has not arrived. */
+  --onb-font: var(--onb-font-inter), Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  font-family: var(--onb-font);
+  color: var(--onb-ink);
+  background: var(--onb-paper);
+  min-height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 56px 24px 64px;
+  text-align: center;
+}
+
+/* ---- the empty state proper (pen: Main > Body > EmptyState) ---- */
+.onb-state {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.onb-disc {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: var(--onb-owner-muted);
+  color: var(--onb-owner);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 22px;
+}
+
+.onb-disc svg {
+  width: 26px;
+  height: 26px;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.onb-title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.21;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--onb-ink);
+}
+
+.onb-lede {
+  margin: 10px 0 0;
+  max-width: 460px;
+  font-size: 14px;
+  line-height: 1.57;
+  color: var(--onb-muted);
+}
+
+/* ---- calls to action (pen: CTA) ---- */
+.onb-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.onb-btn {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  border-radius: 6px;
+  padding: 11px 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.onb-btn svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.onb-btn--primary {
+  background: var(--onb-owner);
+  border-color: var(--onb-owner);
+  color: #fff;
+}
+
+.onb-btn--primary:hover {
+  background: color-mix(in srgb, var(--onb-owner) 88%, #000);
+}
+
+.onb-btn--secondary {
+  background: #fff;
+  border-color: var(--onb-line-strong);
+  color: var(--onb-ink);
+}
+
+.onb-btn--secondary:hover {
+  background: var(--onb-paper);
+  border-color: var(--onb-owner);
+}
+
+.onb-btn:focus-visible {
+  outline: 2px solid var(--onb-owner);
+  outline-offset: 2px;
+}
+
+/* ---- getting started (three steps, left-aligned so they read as a sequence) ---- */
+.onb-steps {
+  width: 100%;
+  max-width: 560px;
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--onb-line);
+  border-radius: 12px;
+  padding: 20px 22px;
+}
+
+.onb-steps-head {
+  margin: 0 0 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--onb-muted);
+}
+
+.onb-steps ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  counter-reset: onb-step;
+}
+
+.onb-step {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.onb-step::before {
+  counter-increment: onb-step;
+  content: counter(onb-step);
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--onb-owner-muted);
+  color: var(--onb-owner);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onb-step-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--onb-ink);
+}
+
+.onb-step-blurb {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--onb-muted);
+}
+
+/* The third step is the counterpart's, not yours — flagged in Builder Orange so
+ * the handover is visible before it happens rather than a surprise. The numeral
+ * uses the darkened `--onb-builder-ink`, not the brand orange: #B4633B on its
+ * own 12% tint measures 3.75:1, which fails AA for 12px text. The tint carries
+ * the brand colour; the glyph on top of it has to stay legible. And the colour
+ * is never the only signal — this is an <ol>, so the step order survives with
+ * no colour at all (FR9). */
+.onb-step--builder::before {
+  background: color-mix(in srgb, var(--onb-builder) 12%, #fff);
+  color: var(--onb-builder-ink);
+}
+
+/* ---- footnote: the returning-user / invited-party escape hatch ---- */
+.onb-note {
+  margin: 0;
+  max-width: 560px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--onb-muted);
+}
+
+.onb-note a {
+  color: var(--onb-owner);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .onb {
+    justify-content: flex-start;
+    padding: 40px 18px 48px;
+  }
+
+  .onb-title {
+    font-size: 24px;
+  }
+
+  .onb-cta {
+    flex-direction: column;
+    align-self: stretch;
+  }
+
+  .onb-btn {
+    justify-content: center;
+  }
+}
