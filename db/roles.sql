@@ -23,7 +23,7 @@ DECLARE
   r text;
   app_roles text[] := ARRAY[
     'identity_app', 'decision_app', 'change_order_app', 'ledger_app', 'schedule_app',
-    'waitlist_app'
+    'waitlist_app', 'authz_app'
   ];
 BEGIN
   -- The one DDL owner.
