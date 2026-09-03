@@ -23,7 +23,7 @@ import { verifySvixSignature } from './svix.mjs';
 export function createClerkWebhookHttp({
   sync,
   verifier = { verify: verifySvixSignature },
-  secret = () => process.env.CLERK_WEBHOOK_SECRET,
+  secret = () => process.env.CLERK_WEBHOOK_SECRET || process.env.CLERK_WEBHOOK_SIGNING_SECRET,
 }) {
   if (!sync) throw new Error('webhook handler requires a sync service');
 
