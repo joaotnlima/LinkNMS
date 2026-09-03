@@ -152,3 +152,104 @@ describe('can() — MANDATORY two-sided rule: a CO proposer cannot decide its ow
     assert.equal(others.allow, true);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Per-resource scoping for role-scoped subcontractor verbs (LINA-148; §8.1 F1)
+//   project.read / progress.report are blanket role grants but scoped to the
+//   subcontractor's ASSIGNED resources. The predicate is dormant in v1 (no
+//   assignment source ⇒ assignedResourceIds undefined) and bites once the
+//   resolver supplies an assignment scope.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SUB_PERMS = [PERMISSION.PROJECT_READ, PERMISSION.PROGRESS_REPORT, PERMISSION.SCHEDULE_READ];
+const subMember = { roleId: 'r-sub', roleKey: 'subcontractor' };
+
+describe('can() — subcontractor per-resource scoping (§8.1 F1)', () => {
+  test('v1 NO-OP: no assignment scope ⇒ blanket role grant stands (project.read any project)', () => {
+    // assignedResourceIds undefined — the documented, ratified v1 behavior.
+    assert.deepEqual(can({
+      actor: sub, action: PERMISSION.PROJECT_READ,
+      resource: { type: 'project', id: 'p-anything' },
+      membership: subMember, rolePermissions: SUB_PERMS,
+    }), { allow: true });
+  });
+
+  test('ENFORCED: with an assignment scope, an ASSIGNED project is allowed', () => {
+    assert.deepEqual(can({
+      actor: sub, action: PERMISSION.PROJECT_READ,
+      resource: { type: 'project', id: 'p-assigned' },
+      membership: subMember, rolePermissions: SUB_PERMS,
+      assignedResourceIds: ['p-assigned', 'p-other-assigned'],
+    }), { allow: true });
+  });
+
+  test('ADVERSARIAL: with an assignment scope, an UNASSIGNED project is denied despite the role grant', () => {
+    const r = can({
+      actor: sub, action: PERMISSION.PROJECT_READ,
+      resource: { type: 'project', id: 'p-not-mine' },
+      membership: subMember, rolePermissions: SUB_PERMS,
+      assignedResourceIds: ['p-assigned'],
+    });
+    assert.equal(r.allow, false, 'sub read an unassigned project — F1 scoping broken');
+    assert.match(r.reason, /not assigned/);
+  });
+
+  test('ADVERSARIAL: an empty assignment scope denies ALL scoped reads (assigned to nothing)', () => {
+    const r = can({
+      actor: sub, action: PERMISSION.PROGRESS_REPORT,
+      resource: { type: 'project', id: 'p-1' },
+      membership: subMember, rolePermissions: SUB_PERMS,
+      assignedResourceIds: [],
+    });
+    assert.equal(r.allow, false);
+    assert.match(r.reason, /not assigned/);
+  });
+
+  test('FAILS CLOSED: enforced scope but no resource id ⇒ deny (no silent allow)', () => {
+    const r = can({
+      actor: sub, action: PERMISSION.PROJECT_READ,
+      resource: { type: 'project' }, // no id
+      membership: subMember, rolePermissions: SUB_PERMS,
+      assignedResourceIds: ['p-assigned'],
+    });
+    assert.equal(r.allow, false);
+    assert.match(r.reason, /resource id is required/);
+  });
+
+  test('scoping is per-instance, not a flat role ban: same sub, assigned vs unassigned', () => {
+    const mine = can({ actor: sub, action: PERMISSION.PROGRESS_REPORT, resource: { type: 'project', id: 'p-mine' }, membership: subMember, rolePermissions: SUB_PERMS, assignedResourceIds: ['p-mine'] });
+    const notMine = can({ actor: sub, action: PERMISSION.PROGRESS_REPORT, resource: { type: 'project', id: 'p-theirs' }, membership: subMember, rolePermissions: SUB_PERMS, assignedResourceIds: ['p-mine'] });
+    assert.equal(mine.allow, true);
+    assert.equal(notMine.allow, false);
+  });
+
+  test('an explicit resource-ACL allow still short-circuits before the predicate (assignment via ACL)', () => {
+    // The ACL-allow path (step 2) is the assignment mechanism F1 names; it wins
+    // even when the actor is not in assignedResourceIds.
+    assert.deepEqual(can({
+      actor: sub, action: PERMISSION.PROJECT_READ,
+      resource: { type: 'project', id: 'p-acl' },
+      membership: subMember, rolePermissions: SUB_PERMS,
+      resourceAcls: [{ key: PERMISSION.PROJECT_READ, effect: 'allow' }],
+      assignedResourceIds: [],
+    }), { allow: true });
+  });
+
+  test('scoping does NOT touch other roles: gc project.read is unaffected by an assignment scope', () => {
+    assert.deepEqual(can({
+      actor: gc, action: PERMISSION.PROJECT_READ,
+      resource: { type: 'project', id: 'p-x' },
+      membership: { roleId: 'r-gc', roleKey: 'gc' }, rolePermissions: [PERMISSION.PROJECT_READ],
+      assignedResourceIds: ['p-only-this-one'],
+    }), { allow: true });
+  });
+
+  test('scoping does NOT touch a subcontractor’s non-scoped verbs (schedule.read stays blanket)', () => {
+    assert.deepEqual(can({
+      actor: sub, action: PERMISSION.SCHEDULE_READ,
+      resource: { type: 'project', id: 'p-unassigned' },
+      membership: subMember, rolePermissions: SUB_PERMS,
+      assignedResourceIds: ['p-assigned'],
+    }), { allow: true });
+  });
+});
