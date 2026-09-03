@@ -605,9 +605,13 @@
     padding-top: 0;
     gap: 14px;
   }
-  .lp-record__explainer .copy,
-  .lp-record__explainer .note {
+  /* The note carries the PLAN → CHANGE → PROGRESS line, so it stays on mobile;
+     only the desktop copy paragraph swaps for the mobile body. */
+  .lp-record__explainer .copy {
     display: none;
+  }
+  .lp-record__explainer .note {
+    order: 2;
   }
   .lp-record__explainer .body--mobile {
     display: block;
@@ -703,7 +707,12 @@
   position: relative;
   background: var(--lp-ink);
   color: var(--lp-cream);
-  min-height: min(900px, 100svh);
+  /* The pinned frame must BE the viewport: ScrollTrigger pins at `top top`, so
+     anything shorter than 100svh locks with a strip of the next section still
+     showing and the keyframe never reads as a full frame (LINA-117 note 2).
+     The pen's 1440×900 artboard is an aspect ratio, not a pixel height — the
+     web frame is whatever the viewport is. */
+  min-height: 100svh;
   display: flex;
   overflow: hidden;
 }
@@ -731,11 +740,24 @@
 .lp-sequence__stage[data-visible='true'] {
   opacity: 1;
 }
+/* The pen puts the scrim on a rectangle that starts at y=360 of the 900px
+   keyframe and runs to the bottom — the top 40% of the still is NOT dimmed, so
+   the render reads as the architect's drawing it is (sky, dimension lines,
+   annotations). Stretched over the full frame here, the pen's three stops
+   (0 → 0.55 → 1 of a 540px band) land at 40% / 73% / 100%.
+   The previous full-height version started ramping at 0% and hit #16181dd9 by
+   55%, which crushed the whole plate to near-black — LINA-117 note 1. */
 .lp-sequence__scrim {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: linear-gradient(180deg, #16181d00 0%, #16181dd9 55%, #16181df7 100%);
+  background: linear-gradient(
+    180deg,
+    #16181d00 0%,
+    #16181d00 40%,
+    #16181dd9 73%,
+    #16181df7 100%
+  );
 }
 .lp-sequence__content {
   position: relative;
@@ -757,9 +779,44 @@
    stacked; only the p=1 keyframe (KF D) is visible by default. <SequenceMotion />
    swaps which one shows as p advances. Positioning the blocks absolutely keeps
    the caption area's height stable so a swap never nudges the bars below. */
+/* Caption | bars | HUD on one row, in the pen's proportions: the KF Body puts
+   the caption at x 72 (w 400), the gantt at x 530 and the HUD at x 1170 of a
+   1440 frame. Below 1100px there is no honest way to hold three columns, so it
+   stacks caption-over-bars with the HUD beside the bars. */
+.lp-sequence__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(20px, 3vw, 36px);
+  align-items: end;
+}
+@media (min-width: 700px) {
+  .lp-sequence__body {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .lp-sequence__caption {
+    grid-column: 1 / -1;
+  }
+}
+@media (min-width: 1100px) {
+  .lp-sequence__body {
+    grid-template-columns: minmax(0, 400fr) minmax(0, 630fr) auto;
+    gap: clamp(24px, 3vw, 58px);
+    /* The pen tops the three columns out together (caption y 24, gantt y 14,
+       HUD y 24 of a 260-tall body) rather than sitting them on a shared
+       baseline. */
+    align-items: start;
+  }
+  .lp-sequence__caption {
+    grid-column: auto;
+  }
+}
+/* The caption blocks are absolutely stacked so swapping one for another cannot
+   nudge the bars. That makes the reserved height load-bearing: it has to clear
+   the LONGEST caption (KF D runs to three lines in every locale) or the tallest
+   one spills out of the section. */
 .lp-sequence__caption {
   position: relative;
-  min-height: clamp(78px, 11vh, 110px);
+  min-height: clamp(104px, 13vh, 136px);
 }
 .lp-sequence__caption-block {
   position: absolute;
@@ -768,28 +825,20 @@
   top: 0;
 }
 .lp-sequence__caption-block[data-visible='false'],
-.lp-hud__cell .value [data-kf][data-visible='false'] {
+.lp-hud__cell [data-kf][data-visible='false'] {
   display: none;
 }
 .lp-sequence__caption .micro {
   color: var(--lp-cream);
 }
+/* Pen: 30px / 800 / line-height 1.1 / tracking −0.9px, in a 400px column
+   (28px at KF D, whose line is the longest). */
 .lp-sequence__caption .line {
   margin-top: 10px;
-  font-size: clamp(20px, 2.6vw, 34px);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-.lp-sequence__panels {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: clamp(24px, 3vw, 48px);
-  align-items: end;
-}
-@media (min-width: 900px) {
-  .lp-sequence__panels {
-    grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
-  }
+  font-size: clamp(20px, 2.1vw, 30px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
 }
 .lp-bars__head {
   color: var(--lp-cream-60);
@@ -809,10 +858,47 @@
 .lp-bars__row[data-closed='true'] .name {
   color: var(--lp-cream);
 }
+
+/* One sequence row's track: the bars as a stretched SVG, the check as HTML
+   beside them. The check is NOT in the SVG — that viewBox is scaled
+   non-uniformly to fit the column, which would squash a round glyph into an
+   ellipse. It sits at `--check-x`, the row's fraction of the track, and only
+   ever animates opacity. */
+.lp-seqtrack {
+  position: relative;
+}
+.lp-seqtrack__bars {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.lp-seqtrack__check {
+  position: absolute;
+  top: 0;
+  left: calc(var(--check-x) * 100%);
+  display: block;
+  /* The pen fills this glyph `#2F7D5B` — --plan-closed — in all four
+     keyframes, and it is the only green in the row: the whole point of the
+     mark is that a closed row reads GREEN at a glance (LINA-117). It was
+     briefly --plan-closed-line on a contrast worry that does not hold;
+     #2F7D5B on #16181d measures 3.6:1, over the 3:1 a non-text graphical
+     indicator needs. The light mint is the KF-D HUD's colour, not this one. */
+  color: var(--plan-closed);
+  line-height: 0;
+}
+
 .lp-hud {
   display: flex;
   flex-wrap: wrap;
   gap: clamp(24px, 4vw, 56px);
+}
+@media (min-width: 1100px) {
+  .lp-hud {
+    /* Three stacked readings at the right edge, as the pen's HUD frame draws
+       them — a vertical column, not a row of three. */
+    flex-direction: column;
+    gap: 12px;
+  }
 }
 .lp-hud__cell .label {
   /* Design specifies 40% cream here; raised to 60% because 40% cream over the
@@ -820,22 +906,27 @@
      Flagged on LINA-83 for the contrast audit. */
   color: var(--lp-cream-60);
 }
+/* The pen's HUD is a quiet readout, not a headline: 9px label over a 15px/600
+   value. It is the corner of the frame that reports, while the caption carries
+   the voice — so it is sized against the bars beside it, not against the
+   caption. */
 .lp-hud__cell .value {
-  margin-top: 8px;
-  font-family: var(--lp-display, var(--lp-sans, var(--font)));
-  font-weight: 800;
-  font-size: clamp(22px, 2.4vw, 32px);
+  margin-top: 4px;
+  font-weight: 600;
+  font-size: clamp(15px, 1.15vw, 17px);
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
-.lp-hud[data-tone='baseline'] .value {
-  color: var(--plan-baseline);
+/* Two tones only, as the refreshed pen has them: cream while the build is
+   running, and the whole cell — label included — in the light mint once it has
+   closed. --plan-closed-line rather than --plan-closed for the same reason as
+   the check mark: this sits on ink. */
+.lp-hud[data-tone='cream'] .value {
+  color: var(--lp-cream);
 }
-.lp-hud[data-tone='actual'] .value {
-  color: var(--plan-actual);
-}
-.lp-hud[data-tone='closed'] .value {
-  color: var(--plan-closed);
+.lp-hud[data-tone='closed'] .value,
+.lp-hud[data-tone='closed'] .label {
+  color: var(--plan-closed-line);
 }
 
 /* ---------- Scroll reveal shells (LINA-98) ----------
@@ -849,15 +940,6 @@
   flex-direction: column;
   gap: 32px;
   align-items: stretch;
-}
-
-/* Reel card fade + stagger. `--d` is set inline per card. */
-.lp-reveal.is-animating .lp-reel__card {
-  opacity: 0;
-}
-.lp-reveal.is-animating.is-revealed .lp-reel__card {
-  opacity: 1;
-  transition: opacity 0.5s ease var(--d);
 }
 
 /* Gantt bars: grow from the planned origin to the closed position. Each lane
@@ -887,20 +969,11 @@
   transition: opacity 0.5s ease var(--li);
 }
 
-/* ---------- The Scroll Reel (S3) ----------
-   A card holding four stage photos + p chips + captions — the founder's
-   "fade-in of the images with the scrolling". Shell padding/radius/fill/stroke
-   are the pen frame's exact values. */
+/* ---------- The Scroll Reel label (S3) ----------
+   All that survives of the pen's `Scroll Reel` frame as static markup: its
+   header strip. The four cards it drew are the pinned sequence below, so the
+   strip is now the sequence's label — same index, same title, same rule. */
 
-.lp-reel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 18px 20px;
-  border-radius: 6px;
-  background: #fbfaf70a;
-  border: 1px solid #fbfaf71a;
-}
 .lp-reel__head {
   display: flex;
   align-items: center;
@@ -925,132 +998,32 @@
   background: #fbfaf71a;
 }
 
-.lp-reel__cards {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-.lp-reel__card {
-  position: relative;
-  aspect-ratio: 32 / 22;
-  margin: 0;
-  border-radius: 8px;
-  background: #16181d;
-  overflow: hidden;
-}
-.lp-reel__img {
-  position: absolute;
-  inset: 0;
-}
-.lp-reel__img img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.lp-reel__scrim {
-  position: absolute;
-  inset: auto 0 0;
-  height: 100px;
-  background: linear-gradient(180deg, #16181d00 0%, #16181dbf 62%, #16181df2 100%);
-  pointer-events: none;
-}
-.lp-reel__chip {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  padding: 7px 11px;
-  border-radius: 999px;
-  background: #16181de6;
-  color: var(--lp-cream);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.lp-reel__caption {
-  position: absolute;
-  bottom: 14px;
-  left: 16px;
-  right: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.lp-reel__stage {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--lp-cream);
-}
-.lp-reel__note {
-  font-size: 10px;
-  color: var(--lp-cream-60);
-}
-
 /* Mobile variants (pen `landing-page (mobile)` frame). Desktop copy elements
    stay in the DOM and are simply hidden; exactly one variant renders. */
 .lp-reel__index--mobile,
-.lp-reel__title--mobile,
-.lp-reel__note--mobile {
+.lp-reel__title--mobile {
   display: none;
-}
-.lp-reel__scroll-note {
-  display: none;
-  max-width: 60ch;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--lp-cream-60);
 }
 @media (max-width: 939px) {
-  .lp-reel {
-    gap: 10px;
-    padding: 14px 12px;
-  }
   .lp-reel__head {
     gap: 10px;
     font-size: 9px;
     letter-spacing: 0.11em;
   }
   .lp-reel__index--desktop,
-  .lp-reel__title--desktop,
-  .lp-reel__note--desktop {
+  .lp-reel__title--desktop {
     display: none;
   }
   .lp-reel__index--mobile,
-  .lp-reel__title--mobile,
-  .lp-reel__note--mobile {
+  .lp-reel__title--mobile {
     display: inline;
   }
-  .lp-reel__cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-  .lp-reel__scrim {
-    height: 50px;
-    background: linear-gradient(180deg, #16181d00 0%, #16181dbf 60%, #16181df2 100%);
-  }
-  .lp-reel__chip {
-    top: 8px;
-    left: 8px;
-    padding: 5px 8px;
-    font-size: 8px;
-    letter-spacing: 0.11em;
-  }
-  .lp-reel__caption {
-    bottom: 10px;
-    left: 12px;
-    right: 12px;
-    gap: 2px;
-  }
-  .lp-reel__stage {
-    font-size: 11px;
-  }
-  .lp-reel__note {
-    font-size: 8px;
-  }
-  .lp-reel__scroll-note {
-    display: block;
-  }
+}
+
+/* The sequence sits between the record's two `.lp-wrap` blocks, so it carries
+   the section gap itself — the wraps' flex `gap` cannot reach across it. */
+.lp-record > .lp-sequence {
+  margin-block: var(--lp-sec-gap);
 }
 
 /* ---------- 03 Getting The Plan In ---------- */
@@ -1596,15 +1569,21 @@
   border-color: var(--plan-actual);
 }
 
-/* Phone preview */
+/* Phone preview — the pen's `S7 CTA / Phone Preview` frame, to its values:
+   300x640, r40, 2px stroke at 24% cream, the outer shadow thrown left and
+   down, and asymmetric padding (12 top, 14 sides, 0 bottom) so the bar list
+   runs to the bottom edge rather than floating inside a box. */
 .lp-phone {
   width: 300px;
   max-width: 100%;
-  border-radius: 34px;
+  height: 640px;
+  border-radius: 40px;
   background: #0f1115;
-  border: 1px solid var(--lp-cream-hair);
-  padding: 14px;
+  border: 2px solid #fbfaf73d;
+  box-shadow: -16px 24px 60px -8px #0a0705cc;
+  padding: 12px 14px 0;
   margin-inline: auto;
+  overflow: hidden;
 }
 .lp-phone__status {
   display: flex;
@@ -1612,7 +1591,7 @@
   justify-content: space-between;
   font-size: 12px;
   font-weight: 600;
-  margin-bottom: 18px;
+  padding: 4px 6px 10px;
 }
 .lp-phone__island {
   width: 76px;
@@ -1620,13 +1599,23 @@
   border-radius: 999px;
   background: #000;
 }
+/* Pen: a 20x10 rounded rect at 60% cream, not a glyph. */
+.lp-phone__battery {
+  width: 20px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--lp-cream-60);
+}
 .lp-phone__build {
   font-family: var(--lp-display, inherit);
   font-weight: 800;
   font-size: 22px;
+  letter-spacing: -0.6px;
+  padding: 8px 6px 0;
 }
 .lp-phone__week {
-  margin-top: 5px;
+  margin-top: 4px;
+  padding: 0 6px 14px;
   color: var(--plan-closed);
   font-size: 9px;
   font-weight: 600;
@@ -1635,17 +1624,16 @@
 }
 .lp-phone__seg {
   display: flex;
-  gap: 3px;
-  margin: 16px 0;
+  gap: 2px;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: 9px;
   background: #fbfaf714;
 }
 .lp-phone__seg span {
   flex: 1;
   text-align: center;
   padding: 7px 0;
-  border-radius: 999px;
+  border-radius: 7px;
   font-size: 11px;
   font-weight: 600;
   color: var(--lp-cream-60);
@@ -1654,19 +1642,32 @@
   background: var(--lp-cream);
   color: var(--lp-ink);
 }
+.lp-phone__bars {
+  padding-top: 18px;
+}
 .lp-phone__row {
-  margin-bottom: 10px;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 160px);
+  align-items: center;
+  gap: 10px;
+  padding-block: 10px;
+  border-top: 1px solid #fbfaf714;
 }
 .lp-phone__row .n {
   font-size: 11px;
-  margin-bottom: 5px;
+}
+/* The pen dims the one row still open (`Finishes`) to 60% and leaves the three
+   closed ones at full cream: what you read off this screen is the settled
+   record, not the work in flight. */
+.lp-phone__row[data-open='true'] .n {
+  color: var(--lp-cream-60);
 }
 .lp-phone__money {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 18px;
+  margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--lp-cream-hair);
 }

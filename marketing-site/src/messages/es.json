@@ -285,57 +285,9 @@
       "agreed": "Azul es lo que acordasteis.",
       "changed": "Naranja es lo que cambió.",
       "closed": "Verde es lo que se cerró.",
-      "explainer": "El scroll hace avanzar las imágenes de la obra mientras el gantt sigue el contrato. El azul se mantiene fijo, el naranja marca la desviación, el verde cierra la fila.",
-      "explainerMobile": "Una línea de tiempo guarda los tres estados a la vez. Las imágenes avanzan con el scroll, la línea base se mantiene azul, el cambio viene en naranja y el trabajo cerrado se pone verde.",
-      "note": "Imagen + gantt, no un pase de diapositivas",
-      "tableCaption": "Capítulos de obra frente a la línea base acordada, con el valor de cada uno.",
-      "colPackage": "Capítulo de obra",
-      "colValue": "Valor",
-      "months": {
-        "MAR": "Mar",
-        "APR": "Abr",
-        "MAY": "May",
-        "JUN": "Jun",
-        "JUL": "Jul",
-        "AUG": "Ago",
-        "SEP": "Sep",
-        "OCT": "Oct"
-      },
-      "packages": {
-        "foundations": "Terreno y cimentación",
-        "structure": "Estructura",
-        "envelope": "Cubierta y envolvente",
-        "cladding": "Ventanas y revestimiento",
-        "mep": "Electricidad y fontanería",
-        "finishes": "Acabados y pavimentos"
-      },
-      "legend": {
-        "baseline": "Línea base acordada",
-        "actual": "Movido · cambio firmado",
-        "closed": "Cerrado · ambas lecturas guardadas",
-        "audit": "Cada barra guarda quién la movió, cuándo y por qué"
-      },
-      "reel": {
-        "index": "03",
-        "indexMobile": "02.1",
-        "title": "Construcción en scroll  ·  Imagen + gantt",
-        "titleMobile": "Construcción en scroll · Mobile",
-        "note": "La imagen y el gráfico avanzan juntos.",
-        "noteMobile": "Se mueve con el gantt.",
-        "labels": {
-          "1": "Diseño",
-          "2": "Estructura",
-          "3": "Acabado",
-          "4": "Construida"
-        },
-        "alt": {
-          "1": "Fase de diseño: la casa en su primer dibujo.",
-          "2": "Fase de estructura: la estructura está levantada.",
-          "3": "Fase de acabado: cubierta y envolvente cerradas.",
-          "4": "Fase de obra: la casa terminada."
-        },
-        "scrollNote": "La construcción avanza en imágenes mientras el gantt se cierra del azul al naranja y al verde."
-      }
+      "explainer": "Sigue cada etapa de tu obra frente al plan original. Ve qué cambió, entiende el impacto y sabe exactamente qué está terminado.",
+      "explainerMobile": "Sigue cada etapa de tu obra frente al plan original. Ve qué cambió, entiende el impacto y sabe exactamente qué está terminado.",
+      "note": "Plan → Cambio → Progreso"
     },
     "sequence": {
       "label": "El dibujo se convierte en la casa",
@@ -344,43 +296,51 @@
         "foundations": "Cimentación",
         "structure": "Estructura",
         "envelope": "Envolvente",
+        "windows": "Ventanas",
+        "mep": "Instalaciones",
         "finishes": "Acabados"
       },
       "captions": {
         "A": {
-          "micro": "p 0,00 → 0,15 · Las líneas se dibujan solas",
-          "line": "Al principio, solo es un dibujo."
+          "micro": "El plan está dibujado",
+          "line": "Al principio, solo es el plan."
         },
         "B": {
-          "micro": "p 0,15 → 0,40 · Cimentación y estructura cierran",
-          "line": "Cada acuerdo levanta un muro."
+          "micro": "Empiezan a levantarse los muros",
+          "line": "Cierran las primeras barras. Se vierte el hormigón."
         },
         "C": {
-          "micro": "p 0,40 → 0,70 · La desviación aparece y se resuelve",
-          "line": "Las cosas cambian. Queda registrado."
+          "micro": "Ajustes finales",
+          "line": "Estanco. Entran los gremios."
         },
         "D": {
-          "micro": "p 0,70 → 1,00 · Todo cierra",
-          "line": "La casa. En plazo, en presupuesto, en alcance."
+          "micro": "¿Listo para mudarte a tu nueva casa?",
+          "line": "Construida en plazo, en presupuesto y con la calidad que merece."
         }
       },
       "hud": {
         "time": "Plazo",
-        "timeValue": "0 días de retraso",
-        "cost": "Coste",
         "scope": "Alcance",
-        "scopeValue": "100%",
+        "cost": {
+          "budget": "Presupuesto",
+          "spent": "Gastado",
+          "final": "Final"
+        },
         "readings": {
+          "A": {
+            "time": "Previsto",
+            "scope": "100%"
+          },
           "B": {
-            "time": "8 meses",
+            "time": "En plazo",
             "scope": "100%"
           },
           "C": {
-            "time": "+ 9 días",
-            "scope": "98%"
+            "time": "+3 días",
+            "scope": "100%"
           },
           "D": {
-            "time": "0 días de retraso",
+            "time": "Completado",
             "scope": "100%"
           }
         }
@@ -467,7 +427,8 @@
           "t1": "Solo móvil",
           "t2": "Sesiones cortas",
           "t3": "Necesita tranquilidad"
-        }
+        },
+        "alt": "Marta, propietaria primeriza en Oporto, retrato"
       },
       "joao": {
         "quote": "“No estoy escondiendo nada. Simplemente no tengo dos horas cada noche para escribir lo que ya sé.”",
@@ -477,7 +438,8 @@
           "t1": "Solo móvil",
           "t2": "Poca soltura digital",
           "t3": "10 segundos, no 2 minutos"
-        }
+        },
+        "alt": "João, maestro de obra con 31 años en obra, retrato"
       }
     },
     "cta": {
