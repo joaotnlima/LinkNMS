@@ -1,8 +1,8 @@
 // The client IP, derived from a hop the client cannot forge (LINA-79).
 //
 // ── THE BUG THIS REPLACES ────────────────────────────────────────────────────
-// `POST /sessions/request` took the LEFT-MOST `x-forwarded-for` hop for its
-// per-IP rate limit. That entry is whatever the client sent: a proxy APPENDS the
+// `POST /sessions/request` (the magic-link route, since deleted in LINA-124)
+// took the LEFT-MOST `x-forwarded-for` hop for its per-IP rate limit. That entry is whatever the client sent: a proxy APPENDS the
 // address it observed, so a request arriving with `x-forwarded-for: 9.9.9.9`
 // reaches us as `9.9.9.9, <real client>`. An attacker rotating a fresh fake
 // left-most value per request gets a fresh counter every time and the per-IP

@@ -25,14 +25,19 @@
 //
 // Either way the request is authorised identically — authorization lives in the
 // service handlers (ADR-0004), not in the Next route files — so the in-process
-// path is not a privilege shortcut. The acting party comes from the signed
-// session cookie and nothing else.
+// path is not a privilege shortcut. The acting party comes from the verified
+// Clerk session and nothing else (LINA-124).
 import { cookies, headers as requestHeaders } from 'next/headers';
 
 import { getContainer } from '@services/gateway/container.mjs';
 import { normaliseParams } from '@services/gateway/params.mjs';
 import { getAnalytics } from '@services/composition.mjs';
-import { SESSION_COOKIE, verifySession } from '@services/identity/session.mjs';
+
+import { currentSession, isSignedIn } from '@/server/session';
+
+// Re-exported: the surfaces already import their auth probe from here, and the
+// resolution itself now lives beside the rest of the session logic.
+export { isSignedIn };
 
 import type { Project, Decision, ChangeOrderDetail, ChangeOrderSummary, AuditResult, Pillars } from './types';
 import {
@@ -135,17 +140,6 @@ type OpName = keyof typeof ROUTES;
 // cannot be forgotten on the one route someone adds later.
 const enc = (v: string | undefined) => encodeURIComponent(v ?? '');
 
-/** The acting party, read ONLY from the signed httpOnly cookie (ADR-0004). */
-async function session(): Promise<{ partyId: string } | null> {
-  const raw = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!raw) return null;
-  return (verifySession(raw) as { partyId: string } | null) ?? null;
-}
-
-export async function isSignedIn(): Promise<boolean> {
-  return (await session()) !== null;
-}
-
 // The services already return a typed `{ error: { code, message } }` body for
 // every domain failure, so there is exactly one error-shaping story regardless
 // of transport.
@@ -157,7 +151,7 @@ function raise(status: number, body: unknown): never {
 
 async function call<T>(op: OpName, params: Params = {}, body?: unknown): Promise<T> {
   const route: Op = ROUTES[op];
-  const s = await session();
+  const s = await currentSession();
   // Fail before the round trip: every one of these endpoints is members-only, so
   // an anonymous caller is a redirect to sign-in, not a 403 rendered as a crash.
   if (!s) throw new UnauthenticatedError();
@@ -244,8 +238,9 @@ async function callHttp(route: Op, params: Params, body: unknown): Promise<{ sta
     method: route.method,
     headers: {
       accept: 'application/json',
-      // Forward the session verbatim: the remote gateway re-verifies the
-      // signature, so this transport grants nothing the caller did not have.
+      // Forward the cookie jar verbatim — since LINA-124 that carries Clerk's
+      // session cookie. The remote gateway re-verifies it with Clerk, so this
+      // transport grants nothing the caller did not already have.
       cookie: jar.toString(),
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
     },

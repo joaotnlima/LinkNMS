@@ -40,8 +40,10 @@ import { createServices, getAnalytics } from '../composition.mjs';
 
 import { createPgStore as createIdentityPgStore } from '../identity/pg-store.mjs';
 import { createPartyStore } from '../identity/parties.mjs';
-import { createPgSignInStore } from '../identity/sign-in-store.mjs';
-import { createSignInService } from '../identity/sign-in.mjs';
+// The ADR-0008 seat allowlist. It used to be a method on the magic-link sign-in
+// store; LINA-124 deleted that service and moved the gate to its own read-only
+// store, checked where the portal turns a Clerk identity into a party.
+import { createSeatStore } from '../identity/seats.mjs';
 import { createIdentityHttp } from '../identity/http.mjs';
 
 import { createPgStore as createDecisionPgStore } from '../decision/pg-store.mjs';
@@ -147,21 +149,16 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
   } = services;
   const parties = createPartyStore({ pool: pools.identity });
 
-  // Magic-link sign-in (LINA-76, ADR-0007): the "proof" half of the session. Its
-  // token table lives in schema `identity`, so it runs on the identity pool /
-  // role — no ledger seam (minting/consuming a link writes no audit event). It
-  // resolves the party through the same `parties` upsert the open-sign-in route
-  // uses; the route mints the cookie via identity/session.mjs `mintSession`.
-  const signIn = createSignInService({
-    store: createPgSignInStore({ pool: pools.identity }),
-    parties,
-  });
+  // The seat gate (ADR-0008). Runs on the identity pool / role, which holds
+  // SELECT and nothing else on identity.seat — asking whether an address may
+  // come in is the only thing the request path is ever allowed to do with it.
+  const seats = createSeatStore({ pool: pools.identity });
 
   return {
     pools,
     identity,
     parties,
-    signIn,
+    seats,
     analytics: services.analytics,
     ledger: ledgerReader,
     services: {

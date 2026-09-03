@@ -36,8 +36,9 @@ const actorOf = (session) => session?.partyId ?? null;
 // the ENV override or the request's forwarded headers — NEVER from the request
 // body. A body-supplied origin would let any authenticated owner mint an invite
 // email, sent from our domain, whose "Accept" button points at a host they chose:
-// a credential-phishing primitive wearing our brand. Same precedence as the
-// sign-in route (app/src/app/api/v1/sessions/request/route.ts).
+// a credential-phishing primitive wearing our brand. The same precedence the
+// deleted magic-link sign-in route used (LINA-124 removed that route; the rule
+// it established for deriving a public origin still governs this one).
 function originOf(headers = {}, env = process.env) {
   if (env.APP_BASE_URL) return env.APP_BASE_URL.replace(/\/+$/, '');
   const h = (k) => headers?.[k] ?? headers?.[k.toLowerCase()] ?? null;

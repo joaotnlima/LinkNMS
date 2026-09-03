@@ -14,12 +14,17 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { TopBar } from '@/components/chrome';
 import { Mark } from '@/components/icons';
-import { isSignedIn } from '@/lib/api';
+import { sessionState } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  if (!(await isSignedIn())) redirect('/sign-in');
+  // Three states, three answers (LINA-124). An unseated visitor is signed in —
+  // bouncing them to /sign-in would loop them through a page telling them they
+  // already are — so they get the honest "no seat yet" screen instead.
+  const state = await sessionState();
+  if (state.kind === 'anonymous') redirect('/sign-in');
+  if (state.kind === 'unseated') redirect('/no-access');
 
   return (
     <>

@@ -1,30 +1,22 @@
-// POST   /api/v1/sessions — establish a session (who is acting).
-// DELETE /api/v1/sessions — sign out.
-// GET    /api/v1/sessions — who am I? (the frontend's cheap auth probe)
+// GET /api/v1/sessions — who am I? (the frontend's cheap auth probe)
 //
-// ⚠️ SECURITY SCOPE — READ BEFORE ENABLING IN PRODUCTION.
+// ── WHAT THIS ROUTE LOST IN LINA-124 (Auth Migration 0B) ─────────────────────
+// `POST` (establish a session) and `DELETE` (sign out) are GONE, along with
+// their siblings `sessions/request` and `sessions/consume`. Creating and ending
+// a session is Clerk's job now: the browser gets one through Clerk's own
+// components on /sign-in and /sign-up, and drops it through Clerk's `signOut()`.
+// Nothing in this app mints, signs, or clears a session cookie any more, which
+// is the point — a second minting path is a second thing to get wrong.
 //
-// ADR-0001 specifies magic-link/invite-token sessions: a party proves control of
-// an email address, then gets a cookie. The *cookie* half is real and
-// production-grade (services/identity/session.mjs: HMAC-signed, httpOnly, signed
-// expiry). The *proof* half — sending and consuming a magic link — needs an email
-// delivery integration that does not exist yet and is not in LINA-56's scope.
+// `POST` in particular carried the `LINKNMS_OPEN_SIGNIN=1` no-proof door (trade
+// an email for a session). It is deleted rather than defaulted-off: a sign-in
+// that needs no proof of anything eventually gets enabled somewhere it matters.
 //
-// Rather than pretend, POST here trades an email for a session with NO proof, and
-// is therefore refused with 404 unless `LINKNMS_OPEN_SIGNIN=1` is explicitly set.
-// It is off by default, so a deploy that forgets to configure it fails closed:
-// no sign-in rather than an open one. Enable it only on preview/demo
-// environments. Real magic-link sign-in is tracked as a follow-up.
-//
-// The gate and the mint themselves live in @/server/signin (LINA-57), because the
-// sign-in FORM needs exactly the same two steps and a gate implemented twice is
-// a gate that eventually only closes once.
+// What survives is the read: given the request's Clerk session, which party is
+// acting on the record. That answer still comes from `currentSession()` — the
+// one authority — so this route stays two lines of its own logic.
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { container, currentSession } from '@/server/gateway';
-import { signIn, secureCookies } from '@/server/signin';
-
-import { sessionCookie, clearSessionCookie, SESSION_TTL_SECONDS } from '@services/identity/session.mjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,49 +29,9 @@ export async function GET() {
     );
   }
   const party = await container().parties.getById(session.partyId);
-  return NextResponse.json({ partyId: session.partyId, party: party ?? null });
-}
-
-export async function POST(req: Request) {
-  let body: { email?: string; displayName?: string; role?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json(
-      { error: { code: 'bad_request', message: 'a JSON body with an email is required' } },
-      { status: 400 },
-    );
-  }
-
-  try {
-    // The LINKNMS_OPEN_SIGNIN gate is inside signIn(), which throws
-    // SignInDisabledError (status 404) — handled by the typed branch below.
-    const { partyId, party, token, expiresAt } = await signIn(body);
-    const res = NextResponse.json({ partyId, party, expiresAt }, { status: 201 });
-    res.headers.set('set-cookie', sessionCookie(token, {
-      ttlSeconds: SESSION_TTL_SECONDS,
-      secure: secureCookies(),
-    }));
-    res.headers.set('cache-control', 'no-store');
-    return res;
-  } catch (err) {
-    const e = err as { status?: number; code?: string; message?: string };
-    if (typeof e.status === 'number' && typeof e.code === 'string') {
-      return NextResponse.json({ error: { code: e.code, message: e.message } }, { status: e.status });
-    }
-    console.error('[api] sign-in failed', err);
-    return NextResponse.json(
-      { error: { code: 'internal', message: 'internal error' } },
-      { status: 500 },
-    );
-  }
-}
-
-export async function DELETE() {
-  // Clearing is unconditional and idempotent — signing out without a session is
-  // a success, not an error.
-  await cookies();
-  const res = new NextResponse(null, { status: 204 });
-  res.headers.set('set-cookie', clearSessionCookie({ secure: secureCookies() }));
+  const res = NextResponse.json({ partyId: session.partyId, party: party ?? null });
+  // Per-user and session-scoped: never let a shared cache hold one party's
+  // identity and hand it to the next caller.
+  res.headers.set('cache-control', 'no-store');
   return res;
 }

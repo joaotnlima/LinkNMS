@@ -10,12 +10,14 @@
 // On success Clerk force-redirects to /onboarding/setup (D0a-setup, LINA-132),
 // where the new user picks a display name + role before entering any record.
 //
-// Why a client component: <SignUp/> from @clerk/clerk-react needs the browser
+// Why a client component: <SignUp/> from @clerk/nextjs needs the browser
 // Clerk context (<ClerkProvider> is wired in components/providers.tsx). We wrap
 // it in the scoped .ob-auth onboarding palette so it matches D0a-setup.
 'use client';
 
-import { SignUp } from '@clerk/clerk-react';
+import { SignUp } from '@clerk/nextjs';
+
+import { clerkAppearance } from '@/components/clerkAppearance';
 import './sign-up.css';
 
 // After a completed sign-up, land on the account-setup screen (D0a-setup) — a
@@ -26,30 +28,6 @@ const AFTER_SIGN_UP = '/onboarding/setup';
 // crashing, mirroring components/providers.tsx and the LINA-129 config: the app
 // boots in preview mode when Clerk keys are not provisioned.
 const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-
-// Brand Clerk's prebuilt component with the onboarding tokens (Owner Blue, Ink,
-// Paper, Inter) so the hosted form reads as LinkNMS, not stock Clerk.
-const appearance = {
-  variables: {
-    colorPrimary: '#3e5c8a',
-    colorText: '#16181d',
-    colorTextSecondary: '#5c5f68',
-    colorBackground: '#ffffff',
-    colorInputText: '#16181d',
-    colorInputBackground: '#fbfaf7',
-    colorDanger: '#b4633b',
-    fontFamily: 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif',
-    borderRadius: '8px',
-  },
-  elements: {
-    card: {
-      border: '1px solid #e4e1d9',
-      boxShadow: '0 1px 2px rgba(22,24,29,0.05), 0 12px 32px rgba(22,24,29,0.08)',
-      borderRadius: '14px',
-    },
-    footerActionLink: { color: '#3e5c8a' },
-  },
-};
 
 export default function SignUpPage() {
   return (
@@ -69,7 +47,7 @@ export default function SignUpPage() {
             signInUrl="/sign-in"
             forceRedirectUrl={AFTER_SIGN_UP}
             fallbackRedirectUrl={AFTER_SIGN_UP}
-            appearance={appearance}
+            appearance={clerkAppearance}
           />
         </div>
       ) : (

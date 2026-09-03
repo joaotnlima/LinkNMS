@@ -1,142 +1,85 @@
-// Sign-in (LINA-57 shell; magic-link proof half added in LINA-76 / ADR-0007).
+// Sign-in — Clerk (LINA-124, Auth Migration 0B).
 //
-// TWO doors, one page:
-//   * Production (default): magic-link sign-in. The form only REQUESTS an emailed
-//     link; the session is minted later when /auth/callback consumes the token.
-//     This is the PROOF half of ADR-0001 — a party proves control of their email
-//     before getting a cookie.
-//   * Demo/preview (LINKNMS_OPEN_SIGNIN=1): the no-proof form that trades an
-//     email for a session immediately. Kept exactly as it was for LINA-75's
-//     acceptance walkthrough; it is never enabled on production.
-import { TopBar } from '@/components/chrome';
-import { ActionForm } from '@/components/ActionForm';
-import { signInAction, requestSignInLinkAction } from '@/app/actions';
-import { openSignInEnabled } from '@/server/signin';
+// ── WHAT THIS REPLACED ───────────────────────────────────────────────────────
+// This page used to hold TWO doors, and both are gone:
+//   * the magic-link request form (LINA-76 / ADR-0007), whose emailed one-time
+//     token was consumed at /auth/callback to mint an `lnms_session` cookie; and
+//   * the `LINKNMS_OPEN_SIGNIN=1` demo form, which traded an email for a session
+//     with NO proof of control.
+// Clerk owns the proof half now — email code or email link, its own delivery,
+// its own single-use/expiry rules — so we no longer run an email-sending sign-in
+// service, a token table, or a hand-rolled HMAC cookie. The demo door is not
+// re-created behind a flag: a no-proof sign-in that exists anywhere eventually
+// exists in production.
+//
+// The "check your email" state that `?sent=1` used to render is now inside
+// Clerk's own component (routing="hash", so it stays on /sign-in), which is the
+// same arrangement D0a-magic uses on /sign-up (LINA-131).
+'use client';
 
-export const dynamic = 'force-dynamic';
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { SignIn } from '@clerk/nextjs';
 
-export default async function SignInPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ next?: string; sent?: string }>;
-}) {
-  const { next, sent } = await searchParams;
-  // Never reflect an absolute URL back into the form — the action re-checks, but
-  // an open redirect should not be one missing check away.
-  const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : '/';
+import { clerkAppearance } from '@/components/clerkAppearance';
+// The onboarding palette, shared with D0a so the two doors look like one system.
+import '../sign-up/sign-up.css';
 
-  // ── Demo/preview: the no-proof open-signin form (unchanged) ─────────────────
-  if (openSignInEnabled()) {
-    return (
-      <>
-        <TopBar />
-        <main className="screen">
-          <div>
-            <div className="crumbs">LinkNMS</div>
-            <h1 className="scr">Sign in</h1>
-            <p className="sub">
-              Everything you record is attributed to you by name and time-stamped.
-            </p>
-          </div>
+const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-          <section className="card">
-            <ActionForm action={signInAction} submitLabel="Continue" pendingLabel="Signing in…">
-              <input type="hidden" name="next" value={safeNext} />
-              <label className="field">
-                <span className="metric-lbl">Email</span>
-                <input name="email" type="email" required autoComplete="email" placeholder="you@example.com" />
-              </label>
-              <label className="field">
-                <span className="metric-lbl">Your name</span>
-                <input
-                  name="displayName"
-                  type="text"
-                  autoComplete="name"
-                  placeholder="How you should appear on the record"
-                  aria-describedby="name-help"
-                />
-              </label>
-              <span id="name-help" className="cap">
-                This is the name shown beside every decision you make.
-              </span>
-            </ActionForm>
-            <p className="cap" role="note" style={{ marginTop: 12 }}>
-              <span aria-hidden="true">⚠ </span>
-              Preview environment: this does not yet verify your email address.
-            </p>
-          </section>
-        </main>
-      </>
-    );
-  }
+/**
+ * Where to land after signing in. Same-origin PATHS only — an absolute or
+ * protocol-relative `next` is ignored, so a crafted link cannot turn the sign-in
+ * page into an open redirect. (The middleware only ever writes a path here, but
+ * the value arrives from the URL, so it is re-checked rather than trusted.)
+ */
+function safeNext(next: string | null): string {
+  if (!next || !next.startsWith('/') || next.startsWith('//')) return '/';
+  return next;
+}
 
-  // ── Production: "check your email" confirmation after a link was requested ──
-  // Shown for known AND unknown emails alike — the copy must never reveal which
-  // (ADR-0007 §4).
-  if (sent) {
-    return (
-      <>
-        <TopBar />
-        <main className="screen">
-          <div>
-            <div className="crumbs">LinkNMS</div>
-            <h1 className="scr">Check your email</h1>
-            <p className="sub">
-              If that address can sign in, a one-time link is on its way. It works once and expires
-              in 15 minutes.
-            </p>
-          </div>
-          <section className="card">
-            <p className="cap">
-              Didn&rsquo;t get it? Check spam, then <a href="/sign-in">request another link</a>.
-            </p>
-          </section>
-        </main>
-      </>
-    );
-  }
+function SignInCard() {
+  const next = safeNext(useSearchParams().get('next'));
 
-  // ── Production: request a magic link ────────────────────────────────────────
   return (
-    <>
-      <TopBar />
-      <main className="screen">
-        <div>
-          <div className="crumbs">LinkNMS</div>
-          <h1 className="scr">Sign in</h1>
-          <p className="sub">
-            Enter your email and we&rsquo;ll send you a one-time sign-in link. Everything you record
-            is attributed to you by name and time-stamped.
-          </p>
-        </div>
+    <div className="ob-auth-card">
+      <SignIn
+        routing="hash"
+        signUpUrl="/sign-up"
+        forceRedirectUrl={next}
+        fallbackRedirectUrl={next}
+        appearance={clerkAppearance}
+      />
+    </div>
+  );
+}
 
-        <section className="card">
-          <ActionForm
-            action={requestSignInLinkAction}
-            submitLabel="Send sign-in link"
-            pendingLabel="Sending…"
-          >
-            <input type="hidden" name="next" value={safeNext} />
-            <label className="field">
-              <span className="metric-lbl">Email</span>
-              <input name="email" type="email" required autoComplete="email" placeholder="you@example.com" />
-            </label>
-            <label className="field">
-              <span className="metric-lbl">Your name</span>
-              <input
-                name="displayName"
-                type="text"
-                autoComplete="name"
-                placeholder="How you should appear on the record"
-                aria-describedby="name-help"
-              />
-            </label>
-            <span id="name-help" className="cap">
-              Shown beside every decision you make. Used only if this is your first sign-in.
-            </span>
-          </ActionForm>
+export default function SignInPage() {
+  return (
+    <main className="ob-auth">
+      <div className="ob-auth-head">
+        <span className="ob-auth-brand">LinkNMS</span>
+        <p className="ob-auth-sub">
+          Sign in to the shared record. Everything you record here is attributed to you by name and
+          time-stamped.
+        </p>
+      </div>
+
+      {PUBLISHABLE_KEY ? (
+        // useSearchParams() forces a client render boundary; without the
+        // Suspense wrapper the whole route opts out of static generation.
+        <Suspense fallback={<div className="ob-auth-card" aria-busy="true" />}>
+          <SignInCard />
+        </Suspense>
+      ) : (
+        <section className="ob-auth-preview" role="note">
+          <h1>Sign-in isn&rsquo;t available in this preview</h1>
+          <p>
+            Authentication isn&rsquo;t configured in this environment yet. Once Clerk keys are
+            provisioned, sign-in opens here.
+          </p>
         </section>
-      </main>
-    </>
+      )}
+    </main>
   );
 }

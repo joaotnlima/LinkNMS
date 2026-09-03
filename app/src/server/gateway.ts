@@ -1,18 +1,18 @@
 // The Next.js ⇄ service adapter (LINA-56).
 //
-// Everything web-framework-specific about the API lives in this one file: read
-// the session cookie, parse the body, call a service handler, serialise the
-// result. The route files under src/app/api/v1/ are then two lines each and hold
+// Everything web-framework-specific about the API lives in this one file:
+// resolve the acting party, parse the body, call a service handler, serialise
+// the result. The route files under src/app/api/v1/ are then two lines each and hold
 // NO domain logic — which is the point: the services stay independently testable
 // (services/*/http.test.mjs) and nothing security-relevant is duplicated per
 // route where it could drift.
 //
-// The acting party is read ONLY from the signed httpOnly session cookie
-// (ADR-0004). There is deliberately no header or query override — not even a
-// dev-only one — because such an escape hatch is exactly the thing that ships to
-// production by accident.
+// The acting party is read ONLY from the verified Clerk session (ADR-0004;
+// LINA-124 replaced the self-minted `lnms_session` HMAC cookie with Clerk).
+// There is deliberately no header or query override — not even a dev-only one —
+// because such an escape hatch is exactly the thing that ships to production by
+// accident.
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 
 // The .mjs service modules are plain JS with JSDoc types; `allowJs` + the
 // `@services/*` path mapping (tsconfig.json) type them from source, so these
@@ -21,16 +21,19 @@ import { getContainer } from '@services/gateway/container.mjs';
 // `[id]` ⇄ `projectId` aliasing plus the UUID shape check, shared with the
 // in-process transport in src/lib/api.ts so the two cannot diverge (LINA-79).
 import { normaliseParams } from '@services/gateway/params.mjs';
-import { SESSION_COOKIE, verifySession } from '@services/identity/session.mjs';
 import { getAnalytics } from '@services/composition.mjs';
+
+// The ONE answer to "who is acting" (LINA-124): Clerk session → verified email
+// → identity party. Re-exported so the route files keep importing it from the
+// gateway they already depend on.
+import { currentSession, type Session } from '@/server/session';
+
+export { currentSession };
+export type { Session };
 
 // Every route touches Postgres and a per-request session; nothing here is
 // statically renderable or cacheable.
 export const dynamic = 'force-dynamic';
-
-export interface Session {
-  partyId: string;
-}
 
 export interface HandlerResult {
   status: number;
@@ -47,14 +50,6 @@ export type Handler = (ctx: {
 
 export function container() {
   return getContainer();
-}
-
-/** The acting party, or null when the request carries no valid session. */
-export async function currentSession(): Promise<Session | null> {
-  const jar = await cookies();
-  const raw = jar.get(SESSION_COOKIE)?.value;
-  if (!raw) return null;
-  return verifySession(raw) as Session | null;
 }
 
 // A malformed JSON body is `undefined`, not a crash: the services already

@@ -92,3 +92,24 @@
   color: var(--ob-owner);
   font-weight: 600;
 }
+
+/* A button that must read as a link — the sign-out affordance on /no-access
+ * (LINA-124). It has to be a <button> because it runs Clerk's signOut(), but a
+ * button styled as a button would compete with the page's real action. */
+.ob-auth-preview .linkish {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--ob-owner);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.ob-auth-preview .linkish:focus-visible {
+  outline: 2px solid var(--ob-owner);
+  outline-offset: 2px;
+  border-radius: 3px;
+}

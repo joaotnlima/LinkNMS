@@ -7,6 +7,15 @@
 - **Builds on:** ADR-0007 (magic-link sign-in), ADR-0004 (permission model).
 - **Does not touch:** ADR-0002 (the audit ledger).
 
+> **Where the gate lives since LINA-124.** This ADR is IN FORCE and unchanged in
+> intent. The Clerk cutover (Auth Migration 0B) deleted the magic-link service
+> that used to host the check, so the gate moved to the one step that turns a
+> verified identity into a party: `app/src/server/session.ts`, backed by the
+> read-only `services/identity/seats.mjs`. A Clerk account with no active seat is
+> authenticated and NOT admitted — it gets `/no-access` and no party row is
+> created for it. The privilege boundary below is untouched: `identity_app` still
+> holds SELECT and nothing else on `identity.seat`.
+
 ## Context
 
 ADR-0007 answered **"is this person who they say they are?"** — prove you control
