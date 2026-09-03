@@ -10,6 +10,7 @@
 // schema carries an actor field — that is a security property of the contract.
 
 const roleEnum = { type: 'string', enum: ['owner', 'counterparty'] };
+const partyRoleEnum = { type: 'string', enum: ['owner', 'contractor', 'viewer'] };
 
 export const schemas = {
   Error: {
@@ -27,6 +28,19 @@ export const schemas = {
           message: { type: 'string' },
         },
       },
+    },
+  },
+  // GET /me — the acting party's own profile (LINA-154). The display name is the
+  // authoritative identity.party value (LINA-132 setup), never derived from the
+  // email local-part.
+  MeProfile: {
+    type: 'object',
+    required: ['partyId', 'displayName'],
+    properties: {
+      partyId: { type: 'string' },
+      displayName: { type: 'string' },
+      email: { type: ['string', 'null'] },
+      role: partyRoleEnum,
     },
   },
   Member: {
@@ -137,6 +151,17 @@ export const spec = {
   },
   servers: [{ url: '/api/v1' }],
   paths: {
+    '/me': {
+      get: {
+        operationId: 'getMe',
+        summary: 'The acting party’s own profile (identity.party): display name, email, role.',
+        responses: {
+          200: { description: 'The party’s profile', content: json('MeProfile') },
+          401: errorResponse('No acting party in session'),
+          404: errorResponse('Party not found'),
+        },
+      },
+    },
     '/projects': {
       post: {
         operationId: 'createProject',

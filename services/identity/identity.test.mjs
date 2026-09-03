@@ -343,3 +343,21 @@ describe('cross-service port (requireMember / roleOf)', () => {
     await expectError(svc.requireMember(null, p.id), 401);
   });
 });
+
+describe('getMe (LINA-154)', () => {
+  test('returns the acting party’s own profile from the store', async () => {
+    const { svc, store } = setup();
+    const me = owner();
+    store.upsertParty({ id: me, displayName: 'Marta' });
+    const res = await svc.getMe({ actorPartyId: me });
+    assert.equal(res.partyId, me);
+    assert.equal(res.displayName, 'Marta');
+    assert.ok('email' in res && 'role' in res);
+  });
+
+  test('anonymous or unknown party is a 401 / 404', async () => {
+    const { svc } = setup();
+    await expectError(svc.getMe({ actorPartyId: null }), 401, 'unauthenticated');
+    await expectError(svc.getMe({ actorPartyId: owner() }), 404, 'not_found');
+  });
+});

@@ -39,7 +39,7 @@ import { currentSession, isSignedIn } from '@/server/session';
 // resolution itself now lives beside the rest of the session logic.
 export { isSignedIn };
 
-import type { Project, Decision, ChangeOrderDetail, ChangeOrderSummary, AuditResult, Pillars } from './types';
+import type { Project, Decision, ChangeOrderDetail, ChangeOrderSummary, AuditResult, Pillars, MeProfile } from './types';
 import {
   directoryOf, countsOf, toProject, toDecision, toChangeOrderSummary, toChangeOrderDetail,
   toAuditResult, projectedIfApproved,
@@ -83,6 +83,10 @@ interface Op {
 }
 
 const ROUTES = {
+  getMe: {
+    method: 'GET', path: () => '/me',
+    handler: (c) => c.http.identity.getMe,
+  },
   getProject: {
     method: 'GET', path: (p) => `/projects/${enc(p.id)}`,
     handler: (c) => c.http.identity.getProject,
@@ -256,6 +260,15 @@ function safeJson(text: string): unknown {
 }
 
 // ── Reads ────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /me — the authenticated party's own profile. The portal uses displayName
+ * to greet the user by name (LINA-154). Returns the authoritative record from
+ * identity.party; never derived client-side from the email.
+ */
+export async function getMe(): Promise<MeProfile> {
+  return call<MeProfile>('getMe');
+}
 
 /**
  * The dashboard object. Four calls, because the R0 services are split by schema

@@ -111,5 +111,17 @@ export function createIdentityHttp({ service }) {
     } catch (err) { return errorBody(err); }
   }
 
-  return { createProject, getProject, inviteCounterparty, acceptInvitation };
+  // GET /me — the authenticated party's own profile. Per-user, session-scoped:
+  // cache-control: no-store so a shared cache never hands one party's identity
+  // to another.
+  async function getMe({ session }) {
+    try {
+      const me = await service.getMe({
+        actorPartyId: actorOf(session),
+      });
+      return { status: 200, body: me, headers: { 'cache-control': 'no-store' } };
+    } catch (err) { return errorBody(err); }
+  }
+
+  return { createProject, getProject, inviteCounterparty, acceptInvitation, getMe };
 }

@@ -15,6 +15,16 @@ export interface Party {
   role: Role;
 }
 
+// GET /me response shape — the authenticated party's own profile.
+// displayName is the authoritative name from identity.party (LINA-132 setup),
+// never derived from the email local-part.
+export interface MeProfile {
+  partyId: string;
+  displayName: string;
+  email: string | null;
+  role: string;
+}
+
 export interface Pillar {
   pillar: PillarKey;
   status: RagStatus;
