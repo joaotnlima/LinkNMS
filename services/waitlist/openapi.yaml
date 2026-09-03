@@ -1,0 +1,141 @@
+openapi: 3.1.0
+info:
+  title: LinkNMS — Waitlist API
+  version: 0.1.0-r0
+  description: >-
+    The Portal's waitlist capture (LINA-127; Onboarding Plan v4 Phase 1, task 2).
+    POST /api/waitlist records an email at status `waitlisted` with a
+    database-assigned `signup_order`, dedupes on a normalized email key (UNIQUE in
+    the database), and triggers the D-2 welcome email. The lifecycle is
+    `waitlisted` on signup → `active` on first login (Phase 2); a signup can only
+    ever be those two values, enforced by a CHECK.
+
+    It is UNAUTHENTICATED prospect capture — there is no session, by design. The
+    acting party is never read from the body, and no client may set `status` or
+    `signup_order` (both are server-side).
+servers:
+  - url: /api
+    description: R0 single-instance gateway (services share one Postgres, one schema each)
+
+tags:
+  - name: waitlist
+    description: Email capture for the waitlist.
+
+paths:
+  /waitlist:
+    post:
+      tags: [waitlist]
+      operationId: subscribe
+      summary: Capture an email to the waitlist (D-4); triggers the D-2 welcome email
+      description: >-
+        Validates the email (including a small disposable-domain blocklist),
+        rejects a duplicate with `409 duplicate` (never creating a second row),
+        stores it `waitlisted` with a DB-assigned `signup_order`, and triggers the
+        welcome email — which may degrade without failing the signup.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscribeRequest' }
+      responses:
+        '201':
+          description: The email was stored waitlisted and the signup committed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Signup' }
+        '400':
+          description: >
+            `invalid_email` (missing, malformed, or disposable) or `invalid_locale`
+            (not pt / en / es).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: >
+            `duplicate` — this normalized email is already on the waitlist. The
+            response never leaks the prior row or its status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+components:
+  schemas:
+    SubscribeRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: The address to reserve. Trimmed and normalized (lowercased) for the dedupe key.
+        locale:
+          type: string
+          enum: [pt, en, es]
+          description: Preferred language for the D-2 welcome email.
+        role:
+          type: [string, 'null']
+          description: Optional self-declared role (homeowner / contractor / …). Retained for parity with the form; never participates in dedupe or order.
+        source:
+          type: [string, 'null']
+          maxLength: 120
+          description: Acquisition source (utm_source / referring host / default). Retained for analytics; never participates in dedupe or order.
+        referrer:
+          type: [string, 'null']
+          maxLength: 500
+          description: Raw referrer captured on submit. Retained for analytics.
+
+    Signup:
+      type: object
+      additionalProperties: false
+      description: The committed signup. Deliberately minimal and non-identifying.
+      required:
+        - id
+        - email
+        - status
+        - signupOrder
+        - createdAt
+        - welcomeEmailSent
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        status:
+          type: string
+          enum: [waitlisted]
+          description: Always `waitlisted` on this Phase 1 write; flips to `active` on first login (Phase 2).
+        signupOrder:
+          type: integer
+          format: int64
+          description: >
+            The DB-assigned monotonic insertion counter the go-date batch selects
+            "the first 10, by signup order" from. Assigned by the database; never
+            client-supplied.
+        createdAt:
+          type: string
+          format: date-time
+        welcomeEmailSent:
+          type: boolean
+          description: >
+            Whether the D-2 welcome email was accepted for delivery. Best-effort:
+            a false (e.g. no RESEND_API_KEY in dev) never fails the signup.
+
+    Error:
+      type: object
+      additionalProperties: false
+      description: The uniform platform error envelope (design §6) — the same `{ error: { code, message } }` shape every service returns and the frontend reads.
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: >
+                Stable machine code, one of: invalid_email, invalid_locale,
+                duplicate.
+            message:
+              type: string
+              description: Human-readable explanation.

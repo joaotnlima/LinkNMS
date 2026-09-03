@@ -17,6 +17,7 @@
 // asymmetry is the waitlist's choice to make, and burying a degrade branch in
 // the shared client is exactly how it would one day reach sign-in.
 import { sendEmail, isEmailConfigured as senderConfigured } from '@services/email/sender.mjs';
+import { renderWelcomeEmail, type WelcomeLocale } from '@/emails/WelcomeEmail';
 
 type Locale = 'pt' | 'en' | 'es';
 
@@ -101,6 +102,38 @@ export async function sendConfirmationEmail(
     // Status/code only — the sender never logs a body, and neither do we: the
     // confirmation link in it is a bearer credential.
     console.error('[email] send failed:', (err as { code?: string })?.code ?? 'unknown');
+    return false;
+  }
+}
+
+// Welcome email (LINA-128), sent once the double opt-in is confirmed. This is
+// the transactional "you're on the list" email: it confirms the place, sets the
+// access-date expectation (Oct 1), and asks for no action. Rendered with the
+// React Email template in src/emails/WelcomeEmail.tsx.
+//
+// SAME ASYMMETRY AS ABOVE: it degrades (returns false, never throws) so a missed
+// welcome is not a security event and dev/preview can exercise the funnel. The
+// from-address defaults to noreply@linknms.com — the sender's default — per the
+// issue contract; RESEND_FROM remains the deploy-level override.
+export async function sendWelcomeEmail(
+  to: string,
+  locale: WelcomeLocale
+): Promise<boolean> {
+  if (!isEmailConfigured()) {
+    console.warn('[email] RESEND_API_KEY not set — welcome email skipped for', to);
+    return false;
+  }
+  const { subject, html } = await renderWelcomeEmail(locale ?? 'en');
+  try {
+    await sendEmail({
+      to,
+      subject,
+      html,
+      from: process.env.RESEND_FROM || 'LinkNMS <noreply@linknms.com>'
+    });
+    return true;
+  } catch (err) {
+    console.error('[email] welcome send failed:', (err as { code?: string })?.code ?? 'unknown');
     return false;
   }
 }

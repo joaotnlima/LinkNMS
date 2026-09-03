@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { getDb, isDbConfigured, signups } from '@/lib/db';
 import { capture } from '@/lib/analytics';
+import { sendWelcomeEmail } from '@/lib/email';
 
 export const runtime = 'nodejs';
 
@@ -27,7 +28,13 @@ export async function GET(req: Request) {
 
   const db = getDb();
   const rows = await db
-    .select({ id: signups.id, emailNorm: signups.emailNorm, status: signups.status })
+    .select({
+      id: signups.id,
+      email: signups.email,
+      emailNorm: signups.emailNorm,
+      locale: signups.locale,
+      status: signups.status
+    })
     .from(signups)
     .where(eq(signups.confirmToken, token))
     .limit(1);
@@ -43,6 +50,13 @@ export async function GET(req: Request) {
       .set({ status: 'confirmed', confirmedAt: new Date(), confirmToken: null })
       .where(and(eq(signups.id, row.id), eq(signups.confirmToken, token)));
     await capture('waitlist_verified', row.emailNorm, { locale });
+    // Successful waitlist signup (LINA-128): the double opt-in is complete, so
+    // send the "you're on the list" welcome email. Degrades silently on failure.
+    const welcomeLocale = (LOCALES.has(row.locale) ? row.locale : 'en') as
+      | 'pt'
+      | 'en'
+      | 'es';
+    await sendWelcomeEmail(row.email, welcomeLocale);
   }
 
   return NextResponse.redirect(dest(true));
