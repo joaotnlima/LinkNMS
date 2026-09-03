@@ -61,3 +61,12 @@ don't repaint it later. The load-bearing rule: a change order can be
   matrix.
 - **Revisit when:** we add a third role or per-field visibility rules
   (e.g. inspectors see a subset).
+
+## Follow-ups / carried forward
+
+- The Clerk → Neon RBAC bridge (Auth Migration 0A, LINA-123) carries these
+  invariants forward — `can()` is the single authorizer, deny-by-default, and the
+  two-sided change-order rule is a runtime predicate + DB check. The four open
+  items (permission matrix, session transport, one-role-per-org, schema
+  namespace) were ratified in
+  [Auth Bridge §8 Architect Review (LINA-142)](../auth-bridge-review-lina-142.md).
