@@ -85314,7 +85314,7 @@
                           "id": "KHkjf",
                           "name": "L",
                           "fill": "$ink",
-                          "content": "Request access",
+                          "content": "JOIN",
                           "fontFamily": "$font",
                           "fontSize": 16,
                           "fontWeight": "600"
