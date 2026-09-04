@@ -4,6 +4,12 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { identifyByEmail, track } from '@/lib/analytics-client';
 import { normalizeEmail } from '@/lib/email-normalize';
+import {
+  clearPlanIntent,
+  getPlanIntent,
+  PLAN_INTENT_EVENT,
+  type PlanIntent
+} from '@/lib/plan-intent';
 
 type State = 'idle' | 'submitting' | 'success' | 'dup' | 'error';
 
@@ -99,6 +105,20 @@ export function WaitlistForm({ source }: { source: string }) {
   const startedRef = useRef(false);
   // The role step unlocks once an email has been typed.
   const [emailEntered, setEmailEntered] = useState(false);
+  // A paid plan picked in the pricing section (LINA-175). While founding free
+  // seats remain, paid CTAs route here instead of Stripe, so the chosen plan
+  // rides along: shown back to the visitor, and posted so the signup records
+  // which plan the intent was for.
+  const [planIntent, setPlanIntentState] = useState<PlanIntent | null>(null);
+
+  useEffect(() => {
+    setPlanIntentState(getPlanIntent());
+    const onIntent = (e: Event) => {
+      setPlanIntentState((e as CustomEvent<PlanIntent>).detail ?? getPlanIntent());
+    };
+    window.addEventListener(PLAN_INTENT_EVENT, onIntent);
+    return () => window.removeEventListener(PLAN_INTENT_EVENT, onIntent);
+  }, []);
 
   const onEmailFocus = () => {
     if (startedRef.current) return;
@@ -153,6 +173,9 @@ export function WaitlistForm({ source }: { source: string }) {
           // submissions omit it entirely rather than posting an empty field.
           ...(honeypot ? { company: honeypot } : {}),
           turnstileToken: String(data.get('cf-turnstile-response') || ''),
+          // Paid-plan intent, when the visitor arrived from a pricing CTA.
+          // Only sent when set, so plain waitlist signups are untouched.
+          ...(planIntent ? { plan: planIntent.plan } : {}),
           locale,
           source: effectiveSource,
           referrer
@@ -171,6 +194,9 @@ export function WaitlistForm({ source }: { source: string }) {
         identifyByEmail(normalizeEmail(email));
         setState('success');
         form.reset();
+        // The intent has been recorded — don't let it ride along on a second
+        // signup later in the same session.
+        clearPlanIntent();
       } else {
         setState('error');
       }
@@ -200,6 +226,21 @@ export function WaitlistForm({ source }: { source: string }) {
   return (
     <>
       <form className="lp-form" onSubmit={onSubmit} noValidate>
+        {planIntent && (
+          <p className="lp-form__plan lp-micro" role="status">
+            <span>{t('planNote', { plan: planIntent.label })}</span>{' '}
+            <button
+              type="button"
+              className="lp-form__plan-clear"
+              onClick={() => {
+                clearPlanIntent();
+                setPlanIntentState(null);
+              }}
+            >
+              {t('planClear')}
+            </button>
+          </p>
+        )}
         <div className="inp">
           <label className="lp-micro" htmlFor="email">
             {t('email')}
