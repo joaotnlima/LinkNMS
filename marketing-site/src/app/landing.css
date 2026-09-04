@@ -1459,7 +1459,7 @@
   max-width: 52ch;
   font-size: clamp(15px, 1.4vw, 18px);
   line-height: 1.6;
-  color: var(--lp-ink-70);
+  color: var(--lp-cream-60);
 }
 .lp-pricing__head-right {
   display: flex;
@@ -1472,7 +1472,8 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
-  background: var(--lp-stone);
+  background: #fbfaf70f;
+  border: 1px solid var(--lp-cream-hair);
   border-radius: 16px;
   padding: 4px;
 }
@@ -1491,12 +1492,12 @@
 .lp-pricing__toggle-opt .t {
   font-size: 14px;
   font-weight: 600;
-  color: var(--lp-ink);
+  color: var(--lp-cream);
 }
 .lp-pricing__toggle-opt .s {
   font-size: 12px;
   font-weight: 400;
-  color: var(--lp-ink-60);
+  color: var(--lp-cream-60);
 }
 .lp-pricing__toggle-opt[aria-selected='true'] {
   background: var(--lp-cream);
@@ -1505,13 +1506,16 @@
 .lp-pricing__toggle-opt[aria-selected='true'] .t {
   color: var(--pl-accent-fg);
 }
+.lp-pricing__toggle-opt[aria-selected='true'] .s {
+  color: var(--lp-ink-60);
+}
 
 /* Audience hints — both shown; the active view's line takes the accent. */
 .lp-pricing__hints {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  color: var(--lp-ink-60);
+  color: var(--lp-cream-60);
 }
 .lp-pricing__hint {
   font-size: 11px;
@@ -1522,12 +1526,12 @@
 }
 [data-pricing-view='owner'] .lp-pricing__hint[data-view='owner'],
 [data-pricing-view='builder'] .lp-pricing__hint[data-view='builder'] {
-  color: var(--pl-accent-fg);
+  color: var(--lp-cream);
   font-weight: 600;
 }
 .lp-pricing__hint-div {
   height: 1px;
-  background: var(--lp-ink-hair);
+  background: var(--lp-cream-hair);
 }
 
 /* Ribbon — differs per view; one is hidden. */
@@ -1541,8 +1545,19 @@
   gap: clamp(20px, 3vw, 40px);
   padding: clamp(24px, 3vw, 40px);
   border-radius: 20px;
-  background: var(--pl-accent-muted);
-  border: 1px solid var(--pl-accent-line);
+  background: var(--ribbon-bg);
+  border: none;
+}
+/* The founding offer is a solid, saturated band (pen S7): owner = closed-green,
+   builder = actual-clay. --ribbon-ink is the on-cream text colour for the
+   inverted chips / CTA that sit on cream inside the band. */
+.lp-pricing__ribbon--owner {
+  --ribbon-bg: var(--plan-closed);
+  --ribbon-ink: var(--plan-closed-fg);
+}
+.lp-pricing__ribbon--builder {
+  --ribbon-bg: var(--plan-actual);
+  --ribbon-ink: var(--plan-actual-fg);
 }
 @media (min-width: 820px) {
   .lp-pricing__ribbon {
@@ -1558,26 +1573,26 @@
 .lp-ribbon__badge {
   border-radius: 999px;
   padding: 5px 11px;
-  border: 1px solid var(--pl-accent-line);
-  color: var(--pl-accent-fg);
-  background: var(--lp-cream);
+  border: 1px solid var(--lp-cream-40);
+  color: var(--lp-cream);
+  background: transparent;
 }
 .lp-ribbon__badge--fill {
-  background: var(--pl-accent);
-  color: var(--lp-cream);
+  background: var(--lp-cream);
+  color: var(--ribbon-ink);
   border-color: transparent;
 }
 .lp-ribbon__h {
   margin-top: 16px;
   font-size: clamp(22px, 2.6vw, 32px);
-  color: var(--pl-accent-fg);
+  color: var(--lp-cream);
 }
 .lp-ribbon__s {
   margin-top: 12px;
   max-width: 54ch;
   font-size: 15px;
   line-height: 1.55;
-  color: var(--lp-ink-70);
+  color: var(--lp-cream-60);
 }
 .lp-ribbon__chips {
   display: flex;
@@ -1588,9 +1603,9 @@
 .lp-ribbon__chip {
   border-radius: 999px;
   padding: 6px 12px;
-  background: var(--lp-cream);
-  border: 1px solid var(--pl-accent-line);
-  color: var(--pl-accent-fg);
+  background: transparent;
+  border: 1px solid var(--lp-cream-40);
+  color: var(--lp-cream);
   text-transform: none;
   letter-spacing: 0.01em;
 }
@@ -1607,34 +1622,34 @@
 }
 .lp-ribbon__count .n {
   font-size: clamp(28px, 3vw, 40px);
-  color: var(--pl-accent-fg);
+  color: var(--lp-cream);
 }
 .lp-ribbon__count .x {
-  color: var(--lp-ink-60);
+  color: var(--lp-cream-60);
 }
 .lp-ribbon__bar {
   width: 100%;
   height: 8px;
   border-radius: 999px;
-  background: var(--lp-cream);
-  border: 1px solid var(--pl-accent-line);
+  background: var(--lp-cream-20);
+  border: none;
   overflow: hidden;
 }
 .lp-ribbon__fill {
   display: block;
   height: 100%;
-  background: var(--pl-accent);
+  background: var(--lp-cream);
   border-radius: 999px;
 }
 .lp-ribbon__cta {
-  background: var(--pl-accent);
-  color: var(--lp-cream);
+  background: var(--lp-cream);
+  color: var(--ribbon-ink);
 }
 .lp-ribbon__cta:hover {
-  background: var(--pl-accent-fg);
+  background: var(--lp-stone);
 }
 .lp-ribbon__note {
-  color: var(--lp-ink-60);
+  color: var(--lp-cream-60);
   text-transform: none;
   letter-spacing: 0.01em;
   font-weight: 400;
@@ -1652,7 +1667,7 @@
   gap: 20px;
 }
 .lp-pricing__plans-label {
-  color: var(--pl-accent-fg);
+  color: var(--pl-accent);
 }
 .lp-pricing__cards {
   display: grid;
@@ -1673,8 +1688,8 @@
   gap: 24px;
   padding: clamp(20px, 2.2vw, 28px);
   border-radius: 20px;
-  background: var(--lp-cream);
-  border: 1px solid var(--lp-ink-hair);
+  background: #fbfaf708;
+  border: 1px solid var(--lp-cream-hair);
 }
 .lp-plan[data-popular='true'] {
   border-color: var(--pl-accent);
@@ -1699,8 +1714,8 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: var(--pl-accent-muted);
-  border: 1px solid var(--pl-accent-line);
+  background: #fbfaf70f;
+  border: 1px solid var(--lp-cream-hair);
 }
 .lp-plan__name {
   font-size: 18px;
@@ -1710,7 +1725,7 @@
   margin-top: 4px;
   font-size: 13px;
   line-height: 1.45;
-  color: var(--lp-ink-60);
+  color: var(--lp-cream-40);
 }
 .lp-plan__price {
   display: flex;
@@ -1720,14 +1735,14 @@
 }
 .lp-plan__price .p {
   font-size: clamp(32px, 3.4vw, 44px);
-  color: var(--pl-accent-fg);
+  color: var(--lp-cream);
 }
 .lp-plan__price .per {
-  color: var(--lp-ink-60);
+  color: var(--lp-cream-40);
 }
 .lp-plan__proj {
   margin-top: 8px;
-  color: var(--pl-accent-fg);
+  color: var(--lp-cream);
 }
 .lp-plan__feats {
   list-style: none;
@@ -1740,7 +1755,7 @@
   margin-bottom: 2px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--lp-ink);
+  color: var(--lp-cream);
 }
 .lp-plan__feat {
   display: flex;
@@ -1748,7 +1763,7 @@
   align-items: flex-start;
   font-size: 14px;
   line-height: 1.4;
-  color: var(--lp-ink-70);
+  color: var(--lp-cream-60);
 }
 .lp-plan__check {
   flex: none;
@@ -1757,14 +1772,16 @@
 }
 .lp-plan__cta {
   width: 100%;
-  background: var(--lp-ink);
+  background: transparent;
   color: var(--lp-cream);
+  border: 1px solid var(--lp-cream-40);
 }
 .lp-plan__cta:hover {
-  background: #2a2d35;
+  background: #fbfaf714;
 }
 .lp-plan[data-popular='true'] .lp-plan__cta {
   background: var(--pl-accent);
+  border-color: transparent;
 }
 .lp-plan[data-popular='true'] .lp-plan__cta:hover {
   background: var(--pl-accent-fg);
@@ -1775,10 +1792,10 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 1px;
-  border: 1px solid var(--lp-ink-hair);
+  border: 1px solid var(--lp-cream-hair);
   border-radius: 16px;
   overflow: hidden;
-  background: var(--lp-ink-hair);
+  background: var(--lp-cream-hair);
 }
 @media (min-width: 760px) {
   .lp-pricing__core {
@@ -1786,11 +1803,11 @@
   }
 }
 .lp-core__cell {
-  background: var(--lp-cream);
+  background: #191b21;
   padding: clamp(18px, 2vw, 24px);
 }
 .lp-core__cell--lead {
-  background: var(--lp-stone);
+  background: #1d1f26;
 }
 .lp-core__t {
   font-size: 15px;
@@ -1800,7 +1817,7 @@
   margin-top: 6px;
   font-size: 13px;
   line-height: 1.45;
-  color: var(--lp-ink-60);
+  color: var(--lp-cream-60);
 }
 
 /* Billing / how-it-works — shared. */
@@ -1818,8 +1835,8 @@
 .lp-billing__side {
   padding: clamp(18px, 2vw, 24px);
   border-radius: 16px;
-  border: 1px solid var(--lp-ink-hair);
-  background: var(--lp-cream);
+  border: 1px solid var(--lp-cream-hair);
+  background: #fbfaf708;
 }
 .lp-billing__t {
   font-size: 15px;
@@ -1829,12 +1846,13 @@
   margin-top: 8px;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--lp-ink-60);
+  color: var(--lp-cream-60);
 }
 .lp-billing__flow {
   padding: clamp(18px, 2vw, 24px);
   border-radius: 16px;
-  background: var(--lp-ink);
+  background: #fbfaf70f;
+  border: 1px solid var(--lp-cream-hair);
   color: var(--lp-cream);
 }
 .lp-billing__ft {
@@ -1864,7 +1882,7 @@
   color: var(--lp-cream-40);
 }
 .lp-pricing__foot {
-  color: var(--lp-ink-40);
+  color: var(--lp-cream-40);
   text-align: center;
 }
 

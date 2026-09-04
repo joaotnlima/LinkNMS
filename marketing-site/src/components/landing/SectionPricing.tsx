@@ -117,7 +117,7 @@ export async function SectionPricing() {
   );
 
   return (
-    <section className="lp-section lp-pricing" id="pricing">
+    <section className="lp-section lp-section--dark lp-pricing" id="pricing">
       <div className="lp-wrap">
         <SectionPricingToggle
           labelBar={labelBar}
