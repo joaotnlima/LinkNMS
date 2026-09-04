@@ -418,21 +418,164 @@
     },
     "pricing": {
       "label": "Pricing",
-      "labelRight": "Fifty seats. No card.",
-      "toggleOwner": "Owner",
-      "toggleBuilder": "Builder",
-      "owner": {
-        "kicker": "Early access · Founding owners",
-        "headline": "Your first build is free.",
-        "body": "We're onboarding the first 50 build owners ourselves. No subscription, no card, no expiry — just your build, tracked properly from day one.",
-        "cta": "Join free",
-        "reassure": "Free while we onboard your first build · No card"
+      "labelRightOwner": "For owners · Per project",
+      "labelRightBuilder": "For builders · Per project",
+      "title": "Priced by how much you build.",
+      "sub": "Blue is the owner's plan, clay is the builder's — but the core is in every tier: Scope, Time and Cost. Add collaborators for free; pay only for the projects you run.",
+      "toggleAria": "Choose owner or builder pricing",
+      "toggle": {
+        "ownerTitle": "I'm an Owner",
+        "ownerSub": "Building my own project",
+        "builderTitle": "I'm a Builder",
+        "builderSub": "Building for clients"
       },
-      "builder": {
-        "kicker": "Coming soon · Builders",
-        "headline": "Builder pricing is on the way.",
-        "body": "We're finalising pricing for builders and specialty contractors. Join the waitlist to be first to know when it lands."
-      }
+      "hintOwner": "Homeowners who want visibility and control of their build.",
+      "hintBuilder": "Builders managing multiple projects, teams and suppliers.",
+      "ribbonOwner": {
+        "badge1": "Founding 50",
+        "badge2": "Limited · While seats last",
+        "h": "First 50 homeowners get Personal — free for life.",
+        "s": "Founding Owners help shape LinkNMS. Bring your build, invite your team, keep Personal free forever.",
+        "count": "18 / 50",
+        "countLabel": "Seats claimed",
+        "cta": "Claim my free seat"
+      },
+      "ribbonBuilder": {
+        "badge1": "For builders",
+        "badge2": "Free to join",
+        "h": "Join free. Pay only when you manage.",
+        "s": "Give your company visibility to potential new builders in your area. Collaborate on any project you're invited to — no cost, no card. Claiming a project to run it is what turns it into a paid Active Project. Pick your tier below.",
+        "chip1": "Invited → collaborate free",
+        "chip2": "Claim to manage → uses 1 project",
+        "cta": "Join as a Builder",
+        "note": "Free to collaborate. Upgrade only to run your own projects."
+      },
+      "plansLabelOwner": "For owners",
+      "plansLabelBuilder": "For builders",
+      "perMonth": "/month",
+      "popular": "Most popular",
+      "plansOwner": [
+        {
+          "name": "Personal",
+          "sub": "Already have your builder? Stay in control.",
+          "price": "€19",
+          "proj": "1 active project",
+          "feats": [
+            "Manage scope, time & cost",
+            "Changes & approvals",
+            "Documents, photos & updates",
+            "Payments tracking",
+            "Unlimited collaborators",
+            "Predefined roles",
+            "Basic reports"
+          ],
+          "cta": "Start Personal"
+        },
+        {
+          "name": "Build+",
+          "sub": "Find, compare and choose the right professionals.",
+          "price": "€49",
+          "proj": "10 active projects",
+          "plus": "Everything in Personal, plus:",
+          "feats": [
+            "Find builders & specialists",
+            "Request quotes",
+            "Compare proposals side-by-side",
+            "Scope & cost comparison",
+            "Verified professionals network",
+            "Decision center"
+          ],
+          "cta": "Start Build+"
+        },
+        {
+          "name": "Real Estate Investor",
+          "sub": "For owners with a portfolio of properties.",
+          "price": "€99",
+          "proj": "Unlimited projects",
+          "plus": "Everything in Build+, plus:",
+          "feats": [
+            "Unlimited active projects",
+            "Portfolio dashboard across builds",
+            "Compare builders across projects",
+            "Consolidated documents, costs & payments",
+            "Priority support"
+          ],
+          "cta": "Start Investor"
+        }
+      ],
+      "plansBuilder": [
+        {
+          "name": "Independent Builder",
+          "sub": "Everything you need to run your projects.",
+          "price": "€59",
+          "proj": "Up to 3 active projects",
+          "feats": [
+            "Manage scope, time & cost",
+            "Changes & approvals",
+            "Documents, photos & updates",
+            "Payments tracking",
+            "Subcontractors & suppliers",
+            "Predefined roles",
+            "Basic reports"
+          ],
+          "cta": "Start Independent"
+        },
+        {
+          "name": "Growing Builder",
+          "sub": "Run more projects and protect your margins.",
+          "price": "€119",
+          "proj": "Up to 10 active projects",
+          "plus": "Everything in Independent, plus:",
+          "feats": [
+            "Supplier quote comparison",
+            "Material price intelligence",
+            "Budget vs actual & forecasting",
+            "Client portal",
+            "Advanced reports & dashboards",
+            "Priority support"
+          ],
+          "cta": "Start Growing"
+        },
+        {
+          "name": "Construction Business",
+          "sub": "Scale your business with full control and automation.",
+          "price": "€199",
+          "proj": "Unlimited projects",
+          "plus": "Everything in Growing, plus:",
+          "feats": [
+            "Custom roles & permissions",
+            "Custom trades & categories",
+            "Workflow automation",
+            "Portfolio analytics",
+            "API & integrations",
+            "Dedicated onboarding"
+          ],
+          "cta": "Start Business"
+        }
+      ],
+      "core": {
+        "title": "Core included in all plans",
+        "desc": "The essentials you always get.",
+        "items": [
+          { "t": "Scope", "d": "Track changes, approvals and all project information." },
+          { "t": "Time", "d": "Plan milestones and stay on schedule." },
+          { "t": "Cost", "d": "Control budgets, costs and payments." }
+        ]
+      },
+      "billing": {
+        "leftTitle": "Invite anyone. Control access.",
+        "leftDesc": "Invite unlimited people to collaborate. You only pay for projects you actively manage.",
+        "flowTitle": "How it works",
+        "steps": [
+          "Owner creates the project",
+          "People collaborate (free)",
+          "Builder “claims” it (uses 1 project)",
+          "Counts in the Builder’s plan"
+        ],
+        "rightTitle": "Important rule",
+        "rightDesc": "A project counts towards your plan when your organisation is the Managing Organisation. Collaborators are always free."
+      },
+      "foot": "All prices are per month, billed monthly. Cancel anytime."
     },
     "who": {
       "label": "Who it is for",

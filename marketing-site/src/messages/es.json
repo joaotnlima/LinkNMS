@@ -418,21 +418,164 @@
     },
     "pricing": {
       "label": "Precios",
-      "labelRight": "Cincuenta plazas. Sin tarjeta.",
-      "toggleOwner": "Propietario",
-      "toggleBuilder": "Constructor",
-      "owner": {
-        "kicker": "Acceso anticipado · Propietarios fundadores",
-        "headline": "Tu primera obra es gratuita.",
-        "body": "Estamos incorporando personalmente a los primeros 50 propietarios de obra. Sin suscripción, sin tarjeta, sin fecha de caducidad — solo tu obra, registrada correctamente desde el primer día.",
-        "cta": "Unirse gratis",
-        "reassure": "Gratis mientras incorporamos tu primera obra · Sin tarjeta"
+      "labelRightOwner": "Para propietarios · Por proyecto",
+      "labelRightBuilder": "Para constructores · Por proyecto",
+      "title": "El precio va con lo que construyes.",
+      "sub": "El azul es el plan del propietario, el arcilla es el del constructor — pero lo esencial está en cada nivel: Alcance, Plazo y Coste. Añade colaboradores gratis; paga solo por los proyectos que gestionas.",
+      "toggleAria": "Elegir precios de propietario o constructor",
+      "toggle": {
+        "ownerTitle": "Soy propietario",
+        "ownerSub": "Construyo mi propio proyecto",
+        "builderTitle": "Soy constructor",
+        "builderSub": "Construyo para clientes"
       },
-      "builder": {
-        "kicker": "Próximamente · Constructores",
-        "headline": "Los precios para constructores están en camino.",
-        "body": "Estamos ultimando los precios para constructores y subcontratistas. Únete a la lista de espera para ser el primero en saberlo."
-      }
+      "hintOwner": "Propietarios que quieren visibilidad y control de su obra.",
+      "hintBuilder": "Constructores que gestionan varios proyectos, equipos y proveedores.",
+      "ribbonOwner": {
+        "badge1": "Fundadores 50",
+        "badge2": "Limitado · Mientras queden plazas",
+        "h": "Los primeros 50 propietarios obtienen Personal — gratis de por vida.",
+        "s": "Los Propietarios Fundadores ayudan a dar forma a LinkNMS. Trae tu obra, invita a tu equipo y mantén Personal gratis para siempre.",
+        "count": "18 / 50",
+        "countLabel": "Plazas reservadas",
+        "cta": "Reservar mi plaza gratis"
+      },
+      "ribbonBuilder": {
+        "badge1": "Para constructores",
+        "badge2": "Alta gratuita",
+        "h": "Únete gratis. Paga solo cuando gestionas.",
+        "s": "Da a tu empresa visibilidad ante nuevos posibles propietarios de tu zona. Colabora en cualquier proyecto al que te inviten — sin coste, sin tarjeta. Reclamar un proyecto para gestionarlo es lo que lo convierte en un Proyecto Activo de pago. Elige tu nivel abajo.",
+        "chip1": "Invitado → colabora gratis",
+        "chip2": "Reclamar para gestionar → usa 1 proyecto",
+        "cta": "Unirse como constructor",
+        "note": "Gratis para colaborar. Mejora solo para gestionar tus propios proyectos."
+      },
+      "plansLabelOwner": "Para propietarios",
+      "plansLabelBuilder": "Para constructores",
+      "perMonth": "/mes",
+      "popular": "Más popular",
+      "plansOwner": [
+        {
+          "name": "Personal",
+          "sub": "¿Ya tienes constructor? Mantén el control.",
+          "price": "€19",
+          "proj": "1 proyecto activo",
+          "feats": [
+            "Gestionar alcance, plazo y coste",
+            "Cambios y aprobaciones",
+            "Documentos, fotos y actualizaciones",
+            "Seguimiento de pagos",
+            "Colaboradores ilimitados",
+            "Roles predefinidos",
+            "Informes básicos"
+          ],
+          "cta": "Empezar con Personal"
+        },
+        {
+          "name": "Build+",
+          "sub": "Encuentra, compara y elige a los profesionales adecuados.",
+          "price": "€49",
+          "proj": "10 proyectos activos",
+          "plus": "Todo lo de Personal, y además:",
+          "feats": [
+            "Encontrar constructores y especialistas",
+            "Solicitar presupuestos",
+            "Comparar propuestas lado a lado",
+            "Comparación de alcance y coste",
+            "Red de profesionales verificados",
+            "Centro de decisiones"
+          ],
+          "cta": "Empezar con Build+"
+        },
+        {
+          "name": "Real Estate Investor",
+          "sub": "Para propietarios con una cartera de inmuebles.",
+          "price": "€99",
+          "proj": "Proyectos ilimitados",
+          "plus": "Todo lo de Build+, y además:",
+          "feats": [
+            "Proyectos activos ilimitados",
+            "Panel de cartera entre obras",
+            "Comparar constructores entre proyectos",
+            "Documentos, costes y pagos consolidados",
+            "Soporte prioritario"
+          ],
+          "cta": "Empezar como Inversor"
+        }
+      ],
+      "plansBuilder": [
+        {
+          "name": "Independent Builder",
+          "sub": "Todo lo que necesitas para gestionar tus proyectos.",
+          "price": "€59",
+          "proj": "Hasta 3 proyectos activos",
+          "feats": [
+            "Gestionar alcance, plazo y coste",
+            "Cambios y aprobaciones",
+            "Documentos, fotos y actualizaciones",
+            "Seguimiento de pagos",
+            "Subcontratistas y proveedores",
+            "Roles predefinidos",
+            "Informes básicos"
+          ],
+          "cta": "Empezar como Independiente"
+        },
+        {
+          "name": "Growing Builder",
+          "sub": "Gestiona más proyectos y protege tus márgenes.",
+          "price": "€119",
+          "proj": "Hasta 10 proyectos activos",
+          "plus": "Todo lo de Independent, y además:",
+          "feats": [
+            "Comparación de presupuestos de proveedores",
+            "Inteligencia de precios de materiales",
+            "Presupuesto vs. real y previsiones",
+            "Portal del cliente",
+            "Informes y paneles avanzados",
+            "Soporte prioritario"
+          ],
+          "cta": "Empezar con Growing"
+        },
+        {
+          "name": "Construction Business",
+          "sub": "Escala tu negocio con control total y automatización.",
+          "price": "€199",
+          "proj": "Proyectos ilimitados",
+          "plus": "Todo lo de Growing, y además:",
+          "feats": [
+            "Roles y permisos personalizados",
+            "Oficios y categorías personalizados",
+            "Automatización de flujos de trabajo",
+            "Analítica de cartera",
+            "API e integraciones",
+            "Incorporación dedicada"
+          ],
+          "cta": "Empezar como Empresa"
+        }
+      ],
+      "core": {
+        "title": "Lo esencial incluido en todos los planes",
+        "desc": "Las bases que siempre tienes.",
+        "items": [
+          { "t": "Alcance", "d": "Registra cambios, aprobaciones y toda la información del proyecto." },
+          { "t": "Plazo", "d": "Planifica hitos y cumple el calendario." },
+          { "t": "Coste", "d": "Controla presupuestos, costes y pagos." }
+        ]
+      },
+      "billing": {
+        "leftTitle": "Invita a cualquiera. Controla el acceso.",
+        "leftDesc": "Invita a personas ilimitadas a colaborar. Solo pagas por los proyectos que gestionas activamente.",
+        "flowTitle": "Cómo funciona",
+        "steps": [
+          "El propietario crea el proyecto",
+          "Las personas colaboran (gratis)",
+          "El constructor lo «reclama» (usa 1 proyecto)",
+          "Cuenta en el plan del constructor"
+        ],
+        "rightTitle": "Regla importante",
+        "rightDesc": "Un proyecto cuenta para tu plan cuando tu organización es la Organización Gestora. Los colaboradores son siempre gratuitos."
+      },
+      "foot": "Todos los precios son mensuales, facturados mensualmente. Cancela cuando quieras."
     },
     "who": {
       "label": "Para quién es",
