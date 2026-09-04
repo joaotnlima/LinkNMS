@@ -6,6 +6,7 @@ import { SectionRecord } from '@/components/landing/SectionRecord';
 import { SectionPlanIn } from '@/components/landing/SectionPlanIn';
 import { SectionMaterials } from '@/components/landing/SectionMaterials';
 import { SectionWho } from '@/components/landing/SectionWho';
+import { SectionPricing } from '@/components/landing/SectionPricing';
 import { SectionCta } from '@/components/landing/SectionCta';
 import { SiteFooter } from '@/components/landing/SiteFooter';
 import { SectionViewTracker } from '@/components/landing/SectionViewTracker';
@@ -61,6 +62,7 @@ export default async function Home({
         <SectionPlanIn locale={locale} />
         <SectionMaterials locale={locale} />
         <SectionWho />
+        <SectionPricing />
 
         {confirmBanner && (
           <div className="lp-wrap" style={{ paddingBlock: 32 }}>

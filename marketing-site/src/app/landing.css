@@ -131,7 +131,8 @@
 .lp-record .lp-wrap,
 .lp-planin .lp-wrap,
 .lp-materials .lp-wrap,
-.lp-who .lp-wrap {
+.lp-who .lp-wrap,
+.lp-pricing .lp-wrap {
   display: flex;
   flex-direction: column;
   gap: var(--lp-sec-gap);
@@ -1407,6 +1408,78 @@
   border-radius: 999px;
   padding: 6px 12px;
   color: var(--lp-ink-60);
+}
+
+/* ---------- 06 Pricing ---------- */
+
+/* Tab toggle bar */
+.lp-pricing__tabbar {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--lp-stone);
+  border-radius: 999px;
+  padding: 3px;
+}
+.lp-pricing__tab {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--lp-ink-60);
+  cursor: pointer;
+  transition: background 140ms ease-out, color 140ms ease-out;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+.lp-pricing__tab[aria-selected='true'] {
+  background: var(--lp-ink);
+  color: var(--lp-cream);
+}
+
+/* Panels — shown/hidden via data-pricing-view on the toggle root */
+.lp-pricing__panel {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(20px, 3vw, 32px);
+}
+[data-pricing-view='owner'] [data-pricing-panel='builder'],
+[data-pricing-view='builder'] [data-pricing-panel='owner'] {
+  display: none;
+}
+
+.lp-pricing__kicker {
+  color: var(--lp-ink-60);
+}
+.lp-pricing__headline {
+  font-size: clamp(40px, 6vw, 80px);
+  max-width: 14ch;
+}
+.lp-pricing__body {
+  max-width: 52ch;
+  font-size: clamp(15px, 1.4vw, 18px);
+  line-height: 1.6;
+  color: var(--lp-ink-70);
+}
+.lp-pricing__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: flex-start;
+}
+.lp-pricing__reassure {
+  color: var(--lp-ink-40);
+}
+
+/* Ink-ground button variant for the pricing CTA */
+.lp-btn--ink {
+  background: var(--lp-ink);
+  color: var(--lp-cream);
+}
+.lp-btn--ink:hover {
+  background: #2a2d35;
 }
 
 /* ---------- CTA ---------- */

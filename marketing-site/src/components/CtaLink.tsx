@@ -14,7 +14,7 @@ export function CtaLink({
   className,
   children
 }: {
-  location: 'header' | 'hero' | 'final';
+  location: 'header' | 'hero' | 'final' | 'pricing';
   href: string;
   className?: string;
   children: ReactNode;

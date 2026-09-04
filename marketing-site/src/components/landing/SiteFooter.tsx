@@ -16,14 +16,15 @@ const COLUMNS = [
       { key: 'plan', href: '#getting-the-plan-in' },
       { key: 'money', href: '#materials-and-money' },
       { key: 'materials', href: '#materials-and-money' },
-      { key: 'history', href: '#the-record' }
+      { key: 'history', href: '#the-record' },
+      { key: 'pricing', href: '#pricing' }
     ]
   },
   {
     key: 'for',
     items: [
-      { key: 'homeowners', href: '#who-it-is-for' },
-      { key: 'contractors', href: '#who-it-is-for' },
+      { key: 'owners', href: '#who-it-is-for' },
+      { key: 'builders', href: '#who-it-is-for' },
       { key: 'partners', href: '#getting-the-plan-in' },
       { key: 'architects', href: '#who-it-is-for' }
     ]

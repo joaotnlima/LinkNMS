@@ -86,7 +86,7 @@ export async function Hero() {
             )}
 
             <div className="lp-hero__actions" style={{ marginTop: 36 }}>
-              <CtaLink location="hero" className="lp-btn" href="#request-access">
+              <CtaLink location="hero" className="lp-btn" href="#pricing">
                 {t('primary')}
                 <ArrowRightIcon />
               </CtaLink>

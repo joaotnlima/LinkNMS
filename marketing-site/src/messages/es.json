@@ -416,6 +416,24 @@
         }
       }
     },
+    "pricing": {
+      "label": "Precios",
+      "labelRight": "Cincuenta plazas. Sin tarjeta.",
+      "toggleOwner": "Propietario",
+      "toggleBuilder": "Constructor",
+      "owner": {
+        "kicker": "Acceso anticipado · Propietarios fundadores",
+        "headline": "Tu primera obra es gratuita.",
+        "body": "Estamos incorporando personalmente a los primeros 50 propietarios de obra. Sin suscripción, sin tarjeta, sin fecha de caducidad — solo tu obra, registrada correctamente desde el primer día.",
+        "cta": "Unirse gratis",
+        "reassure": "Gratis mientras incorporamos tu primera obra · Sin tarjeta"
+      },
+      "builder": {
+        "kicker": "Próximamente · Constructores",
+        "headline": "Los precios para constructores están en camino.",
+        "body": "Estamos ultimando los precios para constructores y subcontratistas. Únete a la lista de espera para ser el primero en saberlo."
+      }
+    },
     "who": {
       "label": "Para quién es",
       "labelRight": "Dos personas que todavía no se fían la una de la otra",
@@ -475,12 +493,13 @@
         "plan": "Plan y plazos",
         "money": "Dinero",
         "materials": "Materiales",
-        "history": "Historial de cambios"
+        "history": "Historial de cambios",
+        "pricing": "Precios"
       },
       "for": {
         "head": "Para",
-        "homeowners": "Propietarios",
-        "contractors": "Contratistas generales",
+        "owners": "Propietarios",
+        "builders": "Constructores",
         "partners": "Socios especializados",
         "architects": "Arquitectos"
       },
