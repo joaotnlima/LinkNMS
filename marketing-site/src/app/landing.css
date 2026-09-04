@@ -1412,68 +1412,463 @@
 
 /* ---------- 06 Pricing ---------- */
 
-/* Tab toggle bar */
-.lp-pricing__tabbar {
-  display: inline-flex;
-  gap: 2px;
-  background: var(--lp-stone);
-  border-radius: 999px;
-  padding: 3px;
-}
-.lp-pricing__tab {
-  padding: 8px 20px;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--lp-ink-60);
-  cursor: pointer;
-  transition: background 140ms ease-out, color 140ms ease-out;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  line-height: 1.4;
-}
-.lp-pricing__tab[aria-selected='true'] {
-  background: var(--lp-ink);
-  color: var(--lp-cream);
-}
-
-/* Panels — shown/hidden via data-pricing-view on the toggle root */
-.lp-pricing__panel {
+/* The whole section lives under a single [data-pricing-view] root so the toggle
+   (a client component) can switch owner ↔ builder with one attribute. The root
+   also carries the per-view accent: owner = plan-baseline (blue), builder =
+   plan-actual (clay). Every accent reads --pl-accent* and never a literal. */
+.lp-pricing__root {
   display: flex;
   flex-direction: column;
-  gap: clamp(20px, 3vw, 32px);
+  gap: var(--lp-sec-gap);
+  --pl-accent: var(--plan-baseline);
+  --pl-accent-muted: var(--plan-baseline-muted);
+  --pl-accent-fg: var(--plan-baseline-fg);
+  --pl-accent-line: var(--plan-baseline-line);
 }
-[data-pricing-view='owner'] [data-pricing-panel='builder'],
-[data-pricing-view='builder'] [data-pricing-panel='owner'] {
+.lp-pricing__root[data-pricing-view='builder'] {
+  --pl-accent: var(--plan-actual);
+  --pl-accent-muted: var(--plan-actual-muted);
+  --pl-accent-fg: var(--plan-actual-fg);
+  --pl-accent-line: var(--plan-actual-line);
+}
+
+/* Label bar right label — one per view. */
+[data-pricing-view='owner'] .lp-labelbar .right[data-view='builder'],
+[data-pricing-view='builder'] .lp-labelbar .right[data-view='owner'] {
   display: none;
 }
 
-.lp-pricing__kicker {
-  color: var(--lp-ink-60);
+/* Head: title + sub on the left, the Owner/Builder toggle + hints on the right. */
+.lp-pricing__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(24px, 4vw, 48px);
 }
-.lp-pricing__headline {
-  font-size: clamp(40px, 6vw, 80px);
-  max-width: 14ch;
+@media (min-width: 900px) {
+  .lp-pricing__head {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    align-items: start;
+  }
 }
-.lp-pricing__body {
+.lp-pricing__title {
+  font-size: clamp(34px, 4.6vw, 60px);
+  max-width: 16ch;
+}
+.lp-pricing__sub {
+  margin-top: 18px;
   max-width: 52ch;
   font-size: clamp(15px, 1.4vw, 18px);
   line-height: 1.6;
   color: var(--lp-ink-70);
 }
-.lp-pricing__actions {
+.lp-pricing__head-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Segmented Owner/Builder toggle — title + subtitle per option. */
+.lp-pricing__toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  background: var(--lp-stone);
+  border-radius: 16px;
+  padding: 4px;
+}
+.lp-pricing__toggle-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  border: 0;
+  cursor: pointer;
+  background: transparent;
+  border-radius: 12px;
+  padding: 12px 16px;
+  transition: background 140ms ease-out, box-shadow 140ms ease-out;
+}
+.lp-pricing__toggle-opt .t {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lp-ink);
+}
+.lp-pricing__toggle-opt .s {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--lp-ink-60);
+}
+.lp-pricing__toggle-opt[aria-selected='true'] {
+  background: var(--lp-cream);
+  box-shadow: inset 0 0 0 1.5px var(--pl-accent-line);
+}
+.lp-pricing__toggle-opt[aria-selected='true'] .t {
+  color: var(--pl-accent-fg);
+}
+
+/* Audience hints — both shown; the active view's line takes the accent. */
+.lp-pricing__hints {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--lp-ink-60);
+}
+.lp-pricing__hint {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  line-height: 1.5;
+}
+[data-pricing-view='owner'] .lp-pricing__hint[data-view='owner'],
+[data-pricing-view='builder'] .lp-pricing__hint[data-view='builder'] {
+  color: var(--pl-accent-fg);
+  font-weight: 600;
+}
+.lp-pricing__hint-div {
+  height: 1px;
+  background: var(--lp-ink-hair);
+}
+
+/* Ribbon — differs per view; one is hidden. */
+[data-pricing-view='owner'] .lp-pricing__ribbon--builder,
+[data-pricing-view='builder'] .lp-pricing__ribbon--owner {
+  display: none;
+}
+.lp-pricing__ribbon {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(20px, 3vw, 40px);
+  padding: clamp(24px, 3vw, 40px);
+  border-radius: 20px;
+  background: var(--pl-accent-muted);
+  border: 1px solid var(--pl-accent-line);
+}
+@media (min-width: 820px) {
+  .lp-pricing__ribbon {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    align-items: center;
+  }
+}
+.lp-ribbon__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lp-ribbon__badge {
+  border-radius: 999px;
+  padding: 5px 11px;
+  border: 1px solid var(--pl-accent-line);
+  color: var(--pl-accent-fg);
+  background: var(--lp-cream);
+}
+.lp-ribbon__badge--fill {
+  background: var(--pl-accent);
+  color: var(--lp-cream);
+  border-color: transparent;
+}
+.lp-ribbon__h {
+  margin-top: 16px;
+  font-size: clamp(22px, 2.6vw, 32px);
+  color: var(--pl-accent-fg);
+}
+.lp-ribbon__s {
+  margin-top: 12px;
+  max-width: 54ch;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--lp-ink-70);
+}
+.lp-ribbon__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.lp-ribbon__chip {
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: var(--lp-cream);
+  border: 1px solid var(--pl-accent-line);
+  color: var(--pl-accent-fg);
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+.lp-ribbon__right {
   display: flex;
   flex-direction: column;
   gap: 14px;
   align-items: flex-start;
 }
-.lp-pricing__reassure {
-  color: var(--lp-ink-40);
+.lp-ribbon__count {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.lp-ribbon__count .n {
+  font-size: clamp(28px, 3vw, 40px);
+  color: var(--pl-accent-fg);
+}
+.lp-ribbon__count .x {
+  color: var(--lp-ink-60);
+}
+.lp-ribbon__bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--lp-cream);
+  border: 1px solid var(--pl-accent-line);
+  overflow: hidden;
+}
+.lp-ribbon__fill {
+  display: block;
+  height: 100%;
+  background: var(--pl-accent);
+  border-radius: 999px;
+}
+.lp-ribbon__cta {
+  background: var(--pl-accent);
+  color: var(--lp-cream);
+}
+.lp-ribbon__cta:hover {
+  background: var(--pl-accent-fg);
+}
+.lp-ribbon__note {
+  color: var(--lp-ink-60);
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-weight: 400;
+  font-size: 12px;
 }
 
-/* Ink-ground button variant for the pricing CTA */
+/* Plans — three cards per view; one group hidden. */
+[data-pricing-view='owner'] .lp-pricing__plans[data-view='builder'],
+[data-pricing-view='builder'] .lp-pricing__plans[data-view='owner'] {
+  display: none;
+}
+.lp-pricing__plans {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.lp-pricing__plans-label {
+  color: var(--pl-accent-fg);
+}
+.lp-pricing__cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@media (min-width: 760px) {
+  .lp-pricing__cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+  }
+}
+
+.lp-plan {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  padding: clamp(20px, 2.2vw, 28px);
+  border-radius: 20px;
+  background: var(--lp-cream);
+  border: 1px solid var(--lp-ink-hair);
+}
+.lp-plan[data-popular='true'] {
+  border-color: var(--pl-accent);
+  box-shadow: 0 0 0 1px var(--pl-accent);
+}
+.lp-plan__pop {
+  display: inline-block;
+  align-self: flex-start;
+  border-radius: 999px;
+  padding: 5px 11px;
+  margin-bottom: 14px;
+  background: var(--pl-accent);
+  color: var(--lp-cream);
+}
+.lp-plan__head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.lp-plan__ico {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--pl-accent-muted);
+  border: 1px solid var(--pl-accent-line);
+}
+.lp-plan__name {
+  font-size: 18px;
+  font-weight: 700;
+}
+.lp-plan__sub {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--lp-ink-60);
+}
+.lp-plan__price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 20px;
+}
+.lp-plan__price .p {
+  font-size: clamp(32px, 3.4vw, 44px);
+  color: var(--pl-accent-fg);
+}
+.lp-plan__price .per {
+  color: var(--lp-ink-60);
+}
+.lp-plan__proj {
+  margin-top: 8px;
+  color: var(--pl-accent-fg);
+}
+.lp-plan__feats {
+  list-style: none;
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lp-plan__plus {
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lp-ink);
+}
+.lp-plan__feat {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--lp-ink-70);
+}
+.lp-plan__check {
+  flex: none;
+  margin-top: 2px;
+  color: var(--pl-accent);
+}
+.lp-plan__cta {
+  width: 100%;
+  background: var(--lp-ink);
+  color: var(--lp-cream);
+}
+.lp-plan__cta:hover {
+  background: #2a2d35;
+}
+.lp-plan[data-popular='true'] .lp-plan__cta {
+  background: var(--pl-accent);
+}
+.lp-plan[data-popular='true'] .lp-plan__cta:hover {
+  background: var(--pl-accent-fg);
+}
+
+/* Core band — shared across both views. */
+.lp-pricing__core {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  border: 1px solid var(--lp-ink-hair);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--lp-ink-hair);
+}
+@media (min-width: 760px) {
+  .lp-pricing__core {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.lp-core__cell {
+  background: var(--lp-cream);
+  padding: clamp(18px, 2vw, 24px);
+}
+.lp-core__cell--lead {
+  background: var(--lp-stone);
+}
+.lp-core__t {
+  font-size: 15px;
+  font-weight: 700;
+}
+.lp-core__d {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--lp-ink-60);
+}
+
+/* Billing / how-it-works — shared. */
+.lp-pricing__billing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@media (min-width: 900px) {
+  .lp-pricing__billing {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr);
+    align-items: stretch;
+  }
+}
+.lp-billing__side {
+  padding: clamp(18px, 2vw, 24px);
+  border-radius: 16px;
+  border: 1px solid var(--lp-ink-hair);
+  background: var(--lp-cream);
+}
+.lp-billing__t {
+  font-size: 15px;
+  font-weight: 700;
+}
+.lp-billing__d {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--lp-ink-60);
+}
+.lp-billing__flow {
+  padding: clamp(18px, 2vw, 24px);
+  border-radius: 16px;
+  background: var(--lp-ink);
+  color: var(--lp-cream);
+}
+.lp-billing__ft {
+  color: var(--lp-cream-60);
+}
+.lp-billing__steps {
+  list-style: none;
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.lp-billing__step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lp-billing__step .s {
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  background: #fbfaf714;
+  border: 1px solid var(--lp-cream-hair);
+}
+.lp-billing__arrow {
+  color: var(--lp-cream-40);
+}
+.lp-pricing__foot {
+  color: var(--lp-ink-40);
+  text-align: center;
+}
+
+/* Ink-ground button variant — kept for any remaining reference. */
 .lp-btn--ink {
   background: var(--lp-ink);
   color: var(--lp-cream);
