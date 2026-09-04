@@ -416,6 +416,24 @@
         }
       }
     },
+    "pricing": {
+      "label": "Preços",
+      "labelRight": "Cinquenta lugares. Sem cartão.",
+      "toggleOwner": "Dono de obra",
+      "toggleBuilder": "Construtor",
+      "owner": {
+        "kicker": "Acesso antecipado · Donos fundadores",
+        "headline": "A primeira obra é gratuita.",
+        "body": "Estamos a integrar pessoalmente os primeiros 50 donos de obra. Sem subscrição, sem cartão, sem prazo — só a sua obra, registada corretamente desde o primeiro dia.",
+        "cta": "Entrar gratuitamente",
+        "reassure": "Gratuito enquanto integramos a sua primeira obra · Sem cartão"
+      },
+      "builder": {
+        "kicker": "Em breve · Construtores",
+        "headline": "Os preços para construtores já vêm.",
+        "body": "Estamos a finalizar os preços para construtores e especialidades. Junte-se à lista de espera para saber assim que estiver disponível."
+      }
+    },
     "who": {
       "label": "Para quem é",
       "labelRight": "Duas pessoas que ainda não confiam uma na outra",
@@ -475,12 +493,13 @@
         "plan": "Plano e prazos",
         "money": "Dinheiro",
         "materials": "Materiais",
-        "history": "Histórico de alterações"
+        "history": "Histórico de alterações",
+        "pricing": "Preços"
       },
       "for": {
         "head": "Para",
-        "homeowners": "Donos de obra",
-        "contractors": "Empreiteiros gerais",
+        "owners": "Donos de obra",
+        "builders": "Construtores",
         "partners": "Parceiros especializados",
         "architects": "Arquitetos"
       },

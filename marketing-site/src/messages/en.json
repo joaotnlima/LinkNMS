@@ -416,6 +416,24 @@
         }
       }
     },
+    "pricing": {
+      "label": "Pricing",
+      "labelRight": "Fifty seats. No card.",
+      "toggleOwner": "Owner",
+      "toggleBuilder": "Builder",
+      "owner": {
+        "kicker": "Early access · Founding owners",
+        "headline": "Your first build is free.",
+        "body": "We're onboarding the first 50 build owners ourselves. No subscription, no card, no expiry — just your build, tracked properly from day one.",
+        "cta": "Join free",
+        "reassure": "Free while we onboard your first build · No card"
+      },
+      "builder": {
+        "kicker": "Coming soon · Builders",
+        "headline": "Builder pricing is on the way.",
+        "body": "We're finalising pricing for builders and specialty contractors. Join the waitlist to be first to know when it lands."
+      }
+    },
     "who": {
       "label": "Who it is for",
       "labelRight": "Two people who don't trust each other yet",
@@ -475,12 +493,13 @@
         "plan": "Plan & schedule",
         "money": "Money",
         "materials": "Materials",
-        "history": "Change history"
+        "history": "Change history",
+        "pricing": "Pricing"
       },
       "for": {
         "head": "For",
-        "homeowners": "Homeowners",
-        "contractors": "General contractors",
+        "owners": "Owners",
+        "builders": "Builders",
         "partners": "Specialty partners",
         "architects": "Architects"
       },
