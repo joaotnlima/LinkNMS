@@ -19,6 +19,7 @@ export function SectionPricingToggle({
     <div data-pricing-view={view}>
       <div className="lp-pricing__tabbar lp-micro" role="tablist">
         <button
+          type="button"
           role="tab"
           aria-selected={view === 'owner'}
           className="lp-pricing__tab"
@@ -27,6 +28,7 @@ export function SectionPricingToggle({
           {labelOwner}
         </button>
         <button
+          type="button"
           role="tab"
           aria-selected={view === 'builder'}
           className="lp-pricing__tab"
