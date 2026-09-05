@@ -17,7 +17,9 @@
 // The raw invitation token is returned exactly once, in the 201 body of
 // inviteCounterparty. It is never persisted (only its SHA-256 is) and must never
 // be logged — hence `cache-control: no-store` on that response.
-import { IdentityError } from './errors.mjs';
+import { IdentityError, badRequest, tooManyRequests } from './errors.mjs';
+import { createRateLimiter, sha256Hex } from './rate-limit.mjs';
+import { clientIpOf } from '../gateway/client-ip.mjs';
 
 function errorBody(err) {
   if (err instanceof IdentityError || (err && typeof err.status === 'number' && typeof err.code === 'string')) {
@@ -51,8 +53,9 @@ function originOf(headers = {}, env = process.env) {
 /**
  * @param {Object} deps
  * @param {ReturnType<import('./identity.mjs').createIdentityService>} deps.service
+ * @param {ReturnType<typeof createRateLimiter>} [deps.rateLimiter]  injected so tests can trip the window
  */
-export function createIdentityHttp({ service }) {
+export function createIdentityHttp({ service, rateLimiter = createRateLimiter() }) {
   if (!service) throw new Error('createIdentityHttp requires { service }');
 
   // POST /projects — FR1, first half: a shared record with a baseline budget.
@@ -135,6 +138,39 @@ export function createIdentityHttp({ service }) {
     } catch (err) { return errorBody(err); }
   }
 
+  // GET /invitations/:token — the ONE unauthenticated read on the record
+  // (LINA-182), powering the Band B accept deep link (M6/D6). No session is
+  // required or wanted: a signed-out visitor carries only the token, and that
+  // token IS the credential for this read (see the service note on the
+  // disclosure reasoning in identity.mjs).
+  //
+  // RATE LIMITING (a transport concern, so it lives here): two buckets per
+  // request — the token-hash keyed one throttles burning one leaked token from
+  // many IPs; the client-IP one applies ADR-0007 §4's per-IP discipline to the
+  // aggregate of token-rotation attempts from a single source. Both must pass;
+  // the token bucket always bites (hashing needs no header), the IP bucket only
+  // when a trustworthy hop is present. This is the ONLY unauthenticated read of
+  // a token-keyed row, and unknown/spent tokens already return a uniform 404 —
+  // the limiter throttles the residual brute-force burst, it is not the primary
+  // control.
+  //
+  // cache-control: no-store — the payload carries a personal address; a shared
+  // cache must never hand one visitor's invite preview to another.
+  async function previewInvitation({ params, headers }) {
+    const token = params?.token;
+    try {
+      if (typeof token !== 'string' || !token) throw badRequest('token is required');
+      const tokenHash = sha256Hex(token);
+      const ip = clientIpOf(headers);
+      if (rateLimiter.overLimit(`invite-preview:${tokenHash}`)
+          || (ip && rateLimiter.overLimit(`invite-preview-ip:${ip}`))) {
+        throw tooManyRequests();
+      }
+      const result = await service.previewInvitation({ token });
+      return { status: 200, body: result, headers: { 'cache-control': 'no-store' } };
+    } catch (err) { return errorBody(err); }
+  }
+
   // GET /me — the authenticated party's own profile. Per-user, session-scoped:
   // cache-control: no-store so a shared cache never hands one party's identity
   // to another.
@@ -147,5 +183,5 @@ export function createIdentityHttp({ service }) {
     } catch (err) { return errorBody(err); }
   }
 
-  return { createProject, getProject, setOperatingModel, inviteCounterparty, acceptInvitation, getMe };
+  return { createProject, getProject, setOperatingModel, inviteCounterparty, acceptInvitation, previewInvitation, getMe };
 }

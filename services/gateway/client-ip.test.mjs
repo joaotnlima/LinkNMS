@@ -65,3 +65,13 @@ test('IPv6 survives, with and without brackets and a port', () => {
 test('an IPv4 with a port is normalised to the address', () => {
   assert.equal(clientIpOf(h({ 'x-real-ip': '203.0.113.7:41234' })), '203.0.113.7');
 });
+
+test('a plain-object header bag (what the Next gateway hands over) works too', () => {
+  // The framework-agnostic handlers receive `Object.fromEntries(req.headers
+  // .entries())` — a plain object, not a `Headers` instance. The same trust
+  // rules must apply to both shapes or the per-IP bucket silently never bites.
+  assert.equal(clientIpOf({ 'x-real-ip': '198.51.100.4' }), '198.51.100.4');
+  assert.equal(clientIpOf({ 'x-forwarded-for': '9.9.9.9, 203.0.113.7' }), '203.0.113.7');
+  assert.equal(clientIpOf({ 'x-vercel-forwarded-for': '203.0.113.7', 'x-forwarded-for': '9.9.9.9' }), '203.0.113.7');
+  assert.equal(clientIpOf({ 'x-real-ip': '<script>' }), null);
+});

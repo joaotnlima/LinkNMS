@@ -303,6 +303,75 @@ describe('acceptInvitation', () => {
   });
 });
 
+describe('previewInvitation (LINA-182)', () => {
+  let svc, store;
+  beforeEach(() => ({ svc, store } = setup()));
+
+  test('reveals build name, inviter, role and email to a token holder with NO session', async () => {
+    // An email on the invite requires a configured sender (fail-closed before
+    // minting); stub it so the address is actually stored and echoed back.
+    const ledger = createMemoryLedger();
+    const store = createMemoryStore({ ledger });
+    const svc = createIdentityService({
+      store,
+      ledger,
+      sender: { isConfigured: () => true, send: async () => {} },
+      env: {},
+    });
+    const o = owner();
+    store.upsertParty({ id: o, displayName: 'Marta' });
+    const p = await svc.createProject({ actorPartyId: o, name: 'Maple Street', baselineBudgetCents: 100 });
+    const { token } = await svc.inviteCounterparty({
+      actorPartyId: o, projectId: p.id, email: 'gc@example.com',
+    });
+
+    const preview = await svc.previewInvitation({ token });
+    assert.equal(preview.projectName, 'Maple Street');
+    assert.equal(preview.invitedByName, 'Marta');
+    assert.equal(preview.role, 'counterparty');
+    assert.equal(preview.email, 'gc@example.com');
+    assert.equal(preview.status, 'pending');
+    // No session, no party ids, no token hash — only the fields the landing
+    // screen needs.
+    assert.equal(preview.projectId, undefined);
+    assert.equal(preview.tokenHash, undefined);
+    assert.equal(preview.invitedByPartyId, undefined);
+  });
+
+  test('out-of-band invite previews with null email and no invented inviter name', async () => {
+    const o = owner();
+    store.upsertParty({ id: o, displayName: null });
+    const p = await svc.createProject({ actorPartyId: o, name: 'Maple Street', baselineBudgetCents: 100 });
+    const { token } = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id });
+
+    const preview = await svc.previewInvitation({ token });
+    assert.equal(preview.email, null);
+    assert.equal(preview.invitedByName, null);
+  });
+
+  test('unknown and spent tokens are an INDISTINGUISHABLE 404 — no validity oracle', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'Maple Street', baselineBudgetCents: 100 });
+    const { token } = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id });
+
+    const grab = (err) => ({ status: err?.status, code: err?.code, message: err?.message });
+    await expectError(svc.previewInvitation({ token: 'garbage-token' }), 404, 'not_found');
+
+    await svc.acceptInvitation({ actorPartyId: owner(), token });
+
+    // The spent token must produce the byte-identical envelope as the garbage
+    // one — a response that differs between the two is a validity oracle.
+    const spent = await svc.previewInvitation({ token }).then(() => null, grab);
+    assert.deepEqual(spent, {
+      status: 404, code: 'not_found', message: 'invitation not found',
+    });
+  });
+
+  test('a missing token is a 400', async () => {
+    await expectError(svc.previewInvitation({ token: '' }), 400);
+  });
+});
+
 describe('the pure authorizer can() (ADR-0004)', () => {
   test('create_project needs no membership; unknown action and non-member deny', () => {
     assert.equal(can({ action: ACTION.CREATE_PROJECT, role: null }).allow, true);

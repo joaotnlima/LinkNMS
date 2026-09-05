@@ -77,9 +77,12 @@ describe('OpenAPI artifact', () => {
       'openapi.yaml is stale — re-run: node -e "import(\'./openapi.mjs\').then(m=>process.stdout.write(m.toYaml(m.spec)))" > openapi.yaml');
   });
 
-  test('the four Slice-2 operations are all present', () => {
+  test('the Identity operations are all present', () => {
     const ops = Object.values(spec.paths).flatMap((p) => Object.values(p)).map((o) => o.operationId);
-    for (const op of ['createProject', 'getProject', 'inviteCounterparty', 'acceptInvitation']) {
+    for (const op of [
+      'createProject', 'getProject', 'setOperatingModel',
+      'inviteCounterparty', 'acceptInvitation', 'previewInvitation', 'getMe',
+    ]) {
       assert.ok(ops.includes(op), `missing operation ${op}`);
     }
   });
@@ -113,5 +116,26 @@ describe('live responses conform to the published schemas', () => {
     const p = await s.createProject({ actorPartyId: o, name: 'Maple', baselineBudgetCents: 500 });
     const { token } = await s.inviteCounterparty({ actorPartyId: o, projectId: p.id });
     conforms('MembershipCreated', await s.acceptInvitation({ actorPartyId: randomUUID(), token }));
+  });
+
+  test('previewInvitation → InvitationPreview (LINA-182)', async () => {
+    // Stub the sender so a real email address is stored and flows through the
+    // preview payload (the schema's `email` can be null, but the mailed path is
+    // the one the deep-link pre-fill depends on).
+    const ledger = createMemoryLedger();
+    const store = createMemoryStore({ ledger });
+    const s = createIdentityService({
+      store,
+      ledger,
+      sender: { isConfigured: () => true, send: async () => {} },
+      env: {},
+    });
+    const o = randomUUID();
+    const p = await s.createProject({ actorPartyId: o, name: 'Maple', baselineBudgetCents: 500 });
+    const { token } = await s.inviteCounterparty({
+      actorPartyId: o, projectId: p.id, email: 'gc@example.com',
+    });
+    const preview = await s.previewInvitation({ token });
+    conforms('InvitationPreview', preview);
   });
 });

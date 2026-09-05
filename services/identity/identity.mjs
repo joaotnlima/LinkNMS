@@ -466,6 +466,44 @@ export function createIdentityService({
     return { membership: shapeMembership(membership) };
   }
 
+  // GET /invitations/:token — the ONE unauthenticated read on the record
+  // (LINA-182). It powers the Band B accept deep link (M6/D6): a signed-out
+  // visitor holding only the token must learn which build they were invited to,
+  // who invited them, and which email the invitation was mailed to so the inline
+  // Clerk sign-up can pre-fill it. There is deliberately NO session — the token
+  // IS the credential for this read; requiring one would defeat the deep link.
+  //
+  // THE DISCLOSURE CALL. The token is already a bearer credential that admits
+  // whoever holds it onto the record, so revealing the build name is not a new
+  // disclosure. The inviter's display name and the invited email belong to the
+  // SAME party the token was minted for — the invitee learning who invited them,
+  // and pre-filling their OWN address, leaks no third party. Both are therefore
+  // returned, and this reasoning is the standing rationale if the fields are
+  // ever revisited.
+  //
+  // ANTI-ORACLE: an unknown token and an already-accepted (spent) token return
+  // the IDENTICAL `notFound` 404, so this endpoint cannot be used to probe
+  // whether an arbitrary string is a live token. Only a `pending` invitation is
+  // ever revealed; `status` in the response is consequently always 'pending'.
+  // (Transport-layer rate limiting lives in http.mjs — this is a framework-
+  // agnostic service and carries no request headers.)
+  async function previewInvitation({ token }) {
+    if (!token || typeof token !== 'string') throw badRequest('token is required');
+
+    const inv = await store.getInvitationByTokenHash(sha256Hex(token));
+    if (!inv || inv.status !== 'pending') throw notFound('invitation');
+
+    const project = await store.getProject(inv.projectId);
+    const inviter = inv.invitedByPartyId ? await store.getParty?.(inv.invitedByPartyId) : null;
+    return {
+      projectName: project?.name ?? null,
+      invitedByName: inviter?.displayName ?? null,
+      role: inv.role,
+      email: inv.email ?? null,
+      status: inv.status,
+    };
+  }
+
   // GET /me — the acting party's own profile. No authorization beyond being
   // authenticated: every signed-in party may read their own identity. Returns
   // the authoritative display_name, email, and role from identity.party — the
@@ -490,6 +528,7 @@ export function createIdentityService({
     setOperatingModel,
     inviteCounterparty,
     acceptInvitation,
+    previewInvitation,
     getMe,
   };
 }

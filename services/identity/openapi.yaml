@@ -241,6 +241,42 @@ paths:
             'application/json':
               schema:
                 '$ref': '#/components/schemas/Error'
+  '/invitations/{token}':
+    get:
+      operationId: previewInvitation
+      summary: 'The unauthenticated invite preview behind the Band B accept deep link (LINA-182).'
+      description: 'Returned to a signed-out visitor who holds only the token: which build they were invited to, who invited them, and the email the invitation was mailed to (for the inline sign-up pre-fill). The token is the credential for this read. Unknown and already-accepted tokens return the IDENTICAL 404, so the endpoint is not a token-validity oracle. Rate-limited at the transport layer.'
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation preview
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/InvitationPreview'
+        '400':
+          description: Missing token
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '404':
+          description: 'Unknown or already-accepted invitation — deliberately indistinguishable'
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
 components:
   schemas:
     Error:
@@ -262,6 +298,7 @@ components:
                 - not_found
                 - conflict
                 - bad_request
+                - rate_limited
             message:
               type: string
     MeProfile:
@@ -418,6 +455,37 @@ components:
         emailed:
           type: boolean
           description: 'True only when the invitation was actually handed to the mailer. The raw token is returned either way, so a delivery failure never strands the inviter.'
+    InvitationPreview:
+      type: object
+      required:
+        - projectName
+        - invitedByName
+        - role
+        - email
+        - status
+      properties:
+        projectName:
+          type:
+            - string
+            - null
+        invitedByName:
+          type:
+            - string
+            - null
+        role:
+          type: string
+          enum:
+            - counterparty
+            - subcontractor
+        email:
+          type:
+            - string
+            - null
+          description: 'The address the invitation was mailed to; null on the out-of-band path. Returned because it is the INVITEE’s own address (pre-fill), not a third party’s.'
+        status:
+          type: string
+          enum:
+            - pending
     MembershipCreated:
       type: object
       required:

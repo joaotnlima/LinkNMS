@@ -12,6 +12,7 @@ import { createMemoryLedger } from './ledger-port.mjs';
 import { createMemoryStore } from './store.mjs';
 import { createIdentityService } from './identity.mjs';
 import { createIdentityHttp } from './http.mjs';
+import { createRateLimiter } from './rate-limit.mjs';
 
 function makeHttp() {
   const ledger = createMemoryLedger();
@@ -248,4 +249,118 @@ test('getMe anonymous is a 401 in the uniform envelope', async () => {
   const res = await http.getMe({ session: null, params: {}, body: undefined, headers: {} });
   assert.equal(res.status, 401);
   assert.equal(res.body.error.code, 'unauthenticated');
+});
+
+// ── GET /invitations/:token preview (LINA-182) ───────────────────────────────
+test('previewInvitation serves a signed-out visitor: build name, inviter, email', async () => {
+  // makeHttp() uses the default (unconfigured) sender; an email invite needs a
+  // configured one, so build the graph here with a stub.
+  const ledger = createMemoryLedger();
+  const store = createMemoryStore({ ledger });
+  const service = createIdentityService({
+    store, ledger,
+    sender: { isConfigured: () => true, send: async () => {} },
+    env: {},
+  });
+  const http = createIdentityHttp({ service });
+  const o = party();
+  store.upsertParty({ id: o, displayName: 'Marta' });
+  const created = await http.createProject({
+    session: session(o), body: { name: 'Maple Street', baselineBudgetCents: 100 },
+  });
+  const invited = await http.inviteCounterparty({
+    session: session(o), params: { id: created.body.id }, body: { email: 'gc@example.com' },
+  });
+
+  const res = await http.previewInvitation({
+    session: null, params: { token: invited.body.token }, headers: {},
+  });
+  assert.equal(res.status, 200);
+  // A personal address rides the payload; a shared cache must never serve it.
+  assert.equal(res.headers['cache-control'], 'no-store');
+  assert.deepEqual(res.body, {
+    projectName: 'Maple Street',
+    invitedByName: 'Marta',
+    role: 'counterparty',
+    email: 'gc@example.com',
+    status: 'pending',
+  });
+  // Only the landing-screen fields — never the token hash, party ids, or ids.
+  assert.equal(res.body.tokenHash, undefined);
+  assert.equal(res.body.invitedByPartyId, undefined);
+});
+
+test('previewInvitation: unknown and spent tokens are an indistinguishable 404', async () => {
+  const { http, store } = makeHttp();
+  const o = party();
+  store.upsertParty({ id: o, displayName: 'Marta' });
+  const created = await http.createProject({
+    session: session(o), body: { name: 'Maple Street', baselineBudgetCents: 100 },
+  });
+  const invited = await http.inviteCounterparty({
+    session: session(o), params: { id: created.body.id }, body: {},
+  });
+
+  const unknown = await http.previewInvitation({ session: null, params: { token: 'no-such-token' }, headers: {} });
+  assert.equal(unknown.status, 404);
+  assert.equal(unknown.body.error.code, 'not_found');
+
+  await http.acceptInvitation({ session: session(party()), params: { token: invited.body.token } });
+  const spent = await http.previewInvitation({ session: null, params: { token: invited.body.token }, headers: {} });
+  assert.equal(spent.status, 404);
+  assert.deepEqual(spent.body, unknown.body, 'spent must be byte-identical to unknown — no oracle');
+});
+
+test('previewInvitation: a missing token is a 400', async () => {
+  const { http } = makeHttp();
+  const res = await http.previewInvitation({ session: null, params: {}, headers: {} });
+  assert.equal(res.status, 400);
+  assert.equal(res.body.error.code, 'bad_request');
+});
+
+test('previewInvitation is rate-limited per token and per client IP (429)', async () => {
+  const ledger = createMemoryLedger();
+  const store = createMemoryStore({ ledger });
+  const service = createIdentityService({ store, ledger });
+  const o = party();
+  // One pending invite per project, so a distinct token needs a distinct build.
+  const mint = async () => {
+    const created = await http.createProject({
+      session: session(o), body: { name: `Build ${Math.random()}`, baselineBudgetCents: 100 },
+    });
+    return (await http.inviteCounterparty({
+      session: session(o), params: { id: created.body.id }, body: {},
+    })).body.token;
+  };
+
+  // A frozen clock keeps the fixed window from ever rolling over mid-test.
+  const http = createIdentityHttp({
+    service,
+    rateLimiter: createRateLimiter({ windowMs: 60_000, max: 2, clock: () => 0 }),
+  });
+
+  const show = (token, ip) =>
+    http.previewInvitation({ session: null, params: { token }, headers: { 'x-real-ip': ip } });
+
+  // One leaked token, hammered from many IPs: the token bucket trips on the
+  // 3rd attempt whatever the IP.
+  const t = await mint();
+  assert.equal((await show(t, '1.1.1.1')).status, 200);
+  assert.equal((await show(t, '2.2.2.2')).status, 200);
+  const tripped = await show(t, '3.3.3.3');
+  assert.equal(tripped.status, 429);
+  assert.equal(tripped.body.error.code, 'rate_limited');
+
+  // A fresh limiter, one IP, rotating tokens: the per-IP bucket trips in
+  // aggregate even though each token was only tried once.
+  const http2 = createIdentityHttp({
+    service,
+    rateLimiter: createRateLimiter({ windowMs: 60_000, max: 3, clock: () => 0 }),
+  });
+  const show2 = (token) =>
+    http2.previewInvitation({ session: null, params: { token }, headers: { 'x-real-ip': '9.9.9.9' } });
+  assert.equal((await show2(await mint())).status, 200);
+  assert.equal((await show2(await mint())).status, 200);
+  assert.equal((await show2(await mint())).status, 200);
+  assert.equal((await show2(await mint())).status, 429);
 });
