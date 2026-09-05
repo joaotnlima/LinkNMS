@@ -40,12 +40,25 @@ const ssl = sslFor(DB);
 // bootstrap the platform owner runs (see roles.sql header), so DATABASE_URL here
 // is the `migrator` (owner) connection and the *_app roles are assumed to exist —
 // exactly the production split. pgcrypto is likewise pre-installed by the owner.
+//
+// PG runs the FULL identity set through 0009 (Band B, ADR-0011), which is what
+// gives the suite its write-guard teeth: identity_app reaches operating_model and
+// status only through the column-scoped UPDATE granted in 0009, and still can't
+// touch baseline_budget_cents / owner_party_id.
 const MIGRATIONS = [
   'db/0001_platform.sql',
   'services/ledger/migrations/0001_ledger.sql',
   'services/ledger/migrations/0002_ledger_roles.sql',
+  'services/ledger/migrations/0003_ledger_identity_grant.sql',
   'services/identity/migrations/0001_identity.sql',
   'services/identity/migrations/0002_identity.sql',
+  'services/identity/migrations/0003_identity.sql',
+  'services/identity/migrations/0004_identity.sql',
+  'services/identity/migrations/0005_identity.sql',
+  'services/identity/migrations/0006_identity.sql',
+  'services/identity/migrations/0007_identity.sql',
+  'services/identity/migrations/0008_identity.sql',
+  'services/identity/migrations/0009_identity.sql',
 ];
 
 describe('Postgres identity (membership + authz + ledger seam)', { skip: DB ? false : 'set DATABASE_URL to run' }, () => {
@@ -134,6 +147,82 @@ describe('Postgres identity (membership + authz + ledger seam)', { skip: DB ? fa
     await svc.acceptInvitation({ actorPartyId: randomUUID(), token });
     // The GC already joined ⇒ inviting again is a clean 409 (no 2nd pending invite).
     await assert.rejects(svc.inviteCounterparty({ actorPartyId: owner, projectId: p.id }), (e) => e.status === 409);
+  });
+
+  // ── Band B (ADR-0011) through pg-store as identity_app ─────────────────────
+  test('draft → setOperatingModel → first invite commits, full lifecycle, chain verifies', async () => {
+    const owner = randomUUID();
+
+    // Step 1: draft-first create. The row lands status=draft, operating_model NULL.
+    const draft = await svc.createProject({ actorPartyId: owner, name: 'Elm & Co', baselineBudgetCents: 300_000_00, draft: true });
+    assert.equal(draft.status, 'draft');
+    assert.equal(draft.operatingModel, null);
+    assert.equal((await ledger._chain(draft.id)).length, 1); // genesis only, nothing minted
+
+    // Inviting a model-less draft must conflict — no silent commit, no invite.
+    await assert.rejects(
+      svc.inviteCounterparty({ actorPartyId: owner, projectId: draft.id, role: 'counterparty' }),
+      (e) => e.status === 409,
+    );
+
+    // Step 2: the owner chooses a model (column-scoped UPDATE from 0009 + event).
+    const modeled = await svc.setOperatingModel({ actorPartyId: owner, projectId: draft.id, operatingModel: 'direct' });
+    assert.equal(modeled.operatingModel, 'direct');
+    assert.equal(modeled.status, 'draft', 'choosing a model does not commit');
+
+    // Step 3: the first invite flips draft→active and writes project_committed.
+    const invited = await svc.inviteCounterparty({ actorPartyId: owner, projectId: draft.id, role: 'subcontractor' });
+    assert.equal(invited.invitation.role, 'subcontractor');
+
+    const afterCommit = await svc.getProject({ actorPartyId: owner, projectId: draft.id });
+    assert.equal(afterCommit.status, 'active');
+    assert.equal(afterCommit.operatingModel, 'direct');
+    assert.equal(afterCommit.members.length, 1, 'owner only so far — the invite has not been accepted');
+
+    // The specialty sub accepts and joins as a full member with their own view.
+    const sub = randomUUID();
+    const { membership } = await svc.acceptInvitation({ actorPartyId: sub, token: invited.token });
+    assert.equal(membership.role, 'subcontractor');
+    assert.equal(membership.partyId, sub);
+    const asSub = await svc.getProject({ actorPartyId: sub, projectId: draft.id });
+    assert.equal(asSub.actingRole, 'subcontractor');
+    assert.deepEqual(asSub.members.map((m) => m.role).sort(), ['owner', 'subcontractor']);
+    // The subcontractor is read-only here — they cannot invite.
+    await assert.rejects(
+      svc.inviteCounterparty({ actorPartyId: sub, projectId: draft.id, role: 'subcontractor' }),
+      (e) => e.status === 403,
+    );
+
+    // Every state change rode the ledger seam in the same unit as the projection
+    // write, and the chain is intact end to end.
+    const chain = await ledger._chain(draft.id);
+    assert.deepEqual(chain.map((e) => e.type), [
+      'project_created', 'operating_model_set', 'project_committed', 'member_joined']);
+    assert.equal(verifyChain(chain).verified, true);
+  });
+
+  test('write-guard: identity_app updates wizard columns but can never rewrite budget/owner', async () => {
+    const owner = randomUUID();
+    const draft = await svc.createProject({ actorPartyId: owner, name: 'Fir', baselineBudgetCents: 50_000_00, draft: true });
+
+    // The carve-out works: the column-scoped grant lets the row be driven by the
+    // request path (an UPDATE that touches ONLY (operating_model, status)).
+    const moved = await appPool.query(
+      `update identity.project set status = 'active' where id = $1 returning status`,
+      [draft.id],
+    );
+    assert.equal(moved.rows[0].status, 'active');
+
+    // The audit-sensitive fields stay locked: rewriting baseline means a silent
+    // projection edit, which the grant deliberately forbids (ADR-0002 intent).
+    await assert.rejects(
+      appPool.query(`update identity.project set baseline_budget_cents = 1 where id = $1`, [draft.id]),
+      /permission denied/i,
+    );
+    await assert.rejects(
+      appPool.query(`update identity.project set owner_party_id = $2 where id = $1`, [draft.id, randomUUID()]),
+      /permission denied/i,
+    );
   });
 
   // GET /me (LINA-154): resolve a party UUID to its identity.party row. The party

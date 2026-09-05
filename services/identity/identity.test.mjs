@@ -361,3 +361,209 @@ describe('getMe (LINA-154)', () => {
     await expectError(svc.getMe({ actorPartyId: owner() }), 404, 'not_found');
   });
 });
+
+// ── Band B (ADR-0011, LINA-164): draft-first create → model → commit 📐 ──────
+// The wizard is three service steps: create(draft:true), setOperatingModel, then
+// inviteCounterparty — whose FIRST invite is what commits the build. Every state
+// change is a ledger event in the same unit of work as the projection write.
+describe('Band B: draft-first createProject', () => {
+  let svc, ledger;
+  beforeEach(() => ({ svc, ledger } = setup()));
+
+  test('draft:true lands status=draft, operatingModel null, genesis event only', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100, draft: true });
+    assert.equal(p.status, 'draft');
+    assert.equal(p.operatingModel, null);
+    assert.deepEqual(ledger._chain(p.id).map((e) => e.type), ['project_created']);
+  });
+
+  test('the legacy one-shot path is unchanged: status=active, operatingModel null', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100 });
+    assert.equal(p.status, 'active');
+    assert.equal(p.operatingModel, null);
+    assert.deepEqual(ledger._chain(p.id).map((e) => e.type), ['project_created']);
+  });
+});
+
+describe('setOperatingModel (wizard step 2)', () => {
+  let svc, ledger;
+  beforeEach(() => ({ svc, ledger } = setup()));
+
+  test('owner chooses a model on a draft; operating_model_set chains after genesis, build stays draft', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100, draft: true });
+    const after = await svc.setOperatingModel({ actorPartyId: o, projectId: p.id, operatingModel: 'direct' });
+    assert.equal(after.operatingModel, 'direct');
+    assert.equal(after.status, 'draft', 'choosing a model does NOT commit the build');
+    assert.deepEqual(ledger._chain(p.id).map((e) => e.type), ['project_created', 'operating_model_set']);
+    assert.equal(ledger._verify(p.id).verified, true);
+  });
+
+  test('bad enum 400; not a draft 409; non-owner 403', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100, draft: true });
+    await expectError(svc.setOperatingModel({ actorPartyId: o, projectId: p.id, operatingModel: 'oops' }), 400);
+    await expectError(svc.setOperatingModel({ actorPartyId: owner(), projectId: p.id, operatingModel: 'turnkey' }), 403);
+
+    const active = await svc.createProject({ actorPartyId: o, name: 'Legacy', baselineBudgetCents: 100 });
+    await expectError(svc.setOperatingModel({ actorPartyId: o, projectId: active.id, operatingModel: 'turnkey' }), 409);
+  });
+
+  test('an idempotent self-PATCH writes no second event', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100, draft: true });
+    await svc.setOperatingModel({ actorPartyId: o, projectId: p.id, operatingModel: 'hybrid' });
+    const again = await svc.setOperatingModel({ actorPartyId: o, projectId: p.id, operatingModel: 'hybrid' });
+    assert.equal(again.operatingModel, 'hybrid');
+    assert.deepEqual(ledger._chain(p.id).map((e) => e.type), ['project_created', 'operating_model_set']);
+  });
+});
+
+describe('invite roles follow the operating model (decision 4)', () => {
+  let svc;
+  beforeEach(() => ({ svc } = setup()));
+
+  async function draftWithModel(model) {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100, draft: true });
+    await svc.setOperatingModel({ actorPartyId: o, projectId: p.id, operatingModel: model });
+    return { o, p };
+  }
+
+  test('turnkey admits counterparty; a subcontractor invite is a 400, not a silent downgrade', async () => {
+    const { o, p } = await draftWithModel('turnkey');
+    const res = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'counterparty' });
+    assert.equal(res.invitation.role, 'counterparty');
+    await expectError(svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'subcontractor' }), 400);
+  });
+
+  test('direct admits subcontractor only', async () => {
+    const { o, p } = await draftWithModel('direct');
+    const res = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'subcontractor' });
+    assert.equal(res.invitation.role, 'subcontractor');
+    await expectError(svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'counterparty' }), 400);
+  });
+
+  test('hybrid admits both, and accepting one role leaves the other open', async () => {
+    const { o, p } = await draftWithModel('hybrid');
+    const cp = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'counterparty' });
+    await svc.acceptInvitation({ actorPartyId: owner(), token: cp.token });
+
+    const sub = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'subcontractor' });
+    await svc.acceptInvitation({ actorPartyId: owner(), token: sub.token });
+
+    const view = await svc.getProject({ actorPartyId: o, projectId: p.id });
+    assert.deepEqual(view.members.map((m) => m.role).sort(), ['counterparty', 'owner', 'subcontractor']);
+  });
+
+  test('a legacy (pre-Band-B) project keeps R0: counterparty only, any other role is a 400', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100 });
+    await expectError(svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'subcontractor' }), 400);
+    const res = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id });
+    assert.equal(res.invitation.role, 'counterparty');
+  });
+});
+
+describe('a draft commits on its first invite (decision 2)', () => {
+  let svc, ledger;
+  beforeEach(() => ({ svc, ledger } = setup()));
+
+  test('inviting a model-less draft is a 409 conflict — nothing minted, nothing committed', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100, draft: true });
+    await expectError(
+      svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'counterparty' }),
+      409,
+      'conflict',
+    );
+    assert.deepEqual(ledger._chain(p.id).map((e) => e.type), ['project_created']);
+  });
+
+  test('first invite flips draft→active and appends project_committed in the same unit', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100, draft: true });
+    await svc.setOperatingModel({ actorPartyId: o, projectId: p.id, operatingModel: 'direct' });
+    assert.equal((await svc.getProject({ actorPartyId: o, projectId: p.id })).status, 'draft');
+
+    const res = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'subcontractor' });
+    assert.equal(res.invitation.role, 'subcontractor');
+
+    const after = await svc.getProject({ actorPartyId: o, projectId: p.id });
+    assert.equal(after.status, 'active', 'the first invite commits the build');
+    assert.equal(after.operatingModel, 'direct');
+
+    const chain = ledger._chain(p.id);
+    assert.deepEqual(chain.map((e) => e.type), [
+      'project_created', 'operating_model_set', 'project_committed']);
+    assert.equal(chain[2].payload.invitedRole, 'subcontractor');
+    assert.equal(ledger._verify(p.id).verified, true);
+  });
+
+  test('a legacy one-shot project never emits project_committed (already active)', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100 });
+    await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id });
+    assert.deepEqual(ledger._chain(p.id).map((e) => e.type), ['project_created']);
+  });
+});
+
+describe('Band B: subcontractor join + analytics gating (LINA-163 stub)', () => {
+  // A recording analytics seam: Band B subcontractor invites/joins must NOT be
+  // reported through the GC-session events (gcInvited/gcJoined are counterparty
+  // semantics; build_creation is owned by LINA-163, still unmerged).
+  function recordingAnalytics() {
+    const calls = [];
+    const record = (name) => (args) => { calls.push({ name, ...args }); };
+    return {
+      calls,
+      projectCreated: record('project_created'),
+      gcInvited: record('gc_invited'),
+      gcJoined: record('gc_joined'),
+    };
+  }
+
+  function setupWithAnalytics() {
+    const ledger = createMemoryLedger();
+    const store = createMemoryStore({ ledger });
+    const analytics = recordingAnalytics();
+    const svc = createIdentityService({ store, ledger, analytics });
+    return { svc, ledger, analytics };
+  }
+
+  test('a subcontractor accepts and joins as subcontractor; gc_joined is suppressed', async () => {
+    const { svc, ledger, analytics } = setupWithAnalytics();
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100, draft: true });
+    await svc.setOperatingModel({ actorPartyId: o, projectId: p.id, operatingModel: 'direct' });
+    const { token } = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'subcontractor' });
+
+    const sub = owner();
+    const { membership } = await svc.acceptInvitation({ actorPartyId: sub, token });
+    assert.equal(membership.role, 'subcontractor');
+
+    const view = await svc.getProject({ actorPartyId: sub, projectId: p.id });
+    assert.equal(view.actingRole, 'subcontractor');
+
+    assert.deepEqual(ledger._chain(p.id).map((e) => e.type), [
+      'project_created', 'operating_model_set', 'project_committed', 'member_joined']);
+    // Neither the subcontractor invite nor the join touched the GC analytics.
+    assert.deepEqual(
+      analytics.calls.filter((c) => c.name === 'gc_invited' || c.name === 'gc_joined'),
+      [],
+      'subcontractor invite/join is not reported until LINA-163 (build_creation) lands',
+    );
+  });
+
+  test('the counterparty path still reports gc_invited + gc_joined (R0 analytics unchanged)', async () => {
+    const { svc, analytics } = setupWithAnalytics();
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100 });
+    const { token } = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id });
+    assert.equal(analytics.calls.filter((c) => c.name === 'gc_invited').length, 1);
+    await svc.acceptInvitation({ actorPartyId: owner(), token });
+    assert.equal(analytics.calls.filter((c) => c.name === 'gc_joined').length, 1);
+  });
+});

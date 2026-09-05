@@ -64,6 +64,16 @@ const defaultClock = { now: () => new Date().toISOString() };
 
 const MAX_NAME = 200;
 
+// The three Band B operating models (ADR-0011 decision 1) and the launch role
+// each may invite (design §7; migration 0009 widened the invitation.role CHECK to
+// {counterparty, subcontractor} to admit this). A legacy project with
+// operating_model NULL falls back to the R0 behaviour — the one GC counterparty.
+const OPERATING_MODEL_ROLES = Object.freeze({
+  turnkey: ['counterparty'],
+  direct: ['subcontractor'],
+  hybrid: ['counterparty', 'subcontractor'],
+});
+
 /**
  * @param {Object} deps
  * @param {ReturnType<import('./store.mjs').createMemoryStore>} deps.store
@@ -129,7 +139,14 @@ export function createIdentityService({
   // POST /projects — the homeowner starts a shared record and becomes its owner
   // (FR1). No prior membership needed; the creator is written as the `owner`
   // membership in the same unit as the project_created genesis event.
-  async function createProject({ actorPartyId, name, baselineBudgetCents }) {
+  //
+  // Band B (ADR-0011, LINA-164): the wizard's step-1 POST passes `draft: true`,
+  // which creates the build row as `status='draft'` with `operating_model=NULL`
+  // (step 2 sets the model, step 3's first invite commits it). The legacy
+  // one-shot path omits `draft`, so the row lands `status='active'` — the DB
+  // default — exactly as before. `status` is stamped server-side in both paths
+  // so the in-memory reference store and the pg adapter stay byte-consistent.
+  async function createProject({ actorPartyId, name, baselineBudgetCents, draft = false }) {
     await authorize({ actorPartyId, action: ACTION.CREATE_PROJECT });
 
     const cleanName = typeof name === 'string' ? name.trim() : '';
@@ -143,6 +160,8 @@ export function createIdentityService({
       name: cleanName,
       ownerPartyId: actorPartyId,
       baselineBudgetCents: baseline,
+      operatingModel: null, // a step-1 build has not chosen one yet (ADR-0011)
+      status: draft ? 'draft' : 'active',
       createdAt: now,
     };
     const ownerMembership = {
@@ -188,7 +207,15 @@ export function createIdentityService({
   // a cross-schema read). Pillars/counts are composed by the API route from the
   // Ledger/Decision/Change-Order services (other slices), not here.
   async function getProject({ actorPartyId, projectId }) {
-    const { role } = await authorize({ actorPartyId, action: ACTION.VIEW_PROJECT, projectId });
+    await authorize({ actorPartyId, action: ACTION.VIEW_PROJECT, projectId });
+    return readProjectView({ actorPartyId, projectId });
+  }
+
+  // The shared "project + memberships + budget" view used by GET /projects/:id and
+  // by Band B mutations that must hand the wizard back the project it just moved.
+  // The acting role is re-derived server-side so the response always says what
+  // THIS session may do, never what the caller claimed.
+  async function readProjectView({ actorPartyId, projectId }) {
     const project = await store.getProject(projectId);
     if (!project) throw notFound('project'); // member of a vanished project — defensive
     const members = await store.listMemberships(projectId);
@@ -196,7 +223,43 @@ export function createIdentityService({
       baselineBudgetCents: project.baselineBudgetCents,
       currentBudgetCents: project.baselineBudgetCents,
     };
-    return shapeProject(project, members, budget, role);
+    return shapeProject(project, members, budget, await roleOf(projectId, actorPartyId));
+  }
+
+  // PATCH /projects/:id/operating-model — the wizard's step 2 (ADR-0011).
+  // Owner-only; sets operating_model ∈ {turnkey, direct, hybrid} on a DRAFT. The
+  // projection write (column-scoped UPDATE grant from 0009) and the
+  // `operating_model_set` ledger event commit in ONE unit — a chosen operating
+  // model is part of the record, never a silent projection edit. Once the build
+  // is committed (status 'active') the model is fixed; an idempotent re-PATCH of
+  // the same value changes nothing and writes no event.
+  async function setOperatingModel({ actorPartyId, projectId, operatingModel }) {
+    await authorize({ actorPartyId, action: ACTION.SET_OPERATING_MODEL, projectId });
+    if (!OPERATING_MODEL_ROLES[operatingModel]) {
+      throw badRequest(`operatingModel must be one of ${Object.keys(OPERATING_MODEL_ROLES).join(', ')}`);
+    }
+    const project = await store.getProject(projectId);
+    if (!project) throw notFound('project');
+    if (project.status !== 'draft') {
+      throw conflict('operating_model can only be set on a draft build');
+    }
+    if (project.operatingModel === operatingModel) {
+      return readProjectView({ actorPartyId, projectId }); // unchanged, no event
+    }
+
+    const now = clock.now();
+    await store.transaction(async (tx) => {
+      await tx.updateProjectOperatingModel(projectId, operatingModel);
+      await tx.appendEvent({
+        projectId,
+        type: 'operating_model_set',
+        actorPartyId,
+        occurredAt: now,
+        payload: { operatingModel },
+      });
+    });
+
+    return readProjectView({ actorPartyId, projectId });
   }
 
   // POST /projects/:id/invitations — owner-only (FR1). Mints a single-use token,
@@ -216,9 +279,28 @@ export function createIdentityService({
   // marked there.
   async function inviteCounterparty({ actorPartyId, projectId, role = 'counterparty', email, baseUrl }) {
     await authorize({ actorPartyId, action: ACTION.INVITE_COUNTERPARTY, projectId });
-    if (role !== 'counterparty') throw badRequest('R0 invites the counterparty role only');
     const project = await store.getProject(projectId);
     if (!project) throw notFound('project');
+
+    // The role vocabulary widened with migration 0009 (ADR-0011 decision 4); which
+    // specialities THIS build may invite follows its operating model. A legacy
+    // project (operating_model NULL, created before Band B) keeps R0 behaviour:
+    // the one GC counterparty.
+    const allowedRoles = OPERATING_MODEL_ROLES[project.operatingModel] ?? ['counterparty'];
+    if (!allowedRoles.includes(role)) {
+      throw badRequest(
+        project.operatingModel
+          ? `operating model "${project.operatingModel}" does not permit inviting role "${role}"`
+          : 'R0 invites the counterparty role only',
+      );
+    }
+    // A draft build commits on its first invite (ADR-0011 decision 2), so the
+    // wizard enforces "operating_model present before commit" at the service
+    // layer: inviting against a model-less draft would commit a build with no
+    // chosen model. State conflict (409), not a malformed request (400).
+    if (project.status === 'draft' && !project.operatingModel) {
+      throw conflict('operating_model must be set before committing the build');
+    }
 
     // An address was offered but is unusable → tell the OWNER plainly. This is not
     // the sign-in path: there is no enumeration concern here (the owner is
@@ -236,25 +318,28 @@ export function createIdentityService({
       throw new IdentityError('email_unconfigured', 503, 'email delivery is not configured');
     }
 
-    // Fast, clean 409s before minting a token: a counterparty already joined, or an
-    // invite is already pending. (The DB UNIQUEs are the ultimate backstop.)
-    if ((await store.listMemberships(projectId)).some((m) => m.role === 'counterparty')) {
-      throw conflict('project already has a counterparty');
+    // Fast, clean 409s before minting a token: a member already holds the role
+    // being invited, or any invite is already pending. (The DB UNIQUEs are the
+    // ultimate backstop. The pending check stays one-at-a-time for V1 per OQ-3 —
+    // the per-role index in 0009 is the latch Hybrid V2 releases later.)
+    if ((await store.listMemberships(projectId)).some((m) => m.role === role)) {
+      throw conflict(`project already has a ${role}`);
     }
     if ((await store.listPendingInvitations(projectId)).length > 0) {
       throw conflict('project already has a pending invitation');
     }
 
+    const now = clock.now();
     const rawToken = ids.token();
     const invitation = {
       id: ids.uuid(),
       projectId,
       tokenHash: sha256Hex(rawToken),
       email: cleanEmail, // null on the out-of-band path
-      role: 'counterparty',
+      role,
       status: 'pending',
       invitedByPartyId: actorPartyId,
-      createdAt: clock.now(),
+      createdAt: now,
       acceptedAt: null,
     };
 
@@ -268,10 +353,30 @@ export function createIdentityService({
       // migration on any branch, and the INSERT grant is an open trust-boundary
       // question for the Architect. When both land:
       //   if (cleanEmail) await tx.insertSeat({ email: cleanEmail, source: 'invite' });
+
+      // Draft→active commit: the FIRST invite is what makes the build live, and
+      // the flip is a ledger event in this same unit of work — never a silent
+      // projection edit. Legacy/active projects skip the flip (and emit nothing);
+      // only a draft commits here.
+      if (project.status === 'draft') {
+        await tx.updateProjectStatus(projectId, 'active');
+        await tx.appendEvent({
+          projectId,
+          type: 'project_committed',
+          actorPartyId,
+          occurredAt: now,
+          payload: { invitedRole: role },
+        });
+      }
     });
     // gc_invited — the owner opened the invite. No token/PII in the payload;
     // only the invite method (R0 = single-use link) and now whether it was mailed.
-    analytics.gcInvited({ projectId, actorPartyId, actorRole: 'owner', method: cleanEmail ? 'email' : 'link' });
+    // Band B's subcontractor invites are NOT reported here: `gc_invited` is
+    // GC-session semantics and the build_creation surface/role enums are owned by
+    // LINA-163 (still unmerged — do not fork the enum here).
+    if (role === 'counterparty') {
+      analytics.gcInvited({ projectId, actorPartyId, actorRole: 'owner', method: cleanEmail ? 'email' : 'link' });
+    }
 
     // Mail AFTER commit, deliberately: an invitation that exists but wasn't mailed
     // is recoverable (the owner still holds the token from the 201 body and can
@@ -343,15 +448,20 @@ export function createIdentityService({
     });
 
     // gc_joined — the second party is now on the record (the activation moment).
+    // Only for the GC: the event and its `has_counterparty` group property are
+    // counterparty semantics. A subcontractor join (Direct/Hybrid) is not
+    // reported until LINA-163's build_creation surface lands — see inviteCounterparty.
     // hours_since_created is a server-clock delta from the project genesis, so we
     // read the project's created_at (own schema, no cross-schema join).
-    const joinedProject = await store.getProject(membership.projectId);
-    analytics.gcJoined({
-      projectId: membership.projectId,
-      actorPartyId,
-      projectCreatedAt: joinedProject?.createdAt ?? now,
-      joinedAt: now,
-    });
+    if (membership.role === 'counterparty') {
+      const joinedProject = await store.getProject(membership.projectId);
+      analytics.gcJoined({
+        projectId: membership.projectId,
+        actorPartyId,
+        projectCreatedAt: joinedProject?.createdAt ?? now,
+        joinedAt: now,
+      });
+    }
 
     return { membership: shapeMembership(membership) };
   }
@@ -377,6 +487,7 @@ export function createIdentityService({
     // handlers
     createProject,
     getProject,
+    setOperatingModel,
     inviteCounterparty,
     acceptInvitation,
     getMe,
@@ -422,6 +533,10 @@ function shapeProject(project, memberships, budget, actingRole) {
     ownerPartyId: project.ownerPartyId,
     baselineBudgetCents: budget?.baselineBudgetCents ?? project.baselineBudgetCents,
     currentBudgetCents: budget?.currentBudgetCents ?? project.baselineBudgetCents,
+    // Band B (ADR-0011): a draft build has not chosen a model yet (null); a
+    // legacy active project predates the concept and stays null too.
+    operatingModel: project.operatingModel ?? null,
+    status: project.status,
     actingRole, // derived server-side from the session (never the body)
     createdAt: project.createdAt,
     // `displayName` is null when the store did not join identity.party (the
