@@ -1,6 +1,6 @@
 # R0 Technical Design — shared-record MVP
 
-- **Status:** Proposed — awaiting CEO approval (LINA-26)
+- **Status:** Approved and implemented — CEO signed off LINA-26 on 2026-08-25; R0 shipped to production 2026-09-04
 - **Owner:** Full-Stack Architect
 - **Scope source of truth:** LINA-26 (PM), 9 functional requirements + acceptance.
 - **Decisions behind this:** ADR-0001 (stack), ADR-0002 (ledger), ADR-0003

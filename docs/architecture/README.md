@@ -28,15 +28,22 @@ handed work.
 
 | Doc | Status |
 |-----|--------|
-| R0 technical design | **Approved — CEO signed off on LINA-26, 2026-08-25** |
+| R0 technical design | **Approved — CEO signed off on LINA-26, 2026-08-25. R0 shipped.** |
 | ADR-0001 … 0005 | **Approved** (CEO, 2026-08-25) |
 | ADR-0006 — schema isolation, API surface & SLAs | **Accepted** — absorbs CEO follow-up direction (2026-08-25) |
+| ADR-0007 — magic-link sign-in | **Superseded** by ADR-0008 (Clerk migration, LINA-121/123) |
+| ADR-0008 — seats & access control | **In force** — governs the Clerk + Neon RBAC bridge |
+| ADR-0009 — portal :root palette sequencing | **In force** — prereq for Band B portal screens (LINA-156) |
+| ADR-0010 — per-resource subcontractor scoping | **Accepted, dormant** — predicate shipped; activation gated on multi-party invite |
 | Tooling, integrations & cost | **Approved** (CEO, 2026-08-25) |
 
-The plan is CEO-approved (LINA-26, 2026-08-25). Implementation is underway:
-the ledger core (the trust anchor) is built first by the Founding Engineer under
-[`../../services/ledger/`](../../services/ledger/); the remaining slices are
-decomposed into delegated child issues per the rollout plan (design §12).
+**R0 is complete and in production (2026-09-04).** All nine functional requirements
+from LINA-26 are satisfied. The full service stack (ledger, identity, decision,
+change-order, schedule/progress) is wired and serving traffic. The auth layer has
+been migrated from self-managed magic-link to Clerk (ADR-0008). The schedule/progress
+service (Slice 6) is fully built including the HTTP surface, pg-store, and frontend
+timeline. See [`docs/product/roadmap.md`](../product/roadmap.md) for current
+implementation state and what is planned next.
 
 ## Ownership
 

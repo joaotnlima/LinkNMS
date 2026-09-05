@@ -217,6 +217,8 @@
       "site_manager": "Jefe de obra",
       "other": "Otro"
     },
+    "planNote": "Plan elegido: {plan}. Únete a la lista de espera y lo activaremos cuando se abra tu acceso.",
+    "planClear": "Cambiar de plan",
     "submit": "Únete a la lista de espera",
     "submitting": "Entrando…",
     "note": "Sin spam, sin promesas de adopción que no podamos respaldar. Un email, cuando esté listo.",

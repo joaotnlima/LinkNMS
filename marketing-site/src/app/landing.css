@@ -2285,3 +2285,36 @@
     transition: none;
   }
 }
+
+/* A paid-plan CTA waiting on /api/checkout (LINA-175). The answer decides
+   whether the click ends at the waitlist or at Stripe, so the press needs to
+   read as "working" for that roundtrip — and stop taking further clicks. */
+.lp-plan__cta[aria-busy='true'] {
+  opacity: 0.72;
+  cursor: progress;
+  pointer-events: none;
+}
+
+/* Paid-plan intent carried into the waitlist form (LINA-175). `.lp-form` is a
+   wrapping flex row, so the note claims a full row above the email field. Text
+   sits at cream-60 for the same AA reason as `.lp-cta__note` above. */
+.lp-form__plan {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--lp-cream-60);
+}
+.lp-form__plan-clear {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--lp-cream);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.lp-form__plan-clear:focus-visible {
+  outline: 2px solid var(--lp-cream);
+  outline-offset: 2px;
+  border-radius: 2px;
+}

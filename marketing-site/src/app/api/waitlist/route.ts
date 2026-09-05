@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
-import { getDb, isDbConfigured, signups } from '@/lib/db';
+import { getDb, isDbConfigured, signups, PLAN_KEYS, type PlanKey } from '@/lib/db';
 import { sendConfirmationEmail } from '@/lib/email';
 import { capture } from '@/lib/analytics';
 import { normalizeRole } from '@/lib/roles';
@@ -17,6 +17,7 @@ export const runtime = 'nodejs';
 type Body = {
   email?: string;
   role?: string; // stable enum key (see @/lib/roles), never a localized label
+  plan?: string; // tier key (see PLAN_KEYS in @/lib/db) — e.g. 'free_founding'
   company?: string; // honeypot — omitted by real clients, filled only by bots
   turnstileToken?: string;
   locale?: string;
@@ -62,6 +63,8 @@ export async function POST(req: Request) {
   const referrer = body.referrer ? body.referrer.slice(0, 500) : null;
   // Store the stable enum key, not the localized label the user saw.
   const role = normalizeRole(body.role);
+  // Tier the signup claimed — only values from PLAN_KEYS are persisted.
+  const plan = PLAN_KEYS.includes(body.plan as PlanKey) ? (body.plan as PlanKey) : null;
   const emailNorm = normalizeEmail(email);
   const token = newToken();
 
@@ -92,6 +95,7 @@ export async function POST(req: Request) {
     email,
     emailNorm,
     role,
+    plan,
     locale,
     source,
     referrer,

@@ -217,6 +217,8 @@
       "site_manager": "Site manager",
       "other": "Other"
     },
+    "planNote": "Plan selected: {plan}. Join the waitlist and we'll set it up when your access opens.",
+    "planClear": "Change plan",
     "submit": "Join the waitlist",
     "submitting": "Joining…",
     "note": "No spam, no adoption claims we can't back up. One email, when it's ready.",
