@@ -41,7 +41,7 @@ export { isSignedIn };
 
 import type {
   Project, Decision, ChangeOrderDetail, ChangeOrderSummary, AuditResult, Pillars, MeProfile,
-  OperatingModel, Role,
+  OperatingModel, Role, InvitationPreview,
 } from './types';
 import {
   directoryOf, countsOf, toProject, toDecision, toChangeOrderSummary, toChangeOrderDetail,
@@ -130,6 +130,10 @@ const ROUTES = {
     method: 'POST', path: (p) => `/invitations/${enc(p.token)}/accept`,
     handler: (c) => c.http.identity.acceptInvitation,
   },
+  previewInvitation: {
+    method: 'GET', path: (p) => `/invitations/${enc(p.token)}`,
+    handler: (c) => c.http.identity.previewInvitation,
+  },
   recordDecision: {
     method: 'POST', path: (p) => `/projects/${enc(p.id)}/decisions`,
     handler: (c) => c.http.decision.recordDecision,
@@ -205,6 +209,42 @@ async function call<T>(op: OpName, params: Params = {}, body?: unknown): Promise
         session: s,
         params: p,
         body,
+        headers: Object.fromEntries((await requestHeaders()).entries()),
+      });
+    } finally {
+      try {
+        await getAnalytics().flush();
+      } catch (flushErr) {
+        console.warn('[ui] analytics flush failed', flushErr);
+      }
+    }
+  }
+
+  if (result.status >= 400) raise(result.status, result.body);
+  return result.body as T;
+}
+
+// `call()` for the ONE public operation (LINA-182). Every other op in ROUTES is
+// members-only, and `call()` fails an anonymous caller with
+// UnauthenticatedError BEFORE the round trip — correct for the portal, fatal
+// for the invite preview, which exists precisely to serve a signed-out visitor
+// holding only the token. This variant keeps everything else identical (same
+// aliasing, same transport split, same rate-limited handler) but lets the
+// session be null.
+async function callPublic<T>(op: OpName, params: Params = {}): Promise<T> {
+  const route: Op = ROUTES[op];
+  const s = await currentSession(); // null for the deep-link visitor; the handler accepts it
+  const p = withAliases(params);
+
+  let result: { status: number; body?: unknown };
+  if (isRemote()) {
+    result = await callHttp(route, p, undefined);
+  } else {
+    try {
+      result = await route.handler(getContainer())({
+        session: s,
+        params: p,
+        body: undefined,
         headers: Object.fromEntries((await requestHeaders()).entries()),
       });
     } finally {
@@ -423,6 +463,17 @@ export async function inviteCounterparty(
 export async function acceptInvitation(token: string): Promise<{ projectId: string }> {
   const res = await call<{ membership: { projectId: string } }>('acceptInvitation', { token });
   return { projectId: res.membership.projectId };
+}
+
+/**
+ * The Band B accept deep link's UNAUTHENTICATED read (M6/D6, LINA-182). Only
+ * reachable by a visitor who holds a live token — which is exactly who the
+ * landing page shows "which build, invited by whom, at which email". Unknown
+ * and already-used tokens both 404 identically, and the endpoint is
+ * rate-limited; it must never be treated as a token-validity oracle.
+ */
+export async function getInvitationPreview(token: string): Promise<InvitationPreview> {
+  return callPublic<InvitationPreview>('previewInvitation', { token });
 }
 
 export async function recordDecision(projectId: string, input: { title: string; body: string }): Promise<{ id: string }> {

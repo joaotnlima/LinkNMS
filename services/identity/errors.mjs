@@ -33,3 +33,9 @@ export const notFound = (what = 'resource') =>
 export const conflict = (msg) => new IdentityError('conflict', 409, msg);
 
 export const badRequest = (msg) => new IdentityError('bad_request', 400, msg);
+
+// The unauthenticated preview read (LINA-182) exceeded its per-key rate
+// window. 429/429-scoped so a limiter trip stays inside the uniform envelope
+// and never looks like a token-validity signal.
+export const tooManyRequests = (msg = 'too many requests') =>
+  new IdentityError('rate_limited', 429, msg);

@@ -38,6 +38,17 @@ export interface MeProfile {
   role: string;
 }
 
+// GET /invitations/:token — the unauthenticated preview behind the Band B
+// accept deep link (LINA-182). Returned to a signed-out visitor who holds only
+// the token; unknown and spent tokens are an indistinguishable 404.
+export interface InvitationPreview {
+  projectName: string | null;
+  invitedByName: string | null;
+  role: Role;
+  email: string | null;
+  status: 'pending';
+}
+
 export interface Pillar {
   pillar: PillarKey;
   status: RagStatus;

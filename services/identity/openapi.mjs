@@ -29,7 +29,7 @@ export const schemas = {
         properties: {
           code: {
             type: 'string',
-            enum: ['unauthenticated', 'forbidden', 'not_found', 'conflict', 'bad_request'],
+            enum: ['unauthenticated', 'forbidden', 'not_found', 'conflict', 'bad_request', 'rate_limited'],
           },
           message: { type: 'string' },
         },
@@ -114,6 +114,26 @@ export const schemas = {
           'True only when the invitation was actually handed to the mailer. The raw token ' +
           'is returned either way, so a delivery failure never strands the inviter.',
       },
+    },
+  },
+  // GET /invitations/:token — the unauthenticated preview behind the Band B
+  // accept deep link (LINA-182). The token IS the credential (ADR-0004 in
+  // reverse: here the caller is the invitee who has not signed up yet), so the
+  // shape deliberately carries no actor and no membership. It is the ONLY
+  // unauthenticated read of a token-keyed row and is rate-limited at the
+  // transport layer; unknown and spent tokens return the same 404 (no oracle).
+  InvitationPreview: {
+    type: 'object',
+    required: ['projectName', 'invitedByName', 'role', 'email', 'status'],
+    properties: {
+      projectName: { type: ['string', 'null'] },
+      invitedByName: { type: ['string', 'null'] },
+      role: roleEnumVisible,
+      email: {
+        type: ['string', 'null'],
+        description: 'The address the invitation was mailed to; null on the out-of-band path. Returned because it is the INVITEE’s own address (pre-fill), not a third party’s.',
+      },
+      status: { type: 'string', enum: ['pending'] },
     },
   },
   MembershipCreated: {
@@ -256,6 +276,25 @@ export const spec = {
           401: errorResponse('No acting party in session'),
           404: errorResponse('Invitation not found'),
           409: errorResponse('Invitation already accepted, or already a member'),
+        },
+      },
+    },
+    '/invitations/{token}': {
+      get: {
+        operationId: 'previewInvitation',
+        summary: 'The unauthenticated invite preview behind the Band B accept deep link (LINA-182).',
+        description:
+          'Returned to a signed-out visitor who holds only the token: which build they were ' +
+          'invited to, who invited them, and the email the invitation was mailed to (for the ' +
+          'inline sign-up pre-fill). The token is the credential for this read. Unknown and ' +
+          'already-accepted tokens return the IDENTICAL 404, so the endpoint is not a ' +
+          'token-validity oracle. Rate-limited at the transport layer.',
+        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: { description: 'Invitation preview', content: json('InvitationPreview') },
+          400: errorResponse('Missing token'),
+          404: errorResponse('Unknown or already-accepted invitation — deliberately indistinguishable'),
+          429: errorResponse('Rate limit exceeded'),
         },
       },
     },

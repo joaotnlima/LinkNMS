@@ -71,11 +71,18 @@ function rightmost(value) {
 }
 
 /**
- * @param {Headers|{ get(name:string): string|null }} headers
+ * @param {Headers|{ get(name:string): string|null }|Record<string,string|null>} headers
  * @returns {string|null} the most trustworthy client IP available, or null.
  */
 export function clientIpOf(headers) {
-  const get = (name) => headers?.get?.(name) ?? null;
+  // The Next gateway hands over a plain object (`Object.fromEntries(req.headers
+  // .entries())`), the framework-agnostic handlers hand that on, and tests feed
+  // real `Headers` — accept both rather than assume one transport shape.
+  const get = (name) =>
+    headers?.get?.(name)
+    ?? headers?.[name]
+    ?? headers?.[name.toLowerCase()]
+    ?? null;
   return (
     rightmost(get('x-vercel-forwarded-for'))
     ?? normaliseIp(get('x-real-ip'))
