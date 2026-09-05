@@ -23,12 +23,25 @@ import { ScrollSequence } from '@/components/landing/ScrollSequence';
  * including the pinned one; see the comment at the top of LandingHeader.tsx.
  */
 
+// The founding-seat counter in <SectionPricing /> is read from the database on
+// render (LINA-189), so this page must not be captured as static HTML — a
+// scarcity number frozen at deploy time is worse than no number. It is already
+// dynamic today because it awaits `searchParams`, but that is INCIDENTAL: drop
+// the confirmation banner and the counter silently freezes at whatever the count
+// was when the site was built. Declared here so the guarantee is deliberate.
+export const dynamic = 'force-dynamic';
+
 export default async function Home({
   params,
   searchParams
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ confirmed?: string; confirm?: string; source?: string }>;
+  searchParams: Promise<{
+    confirmed?: string;
+    confirm?: string;
+    seats?: string;
+    source?: string;
+  }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
@@ -37,8 +50,19 @@ export default async function Home({
 
   const t = await getTranslations();
 
+  // `confirmed=1&seats=full` is the near-miss (LINA-189): the address is
+  // confirmed and on the list, but the fiftieth founding seat went to someone
+  // else while they were in their inbox. It is told apart from a plain
+  // confirmation because "you're on the list" would read as "you're in" to
+  // someone who just pressed "Claim my free seat".
   const confirmBanner =
-    sp.confirmed === '1'
+    sp.confirmed === '1' && sp.seats === 'full'
+      ? {
+          title: t('waitlist.seatsFullTitle'),
+          body: t('waitlist.seatsFullBody'),
+          error: false
+        }
+      : sp.confirmed === '1'
       ? { title: t('waitlist.confirmedTitle'), body: t('waitlist.confirmedBody'), error: false }
       : sp.confirm === 'invalid'
         ? { title: t('waitlist.confirmInvalidTitle'), body: t('waitlist.confirmInvalidBody'), error: true }

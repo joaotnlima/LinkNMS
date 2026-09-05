@@ -229,7 +229,9 @@
     "confirmedTitle": "Estás en el registro.",
     "confirmedBody": "Tu lugar en la lista de espera de LinkNMS está confirmado. Te escribiremos en cuanto haya algo real que probar.",
     "confirmInvalidTitle": "Ese enlace no funcionó.",
-    "confirmInvalidBody": "El enlace de confirmación no es válido o ha caducado. Únete de nuevo a la lista de espera y te enviamos uno nuevo."
+    "confirmInvalidBody": "El enlace de confirmación no es válido o ha caducado. Únete de nuevo a la lista de espera y te enviamos uno nuevo.",
+    "seatsFullTitle": "Estás en el registro — las 50 plazas fundadoras se acaban de agotar.",
+    "seatsFullBody": "Tu correo está confirmado y tu lugar en la lista de espera de LinkNMS está reservado. La última plaza fundadora se ocupó mientras revisabas tu bandeja de entrada; te escribiremos en cuanto se abran nuevas plazas."
   },
   "footer": {
     "how": "Cómo funciona",
@@ -438,7 +440,7 @@
         "badge2": "Limitado · Mientras queden plazas",
         "h": "Los primeros 50 propietarios obtienen Personal — gratis de por vida.",
         "s": "Los Propietarios Fundadores ayudan a dar forma a LinkNMS. Trae tu obra, invita a tu equipo y mantén Personal gratis para siempre.",
-        "count": "18 / 50",
+        "count": "{claimed} / {total}",
         "countLabel": "Plazas reservadas",
         "cta": "Reservar mi plaza gratis",
         "planLabel": "Fundadores 50 — Personal, gratis de por vida"
@@ -560,9 +562,18 @@
         "title": "Lo esencial incluido en todos los planes",
         "desc": "Las bases que siempre tienes.",
         "items": [
-          { "t": "Alcance", "d": "Registra cambios, aprobaciones y toda la información del proyecto." },
-          { "t": "Plazo", "d": "Planifica hitos y cumple el calendario." },
-          { "t": "Coste", "d": "Controla presupuestos, costes y pagos." }
+          {
+            "t": "Alcance",
+            "d": "Registra cambios, aprobaciones y toda la información del proyecto."
+          },
+          {
+            "t": "Plazo",
+            "d": "Planifica hitos y cumple el calendario."
+          },
+          {
+            "t": "Coste",
+            "d": "Controla presupuestos, costes y pagos."
+          }
         ]
       },
       "billing": {

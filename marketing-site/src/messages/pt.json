@@ -229,7 +229,9 @@
     "confirmedTitle": "Estás no registo.",
     "confirmedBody": "O teu lugar na lista de espera do LinkNMS está confirmado. Falamos assim que houver algo real para experimentar.",
     "confirmInvalidTitle": "Esse link não funcionou.",
-    "confirmInvalidBody": "O link de confirmação é inválido ou expirou. Entra novamente na lista de espera e enviamos um novo."
+    "confirmInvalidBody": "O link de confirmação é inválido ou expirou. Entra novamente na lista de espera e enviamos um novo.",
+    "seatsFullTitle": "Estás no registo — os 50 lugares fundadores acabaram de esgotar.",
+    "seatsFullBody": "O teu email está confirmado e o teu lugar na lista de espera do LinkNMS está guardado. O último lugar fundador foi ocupado enquanto verificavas a tua caixa de entrada; escrevemos-te assim que abrirem novos lugares."
   },
   "footer": {
     "how": "Como funciona",
@@ -438,7 +440,7 @@
         "badge2": "Limitado · Enquanto houver lugares",
         "h": "Os primeiros 50 donos de casa ficam com o Personal — grátis para sempre.",
         "s": "Os Donos Fundadores ajudam a moldar o LinkNMS. Traga a sua obra, convide a sua equipa e mantenha o Personal grátis para sempre.",
-        "count": "18 / 50",
+        "count": "{claimed} / {total}",
         "countLabel": "Lugares reservados",
         "cta": "Reservar o meu lugar grátis",
         "planLabel": "Fundadores 50 — Personal, grátis para sempre"
@@ -560,9 +562,18 @@
         "title": "Essencial incluído em todos os planos",
         "desc": "As bases que tem sempre.",
         "items": [
-          { "t": "Âmbito", "d": "Acompanhe alterações, aprovações e toda a informação do projeto." },
-          { "t": "Prazo", "d": "Planeie marcos e cumpra o calendário." },
-          { "t": "Custo", "d": "Controle orçamentos, custos e pagamentos." }
+          {
+            "t": "Âmbito",
+            "d": "Acompanhe alterações, aprovações e toda a informação do projeto."
+          },
+          {
+            "t": "Prazo",
+            "d": "Planeie marcos e cumpra o calendário."
+          },
+          {
+            "t": "Custo",
+            "d": "Controle orçamentos, custos e pagamentos."
+          }
         ]
       },
       "billing": {

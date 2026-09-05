@@ -15,7 +15,9 @@
 // it in the scoped .ob-auth onboarding palette so it matches D0a-setup.
 'use client';
 
+import { Suspense } from 'react';
 import { SignUp } from '@clerk/nextjs';
+import { useSearchParams } from 'next/navigation';
 
 import { clerkAppearance } from '@/components/clerkAppearance';
 import './sign-up.css';
@@ -28,6 +30,35 @@ const AFTER_SIGN_UP = '/onboarding/setup';
 // crashing, mirroring components/providers.tsx and the LINA-129 config: the app
 // boots in preview mode when Clerk keys are not provisioned.
 const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
+/**
+ * The address to prefill, when the visitor arrived from a founding-seat claim
+ * (LINA-189: /api/confirm redirects here with `?email=`).
+ *
+ * This is convenience, not authorisation — the seat gate keys on the address
+ * Clerk VERIFIES, so a hand-edited parameter changes a form field and nothing
+ * else. What it prevents is the ordinary way the loop breaks: someone claims a
+ * seat with one address, then signs up with another and lands on /no-access
+ * holding a seat that is waiting for a different inbox.
+ */
+function useClaimedEmail(): string | undefined {
+  const raw = useSearchParams().get('email')?.trim().toLowerCase();
+  return raw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? raw : undefined;
+}
+
+function ClerkSignUp() {
+  const emailAddress = useClaimedEmail();
+  return (
+    <SignUp
+      routing="hash"
+      signInUrl="/sign-in"
+      forceRedirectUrl={AFTER_SIGN_UP}
+      fallbackRedirectUrl={AFTER_SIGN_UP}
+      initialValues={emailAddress ? { emailAddress } : undefined}
+      appearance={clerkAppearance}
+    />
+  );
+}
 
 export default function SignUpPage() {
   return (
@@ -42,13 +73,11 @@ export default function SignUpPage() {
 
       {PUBLISHABLE_KEY ? (
         <div className="ob-auth-card">
-          <SignUp
-            routing="hash"
-            signInUrl="/sign-in"
-            forceRedirectUrl={AFTER_SIGN_UP}
-            fallbackRedirectUrl={AFTER_SIGN_UP}
-            appearance={clerkAppearance}
-          />
+          {/* useSearchParams() needs a boundary: without one Next refuses to
+              prerender this route at build time. */}
+          <Suspense fallback={null}>
+            <ClerkSignUp />
+          </Suspense>
         </div>
       ) : (
         <section className="ob-auth-preview" role="note">

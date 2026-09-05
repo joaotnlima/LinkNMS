@@ -229,7 +229,9 @@
     "confirmedTitle": "You're on the record.",
     "confirmedBody": "Your place on the LinkNMS waitlist is confirmed. We'll be in touch the moment there's something real to try.",
     "confirmInvalidTitle": "That link didn't work.",
-    "confirmInvalidBody": "The confirmation link is invalid or has expired. Join the waitlist again and we'll send a fresh one."
+    "confirmInvalidBody": "The confirmation link is invalid or has expired. Join the waitlist again and we'll send a fresh one.",
+    "seatsFullTitle": "You're on the record — the founding 50 just filled.",
+    "seatsFullBody": "Your email is confirmed and your place on the LinkNMS waitlist is held. The last founding seat went while you were checking your inbox, so we will write to you the moment the next seats open."
   },
   "footer": {
     "how": "How it works",
@@ -438,7 +440,7 @@
         "badge2": "Limited · While seats last",
         "h": "First 50 homeowners get Personal — free for life.",
         "s": "Founding Owners help shape LinkNMS. Bring your build, invite your team, keep Personal free forever.",
-        "count": "18 / 50",
+        "count": "{claimed} / {total}",
         "countLabel": "Seats claimed",
         "cta": "Claim my free seat",
         "planLabel": "Founding 50 — Personal, free for life"
@@ -560,9 +562,18 @@
         "title": "Core included in all plans",
         "desc": "The essentials you always get.",
         "items": [
-          { "t": "Scope", "d": "Track changes, approvals and all project information." },
-          { "t": "Time", "d": "Plan milestones and stay on schedule." },
-          { "t": "Cost", "d": "Control budgets, costs and payments." }
+          {
+            "t": "Scope",
+            "d": "Track changes, approvals and all project information."
+          },
+          {
+            "t": "Time",
+            "d": "Plan milestones and stay on schedule."
+          },
+          {
+            "t": "Cost",
+            "d": "Control budgets, costs and payments."
+          }
         ]
       },
       "billing": {
