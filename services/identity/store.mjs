@@ -18,7 +18,9 @@
 // write so a rejected mutation leaves no partial state even without rollback.
 //
 // PORT — reads (no tx):
-//   getParty(id) · upsertParty({id,displayName})
+//   getParty(id) · upsertParty({id,displayName,email,role,language,setupComplete})
+//   completeProfile({partyId,displayName,role,language})
+//     -> {status:'ok',party} | {status:'already_setup'} | {status:'not_found'}
 //   getProject(id) · getMembership(projectId, partyId) · listMemberships(projectId)
 //   getInvitationByTokenHash(hash) · listPendingInvitations(projectId)
 //
@@ -152,11 +154,31 @@ export function createMemoryStore({ ledger } = {}) {
   return {
     // reads
     getParty: (id) => copy(parties.get(id)),
-    upsertParty({ id, displayName }) {
+    upsertParty({ id, displayName, email, role, language, setupComplete }) {
       const existing = parties.get(id);
-      const row = { id, displayName: displayName ?? existing?.displayName ?? null };
+      const row = {
+        id,
+        displayName: displayName ?? existing?.displayName ?? null,
+        email: email ?? existing?.email ?? null,
+        role: role ?? existing?.role ?? 'contractor',
+        language: language ?? existing?.language ?? null,
+        setupComplete: setupComplete ?? existing?.setupComplete ?? false,
+      };
       parties.set(id, row);
       return copy(row);
+    },
+    // Mirrors the pg adapter's conditional UPDATE one-for-one, including the
+    // three-way outcome, so a service test written against this store is
+    // testing the real invariant and not a friendlier fiction. Single-threaded
+    // here, which is why the guard reads as a plain `if` — in Postgres the same
+    // guard is `where setup_complete = false` and Postgres does the serialising.
+    completeProfile({ partyId, displayName, role, language }) {
+      const existing = parties.get(partyId);
+      if (!existing) return { status: 'not_found' };
+      if (existing.setupComplete) return { status: 'already_setup' };
+      const row = { ...existing, displayName, role, language, setupComplete: true };
+      parties.set(partyId, row);
+      return { status: 'ok', party: copy(row) };
     },
     getProject,
     getMembership,

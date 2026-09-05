@@ -32,6 +32,10 @@ const mapParty = (r) => r && {
   displayName: r.display_name,
   email: r.email ?? null,
   role: r.role,
+  // 0011: null until the party has been through first-login setup. `?? null`
+  // rather than a default so "never asked" stays distinguishable from a choice.
+  language: r.language ?? null,
+  setupComplete: r.setup_complete === true,
 };
 
 const mapProject = (r) => r && {
@@ -93,6 +97,41 @@ export function createPgStore({ pool = getPool(), ledger }) {
   async function getParty(id) {
     return mapParty(await one('select * from identity.party where id = $1', [id]));
   }
+  // First-login account setup (POST /me/profile, LINA-189). A single
+  // conditional UPDATE, and that is the whole concurrency story:
+  //
+  //   * `where setup_complete = false` makes it idempotent AND race-safe. Two
+  //     concurrent first-login submits both target one row; Postgres serialises
+  //     them, the first flips the flag, the second matches zero rows and gets
+  //     'already_setup'. No read-then-write window, no advisory lock.
+  //   * All three fields move together in one statement, so there is no state
+  //     where the record says "Owner" but still shows the email-local-part name
+  //     the Clerk bridge invented. The contract's atomicity requirement is the
+  //     statement itself, not a transaction wrapped around several writes.
+  //
+  // No ledger append. The ledger is the PROJECT record's hash chain — every
+  // event on it is scoped to a build — and account setup happens before the
+  // party has a build. Writing a chain entry with no project would either
+  // require a nullable project_id (weakening the thing the chain exists to
+  // guarantee) or a synthetic one (a lie in an audit log). What this write
+  // affects downstream — the display name on every future decision — is
+  // captured at the moment it is used, by the events that carry it.
+  async function completeProfile({ partyId, displayName, role, language }) {
+    const { rows } = await pool.query(
+      `update identity.party
+          set display_name = $2, role = $3, language = $4,
+              setup_complete = true, updated_at = now()
+        where id = $1 and setup_complete = false
+        returning *`,
+      [partyId, displayName, role, language],
+    );
+    if (rows.length > 0) return { status: 'ok', party: mapParty(rows[0]) };
+    // Zero rows is two different facts. Distinguish them, because one is a
+    // success the client continues past (409) and the other is a dead session.
+    const existing = await getParty(partyId);
+    return existing ? { status: 'already_setup' } : { status: 'not_found' };
+  }
+
   async function getMembership(projectId, partyId) {
     return mapMembership(await one(
       'select * from identity.membership where project_id = $1 and party_id = $2',
@@ -214,6 +253,7 @@ export function createPgStore({ pool = getPool(), ledger }) {
     getInvitationByTokenHash,
     listPendingInvitations,
     getParty,
+    completeProfile,
     transaction,
   };
 }

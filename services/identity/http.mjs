@@ -23,7 +23,19 @@ import { clientIpOf } from '../gateway/client-ip.mjs';
 
 function errorBody(err) {
   if (err instanceof IdentityError || (err && typeof err.status === 'number' && typeof err.code === 'string')) {
-    return { status: err.status, body: { error: { code: err.code, message: err.message } } };
+    return {
+      status: err.status,
+      body: {
+        error: {
+          code: err.code,
+          message: err.message,
+          // Only fieldError() sets this (account setup, LINA-189). Spread
+          // conditionally so every other error body is byte-for-byte what it
+          // was before rather than gaining a misleading `field: undefined`.
+          ...(err.field ? { field: err.field } : {}),
+        },
+      },
+    };
   }
   // An unmapped throw is a bug or an infrastructure failure (a missing GRANT, a
   // dropped connection), never a client mistake. The response deliberately says
@@ -183,5 +195,25 @@ export function createIdentityHttp({ service, rateLimiter = createRateLimiter() 
     } catch (err) { return errorBody(err); }
   }
 
-  return { createProject, getProject, setOperatingModel, inviteCounterparty, acceptInvitation, previewInvitation, getMe };
+  // POST /me/profile — first-login account setup (LINA-189). Self-only: the
+  // party is the session's and there is no id in the path or body to point
+  // elsewhere. no-store for the same reason GET /me has it — the response
+  // carries a personal display name, and a shared cache must never hand one
+  // party's setup confirmation to another.
+  async function completeProfile({ session, body }) {
+    try {
+      const profile = await service.completeProfile({
+        actorPartyId: actorOf(session),
+        displayName: body?.displayName,
+        role: body?.role,
+        language: body?.language,
+      });
+      return { status: 200, body: { profile }, headers: { 'cache-control': 'no-store' } };
+    } catch (err) { return errorBody(err); }
+  }
+
+  return {
+    createProject, getProject, setOperatingModel, inviteCounterparty,
+    acceptInvitation, previewInvitation, getMe, completeProfile,
+  };
 }

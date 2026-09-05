@@ -1,14 +1,14 @@
 // Client-side data layer for the account-setup screen (D0a-setup, LINA-132).
 //
-// This talks to POST /api/me/profile on the standalone Fastify API (apps/api,
-// LINA-137), authenticated with a Clerk session token. It is deliberately the
-// ONLY place that knows the wire contract, so the screen component stays about
-// layout and the response→outcome mapping is unit-testable without a DOM.
+// This talks to POST /api/v1/me/profile on the portal's own API, authenticated
+// with a Clerk session token. It is deliberately the ONLY place that knows the
+// wire contract, so the screen component stays about layout and the
+// response→outcome mapping is unit-testable without a DOM.
 //
-// The contract it honours verbatim: docs/architecture/api-me-profile-contract.md.
-// Identity is NEVER sent in the body — the server reads clerk_user_id from the
-// verified token (ADR-0004). The client sends a role CHOICE only; the grant is
-// server-side.
+// The contract it honours: docs/architecture/api-me-profile-contract.md.
+// Identity is NEVER sent in the body — the server derives the acting party from
+// the verified Clerk session (ADR-0004). The client sends a role CHOICE only,
+// and that choice is a label on the party, not an entitlement.
 
 export type Role = 'owner' | 'general_contractor';
 export type Language = 'en' | 'pt' | 'es';
@@ -37,6 +37,15 @@ export type ProfileResult =
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
+// The endpoint, on the portal's own versioned API surface.
+//
+// This used to be the unversioned `/api/me/profile`, which is the path the
+// standalone Fastify service (apps/api) would have served had it ever been
+// deployed. It was not, so every submit from this screen 404'd and nobody could
+// finish signing up (LINA-189). The handler now lives in this app, under the
+// same `/api/v1` namespace as every other endpoint it serves.
+const PROFILE_PATH = '/api/v1/me/profile';
+
 const RETRY_MESSAGE = 'Something went wrong on our end. Please try again.';
 
 function apiUrl(path: string): string {
@@ -55,7 +64,7 @@ export async function submitProfile(
 ): Promise<ProfileResult> {
   let res: Response;
   try {
-    res = await fetch(apiUrl('/api/me/profile'), {
+    res = await fetch(apiUrl(PROFILE_PATH), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',

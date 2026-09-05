@@ -17,7 +17,9 @@
 
 import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import { can, ACTION } from './authz.mjs';
-import { IdentityError, badRequest, conflict, forbidden, notFound, unauthenticated } from './errors.mjs';
+import {
+  IdentityError, alreadySetup, badRequest, conflict, fieldError, forbidden, notFound, unauthenticated,
+} from './errors.mjs';
 import { createNoopAnalytics } from '../analytics/analytics.mjs';
 // The SAME normaliser every Identity path uses, so an address typed into the
 // invite form and the same address arriving from anywhere else are one key
@@ -26,6 +28,44 @@ import { normalizeEmail } from './email-normalize.mjs';
 import { sendEmail, isEmailConfigured } from '../email/sender.mjs';
 
 const sha256Hex = (s) => createHash('sha256').update(s).digest('hex');
+
+// ── Account setup vocabulary (LINA-189) ──────────────────────────────────────
+// The two personas the product sells to, mapped to the two party roles the
+// record stores. `viewer` is deliberately NOT reachable from setup: it is an
+// administrative state, not something a person can elect for themselves on the
+// way in. See completeProfile() for why this mapping lives at this boundary.
+const SETUP_ROLE_TO_PARTY_ROLE = Object.freeze({
+  owner: 'owner',
+  general_contractor: 'contractor',
+});
+const SETUP_LANGUAGES = new Set(['en', 'pt', 'es']);
+// Bounded because it is rendered beside every decision this party ever records;
+// an unbounded name is a layout attack on everyone else's audit view.
+const MAX_DISPLAY_NAME = 200;
+
+function validateDisplayName(raw) {
+  if (typeof raw !== 'string') throw fieldError('displayName', 'displayName must be a string');
+  const trimmed = raw.trim();
+  if (!trimmed) throw fieldError('displayName', 'Tell us how you should appear on the record.');
+  if (trimmed.length > MAX_DISPLAY_NAME) {
+    throw fieldError('displayName', `displayName must be at most ${MAX_DISPLAY_NAME} characters`);
+  }
+  return trimmed;
+}
+
+function validateSetupRole(raw) {
+  if (typeof raw !== 'string' || !Object.hasOwn(SETUP_ROLE_TO_PARTY_ROLE, raw)) {
+    throw fieldError('role', 'Choose the role that fits you on this build.');
+  }
+  return raw;
+}
+
+function validateLanguage(raw) {
+  if (typeof raw !== 'string' || !SETUP_LANGUAGES.has(raw)) {
+    throw fieldError('language', 'language must be one of en, pt, es');
+  }
+  return raw;
+}
 
 // The invitation email. Same visual language the sign-in link used to carry:
 // inline-styled, self-contained, no tracking pixels and no external assets — an
@@ -513,7 +553,69 @@ export function createIdentityService({
     if (!actorPartyId) throw unauthenticated();
     const party = await store.getParty(actorPartyId);
     if (!party) throw notFound('party');
-    return { partyId: party.id, displayName: party.displayName, email: party.email, role: party.role };
+    return {
+      partyId: party.id,
+      displayName: party.displayName,
+      email: party.email,
+      role: party.role,
+      language: party.language ?? null,
+      // The portal needs this to know whether to send someone to /onboarding/setup
+      // or straight to their record. Without it the only way to tell a finished
+      // account from a fresh one is to guess from the display name.
+      setupComplete: party.setupComplete === true,
+    };
+  }
+
+  // POST /me/profile — first-login account setup (LINA-189, contract in
+  // docs/architecture/api-me-profile-contract.md).
+  //
+  // ── WHY THE ROLES ARE TRANSLATED HERE ────────────────────────────────────────
+  // The setup screen speaks the product's vocabulary — "Owner" and "General
+  // contractor" — and identity.party's CHECK constraint speaks the record's:
+  // owner | contractor | viewer. Those are two vocabularies for one idea, and
+  // the translation has to live at exactly one boundary or the two drift. This
+  // is that boundary. The screen never sends a storage value and the store never
+  // sees a product one.
+  //
+  // ── WHY THIS GRANTS NOTHING ──────────────────────────────────────────────────
+  // The client sends a role CHOICE. It is written to the party's default role,
+  // which is a description of what this person does — it is NOT an entitlement
+  // and confers no access to any build. Access is identity.membership, minted
+  // only by creating a project or accepting an invitation, and every capability
+  // check goes through the ADR-0004 authorizer against THAT. So a hand-crafted
+  // POST claiming `owner` buys the sender exactly one thing: the word "owner"
+  // next to their own name on a record they still cannot reach.
+  //
+  // Identity is `actorPartyId` — from the verified session, never the body. The
+  // scope is self-only and there is deliberately no party id parameter: nothing
+  // here can be pointed at somebody else's row.
+  async function completeProfile({ actorPartyId, displayName, role, language }) {
+    if (!actorPartyId) throw unauthenticated();
+
+    const cleanName = validateDisplayName(displayName);
+    const productRole = validateSetupRole(role);
+    const cleanLanguage = validateLanguage(language);
+
+    const result = await store.completeProfile({
+      partyId: actorPartyId,
+      displayName: cleanName,
+      role: SETUP_ROLE_TO_PARTY_ROLE[productRole],
+      language: cleanLanguage,
+    });
+
+    // A live session whose party row is gone is not a 404 to show the user — it
+    // is a session that no longer means anything. Sending 401 makes the client
+    // sign out and start over, which is the only recoverable action available.
+    if (result.status === 'not_found') throw unauthenticated();
+    if (result.status === 'already_setup') throw alreadySetup();
+
+    // No analytics event. The analytics port here is a TYPED facade over the
+    // LINA-55 eight-event spine (projectCreated / gcInvited / gcJoined / …),
+    // not a generic capture(), and quietly adding a ninth event through an
+    // untyped side door would bypass the shape and no-PII assertions that make
+    // that spine safe. If account-setup completion is worth measuring, it gets
+    // added to the contract first — landing already counts the claim.
+    return { displayName: cleanName, role: productRole, language: cleanLanguage, setupComplete: true };
   }
 
   return {
@@ -530,6 +632,7 @@ export function createIdentityService({
     acceptInvitation,
     previewInvitation,
     getMe,
+    completeProfile,
   };
 }
 

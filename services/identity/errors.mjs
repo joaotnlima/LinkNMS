@@ -34,6 +34,25 @@ export const conflict = (msg) => new IdentityError('conflict', 409, msg);
 
 export const badRequest = (msg) => new IdentityError('bad_request', 400, msg);
 
+// A 400 that names the OFFENDING FIELD, so the account-setup screen can put the
+// message beside the input that caused it instead of at the top of the form
+// (api-me-profile-contract.md). `field` rides on the error object and the HTTP
+// adapter copies it into the error body — the only place in this service where
+// an error carries more than {code, message}, which is why it is a distinct
+// constructor rather than a badRequest() with a hand-written body somewhere.
+export const fieldError = (field, msg) => {
+  const err = new IdentityError('bad_request', 400, msg);
+  err.field = field;
+  return err;
+};
+
+// First-login setup has already been completed for this party. A 409 and NOT an
+// error the user should see: the client treats it as success and continues to
+// the portal (a re-submitted form, a double-clicked button, or a back-navigation
+// must not strand somebody outside their own record).
+export const alreadySetup = () =>
+  new IdentityError('already_setup', 409, 'profile already set up');
+
 // The unauthenticated preview read (LINA-182) exceeded its per-key rate
 // window. 429/429-scoped so a limiter trip stays inside the uniform envelope
 // and never looks like a token-validity signal.

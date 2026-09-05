@@ -47,6 +47,41 @@ export const schemas = {
       displayName: { type: 'string' },
       email: { type: ['string', 'null'] },
       role: partyRoleEnum,
+      // null until first-login setup has been done — "never asked" is a
+      // different fact from a chosen language, and the portal needs both.
+      language: { type: ['string', 'null'], enum: ['en', 'pt', 'es', null] },
+      setupComplete: { type: 'boolean' },
+    },
+  },
+  // ── Account setup (LINA-189) ─────────────────────────────────────────────
+  // The setup screen's vocabulary, NOT the record's: `general_contractor` here
+  // is stored as party role `contractor`. The two are translated at the service
+  // boundary so neither side has to know the other's spelling.
+  CompleteProfileRequest: {
+    type: 'object',
+    required: ['displayName', 'role', 'language'],
+    properties: {
+      displayName: { type: 'string' },
+      // A CHOICE, not an entitlement: it sets the label on the party and grants
+      // access to nothing. Build access is membership (ADR-0004).
+      role: { type: 'string', enum: ['owner', 'general_contractor'] },
+      language: { type: 'string', enum: ['en', 'pt', 'es'] },
+    },
+  },
+  CompletedProfile: {
+    type: 'object',
+    required: ['profile'],
+    properties: {
+      profile: {
+        type: 'object',
+        required: ['displayName', 'role', 'language', 'setupComplete'],
+        properties: {
+          displayName: { type: 'string' },
+          role: { type: 'string', enum: ['owner', 'general_contractor'] },
+          language: { type: 'string', enum: ['en', 'pt', 'es'] },
+          setupComplete: { type: 'boolean' },
+        },
+      },
     },
   },
   Member: {
@@ -202,6 +237,24 @@ export const spec = {
           200: { description: 'The party’s profile', content: json('MeProfile') },
           401: errorResponse('No acting party in session'),
           404: errorResponse('Party not found'),
+        },
+      },
+    },
+    '/me/profile': {
+      post: {
+        operationId: 'completeProfile',
+        summary: 'First-login account setup: display name, role choice, language. Once only.',
+        description:
+          'Self-only — the party is the session’s and cannot be named in the body (ADR-0004). '
+          + 'The role is a CHOICE recorded on the party, not a grant: access to any build is '
+          + 'membership, minted only by creating a project or accepting an invitation. '
+          + 'Idempotent: a repeat submit is 409 and the client treats it as success.',
+        requestBody: { required: true, content: json('CompleteProfileRequest') },
+        responses: {
+          200: { description: 'Profile stored', content: json('CompletedProfile') },
+          400: errorResponse('Invalid field; the body names the offending field'),
+          401: errorResponse('No acting party in session'),
+          409: errorResponse('Profile already set up'),
         },
       },
     },
