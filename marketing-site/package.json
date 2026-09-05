@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "verify:sequence": "tsx scripts/verify-sequence-timeline.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1",

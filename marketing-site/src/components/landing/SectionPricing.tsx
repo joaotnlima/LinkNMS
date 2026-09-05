@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { CtaLink } from '@/components/CtaLink';
-import { FREE_FOUNDING_PLAN_KEY, type PaidPlanKey } from '@/lib/pricing';
+import { FREE_FOUNDING_PLAN_KEY, type PaidPlanKey, type Persona } from '@/lib/pricing';
 import { foundingSeats } from '@/lib/seats';
 import { CheckIcon } from './icons';
 import { PlanCta } from './PlanCta';
@@ -50,12 +50,15 @@ const BUILDER_PLAN_KEYS: PaidPlanKey[] = [
 function PlanCard({
   plan,
   planKey,
+  persona,
   perMonth,
   popular,
   popularLabel
 }: {
   plan: Plan;
   planKey: PaidPlanKey;
+  /** The panel this card is rendered in — see PlanCta's `persona` (LINA-189). */
+  persona: Persona;
   perMonth: string;
   popular: boolean;
   popularLabel: string;
@@ -91,7 +94,7 @@ function PlanCard({
         </ul>
       </div>
 
-      <PlanCta plan={planKey} label={plan.name} className="lp-btn lp-plan__cta">
+      <PlanCta plan={planKey} label={plan.name} persona={persona} className="lp-btn lp-plan__cta">
         {plan.cta}
       </PlanCta>
     </article>
@@ -194,9 +197,13 @@ export async function SectionPricing() {
                     style={{ width: `${(seats.claimed / seats.total) * 100}%` }}
                   />
                 </div>
+                {/* persona: the founding CTA lives in the owner ribbon, and the
+                    plan key alone cannot say so — free_founding is a seat, not
+                    an owner plan (see personaForPlan). The panel declares it. */}
                 <PlanCta
                   plan={FREE_FOUNDING_PLAN_KEY}
                   label={t('ribbonOwner.planLabel')}
+                  persona="owner"
                   className="lp-btn lp-ribbon__cta"
                 >
                   {t('ribbonOwner.cta')}
@@ -212,6 +219,7 @@ export async function SectionPricing() {
                     key={plan.name}
                     plan={plan}
                     planKey={OWNER_PLAN_KEYS[i]}
+                    persona="owner"
                     perMonth={t('perMonth')}
                     popular={i === 1}
                     popularLabel={t('popular')}
@@ -264,6 +272,7 @@ export async function SectionPricing() {
                     key={plan.name}
                     plan={plan}
                     planKey={BUILDER_PLAN_KEYS[i]}
+                    persona="builder"
                     perMonth={t('perMonth')}
                     popular={i === 1}
                     popularLabel={t('popular')}

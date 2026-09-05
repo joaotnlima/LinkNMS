@@ -261,3 +261,33 @@ jobs:
         run: npx next build
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+
+  # The landing page had no CI job at all, which is how `18 / 50` shipped as a
+  # hardcoded number and how the persona derivation could have shipped untested.
+  # It is a real Next app on a real domain and it now gates like one.
+  marketing-typecheck:
+    name: Marketing site — typecheck & tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # `npm ci`, not `npm install` — same reasoning as the app job above.
+      - name: Install dependencies
+        working-directory: marketing-site
+        run: npm ci --ignore-scripts
+
+      - name: Type-check
+        working-directory: marketing-site
+        run: npx tsc --noEmit
+
+      # Covers the persona derivation (LINA-189): the rule that a plan overrides
+      # a contradicting client-supplied persona is what keeps that column
+      # trustworthy, and it is pure logic, so it is cheap to hold to it.
+      - name: Run tests
+        working-directory: marketing-site
+        run: npm test

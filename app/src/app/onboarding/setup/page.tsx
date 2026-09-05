@@ -14,8 +14,8 @@
 // token, never trust the client), this is only a courtesy redirect.
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth, useUser } from '@clerk/nextjs';
 
 import { submitProfile, type Language, type ProfileInput, type Role } from '@/lib/profile';
@@ -73,13 +73,40 @@ export default function AccountSetupPage() {
       </main>
     );
   }
-  return <AccountSetupForm />;
+  // useSearchParams() needs a Suspense boundary or Next refuses to prerender
+  // this route at build time.
+  return (
+    <Suspense fallback={null}>
+      <AccountSetupForm />
+    </Suspense>
+  );
+}
+
+/**
+ * The role to preselect, from the persona carried across the claim (LINA-189).
+ *
+ * The visitor pressed a CTA on the Owner or the Builder side of the landing
+ * page's pricing split, so we already know which of the two they are. Asking
+ * again — after they claimed a seat, confirmed an inbox and created an account
+ * — is asking someone to repeat themselves.
+ *
+ * A PRESELECTION, not a decision: the radio group is fully interactive and the
+ * choice they submit is whatever is selected when they press the button. The
+ * server validates the role it receives and, either way, the role is a label on
+ * their own party — access to any build is membership (ADR-0004), so this
+ * parameter cannot grant anything to anyone.
+ */
+function personaRole(raw: string | null): Role | null {
+  if (raw === 'owner') return 'owner';
+  if (raw === 'builder') return 'general_contractor';
+  return null;
 }
 
 function AccountSetupForm() {
   const router = useRouter();
   const { isLoaded, isSignedIn, getToken, signOut } = useAuth();
   const { user } = useUser();
+  const searchParams = useSearchParams();
 
   // Seed the display name from Clerk once the user is known — most people keep
   // it, and an empty box on a first-run screen reads as a chore.
@@ -89,7 +116,7 @@ function AccountSetupForm() {
   );
 
   const [displayName, setDisplayName] = useState('');
-  const [role, setRole] = useState<Role | null>(null);
+  const [role, setRole] = useState<Role | null>(personaRole(searchParams.get('persona')));
   const [language, setLanguage] = useState<Language>('en');
 
   const [fieldError, setFieldError] = useState<{ field: keyof ProfileInput; message: string } | null>(null);

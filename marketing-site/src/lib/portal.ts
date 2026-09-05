@@ -27,8 +27,18 @@ export function portalOrigin(): string {
  * stops them signing up with a DIFFERENT address than the one holding the seat,
  * which is the most likely way this loop breaks for a real user.
  */
-export function portalSignUpUrl(email: string): string {
+export function portalSignUpUrl(email: string, persona?: string | null): string {
   const url = new URL('/sign-up', portalOrigin());
   url.searchParams.set('email', email);
+  // The persona the claim came in as (LINA-189), so the portal's account-setup
+  // screen can preselect Owner or General contractor. Like `email` this is a
+  // PREFILL and nothing more: it selects a radio button on a form the person
+  // then submits themselves, and the role it sets is a label on their own party
+  // that grants access to nothing (see the endpoint's contract). Only the two
+  // known values are ever forwarded, so a hand-edited value cannot put an
+  // arbitrary string in front of the portal.
+  if (persona === 'owner' || persona === 'builder') {
+    url.searchParams.set('persona', persona);
+  }
   return url.toString();
 }

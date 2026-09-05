@@ -50,6 +50,7 @@ export async function GET(req: Request) {
       emailNorm: signups.emailNorm,
       locale: signups.locale,
       plan: signups.plan,
+      persona: signups.persona,
       status: signups.status
     })
     .from(signups)
@@ -98,13 +99,19 @@ export async function GET(req: Request) {
   // holds a seat would otherwise be reported as "seats exhausted" and send a
   // seated person back to the waitlist.
   if (await hasSeat(email)) {
-    return NextResponse.redirect(portalSignUpUrl(email));
+    return NextResponse.redirect(portalSignUpUrl(email, row.persona));
   }
 
   const granted = await grantFoundingSeat(email, `founding claim · plan=${row.plan}`);
   if (granted.ok) {
-    await capture('founding_seat_claimed', row.emailNorm, { locale, plan: row.plan });
-    return NextResponse.redirect(portalSignUpUrl(email));
+    await capture('founding_seat_claimed', row.emailNorm, {
+      locale,
+      plan: row.plan,
+      persona: row.persona
+    });
+    // The persona travels with them (LINA-189) so account setup can preselect
+    // Owner or General contractor rather than asking again.
+    return NextResponse.redirect(portalSignUpUrl(email, row.persona));
   }
 
   // Seats are gone (or the grant failed). Their signup is still confirmed and

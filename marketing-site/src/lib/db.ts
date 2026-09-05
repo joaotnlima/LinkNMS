@@ -33,6 +33,12 @@ export const signups = landing.table(
     email: text('email').notNull(), // as entered
     emailNorm: text('email_norm').notNull().unique(), // dedupe key
     role: text('role'), // stable enum key (see ROLE_KEYS in WaitlistForm), not a display label
+    // 'owner' | 'builder' (LINA-189) — the two personas the product is sold to,
+    // taken from WHICH CTA was pressed rather than from a question. Nullable:
+    // the header/hero/final CTAs sit above the Owner/Builder split and have no
+    // persona, and null is the honest value for them. Derived server-side from
+    // `plan` whenever a plan is present — see /api/waitlist.
+    persona: text('persona'),
     locale: text('locale').notNull().default('pt'),
     source: text('source').notNull().default('organic'), // utm_source / referring host / 'direct'
     referrer: text('referrer'), // raw document.referrer captured on submit
