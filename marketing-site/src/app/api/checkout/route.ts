@@ -1,13 +1,7 @@
 import { NextResponse } from 'next/server';
-import { sql } from 'drizzle-orm';
-import { getDb, isDbConfigured } from '@/lib/db';
 import { getStripe } from '@/lib/stripe';
-import {
-  FOUNDING_SEATS_TOTAL,
-  isPaidPlanKey,
-  isStripeConfigured,
-  priceIdForPlan
-} from '@/lib/pricing';
+import { foundingSeats } from '@/lib/seats';
+import { isPaidPlanKey, isStripeConfigured, priceIdForPlan } from '@/lib/pricing';
 import { isValidEmail } from '@/lib/spam';
 
 export const runtime = 'nodejs';
@@ -23,22 +17,6 @@ function baseUrl(req: Request): string {
   if (env) return env.replace(/\/$/, '');
   const url = new URL(req.url);
   return `${url.protocol}//${url.host}`;
-}
-
-async function foundingSeatsClaimed(): Promise<number> {
-  if (!isDbConfigured()) return 0;
-  try {
-    const db = getDb();
-    const rows = await db.execute<{ cnt: number }>(
-      sql`SELECT count(*)::int AS cnt FROM landing.signups WHERE plan = 'free_founding'`
-    );
-    return Math.min(rows.rows?.[0]?.cnt ?? 0, FOUNDING_SEATS_TOTAL);
-  } catch (err) {
-    // Fail safe: if the `plan` column (LINA-172) is absent, treat as "seats
-    // remain" so users get the waitlist flow rather than a 500.
-    console.error('[checkout] founding-seats count failed:', err);
-    return 0;
-  }
 }
 
 /**
@@ -77,17 +55,15 @@ export async function POST(req: Request) {
   // Founder's charge-mode decision (LINA-173): while founding free seats
   // remain, paid intent is collected through the waitlist — no Stripe session.
   // Once all 50 founding seats are claimed, paid plans go to hosted checkout.
-  const claimed = await foundingSeatsClaimed();
-  if (claimed < FOUNDING_SEATS_TOTAL) {
-    return NextResponse.json({
-      flow: 'waitlist',
-      plan,
-      seats: {
-        claimed,
-        total: FOUNDING_SEATS_TOTAL,
-        remaining: FOUNDING_SEATS_TOTAL - claimed
-      }
-    });
+  //
+  // Counted through `foundingSeats()` — the same definition the landing page
+  // prints and the same rows the database cap enforces (LINA-189), so the
+  // number a visitor is shown and the number that decides their flow can never
+  // disagree. It used to count `landing.signups` rows here and render a
+  // hardcoded 18 on the page, which were two different answers to one question.
+  const seats = await foundingSeats();
+  if (seats.remaining > 0) {
+    return NextResponse.json({ flow: 'waitlist', plan, seats });
   }
 
   if (!isStripeConfigured()) {

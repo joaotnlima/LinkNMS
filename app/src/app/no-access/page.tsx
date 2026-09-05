@@ -7,9 +7,12 @@
 // AUTHENTICATED and NOT ADMITTED, and the honest thing is to say so rather than
 // bounce them back to a sign-in page that tells them they are already signed in.
 //
-// Deliberately says nothing about who else is or is not seated, and offers no
-// self-service path: the first ten seats are granted by hand
-// (scripts/grant-seat.mjs), and this page is the waiting room for that.
+// Deliberately says nothing about who else is or is not seated. Since LINA-189
+// there IS a self-service path — claiming one of the fifty founding seats on the
+// landing page — so the most likely reason to be here is no longer "your seat
+// hasn't been granted yet" but "you signed up with a different address than the
+// one you claimed with", or "you never claimed". Both are things the person can
+// act on, so this page points at the claim rather than telling them to wait.
 import { redirect } from 'next/navigation';
 
 import { sessionState } from '@/server/session';
@@ -17,6 +20,10 @@ import { SignOutLink } from '@/components/SignOutLink';
 import '../sign-up/sign-up.css';
 
 export const dynamic = 'force-dynamic';
+
+// The marketing site, where founding seats are claimed. Overridable so preview
+// environments point at their own landing deployment rather than production.
+const LANDING_URL = `${(process.env.NEXT_PUBLIC_LANDING_URL || 'https://linknms.com').replace(/\/$/, '')}/#pricing`;
 
 export default async function NoAccessPage() {
   const state = await sessionState();
@@ -37,8 +44,13 @@ export default async function NoAccessPage() {
           have access to a shared record yet.
         </p>
         <p>
-          LinkNMS is opening to a small first group. If you joined the waitlist, you&rsquo;ll get an
-          email the day your seat opens — nothing else is needed from you.
+          LinkNMS is opening to a small first group of fifty founding owners. If you claimed a
+          founding seat, check that you claimed it with <strong>this</strong> address — a seat is
+          held for one inbox, and signing up with another lands you here.
+        </p>
+        <p>
+          Haven&rsquo;t claimed one yet? <a href={LANDING_URL}>Claim a founding seat</a> — if any
+          remain, you&rsquo;ll be back here in a minute with the door open.
         </p>
         <p>
           Signed in with the wrong address? <SignOutLink />

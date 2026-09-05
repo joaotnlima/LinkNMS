@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { CtaLink } from '@/components/CtaLink';
 import { FREE_FOUNDING_PLAN_KEY, type PaidPlanKey } from '@/lib/pricing';
+import { foundingSeats } from '@/lib/seats';
 import { CheckIcon } from './icons';
 import { PlanCta } from './PlanCta';
 import { pricingPanelId, pricingTabId } from './pricingTabs';
@@ -25,9 +26,12 @@ type Plan = {
   cta: string;
 };
 
-// The founding ribbon's seat counter — 18 of 50 claimed (36% of the bar).
-const SEATS_CLAIMED = 18;
-const SEATS_TOTAL = 50;
+// The founding ribbon's seat counter is read from the database at request time
+// (LINA-189) — see `foundingSeats()`. It used to be `const SEATS_CLAIMED = 18`,
+// a number chosen to fill 36% of the bar. A scarcity counter on a trust product
+// is the one number that must not be decorative: it is a public commitment
+// about how many seats are left, and it now counts the same `identity.seat`
+// rows that the database's hard cap counts.
 
 // Plan-key mapping (LINA-175). The translated `plansOwner` / `plansBuilder`
 // arrays carry display copy only; the stable key each card checks out with
@@ -96,6 +100,7 @@ function PlanCard({
 
 export async function SectionPricing() {
   const t = await getTranslations('lp.pricing');
+  const seats = await foundingSeats();
 
   const plansOwner = t.raw('plansOwner') as Plan[];
   const plansBuilder = t.raw('plansBuilder') as Plan[];
@@ -171,19 +176,22 @@ export async function SectionPricing() {
               </div>
               <div className="lp-ribbon__right">
                 <div className="lp-ribbon__count">
-                  <span className="n lp-display">{t('ribbonOwner.count')}</span>
+                  <span className="n lp-display">
+                    {t('ribbonOwner.count', { claimed: seats.claimed, total: seats.total })}
+                  </span>
                   <span className="x lp-micro">{t('ribbonOwner.countLabel')}</span>
                 </div>
                 <div
                   className="lp-ribbon__bar"
                   role="progressbar"
-                  aria-valuenow={SEATS_CLAIMED}
+                  aria-valuenow={seats.claimed}
                   aria-valuemin={0}
-                  aria-valuemax={SEATS_TOTAL}
+                  aria-valuemax={seats.total}
+                  aria-label={t('ribbonOwner.countLabel')}
                 >
                   <span
                     className="lp-ribbon__fill"
-                    style={{ width: `${(SEATS_CLAIMED / SEATS_TOTAL) * 100}%` }}
+                    style={{ width: `${(seats.claimed / seats.total) * 100}%` }}
                   />
                 </div>
                 <PlanCta
