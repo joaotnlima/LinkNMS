@@ -29,6 +29,42 @@ paths:
             'application/json':
               schema:
                 '$ref': '#/components/schemas/Error'
+  '/me/profile':
+    post:
+      operationId: completeProfile
+      summary: 'First-login account setup: display name, role choice, language. Once only.'
+      description: 'Self-only — the party is the session’s and cannot be named in the body (ADR-0004). The role is a CHOICE recorded on the party, not a grant: access to any build is membership, minted only by creating a project or accepting an invitation. Idempotent: a repeat submit is 409 and the client treats it as success.'
+      requestBody:
+        required: true
+        content:
+          'application/json':
+            schema:
+              '$ref': '#/components/schemas/CompleteProfileRequest'
+      responses:
+        '200':
+          description: Profile stored
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/CompletedProfile'
+        '400':
+          description: Invalid field; the body names the offending field
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '401':
+          description: No acting party in session
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '409':
+          description: Profile already set up
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
   '/projects':
     post:
       operationId: createProject
@@ -321,6 +357,65 @@ components:
             - owner
             - contractor
             - viewer
+        language:
+          type:
+            - string
+            - null
+          enum:
+            - en
+            - pt
+            - es
+            - null
+        setupComplete:
+          type: boolean
+    CompleteProfileRequest:
+      type: object
+      required:
+        - displayName
+        - role
+        - language
+      properties:
+        displayName:
+          type: string
+        role:
+          type: string
+          enum:
+            - owner
+            - general_contractor
+        language:
+          type: string
+          enum:
+            - en
+            - pt
+            - es
+    CompletedProfile:
+      type: object
+      required:
+        - profile
+      properties:
+        profile:
+          type: object
+          required:
+            - displayName
+            - role
+            - language
+            - setupComplete
+          properties:
+            displayName:
+              type: string
+            role:
+              type: string
+              enum:
+                - owner
+                - general_contractor
+            language:
+              type: string
+              enum:
+                - en
+                - pt
+                - es
+            setupComplete:
+              type: boolean
     Member:
       type: object
       required:

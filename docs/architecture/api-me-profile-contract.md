@@ -5,21 +5,44 @@ Contract-first spec for the account-setup endpoint consumed by the D0a-setup scr
 ships against (`apps/web/src/onboarding/api.ts`) exactly; adds the formal detail the
 server must honour.
 
-> **Implementation status:** implemented. Ships with [LINA-123](/LINA/issues/LINA-123)
-> (Neon RBAC schema) and [LINA-136](/LINA/issues/LINA-136) (Fastify `apps/api` scaffold +
-> Clerk JWT verify) + Clerk key provisioning ([LINA-129](/LINA/issues/LINA-129) §7).
-> Code: `apps/api/server.js` (route + error handler), `services/auth/profile.mjs`
-> (domain service), `services/auth/pg-store.mjs` + `services/auth/store.mjs`
-> (`completeProfile`, atomic), `services/auth/migrations/0003_authz_profile.sql`
-> (`language`, `setup_complete`). Tests: `apps/api/server.test.mjs`.
+> **Implementation status: LIVE in the portal ([LINA-189](/LINA/issues/LINA-189)).**
+>
+> This doc previously said "implemented" and pointed at `apps/api` + `services/auth`
+> + the `authz` schema. That code exists and its tests pass, but **it was never
+> deployed anywhere** — so from the user's side the endpoint did not exist, and
+> account setup 404'd for every person who claimed a founding seat. "Implemented"
+> meant "written", which is exactly the gap this note now closes.
+>
+> Code of record:
+> - `app/src/app/api/v1/me/profile/route.ts` — the route (2 lines; no domain logic)
+> - `services/identity/identity.mjs` `completeProfile` — validation + the
+>   product-role → party-role mapping
+> - `services/identity/pg-store.mjs` `completeProfile` — the atomic conditional UPDATE
+> - `services/identity/migrations/0011_identity.sql` — `language`, `setup_complete`
+>   on **`identity.party`**
+> - Tests: `services/identity/profile.test.mjs`
+>
+> The write lands on `identity.party` — the table the whole R0 domain is keyed on —
+> not on a separate `users` mirror. `display_name` IS the attribution name on every
+> decision, change order, and audit row, so setup must write that row itself; a
+> parallel profile that agrees with it only by convention is the integrity bug this
+> product exists to prevent. The two dormant RBAC mirrors are retired by
+> `0012_identity.sql`; see the "RBAC model" note below.
 
 ---
 
 ## Endpoint
 
 ```
-POST /api/me/profile
+POST /api/v1/me/profile
 ```
+
+> **Path change (LINA-189).** This was specified as the unversioned
+> `POST /api/me/profile` because it was designed for `apps/api`, a standalone
+> Fastify service on its own origin. That service was never deployed — the portal
+> is one Next app — so the browser posted same-origin and got a 404 on every
+> submit. The endpoint now lives in the portal, on the same `/api/v1` surface as
+> every other endpoint it serves.
 
 Persist the account-setup form (first login) and grant the chosen role in the Neon
 Postgres RBAC model. Called once per user on first login; a repeat call is `409`.
@@ -55,18 +78,45 @@ All three fields required.
 | `role` | `owner` \| `general_contractor` | required; one of the two (server-validated) |
 | `language` | `en` \| `pt` \| `es` | required; one of the three |
 
-## Server-side role → permissions mapping
+## Server-side role handling
 
-The client sends a **choice only** and never derives an entitlement. Role validation
-**and** the RBAC grant are enforced server-side.
+The client sends a **choice only** and never derives an entitlement. Role validation is
+server-side; any role outside the two values is a 400 naming the `role` field.
 
-- `owner` → RBAC role for the homeowner permission set.
-- `general_contractor` → RBAC role for the GC/counterparty permission set.
+| Wire value (the screen's vocabulary) | Stored `identity.party.role` |
+|---|---|
+| `owner` | `owner` |
+| `general_contractor` | `contractor` |
 
-The concrete permission set and the RBAC rows the grant writes into are owned by
-[LINA-123](/LINA/issues/LINA-123) (`users · orgs · memberships · roles · permissions`).
-This endpoint consumes that model; it does not re-implement or duplicate it. Any role
-outside the two values is a 400/422.
+`viewer` is a real party role but is deliberately **not** electable here: it is an
+administrative state, not something a person chooses on the way in.
+
+### The role grants nothing
+
+**This is the important part, and it is a change from the original spec.** The role on
+the party is a *description of what this person does* — a label beside their name. It
+confers no access to any build. Access is `identity.membership`, minted only by creating
+a project or accepting an invitation, and every capability check runs through the
+ADR-0004 authorizer against *that*. A hand-crafted POST claiming `owner` therefore buys
+the sender one thing: the word "owner" next to their own name, on a record they still
+cannot reach.
+
+### RBAC model — what happened to LINA-123
+
+The original spec had this endpoint write a grant into the LINA-123 RBAC model
+(`users · orgs · memberships · roles · permissions`). That model was built **twice** and
+wired **zero** times:
+
+- `authz.*` (`services/auth`, consumed by the undeployed `apps/api`), and
+- `identity.users/orgs/memberships/roles/permissions/…` (migrations 0006/0007),
+
+both carrying seeded catalogs and no user rows, while the running system authorized
+every request through `identity.membership` + `services/identity/authz.mjs`. Three
+parallel answers to "what may this person do" is not defence in depth, it is an
+integrity hazard — the one that eventually gets answered differently by two of them.
+LINA-189 keeps the model that is actually load-bearing and retires the other two
+(`0012_identity.sql`). Re-introducing an org/role/permission catalog is a real decision
+to make when orgs exist as a product concept; until then it is dead schema.
 
 ## Responses
 

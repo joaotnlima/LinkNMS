@@ -46,14 +46,36 @@ function useClaimedEmail(): string | undefined {
   return raw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? raw : undefined;
 }
 
+/**
+ * The persona the claim came in as — 'owner' or 'builder' (LINA-189).
+ *
+ * The landing page already knows which of the two the visitor is, because they
+ * pressed a CTA on one side of the Owner/Builder pricing split. Carrying it
+ * across the hand-off lets account setup preselect their role instead of asking
+ * them to restate, a minute later, something they already chose.
+ *
+ * Whitelisted to the two known values, so nothing arbitrary reaches the next
+ * screen. Like `email` it is a PREFILL: it selects a radio button on a form the
+ * person still submits themselves, and the role it selects is a label on their
+ * own party that grants access to no build (ADR-0004 — access is membership).
+ */
+function useClaimedPersona(): 'owner' | 'builder' | undefined {
+  const raw = useSearchParams().get('persona')?.trim().toLowerCase();
+  return raw === 'owner' || raw === 'builder' ? raw : undefined;
+}
+
 function ClerkSignUp() {
   const emailAddress = useClaimedEmail();
+  const persona = useClaimedPersona();
+  // Clerk owns the redirect after sign-up, so the persona has to ride in the
+  // destination URL — there is no other channel from here to the next screen.
+  const afterSignUp = persona ? `${AFTER_SIGN_UP}?persona=${persona}` : AFTER_SIGN_UP;
   return (
     <SignUp
       routing="hash"
       signInUrl="/sign-in"
-      forceRedirectUrl={AFTER_SIGN_UP}
-      fallbackRedirectUrl={AFTER_SIGN_UP}
+      forceRedirectUrl={afterSignUp}
+      fallbackRedirectUrl={afterSignUp}
       initialValues={emailAddress ? { emailAddress } : undefined}
       appearance={clerkAppearance}
     />

@@ -175,7 +175,11 @@ export function WaitlistForm({ source }: { source: string }) {
           turnstileToken: String(data.get('cf-turnstile-response') || ''),
           // Paid-plan intent, when the visitor arrived from a pricing CTA.
           // Only sent when set, so plain waitlist signups are untouched.
-          ...(planIntent ? { plan: planIntent.plan } : {}),
+          ...(planIntent?.plan ? { plan: planIntent.plan } : {}),
+          // Owner vs builder (LINA-189) — which side of the pricing split the
+          // CTA they pressed belongs to. A HINT: for a paid plan the server
+          // re-derives it from the plan key and ignores this.
+          ...(planIntent?.persona ? { persona: planIntent.persona } : {}),
           locale,
           source: effectiveSource,
           referrer
@@ -226,7 +230,10 @@ export function WaitlistForm({ source }: { source: string }) {
   return (
     <>
       <form className="lp-form" onSubmit={onSubmit} noValidate>
-        {planIntent && (
+        {/* Only a plan is worth showing back. A persona-only intent (the
+            builder ribbon) is context for the database, not a note that says
+            "you picked: ". */}
+        {planIntent?.plan && (
           <p className="lp-form__plan lp-micro" role="status">
             <span>{t('planNote', { plan: planIntent.label })}</span>{' '}
             <button

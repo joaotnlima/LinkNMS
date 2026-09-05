@@ -76,3 +76,76 @@ export function isStripeConfigured(): boolean {
 
 /** Free founding seats reserve the "free" tier until 50 claims (LINA-172). */
 export const FOUNDING_SEATS_TOTAL = 50;
+
+// ── Persona (LINA-189) ───────────────────────────────────────────────────────
+//
+// The two people this product is sold to, and the two it is built around: the
+// OWNER having the house built, and the BUILDER doing or managing the work.
+// The whole landing page is already organised around exactly this split — the
+// pricing section's Owner/Builder tabs, the two ribbons, the two plan families
+// — but until now the split was purely presentational: whichever side of it a
+// visitor came in through, the signup row looked identical.
+//
+// That matters because it is the one fact about a new signup we can know
+// WITHOUT asking. The role dropdown asks a six-way question that a visitor may
+// skip (and should be able to skip — an email address is enough to send a
+// confirmation link). Which CTA they pressed is not a question at all; it is
+// something they already told us by clicking.
+//
+// The persona then rides the whole way through: signup → confirmation → the
+// portal's sign-up → the account-setup screen, which preselects Owner or
+// General contractor instead of asking a person to state, for a second time,
+// something they picked on the pricing page a minute earlier.
+
+export const PERSONAS = ['owner', 'builder'] as const;
+export type Persona = (typeof PERSONAS)[number];
+
+export function isPersona(value: unknown): value is Persona {
+  return typeof value === 'string' && (PERSONAS as readonly string[]).includes(value);
+}
+
+/** Only a known persona survives; anything else is dropped to null. */
+export function normalizePersona(value: unknown): Persona | null {
+  return isPersona(value) ? value : null;
+}
+
+/**
+ * The persona a plan belongs to — the authoritative derivation.
+ *
+ * Every paid plan lives under exactly one of the two pricing tabs, so the plan
+ * key alone determines the persona and the server can derive it rather than
+ * trust it. That is the point: a client-supplied persona is a hint, but a
+ * client-supplied persona that CONTRADICTS the plan it arrived with is either a
+ * bug or a forgery, and in both cases the plan is the thing the visitor
+ * actually chose. See /api/waitlist, where the plan wins.
+ *
+ * `free_founding` returns null, not 'owner'. The founding CTA sits in the owner
+ * ribbon today, but the seat itself is not an owner plan — it is a seat, and a
+ * builder claiming one is a real case, not a mistake. Guessing 'owner' here
+ * would put the wrong role in front of every builder who takes a founding seat,
+ * which is exactly the friction this is meant to remove. For that CTA the
+ * persona comes from the ribbon that rendered it, declared explicitly.
+ */
+const PLAN_PERSONA: Record<PaidPlanKey, Persona> = {
+  personal: 'owner',
+  build_plus: 'owner',
+  real_estate_investor: 'owner',
+  independent_builder: 'builder',
+  growing_builder: 'builder',
+  construction_business: 'builder'
+};
+
+export function personaForPlan(plan: unknown): Persona | null {
+  return isPaidPlanKey(plan) ? PLAN_PERSONA[plan] : null;
+}
+
+/**
+ * The account-setup role this persona should preselect in the portal.
+ *
+ * The portal speaks `owner | general_contractor` (the two options on
+ * /onboarding/setup). This is the one place the landing site's vocabulary is
+ * translated into the portal's, so the two can be renamed independently.
+ */
+export function setupRoleForPersona(persona: Persona): 'owner' | 'general_contractor' {
+  return persona === 'owner' ? 'owner' : 'general_contractor';
+}

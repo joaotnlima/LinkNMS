@@ -4,7 +4,7 @@ import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useLocale } from 'next-intl';
 import { track } from '@/lib/analytics-client';
 import { setPlanIntent } from '@/lib/plan-intent';
-import { FREE_FOUNDING_PLAN_KEY, type PlanIntentKey } from '@/lib/pricing';
+import { FREE_FOUNDING_PLAN_KEY, type Persona, type PlanIntentKey } from '@/lib/pricing';
 
 // A plan call-to-action (LINA-175). Asks /api/checkout what should happen
 // for this plan and follows the answer:
@@ -31,12 +31,23 @@ import { FREE_FOUNDING_PLAN_KEY, type PlanIntentKey } from '@/lib/pricing';
 export function PlanCta({
   plan,
   label,
+  persona,
   className,
   children
 }: {
   plan: PlanIntentKey;
   /** Localized plan name, carried to the waitlist form for display. */
   label: string;
+  /**
+   * Which side of the Owner/Builder split this CTA sits on (LINA-189). Declared
+   * by the caller because only the render site knows which pricing panel it is
+   * in — deriving it from `plan` here would work for the six paid keys and be a
+   * guess for `free_founding`, which is precisely the case that needs it.
+   *
+   * For a paid plan the server re-derives the persona from the plan key and
+   * ignores whatever is sent, so this cannot be used to mislabel a signup.
+   */
+  persona?: Persona;
   className?: string;
   children: ReactNode;
 }) {
@@ -45,7 +56,7 @@ export function PlanCta({
   const busyRef = useRef(false);
 
   function toWaitlist() {
-    setPlanIntent({ plan, label });
+    setPlanIntent({ plan, label, ...(persona ? { persona } : {}) });
     const target = document.getElementById('request-access');
     if (target) {
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });

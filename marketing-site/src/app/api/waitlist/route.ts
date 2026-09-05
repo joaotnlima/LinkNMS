@@ -4,6 +4,7 @@ import { getDb, isDbConfigured, signups, PLAN_KEYS, type PlanKey } from '@/lib/d
 import { sendConfirmationEmail } from '@/lib/email';
 import { capture } from '@/lib/analytics';
 import { normalizeRole } from '@/lib/roles';
+import { normalizePersona, personaForPlan } from '@/lib/pricing';
 import {
   isValidEmail,
   normalizeEmail,
@@ -18,6 +19,7 @@ type Body = {
   email?: string;
   role?: string; // stable enum key (see @/lib/roles), never a localized label
   plan?: string; // tier key (see PLAN_KEYS in @/lib/db) — e.g. 'free_founding'
+  persona?: string; // 'owner' | 'builder' — a HINT; the plan wins (see below)
   company?: string; // honeypot — omitted by real clients, filled only by bots
   turnstileToken?: string;
   locale?: string;
@@ -65,10 +67,23 @@ export async function POST(req: Request) {
   const role = normalizeRole(body.role);
   // Tier the signup claimed — only values from PLAN_KEYS are persisted.
   const plan = PLAN_KEYS.includes(body.plan as PlanKey) ? (body.plan as PlanKey) : null;
+  // ── Persona: owner or builder (LINA-189) ───────────────────────────────────
+  // DERIVED before it is trusted. Every paid plan belongs to exactly one side of
+  // the pricing split, so when a plan is present the server computes the persona
+  // from it and the client's claim is ignored outright — a posted persona can
+  // therefore never contradict the plan stored beside it, which is the only way
+  // this column could become misleading.
+  //
+  // The client's value is used only where there is nothing to derive from: the
+  // free founding seat (a seat, not an owner plan) and the builder ribbon (no
+  // plan at all). Unknown values fall to null, because "we don't know" is a
+  // legitimate answer here and a guess is not — the header, hero and final CTAs
+  // sit above the Owner/Builder split and honestly have no persona.
+  const persona = personaForPlan(plan) ?? normalizePersona(body.persona);
   const emailNorm = normalizeEmail(email);
   const token = newToken();
 
-  await capture('waitlist_submitted', emailNorm, { locale, source, referrer, role });
+  await capture('waitlist_submitted', emailNorm, { locale, source, referrer, role, persona });
 
   // Dev / preview without a database: succeed so the funnel is testable, and log
   // the confirmation link the email would have carried.
@@ -95,6 +110,7 @@ export async function POST(req: Request) {
     email,
     emailNorm,
     role,
+    persona,
     plan,
     locale,
     source,
