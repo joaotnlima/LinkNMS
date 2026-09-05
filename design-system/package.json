@@ -6,6 +6,7 @@
   "description": "LinkNMS design tokens and logo asset pipeline. The source of truth for colour/type/spacing and the brand-kit icons.",
   "scripts": {
     "tokens": "node build-tokens.mjs",
+    "contrast": "node contrast-audit.mjs",
     "icons": "node build-icons.mjs",
     "build": "npm run tokens && npm run icons"
   },

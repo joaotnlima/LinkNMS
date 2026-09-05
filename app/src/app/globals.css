@@ -1,44 +1,74 @@
-/* LinkNMS R0 — design tokens mirrored from LINA-27 hi-fi mockups + design-system/tokens.json.
-   Colour is NEVER the only signal: every RAG state also carries a label + icon (FR9). */
+/* LinkNMS R0 portal styles.
+   Colour is NEVER the only signal: every RAG state also carries a label + icon (FR9).
+
+   Both colour schemes come from the token pipeline. `tokens.css` is GENERATED
+   by design-system/build-tokens.mjs from design-system/tokens.json — do not
+   edit it, and do not re-declare a token below. Until LINA-92 this file
+   hand-mirrored the palette, which is how it drifted a full re-base behind and
+   then briefly carried a re-based light scheme beside a retired dark one.
+   `npm run tokens` now emits both schemes here and `npm run contrast` gates
+   every pair in both, so that class of drift cannot recur silently.
+
+   Two families that used to be one (LINA-80's call, applied here by LINA-87):
+
+     --owner / --builder    PARTY — who is speaking. Tags, avatars, attribution.
+     --plan-*               STATE of a commitment — what happened to it. Bars,
+                            timelines, budget. Never a party.
+
+   They carry equal values today, which is exactly why they must stay separate
+   names: a change order raised by the BUILDER against an OWNER-set baseline has
+   a party on one axis and a commitment state on the other, and collapsing them
+   makes that row uncolourable.
+
+   Usage rule for both families: the base tone is a FILL, `-fg` is the TYPE (and
+   the fill to use when white type sits on it), `-line` is decorative only. The
+   `-on-dark` rungs are a LANDING concern — in the portal the dark scheme binds
+   them to the plain `plan-*` names, so never branch on the scheme here. */
+@import "./tokens.css";
+
+/* App-local aliases and the values the token source does not model. Everything
+   here either renames a token for this file's shorthand or is a shadow. No
+   colour literals, and nothing that redefines a token. */
 :root {
-  --owner: #2a78d6;
-  --builder: #eb6834;
-  --fg: #0b0b0b;
-  --paper: #fcfcfb;
-  --sunken: #f4f3f0;
-  --raised: #ffffff;
-  --outline: #dcdbd7;
-  --outline-strong: #9b9a95;
-  --muted: #5b5b58;
-  --owner-muted: #e2edfb;
-  --owner-ink: #1a5296;
-  --builder-muted: #fce3d8;
-  --builder-ink: #a8451c;
-  --success: #2e7d54;
-  --warning: #b7791f;
-  --danger: #c0392b;
-  --ok-fg: #2e7d54; --ok-bg: #e8f3ec; --ok-bd: #b7d8c4;
-  --warn-fg: #8a5a12; --warn-bg: #fbf3e2; --warn-bd: #e6cfa0;
-  --bad-fg: #a5271b; --bad-bg: #f7e7e5; --bad-bd: #e2b4ae;
-  --shadow: 0 1px 2px rgba(11,11,11,.06), 0 4px 12px rgba(11,11,11,.08);
-  --shadow-lg: 0 8px 24px rgba(11,11,11,.14);
-  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s6:24px;--s8:32px;--s12:48px;
-  --r-ctrl:6px;--r-overlay:10px;
-  --font: system-ui,-apple-system,"Segoe UI",sans-serif;
+  /* Surfaces, under this file's shorthand names. --paper, --outline,
+     --outline-strong, --line, --line-strong, --muted, the --owner/--builder
+     party ramps, the --plan-* state ramps and the RAG bases all arrive from
+     tokens.css under their own names and are NOT repeated here. */
+  --fg: var(--ink);
+  --sunken: var(--surface-sunken);
+  --raised: var(--surface-raised);
+
+  /* RAG chip triplets — fg / background / border.
+     `ok` borrows the plan-closed tint because the token source has no
+     state-success ramp: the .pen never specified one. Inventing a green here
+     instead of in tokens.json is precisely how the last round of drift started,
+     so this stays an alias and the gap is tracked, not patched in passing. */
+  --ok-fg: var(--success-fg); --ok-bg: var(--plan-closed-muted); --ok-bd: var(--plan-closed-line);
+  --warn-fg: var(--state-warning-fg); --warn-bg: var(--state-warning-muted); --warn-bd: var(--state-warning-line);
+  --bad-fg: var(--state-danger-fg); --bad-bg: var(--state-danger-muted); --bad-bd: var(--state-danger-line);
+
+  --shadow: 0 1px 2px rgba(22,24,29,.06), 0 4px 12px rgba(22,24,29,.08);
+  --shadow-lg: 0 8px 24px rgba(22,24,29,.14);
+  --s1: var(--space-1); --s2: var(--space-2); --s3: var(--space-3); --s4: var(--space-4);
+  --s6: var(--space-6); --s8: var(--space-8); --s12: var(--space-12);
+  --r-ctrl: var(--radius-control); --r-overlay: var(--radius-overlay);
+  /* --font-inter is the self-hosted Inter face, loaded once in layout.tsx via
+     next/font and exposed as a CSS variable on <html>. --sans (from tokens.css)
+     already names Inter, but only the *installed* face — without the webfont it
+     silently falls back to system-ui, which is how the onboarding surfaces
+     rendered before this migration. Leading with the loaded face makes Inter
+     actually paint; the token stack stays the fallback. */
+  --font: var(--font-inter), var(--sans);
 }
+
+/* Shadows only. Every COLOUR in the dark scheme now arrives from tokens.css
+   above. Shadow is not a palette entry: on a dark field it stops being a tint
+   of the ink and becomes near-opaque black, so there is nothing in the ramp to
+   derive it from. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --owner:#6aa6ef; --builder:#f38b53;
-    --fg:#f3f2ec; --paper:#17170f; --sunken:#100f0a; --raised:#211f19;
-    --outline:#34322b; --outline-strong:#57554c; --muted:#a7a59c;
-    --owner-muted:#1c2a3a; --owner-ink:#a9cbf5;
-    --builder-muted:#34241b; --builder-ink:#f3b58f;
-    --success:#4bb47e; --warning:#dca63a; --danger:#e46b5c;
-    --ok-fg:#63c491; --ok-bg:#16281f; --ok-bd:#2c5f43;
-    --warn-fg:#e2b455; --warn-bg:#2c2413; --warn-bd:#5c4a1e;
-    --bad-fg:#ef8375; --bad-bg:#2e1a17; --bad-bd:#5f3029;
-    --shadow:0 1px 2px rgba(0,0,0,.5), 0 6px 18px rgba(0,0,0,.55);
-    --shadow-lg:0 10px 30px rgba(0,0,0,.6);
+    --shadow: 0 1px 2px rgba(0,0,0,.5), 0 6px 18px rgba(0,0,0,.55);
+    --shadow-lg: 0 10px 30px rgba(0,0,0,.6);
   }
 }
 
@@ -110,9 +140,12 @@ h1.scr { font-size: 22px; font-weight: 650; letter-spacing: -.3px; }
 /* ---- party tags ---- */
 .tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
 .tag .pd { width: 8px; height: 8px; border-radius: 50%; }
-.tag.owner { color: var(--owner-ink); background: var(--owner-muted); }
+/* PARTY surfaces — these stay on --owner/--builder by design. The dot is the
+   identity tone; the label must be the -fg rung, because the base tones are
+   3.44:1 and 4.20:1 on their own tints and cannot carry type. */
+.tag.owner { color: var(--owner-fg); background: var(--owner-muted); }
 .tag.owner .pd { background: var(--owner); }
-.tag.counterparty { color: var(--builder-ink); background: var(--builder-muted); }
+.tag.counterparty { color: var(--builder-fg); background: var(--builder-muted); }
 .tag.counterparty .pd { background: var(--builder); }
 
 /* ---- amounts ---- */
@@ -121,9 +154,14 @@ h1.scr { font-size: 22px; font-weight: 650; letter-spacing: -.3px; }
 .delta.down { color: var(--success); font-weight: 700; }
 .delta.flat { color: var(--muted); font-weight: 700; }
 
-/* ---- budget bar ---- */
-.budgetbar { height: 10px; border-radius: 999px; background: var(--sunken); overflow: hidden; border: 1px solid var(--outline); }
-.budgetbar > span { display: block; height: 100%; background: var(--owner); }
+/* ---- budget bar ----
+   STATE surface, not a party one: the fill is the agreed baseline being spent
+   down, whoever raised the spend. Hence --plan-baseline, not --owner.
+   The track border is --plan-track-line rather than --outline: --outline is
+   1.33:1 on paper, and if the track's extent is not visible then neither is
+   the proportion the bar is trying to communicate. */
+.budgetbar { height: 10px; border-radius: 999px; background: var(--plan-baseline-muted); overflow: hidden; border: 1px solid var(--plan-track-line); }
+.budgetbar > span { display: block; height: 100%; background: var(--plan-baseline); }
 .budgetbar.over > span { background: var(--warning); }
 
 /* ---- list rows ---- */

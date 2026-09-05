@@ -30,28 +30,18 @@
 // email local-part: greeting someone "Welcome, joao.ferreirafilhos" is worse
 // than greeting nobody.
 import Link from 'next/link';
-import { Inter } from 'next/font/google';
 
 import './empty-portal.css';
 
-// The token spec names Inter, and `app` never loaded it — the setup screen
-// (LINA-132) asks for it in a font stack and silently falls back to system-ui.
-// Loaded as a CSS variable and scoped to this subtree rather than to <body>,
-// for the same reason the colours are: the record surfaces run globals.css and
-// are not in this ticket's remit to restyle. `onboarding-setup.css` can adopt
-// `--onb-font-inter` the same way whenever someone touches it next.
-const inter = Inter({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--onb-font-inter',
-});
-
+// Inter now loads globally from the portal layout (LINA-156), and this screen
+// draws from the migrated globals.css token set rather than a scoped palette,
+// so it no longer scopes its own font — see empty-portal.css.
 const NEW_BUILD_HREF = '/projects/new';
 const INVITE_HREF = '/invitations/accept';
 
 export function EmptyPortal({ name }: { name?: string }) {
   return (
-    <main className={`onb ${inter.variable}`}>
+    <main className="onb">
       <section className="onb-state">
         <span className="onb-disc" aria-hidden="true">
           <BlueprintIcon />

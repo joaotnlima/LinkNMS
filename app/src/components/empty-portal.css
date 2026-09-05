@@ -1,32 +1,20 @@
-/* D1-new — first-time empty portal (LINA-133).
+/* D1-new — first-time empty portal (LINA-133; palette migrated by LINA-156).
  *
- * Tokens are scoped under `.onb`, not applied to `:root`. The palette this
- * screen is specified in (Owner Blue #3E5C8A, Builder Orange #B4633B, Paper
- * #FBFAF7, Ink #16181D, Inter) is the pen's; globals.css `:root` still carries
- * the older LINA-27 set (#2A78D6 / #EB6834). Re-tokening `:root` from an
- * onboarding ticket would repaint the four pillars and every RAG state, so the
- * two systems are kept side by side until that migration is sequenced. Delete
- * this block and switch to the globals once `:root` moves.
+ * This screen was built (LINA-133) with the pen palette scoped locally under
+ * `.onb`, beside globals.css's then-stale LINA-27 `:root`. LINA-156 / ADR-0009
+ * migrated `:root` onto the same pen palette via the generated token pipeline,
+ * so the local `--onb-*` alias block is gone and every surface below now reads
+ * the shared globals.css tokens directly. Ink #16181D is `--ink`, Owner Blue
+ * `--owner`, Builder Orange `--builder` (with `--builder-fg` for type on tints),
+ * Paper `--paper`, and Inter loads globally from the portal layout via `--font`.
  *
- * Same scoping convention as onboarding/setup/onboarding-setup.css (`.ob`).
+ * Same convention as onboarding/setup/onboarding-setup.css (`.ob`), migrated in
+ * the same pass.
  */
 .onb {
-  --onb-owner: #3e5c8a;
-  --onb-builder: #b4633b;
-  --onb-builder-ink: #8a4423;
-  --onb-paper: #fbfaf7;
-  --onb-ink: #16181d;
-  --onb-muted: #5c5f68;
-  --onb-line: #e4e1d9;
-  --onb-line-strong: #c9c5ba;
-  --onb-owner-muted: #e8edf5;
-  /* `--onb-font-inter` is set by next/font in EmptyPortal.tsx; the stack still
-     degrades cleanly if the self-hosted face has not arrived. */
-  --onb-font: var(--onb-font-inter), Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
-
-  font-family: var(--onb-font);
-  color: var(--onb-ink);
-  background: var(--onb-paper);
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--paper);
   min-height: 100vh;
 
   display: flex;
@@ -51,8 +39,8 @@
   width: 56px;
   height: 56px;
   border-radius: 12px;
-  background: var(--onb-owner-muted);
-  color: var(--onb-owner);
+  background: var(--owner-muted);
+  color: var(--owner);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -75,7 +63,7 @@
   line-height: 1.21;
   font-weight: 600;
   letter-spacing: -0.015em;
-  color: var(--onb-ink);
+  color: var(--ink);
 }
 
 .onb-lede {
@@ -83,7 +71,7 @@
   max-width: 460px;
   font-size: 14px;
   line-height: 1.57;
-  color: var(--onb-muted);
+  color: var(--muted);
 }
 
 /* ---- calls to action (pen: CTA) ---- */
@@ -121,28 +109,28 @@
 }
 
 .onb-btn--primary {
-  background: var(--onb-owner);
-  border-color: var(--onb-owner);
+  background: var(--owner);
+  border-color: var(--owner);
   color: #fff;
 }
 
 .onb-btn--primary:hover {
-  background: color-mix(in srgb, var(--onb-owner) 88%, #000);
+  background: color-mix(in srgb, var(--owner) 88%, #000);
 }
 
 .onb-btn--secondary {
   background: #fff;
-  border-color: var(--onb-line-strong);
-  color: var(--onb-ink);
+  border-color: var(--line-strong);
+  color: var(--ink);
 }
 
 .onb-btn--secondary:hover {
-  background: var(--onb-paper);
-  border-color: var(--onb-owner);
+  background: var(--paper);
+  border-color: var(--owner);
 }
 
 .onb-btn:focus-visible {
-  outline: 2px solid var(--onb-owner);
+  outline: 2px solid var(--owner);
   outline-offset: 2px;
 }
 
@@ -152,7 +140,7 @@
   max-width: 560px;
   text-align: left;
   background: #fff;
-  border: 1px solid var(--onb-line);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 20px 22px;
 }
@@ -163,7 +151,7 @@
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  color: var(--onb-muted);
+  color: var(--muted);
 }
 
 .onb-steps ol {
@@ -189,8 +177,8 @@
   width: 24px;
   height: 24px;
   border-radius: 999px;
-  background: var(--onb-owner-muted);
-  color: var(--onb-owner);
+  background: var(--owner-muted);
+  color: var(--owner);
   font-size: 12px;
   font-weight: 700;
   display: flex;
@@ -202,7 +190,7 @@
   display: block;
   font-size: 14px;
   font-weight: 600;
-  color: var(--onb-ink);
+  color: var(--ink);
 }
 
 .onb-step-blurb {
@@ -210,19 +198,19 @@
   margin-top: 2px;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--onb-muted);
+  color: var(--muted);
 }
 
 /* The third step is the counterpart's, not yours — flagged in Builder Orange so
  * the handover is visible before it happens rather than a surprise. The numeral
- * uses the darkened `--onb-builder-ink`, not the brand orange: #B4633B on its
- * own 12% tint measures 3.75:1, which fails AA for 12px text. The tint carries
- * the brand colour; the glyph on top of it has to stay legible. And the colour
- * is never the only signal — this is an <ol>, so the step order survives with
- * no colour at all (FR9). */
+ * uses the darkened `--builder-fg` (#8a4522), not the brand orange: #B4633B on
+ * its own 12% tint measures 3.75:1, which fails AA for 12px text. The tint
+ * carries the brand colour; the glyph on top of it has to stay legible. And the
+ * colour is never the only signal — this is an <ol>, so the step order survives
+ * with no colour at all (FR9). */
 .onb-step--builder::before {
-  background: color-mix(in srgb, var(--onb-builder) 12%, #fff);
-  color: var(--onb-builder-ink);
+  background: color-mix(in srgb, var(--builder) 12%, #fff);
+  color: var(--builder-fg);
 }
 
 /* ---- footnote: the returning-user / invited-party escape hatch ---- */
@@ -231,11 +219,11 @@
   max-width: 560px;
   font-size: 12.5px;
   line-height: 1.5;
-  color: var(--onb-muted);
+  color: var(--muted);
 }
 
 .onb-note a {
-  color: var(--onb-owner);
+  color: var(--owner);
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 2px;
