@@ -272,9 +272,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22, not 20 like the jobs above: `node --test` only learned to expand
+      # glob patterns itself in Node 21. On 20 the quoted `src/**/*.test.ts` is
+      # passed through verbatim and the runner reports "could not find" — a green
+      # local run on 22 and a red CI, for a reason that has nothing to do with
+      # the code. 22 is also what Vercel builds this site with.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # `npm ci`, not `npm install` — same reasoning as the app job above.
       - name: Install dependencies
