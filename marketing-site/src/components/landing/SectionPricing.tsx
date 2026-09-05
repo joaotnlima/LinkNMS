@@ -3,6 +3,7 @@ import { CtaLink } from '@/components/CtaLink';
 import type { PaidPlanKey } from '@/lib/pricing';
 import { CheckIcon } from './icons';
 import { PlanCta } from './PlanCta';
+import { pricingPanelId, pricingTabId } from './pricingTabs';
 import { SectionPricingToggle } from './SectionPricingToggle';
 
 // 06 · Pricing — the pen's S7 Pricing frames (owner + builder).
@@ -146,94 +147,120 @@ export async function SectionPricing() {
             builder: { title: t('toggle.builderTitle'), sub: t('toggle.builderSub') }
           }}
         >
-          {/* Ribbon — differs per view. */}
-          <div className="lp-pricing__ribbon lp-pricing__ribbon--owner" data-view="owner">
-            <div className="lp-ribbon__left">
-              <div className="lp-ribbon__badges lp-micro">
-                <span className="lp-ribbon__badge lp-ribbon__badge--fill">
-                  {t('ribbonOwner.badge1')}
-                </span>
-                <span className="lp-ribbon__badge">{t('ribbonOwner.badge2')}</span>
+          {/* Owner panel — ribbon + plans. The tabpanel wrapper is what the
+              toggle's Owner tab points at with aria-controls; CSS hides the
+              inactive panel wholesale, so its contents leave the a11y tree. */}
+          <div
+            className="lp-pricing__panel"
+            data-view="owner"
+            id={pricingPanelId('owner')}
+            role="tabpanel"
+            aria-labelledby={pricingTabId('owner')}
+          >
+            <div className="lp-pricing__ribbon lp-pricing__ribbon--owner" data-view="owner">
+              <div className="lp-ribbon__left">
+                <div className="lp-ribbon__badges lp-micro">
+                  <span className="lp-ribbon__badge lp-ribbon__badge--fill">
+                    {t('ribbonOwner.badge1')}
+                  </span>
+                  <span className="lp-ribbon__badge">{t('ribbonOwner.badge2')}</span>
+                </div>
+                <p className="lp-ribbon__h lp-display">{t('ribbonOwner.h')}</p>
+                <p className="lp-ribbon__s">{t('ribbonOwner.s')}</p>
               </div>
-              <p className="lp-ribbon__h lp-display">{t('ribbonOwner.h')}</p>
-              <p className="lp-ribbon__s">{t('ribbonOwner.s')}</p>
+              <div className="lp-ribbon__right">
+                <div className="lp-ribbon__count">
+                  <span className="n lp-display">{t('ribbonOwner.count')}</span>
+                  <span className="x lp-micro">{t('ribbonOwner.countLabel')}</span>
+                </div>
+                <div
+                  className="lp-ribbon__bar"
+                  role="progressbar"
+                  aria-valuenow={SEATS_CLAIMED}
+                  aria-valuemin={0}
+                  aria-valuemax={SEATS_TOTAL}
+                >
+                  <span
+                    className="lp-ribbon__fill"
+                    style={{ width: `${(SEATS_CLAIMED / SEATS_TOTAL) * 100}%` }}
+                  />
+                </div>
+                <PlanCta
+                  plan={FREE_FOUNDING_PLAN_KEY}
+                  label={t('ribbonOwner.planLabel')}
+                  className="lp-btn lp-ribbon__cta"
+                >
+                  {t('ribbonOwner.cta')}
+                </PlanCta>
+              </div>
             </div>
-            <div className="lp-ribbon__right">
-              <div className="lp-ribbon__count">
-                <span className="n lp-display">{t('ribbonOwner.count')}</span>
-                <span className="x lp-micro">{t('ribbonOwner.countLabel')}</span>
+
+            <div className="lp-pricing__plans" data-view="owner">
+              <p className="lp-pricing__plans-label lp-micro">{t('plansLabelOwner')}</p>
+              <div className="lp-pricing__cards">
+                {plansOwner.map((plan, i) => (
+                  <PlanCard
+                    key={plan.name}
+                    plan={plan}
+                    planKey={OWNER_PLAN_KEYS[i]}
+                    perMonth={t('perMonth')}
+                    popular={i === 1}
+                    popularLabel={t('popular')}
+                  />
+                ))}
               </div>
-              <div
-                className="lp-ribbon__bar"
-                role="progressbar"
-                aria-valuenow={SEATS_CLAIMED}
-                aria-valuemin={0}
-                aria-valuemax={SEATS_TOTAL}
-              >
-                <span
-                  className="lp-ribbon__fill"
-                  style={{ width: `${(SEATS_CLAIMED / SEATS_TOTAL) * 100}%` }}
-                />
-              </div>
-              <CtaLink location="pricing" href="#request-access" className="lp-btn lp-ribbon__cta">
-                {t('ribbonOwner.cta')}
-              </CtaLink>
             </div>
           </div>
 
-          <div className="lp-pricing__ribbon lp-pricing__ribbon--builder" data-view="builder">
-            <div className="lp-ribbon__left">
-              <div className="lp-ribbon__badges lp-micro">
-                <span className="lp-ribbon__badge lp-ribbon__badge--fill">
-                  {t('ribbonBuilder.badge1')}
-                </span>
-                <span className="lp-ribbon__badge">{t('ribbonBuilder.badge2')}</span>
+          {/* Builder panel — same shape, builder ribbon + builder plans. */}
+          <div
+            className="lp-pricing__panel"
+            data-view="builder"
+            id={pricingPanelId('builder')}
+            role="tabpanel"
+            aria-labelledby={pricingTabId('builder')}
+          >
+            <div className="lp-pricing__ribbon lp-pricing__ribbon--builder" data-view="builder">
+              <div className="lp-ribbon__left">
+                <div className="lp-ribbon__badges lp-micro">
+                  <span className="lp-ribbon__badge lp-ribbon__badge--fill">
+                    {t('ribbonBuilder.badge1')}
+                  </span>
+                  <span className="lp-ribbon__badge">{t('ribbonBuilder.badge2')}</span>
+                </div>
+                <p className="lp-ribbon__h lp-display">{t('ribbonBuilder.h')}</p>
+                <p className="lp-ribbon__s">{t('ribbonBuilder.s')}</p>
+                <div className="lp-ribbon__chips lp-micro">
+                  <span className="lp-ribbon__chip">{t('ribbonBuilder.chip1')}</span>
+                  <span className="lp-ribbon__chip">{t('ribbonBuilder.chip2')}</span>
+                </div>
               </div>
-              <p className="lp-ribbon__h lp-display">{t('ribbonBuilder.h')}</p>
-              <p className="lp-ribbon__s">{t('ribbonBuilder.s')}</p>
-              <div className="lp-ribbon__chips lp-micro">
-                <span className="lp-ribbon__chip">{t('ribbonBuilder.chip1')}</span>
-                <span className="lp-ribbon__chip">{t('ribbonBuilder.chip2')}</span>
+              <div className="lp-ribbon__right">
+                <CtaLink
+                  location="pricing"
+                  href="#request-access"
+                  className="lp-btn lp-ribbon__cta"
+                >
+                  {t('ribbonBuilder.cta')}
+                </CtaLink>
+                <p className="lp-ribbon__note lp-micro">{t('ribbonBuilder.note')}</p>
               </div>
             </div>
-            <div className="lp-ribbon__right">
-              <CtaLink location="pricing" href="#request-access" className="lp-btn lp-ribbon__cta">
-                {t('ribbonBuilder.cta')}
-              </CtaLink>
-              <p className="lp-ribbon__note lp-micro">{t('ribbonBuilder.note')}</p>
-            </div>
-          </div>
 
-          {/* Plans — three cards per view. */}
-          <div className="lp-pricing__plans" data-view="owner">
-            <p className="lp-pricing__plans-label lp-micro">{t('plansLabelOwner')}</p>
-            <div className="lp-pricing__cards">
-              {plansOwner.map((plan, i) => (
-                <PlanCard
-                  key={plan.name}
-                  plan={plan}
-                  planKey={OWNER_PLAN_KEYS[i]}
-                  perMonth={t('perMonth')}
-                  popular={i === 1}
-                  popularLabel={t('popular')}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="lp-pricing__plans" data-view="builder">
-            <p className="lp-pricing__plans-label lp-micro">{t('plansLabelBuilder')}</p>
-            <div className="lp-pricing__cards">
-              {plansBuilder.map((plan, i) => (
-                <PlanCard
-                  key={plan.name}
-                  plan={plan}
-                  planKey={BUILDER_PLAN_KEYS[i]}
-                  perMonth={t('perMonth')}
-                  popular={i === 1}
-                  popularLabel={t('popular')}
-                />
-              ))}
+            <div className="lp-pricing__plans" data-view="builder">
+              <p className="lp-pricing__plans-label lp-micro">{t('plansLabelBuilder')}</p>
+              <div className="lp-pricing__cards">
+                {plansBuilder.map((plan, i) => (
+                  <PlanCard
+                    key={plan.name}
+                    plan={plan}
+                    planKey={BUILDER_PLAN_KEYS[i]}
+                    perMonth={t('perMonth')}
+                    popular={i === 1}
+                    popularLabel={t('popular')}
+                  />
+                ))}
+              </div>
             </div>
           </div>
 
