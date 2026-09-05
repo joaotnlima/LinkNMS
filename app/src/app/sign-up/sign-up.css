@@ -1,22 +1,17 @@
-/* D0a — sign-up / account-creation screen (LINA-131). Front door of the
- * onboarding flow; it shares the scoped onboarding palette with D0a-setup
- * (onboarding-setup.css) so the sequence reads as one system. Tokens are the
- * ones the design brief fixes: Owner Blue, Builder Orange, Paper, Ink, Inter.
- * Scoped under .ob-auth so the onboarding palette never leaks into the record
- * surfaces, which run the globals.css system. */
+/* D0a — sign-up / account-creation screen (LINA-131; palette migrated by
+ * LINA-156). Front door of the onboarding flow; it read the same scoped pen
+ * palette as D0a-setup while globals.css `:root` was still stale. LINA-156 /
+ * ADR-0009 migrated `:root` onto that pen palette via the generated token
+ * pipeline, so the local `--ob-*` alias block is gone and this surface reads the
+ * shared globals.css tokens directly: Owner Blue `--owner`, Paper `--paper`, Ink
+ * `--ink`, and Inter loads globally from the portal layout via `--font`.
+ * (The issue named only the setup and empty-portal blocks; this third onboarding
+ * surface carried the identical drift, so it is migrated in the same pass to
+ * leave one palette across the whole flow — see LINA-156 notes.) */
 .ob-auth {
-  --ob-owner: #3e5c8a;
-  --ob-builder: #b4633b;
-  --ob-paper: #fbfaf7;
-  --ob-ink: #16181d;
-  --ob-muted: #5c5f68;
-  --ob-line: #e4e1d9;
-  --ob-line-strong: #c9c5ba;
-  --ob-font: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
-
-  font-family: var(--ob-font);
-  color: var(--ob-ink);
-  background: var(--ob-paper);
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--paper);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -39,14 +34,14 @@
   font-weight: 700;
   letter-spacing: 0.6px;
   text-transform: uppercase;
-  color: var(--ob-owner);
+  color: var(--owner);
 }
 
 .ob-auth-sub {
   margin: 0;
   font-size: 14px;
   line-height: 1.5;
-  color: var(--ob-muted);
+  color: var(--muted);
 }
 
 /* The Clerk <SignUp/> card carries the actual credential form (D0a) and its own
@@ -66,7 +61,7 @@
   width: 100%;
   max-width: 400px;
   background: #fff;
-  border: 1px solid var(--ob-line);
+  border: 1px solid var(--line);
   border-radius: 14px;
   box-shadow: 0 1px 2px rgba(22, 24, 29, 0.05), 0 12px 32px rgba(22, 24, 29, 0.08);
   padding: 24px 22px;
@@ -85,11 +80,11 @@
   margin: 0;
   font-size: 14px;
   line-height: 1.5;
-  color: var(--ob-muted);
+  color: var(--muted);
 }
 
 .ob-auth-preview a {
-  color: var(--ob-owner);
+  color: var(--owner);
   font-weight: 600;
 }
 
@@ -102,14 +97,14 @@
   border: 0;
   padding: 0;
   font: inherit;
-  color: var(--ob-owner);
+  color: var(--owner);
   font-weight: 600;
   cursor: pointer;
   text-decoration: underline;
 }
 
 .ob-auth-preview .linkish:focus-visible {
-  outline: 2px solid var(--ob-owner);
+  outline: 2px solid var(--owner);
   outline-offset: 2px;
   border-radius: 3px;
 }

@@ -83,3 +83,56 @@
   --radius-overlay: 10px;
   --radius-sharp: 0px;
 }
+
+/* The dark scheme re-binds the same names, so consumers write var(--owner)
+   once and never branch on the colour scheme. Derived from the re-based
+   primitives by LINA-106; every pair is gated by `npm run contrast`. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #1a1915;
+    --surface-sunken: #131210;
+    --surface-raised: #242320;
+    --ink: #f4f3f0;
+    --outline: #3a3935;
+    --outline-strong: #6f6d6a;
+    --muted: #a5a39e;
+    --line: #2c2b27;
+    --line-strong: #464441;
+    --ink-60: #f4f3f099;
+    --ink-45: #f4f3f073;
+    --ink-35: #f4f3f059;
+    --ink-25: #f4f3f040;
+    --ink-15: #f4f3f026;
+    --owner: #4e6891;
+    --owner-muted: #1e2a3c;
+    --owner-fg: #a3bce5;
+    --builder: #b05e30;
+    --builder-muted: #2e2319;
+    --builder-fg: #f4b08a;
+    --success: #2e7d54;
+    --success-fg: #6dc99a;
+    --warning: #9d631a;
+    --danger: #b84838;
+    --state-warning: #9d631a;
+    --state-warning-fg: #f4ba70;
+    --state-warning-muted: #2e2519;
+    --state-warning-line: #b37d35;
+    --state-danger: #b84838;
+    --state-danger-muted: #2e1c19;
+    --state-danger-fg: #f49a8a;
+    --state-danger-line: #b85848;
+    --plan-baseline: #6e85a7;
+    --plan-baseline-muted: #23272b;
+    --plan-baseline-fg: #a3bce5;
+    --plan-baseline-line: #37404c;
+    --plan-actual: #bb714d;
+    --plan-actual-muted: #31231b;
+    --plan-actual-fg: #f4b08a;
+    --plan-actual-line: #563828;
+    --plan-closed: #4e9074;
+    --plan-closed-muted: #1e2922;
+    --plan-closed-fg: #6dc99a;
+    --plan-closed-line: #2b4438;
+    --plan-track-line: #727168;
+  }
+}
