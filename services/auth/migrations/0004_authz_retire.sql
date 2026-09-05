@@ -1,0 +1,53 @@
+-- Retire the `authz` schema — a whole RBAC model that was never wired up (LINA-189).
+--
+-- ── WHAT THIS DROPS AND WHY IT IS SAFE ───────────────────────────────────────
+-- Seven tables: users, orgs, memberships, roles, permissions, role_permissions,
+-- resource_acls. At the time of writing production held ZERO rows in users,
+-- orgs, memberships and resource_acls — every table that would hold a real
+-- person — and only the seeded catalog (3 roles, 17 permissions, 33 mappings)
+-- in the rest. Nothing has ever been authorized against them.
+--
+-- They were built for `apps/api`, a standalone Fastify service that was
+-- designed, built, tested, and never deployed to anything. Its only consumer is
+-- `services/auth`, which this change removes along with it. No deployed code
+-- path reads or writes this schema.
+--
+-- ── WHY REMOVING IT IS THE SAFER ACT ─────────────────────────────────────────
+-- Production was carrying THREE answers to "what may this person do here":
+--
+--   1. `identity.membership` + services/identity/authz.mjs — the ADR-0004
+--      authorizer. The one the running system actually asks.
+--   2. `authz.*` — this schema.
+--   3. `identity.users/orgs/memberships/…` — a second copy of the same LINA-123
+--      design, dropped by services/identity/migrations/0012_identity.sql.
+--
+-- Three parallel authorization models is not defence in depth. It is a standing
+-- invitation for two of them to be answered differently, on a product whose
+-- entire promise is that the record cannot be argued with. Unwired schema also
+-- reads as capability to whoever finds it next: the natural response to "we need
+-- org roles" is to extend the dormant table rather than notice that nothing
+-- has ever consulted it.
+--
+-- This is not a judgement on the LINA-123 design. Re-introducing an
+-- org/role/permission catalog is a real decision to make when organisations
+-- exist as a product concept. Until then it is dead schema, and dead schema
+-- that looks alive is worse than no schema.
+--
+-- ── FORWARD-ONLY, AND WHAT IS DELIBERATELY LEFT BEHIND ───────────────────────
+-- The runner is forward-only and records each applied file by name + checksum,
+-- so 0001–0003 are immutable history and this is a NEW file, not an edit. On a
+-- fresh database the chain still creates the schema and then drops it — correct,
+-- if briefly wasteful, and the only shape that keeps the checksum ledger honest.
+--
+-- The `authz_app` role is NOT dropped. It is created by db/roles.sql (which runs
+-- ahead of every migration and is never recorded), and 0001_authz_rbac.sql
+-- GRANTs to it, so removing it from roles.sql would break the forward chain on a
+-- fresh database. What is left is a NOLOGIN, passwordless role holding no grants
+-- on anything — inert. Removing it means retiring the historical migration
+-- itself, which is a squash of the whole chain, not a cleanup.
+--
+-- CASCADE because the tables reference each other (memberships → users/orgs/
+-- roles, role_permissions → roles/permissions). Dropping the schema in one
+-- statement avoids depending on a hand-maintained drop order.
+
+DROP SCHEMA IF EXISTS authz CASCADE;

@@ -1,0 +1,36 @@
+-- Retire the `waitlist` schema — the second, duplicate waitlist (LINA-189).
+--
+-- ── TWO WAITLISTS, ONE FUNNEL ────────────────────────────────────────────────
+-- Production carried two unrelated tables for the same job:
+--
+--   landing.signups   the marketing site's funnel (linknms.com). Double opt-in,
+--                     confirmation email, plan intent, and since LINA-189 the
+--                     founding-seat claim that actually admits somebody. LIVE.
+--   waitlist.signup   this schema, behind portal.linknms.com/waitlist. Captures
+--                     an email and an ordinal and does nothing else with it: no
+--                     seat, no claim, no path into the product. ZERO rows, ever.
+--
+-- Two places to look for "who asked for access" is one place too many when the
+-- answer has to be trustworthy, and the duplication is actively misleading — the
+-- portal's copy looks like the funnel and is a dead end. Only the marketing
+-- site's funnel finishes the job, so it is the one that stays.
+--
+-- The portal's /waitlist page is not deleted with the table: it now redirects to
+-- the live funnel. Nobody who follows an existing link loses a door — the door
+-- leads somewhere that works instead of somewhere that records an address no
+-- process ever reads.
+--
+-- ── SAFETY ───────────────────────────────────────────────────────────────────
+-- Both tables (signup, waitlist_activation) held zero rows in production at the
+-- time of writing, so nothing is lost. Their only consumer was the portal's
+-- POST /api/waitlist route, removed in the same change.
+--
+-- Forward-only, same discipline as the sibling retire migrations: 0001 and 0002
+-- are immutable applied history and this is a NEW file. `waitlist_app` is left
+-- in place — 0001 creates and GRANTs to it, so it must still exist for the chain
+-- to replay on a fresh database. What remains is a NOLOGIN, passwordless role
+-- with no grants on anything.
+--
+-- CASCADE: waitlist_activation references signup.
+
+DROP SCHEMA IF EXISTS waitlist CASCADE;

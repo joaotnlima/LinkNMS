@@ -54,8 +54,6 @@ import { createPgStore as createChangeOrderPgStore } from '../change_order/pg-st
 
 import { createPgStore as createSchedulePgStore } from '../schedule/pg-store.mjs';
 
-import { createPgStore as createWaitlistPgStore } from '../waitlist/pg-store.mjs';
-import { sendWelcome } from '../waitlist/email-adapter.mjs';
 
 // Per-service connection string with an explicit single-role fallback. Returning
 // the fallback is right for CI/local (one migrator role, no role separation to
@@ -105,7 +103,6 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
     changeOrder: pool('changeOrder', 'CHANGE_ORDER_DATABASE_URL', 'CHANGE_ORDER_DATABASE_ROLE'),
     schedule: pool('schedule', 'SCHEDULE_DATABASE_URL', 'SCHEDULE_DATABASE_ROLE'),
     ledger: pool('ledger', 'LEDGER_DATABASE_URL', 'LEDGER_DATABASE_ROLE'),
-    waitlist: pool('waitlist', 'WAITLIST_DATABASE_URL', 'WAITLIST_DATABASE_ROLE'),
   };
 
   // See (2) above — one cache, four ledger bindings.
@@ -139,13 +136,11 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
     decisionAuthz: (identity) => createIdentityAuthz({ identity }),
     changeOrderStore: createChangeOrderPgStore({ pool: pools.changeOrder }),
     scheduleStore: createSchedulePgStore({ pool: pools.schedule }),
-    waitlistStore: createWaitlistPgStore({ pool: pools.waitlist }),
-    waitlistEmail: { sendWelcome },
   });
 
   const {
     identity, decision: decisionService, changeOrder: changeOrderService,
-    schedule: scheduleService, waitlist: waitlistService,
+    schedule: scheduleService,
   } = services;
   const parties = createPartyStore({ pool: pools.identity });
 
@@ -163,7 +158,7 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
     ledger: ledgerReader,
     services: {
       identity, decision: decisionService, changeOrder: changeOrderService,
-      schedule: scheduleService, waitlist: waitlistService,
+      schedule: scheduleService,
     },
     http: {
       identity: createIdentityHttp({ service: identity }),
@@ -171,7 +166,6 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
       changeOrder: services.changeOrderHttp,
       schedule: services.scheduleHttp,
       ledger: createLedgerHttp({ ledger: ledgerReader, identity }),
-      waitlist: services.waitlistHttp,
     },
     async close() {
       await Promise.all(Object.values(pools).map((p) => p.end()));

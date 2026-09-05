@@ -26,7 +26,8 @@ const URLS = {
   changeOrder: 'postgres://change_order_app@localhost:5432/linknms?sslmode=disable',
   schedule: 'postgres://schedule_app@localhost:5432/linknms?sslmode=disable',
   ledger: 'postgres://ledger_app@localhost:5432/linknms?sslmode=disable',
-  waitlist: 'postgres://waitlist_app@localhost:5432/linknms?sslmode=disable',
+  // No waitlist: the portal's duplicate waitlist service and its `waitlist`
+  // schema are retired (LINA-189) — the marketing site owns the one funnel.
 };
 
 const noopAnalytics = () => ({ capture() {}, async flush() {} });
@@ -36,15 +37,19 @@ describe('createContainer', () => {
     const container = createContainer({ urls: URLS, analytics: noopAnalytics() });
     try {
       const pools = Object.values(container.pools);
-      assert.equal(pools.length, 6);
-      assert.equal(new Set(pools).size, 6, 'one pool per service role, never shared');
+      assert.equal(pools.length, 5);
+      assert.equal(new Set(pools).size, 5, 'one pool per service role, never shared');
 
-      for (const name of ['identity', 'decision', 'changeOrder', 'schedule', 'ledger', 'waitlist']) {
+      for (const name of ['identity', 'decision', 'changeOrder', 'schedule', 'ledger']) {
         assert.ok(container.http[name], `route layer needs container.http.${name}`);
       }
-      for (const name of ['identity', 'decision', 'changeOrder', 'schedule', 'waitlist']) {
+      for (const name of ['identity', 'decision', 'changeOrder', 'schedule']) {
         assert.ok(container.services[name], `container.services.${name} must be composed`);
       }
+      // The retired waitlist must be GONE, not merely unused — a lingering
+      // pool would still open a connection as a role with no tables.
+      assert.equal(container.pools.waitlist, undefined);
+      assert.equal(container.http.waitlist, undefined);
     } finally {
       await container.close();
     }

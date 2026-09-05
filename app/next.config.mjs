@@ -41,6 +41,31 @@ const nextConfig = {
     return config;
   },
 
+  // The portal's own /waitlist (LINA-126/127) is retired (LINA-189). It was the
+  // SECOND waitlist: it captured an email into `waitlist.signup` and stopped
+  // there — no confirmation, no seat, no path into the product — while the
+  // marketing site's funnel at linknms.com does the whole job, including the
+  // founding-seat claim that actually admits someone. Zero people had ever used
+  // it, and two places to look for "who asked for access" is one too many.
+  //
+  // A redirect rather than a deletion: an existing link, bookmark or QR code
+  // should land on the funnel that works, not on a 404. 308 (permanent) so the
+  // move is cacheable and honest about being permanent.
+  //
+  // NEXT_PUBLIC_MARKETING_URL lets a preview point at a preview; the default is
+  // production, because that is where a stray link in the wild will point.
+  async redirects() {
+    const marketing = (process.env.NEXT_PUBLIC_MARKETING_URL || 'https://linknms.com')
+      .replace(/\/+$/, '');
+    return [
+      {
+        source: '/waitlist',
+        destination: `${marketing}/#request-access`,
+        permanent: true,
+      },
+    ];
+  },
+
   // The `/auth/callback` Referrer-Policy header is GONE with the magic link it
   // protected (LINA-124). It existed because our OWN callback page carried a
   // single-use token in a query param (LINA-76, ADR-0007 §2); Clerk's flow never
