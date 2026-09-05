@@ -147,6 +147,16 @@ h1.scr { font-size: 22px; font-weight: 650; letter-spacing: -.3px; }
 .tag.owner .pd { background: var(--owner); }
 .tag.counterparty { color: var(--builder-fg); background: var(--builder-muted); }
 .tag.counterparty .pd { background: var(--builder); }
+/* `subcontractor` is the third membership role (migration 0009 / ADR-0011 §4).
+   It borrows the BUILDER ramp rather than getting a hue of its own, for the same
+   reason `--ok-*` borrows the plan-closed tint above: the .pen never specified a
+   third party tone, and inventing one here instead of in tokens.json is exactly
+   how the last round of palette drift started. The two are still told apart —
+   `roleLabel()` renders "Trade" beside a sub and "GC" beside the general
+   contractor, and per FR9 the label, not the colour, is the signal. If the pen
+   later draws a third party tone, this becomes a token swap and nothing else. */
+.tag.subcontractor { color: var(--builder-fg); background: var(--builder-muted); }
+.tag.subcontractor .pd { background: var(--builder); }
 
 /* ---- amounts ---- */
 .amt { font-variant-numeric: tabular-nums; font-weight: 650; }

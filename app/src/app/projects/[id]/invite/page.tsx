@@ -1,57 +1,83 @@
-// FR1, second half — invite the GC (LINA-57).
+// M4/D4 — "Invite", step 3 of Band B (LINA-179; originally LINA-57 / LINA-84).
 //
-// R0 delivers the invitation OUT OF BAND: ADR-0001 specifies a magic link, but
-// the email integration does not exist yet, so the owner copies a single-use
-// code and sends it however they already talk to their GC. That is stated on the
-// screen rather than hidden, because an invite the owner believes was emailed
-// and was not is a silent dead end.
+// Pen source: Bootstrap Flow Board, screen 04 ("Invite General Contractor") and
+// screen 05 ("Invite sent"), the second of which is the result state rendered by
+// InvitePanel without a navigation.
 //
-// ⚠️ The raw code is shown EXACTLY ONCE and is never stored (only its SHA-256
-// is). Re-rendering this page cannot show it again — hence the explicit warning
-// in the UI rather than a reassuring "you can find this later".
+// THIS IS THE STEP THAT COMMITS THE BUILD. The first invite flips a draft to
+// `active` and writes a `project_committed` ledger event in the same unit of work
+// (ADR-0011 decision 2), so the screen says what is about to become shared rather
+// than presenting the invite as a small last formality.
+//
+// One pen field is absent: the "Scope note" textarea on screen 04.
+// `identity.invitation` has no note column (migration 0009 added none), so it
+// would be a textarea whose contents the server discards — see the GAPS note in
+// @/lib/build-creation. A scope note also belongs on the record as a decision,
+// not on an invitation that is consumed and gone.
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+
 import { TopBar } from '@/components/chrome';
+import { WizardSteps } from '@/components/WizardSteps';
 import { InvitePanel } from './InvitePanel';
-import { getProject } from '@/lib/api';
+import { getBuild } from '@/lib/api';
+import { INVITE_ROLE_COPY, inviteRoleFor, stepFor, type OperatingModel } from '@/lib/build-creation';
+import '../../../build-wizard.css';
 
 export const dynamic = 'force-dynamic';
 
 export default async function InvitePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const project = await getProject(id);
+  const build = await getBuild(id);
 
   // Owner-only. The service enforces this too (it is the authority); checking
   // here as well is what turns a would-be 403 into a sensible screen.
-  if (project.actingRole !== 'owner') redirect(`/projects/${id}`);
+  if (build.actingRole !== 'owner') redirect(`/projects/${id}`);
 
-  const counterparty = project.members.find((m) => m.role === 'counterparty');
+  // A draft with no operating model cannot be invited against — the service 409s
+  // rather than committing a build whose model was never chosen. Send them to the
+  // step they actually owe rather than rendering a form that is guaranteed to
+  // fail on submit.
+  if (stepFor(build) === 'model') redirect(`/projects/${id}/operating-model`);
+
+  const operatingModel = (build.operatingModel ?? null) as OperatingModel | null;
+  const role = inviteRoleFor(operatingModel);
+  const copy = INVITE_ROLE_COPY[role];
+
+  // V1 invites one party per wizard pass (ADR-0011 OQ-3), so a build that already
+  // has this role filled has nothing to do here.
+  const joined = build.members.find((m) => m.role === role);
+  const isDraft = build.status === 'draft';
 
   return (
     <>
-      <TopBar back={{ href: `/projects/${id}`, label: project.name }} />
-      <main className="screen">
-        <div>
-          <div className="crumbs">{project.name}</div>
-          <h1 className="scr">Invite your general contractor</h1>
-          <p className="sub">
-            R0 records agreements between two parties: you and one GC.
+      <TopBar back={{ href: `/projects/${id}`, label: build.name }} />
+      <main className="bw">
+        <WizardSteps current="invite" />
+
+        <div className="bw-head">
+          <div className="crumbs">{build.name}</div>
+          <h1 className="bw-title">Invite your {copy.noun}</h1>
+          <p className="bw-lede">
+            {isDraft
+              ? `This is the step that opens the build. The moment you send it, ${build.name} becomes a shared record — everything either of you writes on it from then on is attributed and time-stamped.`
+              : `They join the shared record for ${build.name}. Everything either of you writes on it is attributed and time-stamped.`}
           </p>
         </div>
 
-        {counterparty ? (
-          <section className="card">
+        {joined ? (
+          <section className="bw-card">
             <p>
-              <strong>{counterparty.name}</strong> has already joined this record as the general
-              contractor.
+              <strong>{joined.displayName?.trim() || 'Someone'}</strong> has already joined this
+              build as the {copy.noun}.
             </p>
             <Link className="btn" href={`/projects/${id}`}>
-              Go to the project
+              Go to the build
             </Link>
           </section>
         ) : (
-          <section className="card">
-            <InvitePanel projectId={id} />
+          <section className="bw-card">
+            <InvitePanel projectId={id} operatingModel={operatingModel} />
           </section>
         )}
       </main>

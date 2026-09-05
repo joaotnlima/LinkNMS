@@ -1,5 +1,6 @@
-// Identity & Membership — HTTP route handlers for the four openapi.yaml
-// endpoints (create project / get project / invite / accept), LINA-56 / ADR-0004.
+// Identity & Membership — HTTP route handlers for the openapi.yaml
+// endpoints (create project / get project / set operating model / invite /
+// accept / me), LINA-56 / ADR-0004.
 //
 // Framework-agnostic, same shape as services/change_order/http.mjs and
 // services/decision/http.mjs: `{ session, params, body }` in, `{ status, body }`
@@ -55,12 +56,17 @@ export function createIdentityHttp({ service }) {
   if (!service) throw new Error('createIdentityHttp requires { service }');
 
   // POST /projects — FR1, first half: a shared record with a baseline budget.
+  // `draft: true` selects the Band B wizard step-1 path (ADR-0011): the build row
+  // is created `status='draft'` with no operating model; the legacy one-shot path
+  // (no `draft`) behaves exactly as before. `draft` is a server-read boolean, and
+  // the actor is still the session's — a body cannot forge the owner.
   async function createProject({ session, body }) {
     try {
       const project = await service.createProject({
         actorPartyId: actorOf(session),
         name: body?.name,
         baselineBudgetCents: body?.baselineBudgetCents,
+        draft: Boolean(body?.draft),
       });
       return { status: 201, body: project };
     } catch (err) { return errorBody(err); }
@@ -77,11 +83,12 @@ export function createIdentityHttp({ service }) {
     } catch (err) { return errorBody(err); }
   }
 
-  // POST /projects/:id/invitations — FR1, second half: invite the one GC.
-  // Owner-only. The 201 body carries the raw token ONCE; it is not stored.
-  // `email` is optional (LINA-84): present → the link is mailed to the GC and the
-  // body reports `emailed`; absent → unchanged, the owner delivers the token
-  // out of band. Either way the raw token is in the 201 body.
+  // POST /projects/:id/invitations — FR1, second half: invite the party the
+  // build's operating model admits. Owner-only. The 201 body carries the raw
+  // token ONCE; it is not stored. `email` is optional (LINA-84): present → the
+  // link is mailed and the body reports `emailed`; absent → unchanged, the owner
+  // delivers the token out of band. The first invite on a draft commits the build
+  // (draft→active, a ledger event) — see the service unit of work.
   async function inviteCounterparty({ session, params, body, headers }) {
     try {
       const result = await service.inviteCounterparty({
@@ -100,7 +107,24 @@ export function createIdentityHttp({ service }) {
     } catch (err) { return errorBody(err); }
   }
 
-  // POST /invitations/:token/accept — the invited GC joins as counterparty.
+  // PATCH /projects/:id/operating-model — Band B wizard step 2 (ADR-0011).
+  // Owner-only; sets the operating model on a draft. The body's operatingModel
+  // must be one of {turnkey, direct, hybrid} or the service returns a typed 400.
+  // Response is the updated project view so the wizard can advance without a
+  // second GET.
+  async function setOperatingModel({ session, params, body }) {
+    try {
+      const project = await service.setOperatingModel({
+        actorPartyId: actorOf(session),
+        projectId: params.id,
+        operatingModel: body?.operatingModel,
+      });
+      return { status: 200, body: project };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /invitations/:token/accept — the invited party joins. The acting party is the
+  // accepting session; the token proves the invitation, the session says who joins.
   async function acceptInvitation({ session, params }) {
     try {
       const result = await service.acceptInvitation({
@@ -123,5 +147,5 @@ export function createIdentityHttp({ service }) {
     } catch (err) { return errorBody(err); }
   }
 
-  return { createProject, getProject, inviteCounterparty, acceptInvitation, getMe };
+  return { createProject, getProject, setOperatingModel, inviteCounterparty, acceptInvitation, getMe };
 }

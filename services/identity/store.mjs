@@ -117,6 +117,24 @@ export function createMemoryStore({ ledger } = {}) {
       return copy(inv);
     },
 
+    // Band B wizard mutations (ADR-0011). Both are projection edits that the
+    // service only ever performs alongside a ledger append in the same unit —
+    // never a silent update (the pg adapter's column-scoped grant enforces the
+    // same separation).
+    updateProjectOperatingModel(projectId, operatingModel) {
+      const p = projects.get(projectId);
+      if (!p) throw notFound('project');
+      p.operatingModel = operatingModel;
+      return copy(p);
+    },
+
+    updateProjectStatus(projectId, status) {
+      const p = projects.get(projectId);
+      if (!p) throw notFound('project');
+      p.status = status;
+      return copy(p);
+    },
+
     // Read-within-tx: accept must re-read the invite under the same unit so a
     // concurrent accept cannot double-spend it (the pg adapter uses SELECT … FOR
     // UPDATE / the status guard on markInvitationAccepted).
