@@ -4,9 +4,9 @@ import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useLocale } from 'next-intl';
 import { track } from '@/lib/analytics-client';
 import { setPlanIntent } from '@/lib/plan-intent';
-import type { PaidPlanKey } from '@/lib/pricing';
+import { FREE_FOUNDING_PLAN_KEY, type PlanIntentKey } from '@/lib/pricing';
 
-// A paid-plan call-to-action (LINA-175). Asks /api/checkout what should happen
+// A plan call-to-action (LINA-175). Asks /api/checkout what should happen
 // for this plan and follows the answer:
 //
 //   { flow: 'waitlist' } — founding free seats remain, so paid intent is still
@@ -23,13 +23,18 @@ import type { PaidPlanKey } from '@/lib/pricing';
 // Progressive enhancement: the element stays an <a href="#request-access">, so
 // with JS off (or if the fetch fails) the visitor still lands in the waitlist
 // form — the pre-LINA-175 behaviour.
+//
+// The free founding seat (`free_founding`, LINA-180) uses the same CTA for the
+// intent hand-off but never asks /api/checkout: there is nothing to charge, and
+// it is this intent that /api/checkout counts to decide when the paid CTAs flip
+// to Stripe. It goes straight to the waitlist form carrying the plan.
 export function PlanCta({
   plan,
   label,
   className,
   children
 }: {
-  plan: PaidPlanKey;
+  plan: PlanIntentKey;
   /** Localized plan name, carried to the waitlist form for display. */
   label: string;
   className?: string;
@@ -53,6 +58,13 @@ export function PlanCta({
   async function onClick(e: MouseEvent<HTMLAnchorElement>) {
     track('cta_click', { cta_location: 'pricing', cta_action: 'request_access', plan });
     e.preventDefault();
+
+    // Free founding seat: no checkout to ask about — record the claim and go.
+    if (plan === FREE_FOUNDING_PLAN_KEY) {
+      toWaitlist();
+      return;
+    }
+
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);

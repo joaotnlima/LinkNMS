@@ -440,7 +440,8 @@
         "s": "Founding Owners help shape LinkNMS. Bring your build, invite your team, keep Personal free forever.",
         "count": "18 / 50",
         "countLabel": "Seats claimed",
-        "cta": "Claim my free seat"
+        "cta": "Claim my free seat",
+        "planLabel": "Founding 50 — Personal, free for life"
       },
       "ribbonBuilder": {
         "badge1": "For builders",

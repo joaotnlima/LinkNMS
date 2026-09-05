@@ -440,7 +440,8 @@
         "s": "Os Donos Fundadores ajudam a moldar o LinkNMS. Traga a sua obra, convide a sua equipa e mantenha o Personal grátis para sempre.",
         "count": "18 / 50",
         "countLabel": "Lugares reservados",
-        "cta": "Reservar o meu lugar grátis"
+        "cta": "Reservar o meu lugar grátis",
+        "planLabel": "Fundadores 50 — Personal, grátis para sempre"
       },
       "ribbonBuilder": {
         "badge1": "Para construtores",

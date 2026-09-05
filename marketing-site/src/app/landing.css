@@ -1534,11 +1534,21 @@
   background: var(--lp-cream-hair);
 }
 
-/* Ribbon — differs per view; one is hidden. */
-[data-pricing-view='owner'] .lp-pricing__ribbon--builder,
-[data-pricing-view='builder'] .lp-pricing__ribbon--owner {
+/* Per-view tabpanel (ribbon + plans). One panel per audience; the inactive one
+   is display:none so it also leaves the accessibility tree. The panel replaces
+   the ribbon and the plans block as a root child, so it repeats the root's own
+   column gap and the layout is unchanged. */
+.lp-pricing__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lp-sec-gap);
+}
+[data-pricing-view='owner'] .lp-pricing__panel[data-view='builder'],
+[data-pricing-view='builder'] .lp-pricing__panel[data-view='owner'] {
   display: none;
 }
+
+/* Ribbon — differs per view. */
 .lp-pricing__ribbon {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1656,11 +1666,7 @@
   font-size: 12px;
 }
 
-/* Plans — three cards per view; one group hidden. */
-[data-pricing-view='owner'] .lp-pricing__plans[data-view='builder'],
-[data-pricing-view='builder'] .lp-pricing__plans[data-view='owner'] {
-  display: none;
-}
+/* Plans — three cards per view; the inactive group is hidden with its panel. */
 .lp-pricing__plans {
   display: flex;
   flex-direction: column;
