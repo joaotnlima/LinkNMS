@@ -4,8 +4,9 @@
 // every service calls `can(...)` FIRST, before touching data. Authorization is a
 // property of the party's `membership` (party × project × role) — never of the
 // user globally, and never trusted from the request body. R0 caps roles to
-// `owner` (homeowner) and `counterparty` (GC); adding `sub`, `inspector`, … later
-// is new role values + rows in the table below, not a model change.
+// `owner` (homeowner) and `counterparty` (GC); `subcontractor` joins with 0009
+// (Band B, ADR-0011) as a read-only member of the build's own slice; adding more
+// roles later is new role values + rows in the table below, not a model change.
 //
 // This module is deliberately PURE: given a role (and, for the two-sided rule,
 // the proposer) it returns a decision. The Identity service wraps it with the
@@ -13,7 +14,7 @@
 // party is always derived from the session. Keeping the decision pure is what
 // lets the adversarial tests attack the rule directly.
 
-/** @typedef {'owner' | 'counterparty'} Role */
+/** @typedef {'owner' | 'counterparty' | 'subcontractor'} Role */
 
 // The catalogue of authorizable actions. Using a frozen enum (not free strings
 // at call sites) means a typo'd action fails loudly here instead of silently
@@ -22,6 +23,7 @@ export const ACTION = Object.freeze({
   // Identity & Membership (this slice)
   CREATE_PROJECT: 'create_project',
   INVITE_COUNTERPARTY: 'invite_counterparty',
+  SET_OPERATING_MODEL: 'set_operating_model',
   VIEW_PROJECT: 'view_project',
   // Decision Log (Slice 3)
   RECORD_DECISION: 'record_decision',
@@ -43,6 +45,7 @@ const ALL_ACTIONS = new Set(Object.values(ACTION));
 // is intentionally absent: it needs no prior membership (see `can`).
 const OWNER = new Set([
   ACTION.INVITE_COUNTERPARTY,
+  ACTION.SET_OPERATING_MODEL,
   ACTION.VIEW_PROJECT,
   ACTION.RECORD_DECISION,
   ACTION.REVISE_DECISION,
@@ -62,7 +65,21 @@ const COUNTERPARTY = new Set([
   ACTION.UPLOAD_PLAN_DOCUMENT,
 ]);
 
-const CAPABILITIES = { owner: OWNER, counterparty: COUNTERPARTY };
+// Band B (ADR-0011) direct/hybrid builds invite a `subcontractor` who is on the
+// record but whose authority is deliberately minimal in THIS slice: they see the
+// build (identity actions) and nothing else. Any write capabilities a
+// subcontractor earns (schedule, progress, …) are owned by the sibling service
+// that defines them — add actions there, not here, and only after the Architect
+// signs the capability row.
+const SUBCONTRACTOR = new Set([
+  ACTION.VIEW_PROJECT,
+]);
+
+const CAPABILITIES = {
+  owner: OWNER,
+  counterparty: COUNTERPARTY,
+  subcontractor: SUBCONTRACTOR,
+};
 
 /**
  * @typedef {Object} Decision

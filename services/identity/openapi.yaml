@@ -93,10 +93,64 @@ paths:
             'application/json':
               schema:
                 '$ref': '#/components/schemas/Error'
+  '/projects/{id}/operating-model':
+    patch:
+      operationId: setOperatingModel
+      summary: Choose the operating model on a draft (Band B wizard step 2). Owner only.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          'application/json':
+            schema:
+              '$ref': '#/components/schemas/SetOperatingModelRequest'
+      responses:
+        '200':
+          description: Operating model set; updated project view
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Project'
+        '400':
+          description: Unsupported operating model
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '401':
+          description: No acting party in session
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '403':
+          description: Only the owner may set the operating model
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '404':
+          description: Project not found
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
+        '409':
+          description: The project is not a draft
+          content:
+            'application/json':
+              schema:
+                '$ref': '#/components/schemas/Error'
   '/projects/{id}/invitations':
     post:
       operationId: inviteCounterparty
-      summary: Invite the one GC (counterparty). Owner only (FR1).
+      summary: Invite the role the build’s operating model admits (Band B). Owner only (FR1).
+      description: 'Turnkey invites counterparty, direct invites subcontractor, hybrid invites either. The first invite on a draft commits the build (draft→active).'
       parameters:
         - name: id
           in: path
@@ -244,6 +298,7 @@ components:
           enum:
             - owner
             - counterparty
+            - subcontractor
         joinedAt:
           type: string
     Project:
@@ -254,6 +309,8 @@ components:
         - ownerPartyId
         - baselineBudgetCents
         - currentBudgetCents
+        - operatingModel
+        - status
         - actingRole
         - createdAt
         - members
@@ -268,11 +325,26 @@ components:
           type: integer
         currentBudgetCents:
           type: integer
+        operatingModel:
+          type:
+            - string
+            - null
+          enum:
+            - null
+            - turnkey
+            - direct
+            - hybrid
+        status:
+          type: string
+          enum:
+            - draft
+            - active
         actingRole:
           type: string
           enum:
             - owner
             - counterparty
+            - subcontractor
         createdAt:
           type: string
         members:
@@ -299,6 +371,7 @@ components:
           enum:
             - owner
             - counterparty
+            - subcontractor
         joinedAt:
           type: string
     Invitation:
@@ -319,6 +392,7 @@ components:
           enum:
             - owner
             - counterparty
+            - subcontractor
         status:
           type: string
           enum:
@@ -362,6 +436,10 @@ components:
         baselineBudgetCents:
           type: integer
           minimum: 0
+        draft:
+          type: boolean
+          default: false
+          description: Create the build as a draft (Band B wizard step 1).
     InviteRequest:
       type: object
       properties:
@@ -369,9 +447,21 @@ components:
           type: string
           enum:
             - counterparty
+            - subcontractor
         email:
           type:
             - string
             - null
           format: email
           description: 'Optional (LINA-84). Supplied, the invitation link is emailed to this address and the response reports `emailed`. Omitted, nothing is sent and the caller delivers the raw token out of band. Lower-cased server-side, same normalisation as sign-in.'
+    SetOperatingModelRequest:
+      type: object
+      required:
+        - operatingModel
+      properties:
+        operatingModel:
+          type: string
+          enum:
+            - turnkey
+            - direct
+            - hybrid

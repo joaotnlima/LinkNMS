@@ -39,6 +39,8 @@ const mapProject = (r) => r && {
   name: r.name,
   ownerPartyId: r.owner_party_id,
   baselineBudgetCents: Number(r.baseline_budget_cents),
+  operatingModel: r.operating_model ?? null,
+  status: r.status,
   createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
 };
 const mapMembership = (r) => r && {
@@ -128,12 +130,33 @@ export function createPgStore({ pool = getPool(), ledger }) {
         async insertProject(p) {
           try {
             const { rows } = await client.query(
-              `insert into identity.project (id, name, owner_party_id, baseline_budget_cents, created_at)
-               values ($1, $2, $3, $4, $5) returning *`,
-              [p.id, p.name, p.ownerPartyId, p.baselineBudgetCents, p.createdAt],
+              `insert into identity.project
+                 (id, name, owner_party_id, baseline_budget_cents, operating_model, status, created_at)
+               values ($1, $2, $3, $4, $5, $6, $7) returning *`,
+              [p.id, p.name, p.ownerPartyId, p.baselineBudgetCents, p.operatingModel ?? null, p.status, p.createdAt],
             );
             return mapProject(rows[0]);
           } catch (e) { throw asConflict(e); }
+        },
+        // Band B wizard projection writes (ADR-0011). These run through the
+        // column-scoped GRANT UPDATE (operating_model, status) issued in 0009 —
+        // identity_app can drive the wizard but can never rewrite
+        // baseline_budget_cents or owner_party_id (0009 header, ADR-0002 intent).
+        async updateProjectOperatingModel(projectId, operatingModel) {
+          const { rows } = await client.query(
+            `update identity.project set operating_model = $2
+              where id = $1 returning *`,
+            [projectId, operatingModel],
+          );
+          return mapProject(rows[0] ?? null);
+        },
+        async updateProjectStatus(projectId, status) {
+          const { rows } = await client.query(
+            `update identity.project set status = $2
+              where id = $1 returning *`,
+            [projectId, status],
+          );
+          return mapProject(rows[0] ?? null);
         },
         async insertMembership(m) {
           try {

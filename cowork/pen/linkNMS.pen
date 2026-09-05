@@ -90110,7 +90110,7 @@
                                       "id": "Ep2Vi",
                                       "name": "L",
                                       "fill": "$lp-cream",
-                                      "content": "10 active project",
+                                      "content": "10 active projects",
                                       "fontFamily": "$font",
                                       "fontSize": 12.5,
                                       "fontWeight": "600"
@@ -91773,7 +91773,7 @@
                       "fill": "#FBFAF7CC",
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
-                      "content": "Give you company visibility to potential new builders in your are. Collaborate on any project you're invited to — no cost, no card. Claiming a project to run it is what turns it into a paid Active Project. Pick your tier below.",
+                      "content": "Give your company visibility to potential new builders in your area. Collaborate on any project you're invited to — no cost, no card. Claiming a project to run it is what turns it into a paid Active Project. Pick your tier below.",
                       "lineHeight": 1.5,
                       "fontFamily": "$font",
                       "fontSize": 14,

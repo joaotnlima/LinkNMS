@@ -9,8 +9,14 @@
 // is derived server-side from the session (never a body/query param), so no request
 // schema carries an actor field — that is a security property of the contract.
 
-const roleEnum = { type: 'string', enum: ['owner', 'counterparty'] };
+// Band B (ADR-0011): membership/invitation roles widen with migration 0009 and
+// the Project shape gains the draft/operating-model fields the wizard drives.
+const roleEnum = { type: 'string', enum: ['owner', 'counterparty', 'subcontractor'] };
+const roleEnumVisible = { type: 'string', enum: ['counterparty', 'subcontractor'] };
 const partyRoleEnum = { type: 'string', enum: ['owner', 'contractor', 'viewer'] };
+// The three Band B operating models; null is the "not chosen yet" state (ADR-0011).
+const operatingModelEnum = { type: ['string', 'null'], enum: [null, 'turnkey', 'direct', 'hybrid'] };
+const projectStatusEnum = { type: 'string', enum: ['draft', 'active'] };
 
 export const schemas = {
   Error: {
@@ -52,7 +58,7 @@ export const schemas = {
     type: 'object',
     required: [
       'id', 'name', 'ownerPartyId', 'baselineBudgetCents', 'currentBudgetCents',
-      'actingRole', 'createdAt', 'members',
+      'operatingModel', 'status', 'actingRole', 'createdAt', 'members',
     ],
     properties: {
       id: { type: 'string' },
@@ -60,6 +66,8 @@ export const schemas = {
       ownerPartyId: { type: 'string' },
       baselineBudgetCents: { type: 'integer' },
       currentBudgetCents: { type: 'integer' },
+      operatingModel: operatingModelEnum,
+      status: projectStatusEnum,
       actingRole: roleEnum,
       createdAt: { type: 'string' },
       members: { type: 'array', items: { $ref: '#/components/schemas/Member' } },
@@ -119,12 +127,20 @@ export const schemas = {
     properties: {
       name: { type: 'string' },
       baselineBudgetCents: { type: 'integer', minimum: 0 },
+      // Band B (ADR-0011): true selects the wizard step-1 path — the build row is
+      // created `status='draft'` with `operatingModel=null`. Absent/false keeps
+      // the legacy one-shot path: an immediately `active` project, unchanged.
+      draft: { type: 'boolean', default: false, description: 'Create the build as a draft (Band B wizard step 1).' },
     },
   },
   InviteRequest: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['counterparty'] },
+      // The launch vocabulary (0009): a build invites the role(s) its operating
+      // model admits — turnkey → counterparty, direct → subcontractor, hybrid →
+      // both. `subcontractor` is only accepted when the model allows it (service-
+      // enforced); the enum here mirrors the DB CHECK.
+      role: roleEnumVisible,
       email: {
         type: ['string', 'null'],
         format: 'email',
@@ -133,6 +149,13 @@ export const schemas = {
           'the response reports `emailed`. Omitted, nothing is sent and the caller delivers ' +
           'the raw token out of band. Lower-cased server-side, same normalisation as sign-in.',
       },
+    },
+  },
+  SetOperatingModelRequest: {
+    type: 'object',
+    required: ['operatingModel'],
+    properties: {
+      operatingModel: { type: 'string', enum: ['turnkey', 'direct', 'hybrid'] },
     },
   },
 };
@@ -187,10 +210,29 @@ export const spec = {
         },
       },
     },
+    '/projects/{id}/operating-model': {
+      patch: {
+        operationId: 'setOperatingModel',
+        summary: 'Choose the operating model on a draft (Band B wizard step 2). Owner only.',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: json('SetOperatingModelRequest') },
+        responses: {
+          200: { description: 'Operating model set; updated project view', content: json('Project') },
+          400: errorResponse('Unsupported operating model'),
+          401: errorResponse('No acting party in session'),
+          403: errorResponse('Only the owner may set the operating model'),
+          404: errorResponse('Project not found'),
+          409: errorResponse('The project is not a draft'),
+        },
+      },
+    },
     '/projects/{id}/invitations': {
       post: {
         operationId: 'inviteCounterparty',
-        summary: 'Invite the one GC (counterparty). Owner only (FR1).',
+        summary: 'Invite the role the build’s operating model admits (Band B). Owner only (FR1).',
+        description:
+          'Turnkey invites counterparty, direct invites subcontractor, hybrid invites either. ' +
+          'The first invite on a draft commits the build (draft→active).',
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: { required: false, content: json('InviteRequest') },
         responses: {
