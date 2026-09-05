@@ -440,7 +440,8 @@
         "s": "Los Propietarios Fundadores ayudan a dar forma a LinkNMS. Trae tu obra, invita a tu equipo y mantén Personal gratis para siempre.",
         "count": "18 / 50",
         "countLabel": "Plazas reservadas",
-        "cta": "Reservar mi plaza gratis"
+        "cta": "Reservar mi plaza gratis",
+        "planLabel": "Fundadores 50 — Personal, gratis de por vida"
       },
       "ribbonBuilder": {
         "badge1": "Para constructores",

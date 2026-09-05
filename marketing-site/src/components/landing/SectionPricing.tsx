@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { CtaLink } from '@/components/CtaLink';
-import type { PaidPlanKey } from '@/lib/pricing';
+import { FREE_FOUNDING_PLAN_KEY, type PaidPlanKey } from '@/lib/pricing';
 import { CheckIcon } from './icons';
 import { PlanCta } from './PlanCta';
 import { pricingPanelId, pricingTabId } from './pricingTabs';
@@ -33,8 +33,9 @@ const SEATS_TOTAL = 50;
 // arrays carry display copy only; the stable key each card checks out with
 // lives here, positionally, and must stay in step with the message arrays.
 // Keys are the paid subset of LINA-172's PLAN_KEYS — see PAID_PLAN_KEYS in
-// `@/lib/pricing`. The free founding seat is NOT here: the ribbon CTAs below
-// stay plain waitlist links.
+// `@/lib/pricing`. The free founding seat is NOT here: it has no card, it is
+// claimed through the owner ribbon CTA (LINA-180), which hands `free_founding`
+// to the waitlist form the same way a card CTA hands its paid key.
 const OWNER_PLAN_KEYS: PaidPlanKey[] = ['personal', 'build_plus', 'real_estate_investor'];
 const BUILDER_PLAN_KEYS: PaidPlanKey[] = [
   'independent_builder',

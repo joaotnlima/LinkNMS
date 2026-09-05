@@ -24,6 +24,19 @@ export function isPaidPlanKey(value: unknown): value is PaidPlanKey {
   );
 }
 
+/**
+ * The free founding seat (LINA-180). A valid PLAN_KEYS value, but never a
+ * checkout plan: claiming it means "I want one of the founding 50", which is
+ * recorded on the waitlist signup. `/api/checkout` counts exactly these rows
+ * to decide when paid CTAs flip from the waitlist to Stripe, so the free CTA
+ * has to record the intent like a paid CTA does.
+ */
+export const FREE_FOUNDING_PLAN_KEY = 'free_founding';
+export type FreeFoundingPlanKey = typeof FREE_FOUNDING_PLAN_KEY;
+
+/** Any plan a landing CTA can hand to the waitlist form. */
+export type PlanIntentKey = PaidPlanKey | FreeFoundingPlanKey;
+
 /** Monthly gross price shown on the pen/pricing section, per plan (EUR). */
 export const PLAN_PRICE_EUR: Record<PaidPlanKey, number> = {
   personal: 19,
