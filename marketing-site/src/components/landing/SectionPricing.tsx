@@ -1,6 +1,8 @@
 import { getTranslations } from 'next-intl/server';
 import { CtaLink } from '@/components/CtaLink';
+import type { PaidPlanKey } from '@/lib/pricing';
 import { CheckIcon } from './icons';
+import { PlanCta } from './PlanCta';
 import { SectionPricingToggle } from './SectionPricingToggle';
 
 // 06 · Pricing — the pen's S7 Pricing frames (owner + builder).
@@ -26,13 +28,28 @@ type Plan = {
 const SEATS_CLAIMED = 18;
 const SEATS_TOTAL = 50;
 
+// Plan-key mapping (LINA-175). The translated `plansOwner` / `plansBuilder`
+// arrays carry display copy only; the stable key each card checks out with
+// lives here, positionally, and must stay in step with the message arrays.
+// Keys are the paid subset of LINA-172's PLAN_KEYS — see PAID_PLAN_KEYS in
+// `@/lib/pricing`. The free founding seat is NOT here: the ribbon CTAs below
+// stay plain waitlist links.
+const OWNER_PLAN_KEYS: PaidPlanKey[] = ['personal', 'build_plus', 'real_estate_investor'];
+const BUILDER_PLAN_KEYS: PaidPlanKey[] = [
+  'independent_builder',
+  'growing_builder',
+  'construction_business'
+];
+
 function PlanCard({
   plan,
+  planKey,
   perMonth,
   popular,
   popularLabel
 }: {
   plan: Plan;
+  planKey: PaidPlanKey;
   perMonth: string;
   popular: boolean;
   popularLabel: string;
@@ -68,9 +85,9 @@ function PlanCard({
         </ul>
       </div>
 
-      <CtaLink location="pricing" href="#request-access" className="lp-btn lp-plan__cta">
+      <PlanCta plan={planKey} label={plan.name} className="lp-btn lp-plan__cta">
         {plan.cta}
-      </CtaLink>
+      </PlanCta>
     </article>
   );
 }
@@ -195,6 +212,7 @@ export async function SectionPricing() {
                 <PlanCard
                   key={plan.name}
                   plan={plan}
+                  planKey={OWNER_PLAN_KEYS[i]}
                   perMonth={t('perMonth')}
                   popular={i === 1}
                   popularLabel={t('popular')}
@@ -210,6 +228,7 @@ export async function SectionPricing() {
                 <PlanCard
                   key={plan.name}
                   plan={plan}
+                  planKey={BUILDER_PLAN_KEYS[i]}
                   perMonth={t('perMonth')}
                   popular={i === 1}
                   popularLabel={t('popular')}
