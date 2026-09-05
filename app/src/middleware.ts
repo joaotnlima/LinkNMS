@@ -27,6 +27,21 @@ const isProtectedRoute = createRouteMatcher([
   '/invitations(.*)',
 ]);
 
+// The Band B invite deep link (M6/D6, LINA-179) is the one route under
+// /invitations a signed-OUT person is meant to reach: it arrives by email or
+// WhatsApp and renders inline Clerk sign-up, after which Clerk redirects back to
+// it with the token still in the path (ADR-0011 §6). Redirecting it to /sign-in
+// would strip the token from the destination the visitor actually came for — and
+// a lost token is not recoverable by the person holding it, only by the owner
+// minting a fresh invitation.
+//
+// The exclusion grants NOTHING. The page renders a landing and a form; accepting
+// requires a live session, checked in the page and enforced again by the identity
+// service, which is the authority (ADR-0004). The rule this file already states
+// holds unchanged: the redirect is a routing convenience, never a security
+// control.
+const isPublicInviteLink = createRouteMatcher(['/invitations/:token/accept']);
+
 // A keyless preview/CI build must still serve pages. `clerkMiddleware()` throws
 // without a publishable key, so in that environment the middleware is a
 // pass-through and `currentSession()` reports nobody signed in — the surfaces
@@ -37,7 +52,7 @@ const passthrough = () => NextResponse.next();
 
 export default clerkConfigured
   ? clerkMiddleware(async (auth, req) => {
-      if (!isProtectedRoute(req)) return;
+      if (!isProtectedRoute(req) || isPublicInviteLink(req)) return;
 
       const { userId } = await auth();
       if (userId) return;

@@ -39,7 +39,10 @@ import { currentSession, isSignedIn } from '@/server/session';
 // resolution itself now lives beside the rest of the session logic.
 export { isSignedIn };
 
-import type { Project, Decision, ChangeOrderDetail, ChangeOrderSummary, AuditResult, Pillars, MeProfile } from './types';
+import type {
+  Project, Decision, ChangeOrderDetail, ChangeOrderSummary, AuditResult, Pillars, MeProfile,
+  OperatingModel, Role,
+} from './types';
 import {
   directoryOf, countsOf, toProject, toDecision, toChangeOrderSummary, toChangeOrderDetail,
   toAuditResult, projectedIfApproved,
@@ -114,6 +117,10 @@ const ROUTES = {
   createProject: {
     method: 'POST', path: () => '/projects',
     handler: (c) => c.http.identity.createProject,
+  },
+  setOperatingModel: {
+    method: 'PATCH', path: (p) => `/projects/${enc(p.id)}/operating-model`,
+    handler: (c) => c.http.identity.setOperatingModel,
   },
   inviteCounterparty: {
     method: 'POST', path: (p) => `/projects/${enc(p.id)}/invitations`,
@@ -334,6 +341,53 @@ export async function createProject(input: { name: string; baselineBudgetCents: 
   return call<{ id: string }>('createProject', {}, input);
 }
 
+// ── Band B: the build-creation wizard (ADR-0011, LINA-179) ───────────────────
+
+/**
+ * The wizard's own read. `getProject()` above composes FOUR calls — identity plus
+ * the ledger's pillars and both list folds — because that is what the dashboard
+ * needs. A wizard step needs the build's name, status and operating model and
+ * nothing else, and issuing three extra reads against a build with no decisions,
+ * no change orders and no second party yet would be three round trips to derive
+ * four "nothing here" pillars.
+ *
+ * Returns the wire shape rather than the composed `Project`: there are no pillars
+ * or counts to compose, and manufacturing empty ones would put a screen-shaped
+ * object in circulation that says "cost: green" about a build nobody has agreed
+ * anything on.
+ */
+export async function getBuild(id: string): Promise<WireProject> {
+  return call<WireProject>('getProject', { id });
+}
+
+/**
+ * Wizard step 1 (M2/D2). Creates the build row as `status='draft'` with no
+ * operating model — the draft-first spine of ADR-0011 decision 2. The build is
+ * real and owned from this moment; it becomes `active` only when step 3's first
+ * invite commits it.
+ */
+export async function createBuildDraft(input: {
+  name: string;
+  baselineBudgetCents: number;
+}): Promise<{ id: string }> {
+  return call<{ id: string }>('createProject', {}, { ...input, draft: true });
+}
+
+/**
+ * Wizard step 2 (M3/D3). Owner-only; the service rejects anything outside
+ * {turnkey, direct, hybrid} and 409s once the build has committed — the choice is
+ * "asked once, never again" (pen: Note — Operating model asked once), so it is not
+ * editable after commit and this call is not a settings update.
+ *
+ * Returns the updated project view so the wizard advances without a second GET.
+ */
+export async function setOperatingModel(
+  projectId: string,
+  operatingModel: OperatingModel,
+): Promise<WireProject> {
+  return call<WireProject>('setOperatingModel', { id: projectId }, { operatingModel });
+}
+
 /**
  * FR1, second half. The raw invitation token comes back EXACTLY ONCE and is
  * never persisted — the caller must show it to the inviter immediately, and it
@@ -345,14 +399,23 @@ export async function createProject(input: { name: string; baselineBudgetCents: 
  * single-use token comes back either way, so the owner always has a link to
  * hand over even when delivery fails.
  */
+/**
+ * `role` defaults to `counterparty` — the R0 behaviour and, since ADR-0011 §4,
+ * the GC's unchanged name. Band B's Direct-to-specialty and Hybrid models pass
+ * `subcontractor`. The service is the authority on which role THIS build's
+ * operating model admits and 400s on a mismatch; sending the role we intend and
+ * letting it rule is the point, because the alternative is the client deciding
+ * who may join a record.
+ */
 export async function inviteCounterparty(
   projectId: string,
   email?: string,
+  role: Exclude<Role, 'owner'> = 'counterparty',
 ): Promise<{ token: string; emailed: boolean }> {
   const res = await call<{ token: string; emailed?: boolean; invitation: { id: string } }>(
     'inviteCounterparty',
     { id: projectId },
-    { role: 'counterparty', ...(email ? { email } : {}) },
+    { role, ...(email ? { email } : {}) },
   );
   return { token: res.token, emailed: res.emailed === true };
 }

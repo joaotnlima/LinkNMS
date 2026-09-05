@@ -3,7 +3,20 @@
 // (business-critical calc is server-side — role boundary). Pillars and the
 // chain-verify result arrive pre-derived from the Ledger & Budget service.
 
-export type Role = 'owner' | 'counterparty';
+// `subcontractor` arrived with migration 0009 / ADR-0011 decision 4: the launch
+// role vocabulary. The GC deliberately STAYS `counterparty` (no rename), so every
+// existing surface keeps rendering unchanged; specialty subs are the new value.
+export type Role = 'owner' | 'counterparty' | 'subcontractor';
+
+// Band B (ADR-0011 decision 1). Chosen once during build creation and never asked
+// again — it decides which counterparty role the build may invite.
+export type OperatingModel = 'turnkey' | 'direct' | 'hybrid';
+
+// ADR-0011 decision 2, draft-first: the build row exists from wizard step 1 and
+// flips to `active` when the first invite commits it. A `null` operatingModel is
+// a first-class "not chosen yet" — a draft mid-wizard, or a pre-Band-B project.
+export type BuildStatus = 'draft' | 'active';
+
 export type RagStatus = 'green' | 'amber' | 'red';
 export type IconName = 'check-circle' | 'info' | 'alert-triangle' | 'alert-octagon';
 export type PillarKey = 'cost' | 'time' | 'scope' | 'quality';
@@ -49,6 +62,10 @@ export interface Project {
   baselineBudgetCents: number;
   currentBudgetCents: number;
   actingRole: Role; // the party derived server-side from the session
+  // Band B projections (ADR-0011). Optional so the R0 surfaces that predate the
+  // wizard keep compiling against a project fetched before 0009 back-filled.
+  status?: BuildStatus;
+  operatingModel?: OperatingModel | null;
   members: Party[];
   pillars: Pillars;
   counts: {

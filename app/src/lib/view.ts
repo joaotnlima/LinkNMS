@@ -24,7 +24,7 @@
 //     wrong name is worse than an honest gap.
 import type {
   Project, Pillars, Decision, Revision, ChangeOrderSummary, ChangeOrderDetail,
-  AuditResult, AuditEvent, Role, Party,
+  AuditResult, AuditEvent, Role, Party, BuildStatus, OperatingModel,
 } from './types';
 
 // ── Wire shapes (what the services actually return) ──────────────────────────
@@ -41,6 +41,12 @@ export interface WireProject {
   currentBudgetCents: number;
   actingRole: Role;
   createdAt: string;
+  // Band B, added by migration 0009 / ADR-0011 and returned by shapeProject().
+  // Optional here rather than required: this interface is also the shape the
+  // pre-0009 fixtures and any deployed-but-not-yet-migrated API return, and a
+  // required field would turn a rolling deploy into a type lie.
+  status?: BuildStatus;
+  operatingModel?: OperatingModel | null;
   members: WireMember[];
 }
 
@@ -90,7 +96,14 @@ export const UNKNOWN_PARTY = 'Unknown party';
 // 'contractor'/'viewer' as a *party* role, which is a different axis from the
 // per-project membership role; anything that is not the owner is the
 // counterparty as far as these surfaces are concerned.
-const asRole = (role: string | null | undefined): Role => (role === 'owner' ? 'owner' : 'counterparty');
+// `subcontractor` is a real membership role since migration 0009 (ADR-0011 §4),
+// so it is mapped rather than folded into `counterparty`. Folding it would
+// attribute a specialty sub's entry to "the GC" on the audit trail — an invented
+// attribution, which rule 2 at the top of this file forbids. Anything else still
+// falls back to `counterparty`: an unknown role is a contract drift, and the
+// conservative read is "the other party", not "the owner".
+const asRole = (role: string | null | undefined): Role =>
+  role === 'owner' ? 'owner' : role === 'subcontractor' ? 'subcontractor' : 'counterparty';
 
 export function directoryOf(project: WireProject): Directory {
   const dir: Directory = new Map();
@@ -137,6 +150,12 @@ export function toProject(wire: WireProject, pillars: Pillars, counts: Counts): 
     baselineBudgetCents: wire.baselineBudgetCents,
     currentBudgetCents: wire.currentBudgetCents,
     actingRole: wire.actingRole,
+    // Passed through, never inferred. "Is this build still a draft?" is the
+    // question the wizard resumes on, and guessing it from (say) "has no
+    // counterparty" would show the invite step for a build the owner already
+    // committed with a copy-link.
+    status: wire.status,
+    operatingModel: wire.operatingModel ?? null,
     members: wire.members.map(toParty),
     pillars,
     counts,

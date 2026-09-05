@@ -1,5 +1,6 @@
 // Presentation helpers. Money is integer cents on the wire (design §6); we only
 // format for display — never compute budget/status here.
+import type { Role } from './types';
 
 export function money(cents: number): string {
   const sign = cents < 0 ? '-' : '';
@@ -37,8 +38,16 @@ export function formatDateTime(iso: string): string {
   return `${date} · ${time}`;
 }
 
-export function roleLabel(role: 'owner' | 'counterparty'): string {
-  return role === 'owner' ? 'Owner' : 'GC';
+/**
+ * The short attribution label beside a name. `subcontractor` arrived with
+ * migration 0009 / ADR-0011 §4 and is labelled distinctly rather than folded into
+ * "GC": on a record whose promise is "who decided this", calling a specialty
+ * contractor the general contractor is a wrong answer to the product's only
+ * question. "Trade" rather than "Sub" — it is what the trades call themselves and
+ * it does not read as a diminutive of the GC.
+ */
+export function roleLabel(role: Role): string {
+  return role === 'owner' ? 'Owner' : role === 'subcontractor' ? 'Trade' : 'GC';
 }
 
 /**

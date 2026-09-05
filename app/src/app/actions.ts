@@ -14,8 +14,11 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
-import { ApiError, createProject, inviteCounterparty, acceptInvitation } from '@/lib/api';
+import {
+  ApiError, createProject, createBuildDraft, setOperatingModel, inviteCounterparty, acceptInvitation,
+} from '@/lib/api';
 import { parseBudgetToCents } from '@/lib/format';
+import { OPERATING_MODELS, inviteRoleFor, type OperatingModel } from '@/lib/build-creation';
 
 export interface FormState { error?: string }
 
@@ -46,6 +49,67 @@ export async function createProjectAction(_prev: FormState, form: FormData): Pro
   redirect(`/projects/${id}/invite`);
 }
 
+// ── Band B: the build-creation wizard (LINA-179, ADR-0011) ──────────────────
+
+/**
+ * Wizard step 1 (M2/D2). Creates the build as a DRAFT and moves to step 2.
+ *
+ * Draft-first is the whole point (ADR-0011 decision 2): the owner's build exists
+ * on the server the moment they name it, so a wizard abandoned at step 2 on a
+ * phone is resumable rather than lost. It is not yet a shared record — nobody
+ * else is on it until step 3's invite commits it.
+ *
+ * The baseline budget is collected HERE, not because the pen's screen 02 draws it
+ * (it does not — it draws site address and build type, for which no column
+ * exists) but because `createProject` requires it and it is the number every
+ * later claim is measured against. Asking for it after the build is live would
+ * mean a live record with no baseline.
+ */
+export async function createBuildAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const name = String(form.get('name') ?? '').trim();
+  if (!name) return { error: 'Give the build a name.' };
+
+  let baselineBudgetCents: number;
+  try {
+    baselineBudgetCents = parseBudgetToCents(String(form.get('baselineBudget') ?? ''));
+  } catch (err) {
+    return { error: message(err, 'That baseline budget is not a valid amount.') };
+  }
+
+  let id: string;
+  try {
+    ({ id } = await createBuildDraft({ name, baselineBudgetCents }));
+  } catch (err) {
+    return { error: message(err, 'Could not create the build.') };
+  }
+  redirect(`/projects/${id}/operating-model`);
+}
+
+/**
+ * Wizard step 2 (M3/D3). Sets the operating model and moves to the invite step.
+ *
+ * The value is checked against the frozen list before the call — not as a
+ * substitute for the service's own validation (it rejects anything outside the
+ * three regardless) but so a mangled form post is a sentence beside the control
+ * rather than a 400 the owner has to interpret.
+ */
+export async function setOperatingModelAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const projectId = String(form.get('projectId') ?? '');
+  if (!projectId) return { error: 'Missing build.' };
+
+  const choice = String(form.get('operatingModel') ?? '');
+  if (!OPERATING_MODELS.includes(choice as OperatingModel)) {
+    return { error: 'Choose how this build is run.' };
+  }
+
+  try {
+    await setOperatingModel(projectId, choice as OperatingModel);
+  } catch (err) {
+    return { error: message(err, 'Could not save how this build is run.') };
+  }
+  redirect(`/projects/${projectId}/invite`);
+}
+
 // ── FR1: invite the GC ───────────────────────────────────────────────────────
 
 export interface InviteState extends FormState {
@@ -70,8 +134,21 @@ export async function inviteAction(_prev: InviteState, form: FormData): Promise<
   const projectId = String(form.get('projectId') ?? '');
   if (!projectId) return { error: 'Missing project.' };
   const email = String(form.get('email') ?? '').trim();
+
+  // Band B (ADR-0011 §4): which role this build may invite follows its operating
+  // model. The model is read from the hidden field the invite screen rendered
+  // from the SERVER's projection, and it is mapped through `inviteRoleFor` — the
+  // form never posts a role directly, so a tampered field can at worst name a
+  // different model, and the service then rejects a role that build does not
+  // admit. A legacy project (no model) falls through to `counterparty`, R0's
+  // behaviour, unchanged.
+  const role = inviteRoleFor(String(form.get('operatingModel') ?? '') as OperatingModel);
+
   try {
-    const { token, emailed } = await inviteCounterparty(projectId, email || undefined);
+    const { token, emailed } = await inviteCounterparty(projectId, email || undefined, role);
+    // This invite is what commits a draft build (draft→active). Revalidate the
+    // build's own route so the record the owner lands on is the committed one,
+    // not a cached draft.
     revalidatePath(`/projects/${projectId}`);
     return { token, emailed, ...(email ? { sentTo: email } : {}) };
   } catch (err) {
