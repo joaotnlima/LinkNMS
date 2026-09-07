@@ -24,6 +24,7 @@ import { createPool, sslFor } from '../ledger/db.mjs';
 import { createPgLedger } from '../ledger/pg-ledger.mjs';
 import { verifyChain } from '../ledger/hash-chain.mjs';
 import { createPgStore } from './pg-store.mjs';
+import { createPartyStore } from './parties.mjs';
 import { createIdentityService } from './identity.mjs';
 
 const { Pool } = pg;
@@ -41,10 +42,16 @@ const ssl = sslFor(DB);
 // is the `migrator` (owner) connection and the *_app roles are assumed to exist —
 // exactly the production split. pgcrypto is likewise pre-installed by the owner.
 //
-// PG runs the FULL identity set through 0009 (Band B, ADR-0011), which is what
-// gives the suite its write-guard teeth: identity_app reaches operating_model and
-// status only through the column-scoped UPDATE granted in 0009, and still can't
-// touch baseline_budget_cents / owner_party_id.
+// PG runs the FULL identity set, which is what gives the suite its write-guard
+// teeth: identity_app reaches operating_model and status only through the
+// column-scoped UPDATE granted in 0009, and still can't touch
+// baseline_budget_cents / owner_party_id.
+//
+// This list must be EXTENDED whenever a migration is added — it stalled at 0009
+// while 0010–0012 shipped, so the suite was quietly asserting against a schema
+// production had already moved past, and `setup_complete` (0011) was untestable
+// here. A migration missing from this list is a test that proves nothing about
+// the database anyone actually runs.
 const MIGRATIONS = [
   'db/0001_platform.sql',
   'services/ledger/migrations/0001_ledger.sql',
@@ -59,6 +66,9 @@ const MIGRATIONS = [
   'services/identity/migrations/0007_identity.sql',
   'services/identity/migrations/0008_identity.sql',
   'services/identity/migrations/0009_identity.sql',
+  'services/identity/migrations/0010_identity.sql',
+  'services/identity/migrations/0011_identity.sql',
+  'services/identity/migrations/0012_identity.sql',
 ];
 
 describe('Postgres identity (membership + authz + ledger seam)', { skip: DB ? false : 'set DATABASE_URL to run' }, () => {
@@ -243,5 +253,29 @@ describe('Postgres identity (membership + authz + ledger seam)', { skip: DB ? fa
 
     // An unknown party is a 404, never a fabricated name.
     await assert.rejects(svc.getMe({ actorPartyId: randomUUID() }), (e) => e.status === 404);
+  });
+
+  // The portal root reads this flag to decide whether to send someone back to
+  // account setup (LINA-189, app/src/app/page.tsx). It is asserted here because
+  // the only way it can break is silently: drop `setup_complete` from
+  // parties.mjs's row mapping and every party reads as "not set up", which turns
+  // the portal into a permanent redirect to a screen the person already
+  // finished. Nothing else in the suite would notice.
+  test('the party mapping carries setup_complete across a first sign-in and setup', async () => {
+    const parties = createPartyStore({ pool: appPool });
+    const email = `seatless-${randomUUID()}@example.com`;
+
+    // First authenticated request: the placeholder row. Unfinished by
+    // construction — the name is guessed and the role is the default.
+    const created = await parties.findOrCreateByEmail({ email, displayName: 'Ana' });
+    assert.equal(created.setupComplete, false);
+    assert.equal((await parties.getById(created.id)).setupComplete, false);
+
+    // …and after the person actually completes the form.
+    const store = createPgStore({ pool: appPool, ledger });
+    await store.completeProfile({
+      partyId: created.id, displayName: 'Ana Lima', role: 'owner', language: 'pt',
+    });
+    assert.equal((await parties.getById(created.id)).setupComplete, true);
   });
 });

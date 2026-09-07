@@ -25,6 +25,17 @@ import { getContainer } from '@services/gateway/container.mjs';
 
 export interface Session {
   partyId: string;
+  /**
+   * False until the person has been through account setup (LINA-189).
+   *
+   * A party row exists from the FIRST authenticated request — `findOrCreateByEmail`
+   * upserts one so attribution has somewhere to land — but at that moment its
+   * name is guessed off Clerk and its role is the `contractor` default. Neither
+   * was chosen by the person, and on a trust product a role nobody picked is
+   * worse than no role. This flag is how a surface tells that placeholder apart
+   * from a profile its owner actually completed.
+   */
+  setupComplete: boolean;
 }
 
 /**
@@ -91,7 +102,10 @@ export const sessionState = cache(async (): Promise<SessionState> => {
     email,
     displayName: user?.fullName ?? undefined,
   });
-  return { kind: 'party', session: { partyId: party.id } };
+  return {
+    kind: 'party',
+    session: { partyId: party.id, setupComplete: party.setupComplete === true },
+  };
 });
 
 /**
