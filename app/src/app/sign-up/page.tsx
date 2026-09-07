@@ -11,16 +11,22 @@
 // where the new user picks a display name + role before entering any record.
 //
 // Why a client component: <SignUp/> from @clerk/nextjs needs the browser
-// Clerk context (<ClerkProvider> is wired in components/providers.tsx). We wrap
-// it in the scoped .ob-auth onboarding palette so it matches D0a-setup.
+// Clerk context (<ClerkProvider> is wired in components/providers.tsx).
+//
+// LINA-191: the frame is now the shared split-screen `AuthShell`, the same one
+// /sign-in renders. The pen draws one Band A · Account artboard, not two — the
+// two doors are the same screen with a different verb, and keeping them in one
+// component is what stops the sign-in door and the sign-up door from drifting
+// into looking like different products (the LINA-124 note above, made
+// structural rather than a convention).
 'use client';
 
 import { Suspense } from 'react';
 import { SignUp } from '@clerk/nextjs';
 import { useSearchParams } from 'next/navigation';
 
-import { clerkAppearance } from '@/components/clerkAppearance';
-import './sign-up.css';
+import { AuthShell } from '@/components/AuthShell';
+import { authShellAppearance } from '@/components/clerkAppearance';
 
 // After a completed sign-up, land on the account-setup screen (D0a-setup) — a
 // brand-new user has no display name or role yet, so the portal root is wrong.
@@ -77,24 +83,24 @@ function ClerkSignUp() {
       forceRedirectUrl={afterSignUp}
       fallbackRedirectUrl={afterSignUp}
       initialValues={emailAddress ? { emailAddress } : undefined}
-      appearance={clerkAppearance}
+      appearance={authShellAppearance}
     />
   );
 }
 
 export default function SignUpPage() {
   return (
-    <main className="ob-auth">
-      <div className="ob-auth-head">
-        <span className="ob-auth-brand">LinkNMS</span>
-        <p className="ob-auth-sub">
-          Create your account. Everything you record here is attributed to you by name and
-          time-stamped — the shared record of what was agreed, what changed, and what it cost.
-        </p>
-      </div>
-
+    <AuthShell
+      title="Create your LinkNMS account"
+      // Deliberately the same welcome line as /sign-in: at this point the
+      // visitor has not chosen a method yet, and the choice is identical on
+      // both doors.
+      description="Welcome — choose how you'd like to continue."
+      promise="One account for every build you're part of."
+      promiseShort="One account for every build."
+    >
       {PUBLISHABLE_KEY ? (
-        <div className="ob-auth-card">
+        <div className="au-clerk">
           {/* useSearchParams() needs a boundary: without one Next refuses to
               prerender this route at build time. */}
           <Suspense fallback={null}>
@@ -102,8 +108,7 @@ export default function SignUpPage() {
           </Suspense>
         </div>
       ) : (
-        <section className="ob-auth-preview" role="note">
-          <h1>Sign-up isn&rsquo;t available in this preview</h1>
+        <section className="au-preview" role="note">
           <p>
             Authentication isn&rsquo;t configured in this environment yet. Once Clerk keys are
             provisioned, account creation opens here.
@@ -113,6 +118,6 @@ export default function SignUpPage() {
           </p>
         </section>
       )}
-    </main>
+    </AuthShell>
   );
 }

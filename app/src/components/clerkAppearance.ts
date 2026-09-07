@@ -27,3 +27,40 @@ export const clerkAppearance = {
     footerActionLink: { color: '#3e5c8a' },
   },
 };
+
+/**
+ * The same brand, dressed for the LINA-191 split-screen door (`AuthShell`).
+ *
+ * Two differences from the standalone appearance above, and only two:
+ *
+ *  1. NO CARD CHROME. Inside the auth column the Clerk card *is* the column —
+ *     the artboard draws no second border there. The invite-accept screen still
+ *     uses `clerkAppearance`, where the card floats on its own and needs it.
+ *  2. NO CLERK HEADER. The artboard puts the title and the one-line welcome
+ *     above the card, in our type, and Clerk's defaults say something else
+ *     ("Welcome back! Please sign in to continue"). Rendering the header
+ *     ourselves also means the keyless preview state is titled identically
+ *     instead of being an untitled notice.
+ *
+ * Everything else is handed to CSS via the class-name form of `elements`, so
+ * the control spec lives in auth-shell.css next to the layout it belongs to and
+ * reads the same tokens — including the dark scheme, which an inline style
+ * object of frozen hexes cannot follow.
+ *
+ * `socialButtonsPlacement: 'top'` matches the artboard: SSO first, "or", then
+ * email and password. That order is the design's claim about which door most
+ * people use, not a Clerk default worth inheriting silently.
+ */
+export const authShellAppearance = {
+  ...clerkAppearance,
+  layout: {
+    socialButtonsPlacement: 'top' as const,
+    socialButtonsVariant: 'blockButton' as const,
+  },
+  elements: {
+    ...clerkAppearance.elements,
+    card: { border: 0, boxShadow: 'none', borderRadius: 0 },
+    cardBox: { border: 0, boxShadow: 'none', borderRadius: 0 },
+    header: { display: 'none' },
+  },
+};
