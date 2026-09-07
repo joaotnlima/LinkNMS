@@ -1,4 +1,5 @@
-// Sign-in — Clerk (LINA-124, Auth Migration 0B).
+// Sign-in — Clerk (LINA-124, Auth Migration 0B); re-skinned to the D0 · Sign in
+// artboard in LINA-191.
 //
 // ── WHAT THIS REPLACED ───────────────────────────────────────────────────────
 // This page used to hold TWO doors, and both are gone:
@@ -15,15 +16,19 @@
 // The "check your email" state that `?sent=1` used to render is now inside
 // Clerk's own component (routing="hash", so it stays on /sign-in), which is the
 // same arrangement D0a-magic uses on /sign-up (LINA-131).
+//
+// ── LINA-191 ─────────────────────────────────────────────────────────────────
+// The layout moved from a centred card on Paper to the split-screen `AuthShell`.
+// Only the frame changed: the credential form is still Clerk's, hosted not
+// rebuilt (LINA-129 §6).
 'use client';
 
 import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { SignIn } from '@clerk/nextjs';
 
-import { clerkAppearance } from '@/components/clerkAppearance';
-// The onboarding palette, shared with D0a so the two doors look like one system.
-import '../sign-up/sign-up.css';
+import { AuthShell } from '@/components/AuthShell';
+import { authShellAppearance } from '@/components/clerkAppearance';
 
 const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -42,13 +47,13 @@ function SignInCard() {
   const next = safeNext(useSearchParams().get('next'));
 
   return (
-    <div className="ob-auth-card">
+    <div className="au-clerk">
       <SignIn
         routing="hash"
         signUpUrl="/sign-up"
         forceRedirectUrl={next}
         fallbackRedirectUrl={next}
-        appearance={clerkAppearance}
+        appearance={authShellAppearance}
       />
     </div>
   );
@@ -56,30 +61,26 @@ function SignInCard() {
 
 export default function SignInPage() {
   return (
-    <main className="ob-auth">
-      <div className="ob-auth-head">
-        <span className="ob-auth-brand">LinkNMS</span>
-        <p className="ob-auth-sub">
-          Sign in to the shared record. Everything you record here is attributed to you by name and
-          time-stamped.
-        </p>
-      </div>
-
+    <AuthShell
+      title="Sign in to LinkNMS"
+      description="Welcome — choose how you'd like to continue."
+      promise="One account for every build you're part of."
+      promiseShort="One account for every build."
+    >
       {PUBLISHABLE_KEY ? (
         // useSearchParams() forces a client render boundary; without the
         // Suspense wrapper the whole route opts out of static generation.
-        <Suspense fallback={<div className="ob-auth-card" aria-busy="true" />}>
+        <Suspense fallback={<div className="au-clerk" aria-busy="true" />}>
           <SignInCard />
         </Suspense>
       ) : (
-        <section className="ob-auth-preview" role="note">
-          <h1>Sign-in isn&rsquo;t available in this preview</h1>
+        <section className="au-preview" role="note">
           <p>
             Authentication isn&rsquo;t configured in this environment yet. Once Clerk keys are
             provisioned, sign-in opens here.
           </p>
         </section>
       )}
-    </main>
+    </AuthShell>
   );
 }

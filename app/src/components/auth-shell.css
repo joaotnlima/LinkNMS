@@ -1,0 +1,391 @@
+/* D0 · Sign in — split-screen auth shell (LINA-191).
+ *
+ * Every colour here is a globals.css token (LINA-156 / ADR-0009 put the portal
+ * `:root` on the pen palette), so this surface follows the dark scheme for free
+ * and nothing re-declares a hex. The mapping from the artboard's token names:
+ *   $ui-raised → --surface-raised   $ui-sunken  → --surface-sunken
+ *   $ui-outline → --outline         $ui-outline-strong → --outline-strong
+ *   $ui-muted-fg → --muted          $ink → --ink   $ink-35 → --ink-35
+ *   $owner-blue → --owner           $lp-cream → --lp-cream
+ *   $plan-closed-line → --plan-closed-line   $lp-display → --lp-display
+ *
+ * MOBILE FIRST. The 390×820 artboard is the base rule set; the 1440×900 one
+ * arrives at the 1024px breakpoint. The two artboards share the whole auth
+ * column verbatim — only the brand panel and three type sizes differ — so the
+ * media query stays short on purpose. */
+
+/* The portal shell is a 780px reading column (globals.css `.shell`), which is
+ * right for the record and wrong for a door that is a full-bleed photograph
+ * beside a form. Widened only when the shell's child IS this screen. */
+.shell:has(> .au) {
+  max-width: none;
+  box-shadow: none;
+  background: var(--surface-raised);
+}
+
+/* Fallback for engines without `:has()`. The classic full-bleed escape: pull
+ * left by half the gap between the container and the viewport, then span the
+ * viewport. Not the primary rule because `100vw` includes the scrollbar. */
+@supports not selector(:has(*)) {
+  .au {
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
+  }
+}
+
+.au {
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--surface-raised);
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: 230px 1fr;
+}
+
+/* ── Brand panel ─────────────────────────────────────────────────────────── */
+
+.au-brand {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px;
+}
+
+.au-brand__photo,
+.au-brand__photo img {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+}
+
+.au-brand__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Pen `Scrim` — darkest at the foot, where the wordmark and promise sit. The
+ * stops are the artboard's, not a guess: #16181d at 40% → 80% → 95%. */
+.au-brand__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    180deg,
+    rgba(22, 24, 29, 0.4) 0%,
+    rgba(22, 24, 29, 0.8) 50%,
+    rgba(22, 24, 29, 0.95) 100%
+  );
+}
+
+.au-brand__top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--lp-cream);
+}
+
+.au-brand__mark {
+  width: 22px;
+  height: 22px;
+}
+
+.au-brand__word {
+  font-family: var(--lp-display);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  color: var(--lp-cream);
+}
+
+.au-brand__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 532px;
+}
+
+.au-brand__promise {
+  margin: 0;
+  font-family: var(--lp-display);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.6px;
+  line-height: 1.1;
+  color: var(--lp-cream);
+}
+
+/* One promise ships per breakpoint (see AuthShell's `promiseShort`): the short
+ * line on the 230px header, the full sentence on the 620px panel. */
+.au-brand__promise:not(.au-brand__promise--short) {
+  display: none;
+}
+
+/* The trust list belongs to the tall panel only — the mobile artboard has no
+ * room for it under a 230px photo. `display: none` and not a conditional render
+ * so there is one DOM for both sizes. */
+.au-brand__trust {
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.au-brand__trust li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  /* Pen `#fbfaf7d9` — cream at 85% over the scrim. */
+  color: color-mix(in srgb, var(--lp-cream) 85%, transparent);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* The artboard names `$plan-closed-line` here, and this is the one place that
+ * token is the wrong one to ship: it re-binds to a near-black green under the
+ * dark scheme (#2b4438), and this panel is a photograph under a 95% scrim in
+ * BOTH schemes — it never flips, so a flipping token disappears on it.
+ * `--plan-closed-on-dark` is the design system's own answer to "this green, on
+ * a dark surface", and it holds one value across both. */
+.au-tick {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--plan-closed-on-dark);
+}
+
+/* ── Auth column ─────────────────────────────────────────────────────────── */
+
+.au-panel {
+  background: var(--surface-raised);
+  display: flex;
+  justify-content: center;
+  padding: 26px 22px;
+}
+
+.au-col {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.au-head {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.au-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--ink);
+}
+
+.au-desc {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.au-legal {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-35);
+}
+
+/* ── The Clerk card ──────────────────────────────────────────────────────── */
+
+/* Clerk's own chrome is off (`authShellAppearance`): inside this column the
+ * card IS the column, so a bordered card floating in a bordered panel would
+ * read as two nested surfaces. Everything below re-dresses Clerk's elements to
+ * the artboard's control spec. */
+.au-clerk {
+  width: 100%;
+}
+
+.au-clerk .cl-cardBox,
+.au-clerk .cl-card {
+  width: 100%;
+  max-width: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+  gap: 16px;
+}
+
+/* Pen `SSO` — three block buttons, 8px radius, hairline in Outline Strong. */
+.au-clerk .cl-socialButtonsBlockButton {
+  border: 1px solid var(--outline-strong);
+  border-radius: 8px;
+  padding: 12px 16px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.au-clerk .cl-socialButtonsBlockButton:hover {
+  background: var(--surface-sunken);
+}
+
+.au-clerk .cl-dividerLine {
+  background: var(--outline);
+}
+
+.au-clerk .cl-dividerText {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: none;
+}
+
+.au-clerk .cl-formFieldLabel {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.au-clerk .cl-formFieldInput {
+  border: 1px solid var(--outline-strong);
+  border-radius: 6px;
+  padding: 12px 13px;
+  font-size: 14px;
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+
+/* Pen `Forgot` — Owner Blue, 12.5/600, the only other blue on the screen
+ * besides the primary action. */
+.au-clerk .cl-formFieldAction,
+.au-clerk .cl-footerActionLink {
+  color: var(--owner);
+  font-weight: 600;
+}
+
+.au-clerk .cl-formFieldAction {
+  font-size: 12.5px;
+}
+
+/* `--lp-cream` and not `--paper` for the label, for the same reason as the tick
+ * above: Owner Blue stays a mid blue in the dark scheme while `--paper` flips to
+ * near-black, which would put dark text on a blue button. `--lp-cream` holds
+ * #fbfaf7 in both — the value the artboard's `$paper` resolves to here, and the
+ * literal white the pen's other primary buttons already spell out. */
+.au-clerk .cl-formButtonPrimary {
+  background: var(--owner);
+  color: var(--lp-cream);
+  border: 0;
+  border-radius: 6px;
+  padding: 13px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+
+/* Pen `Foot` — "New to LinkNMS?" in Muted, "Create account" in Owner Blue, both
+ * at 13px. The size is repeated on the link because globals.css resets anchors
+ * to `color: inherit` only, not size, and an inherited 16px there makes the
+ * secondary door louder than the primary button above it. */
+.au-clerk .cl-footerAction,
+.au-clerk .cl-footerActionText,
+.au-clerk .cl-footerActionLink {
+  font-size: 13px;
+}
+
+.au-clerk .cl-footerAction,
+.au-clerk .cl-footerActionText {
+  color: var(--muted);
+}
+
+/* Clerk's footer also carries its own "Secured by Clerk" strip. It is NOT
+ * hidden here: removing it is a plan entitlement on Clerk's side, and the only
+ * way to do it from CSS is to target a generated `.cl-internal-*` hash that
+ * changes between releases — a selector that silently stops matching is worse
+ * than a line of duplicate small print. */
+
+/* ── Keyless preview ─────────────────────────────────────────────────────── */
+
+/* No publishable key ⇒ no Clerk (components/providers.tsx renders without it).
+ * The door still has to open and say why, rather than crash. */
+.au-preview {
+  border: 1px solid var(--outline);
+  border-radius: 12px;
+  background: var(--surface-sunken);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.au-preview p {
+  margin: 0;
+}
+
+.au-preview a {
+  color: var(--owner);
+  font-weight: 600;
+}
+
+/* ── 1440×900 artboard ───────────────────────────────────────────────────── */
+
+@media (min-width: 1024px) {
+  .au {
+    /* 620 of 1440 in the artboard; capped so the panel never eats an ultrawide
+       and the form never drifts off-centre. */
+    grid-template-rows: none;
+    grid-template-columns: minmax(0, 620fr) minmax(0, 820fr);
+    max-height: 100dvh;
+  }
+
+  .au-brand {
+    padding: 40px 44px 44px;
+  }
+
+  .au-brand__word {
+    font-size: 17px;
+    letter-spacing: -0.4px;
+  }
+
+  .au-brand__promise:not(.au-brand__promise--short) {
+    display: block;
+    font-size: 32px;
+    letter-spacing: -1px;
+  }
+
+  .au-brand__promise--short {
+    display: none;
+  }
+
+  .au-brand__trust {
+    display: flex;
+  }
+
+  .au-panel {
+    padding: 40px;
+    align-items: center;
+    overflow-y: auto;
+  }
+
+  .au-title {
+    font-size: 26px;
+  }
+}

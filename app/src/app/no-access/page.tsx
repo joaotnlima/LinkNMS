@@ -17,7 +17,10 @@ import { redirect } from 'next/navigation';
 
 import { sessionState } from '@/server/session';
 import { SignOutLink } from '@/components/SignOutLink';
-import '../sign-up/sign-up.css';
+// Moved here in LINA-191 with its last consumer: /sign-in and /sign-up left the
+// `.ob-auth` centred-card layout for the split-screen AuthShell, so this
+// stylesheet no longer belongs under sign-up/.
+import './no-access.css';
 
 export const dynamic = 'force-dynamic';
 

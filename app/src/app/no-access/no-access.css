@@ -1,6 +1,8 @@
-/* D0a — sign-up / account-creation screen (LINA-131; palette migrated by
- * LINA-156). Front door of the onboarding flow; it read the same scoped pen
- * palette as D0a-setup while globals.css `:root` was still stale. LINA-156 /
+/* `.ob-auth` — the centred-card auth layout (LINA-131; palette migrated by
+ * LINA-156; moved out of sign-up/ by LINA-191, when /sign-in and /sign-up moved
+ * to the split-screen AuthShell and /no-access became its only consumer).
+ * It read the same scoped pen palette as D0a-setup while globals.css `:root`
+ * was still stale. LINA-156 /
  * ADR-0009 migrated `:root` onto that pen palette via the generated token
  * pipeline, so the local `--ob-*` alias block is gone and this surface reads the
  * shared globals.css tokens directly: Owner Blue `--owner`, Paper `--paper`, Ink
@@ -44,15 +46,8 @@
   color: var(--muted);
 }
 
-/* The Clerk <SignUp/> card carries the actual credential form (D0a) and its own
- * email-verification "check your email" state (D0a-magic). We only host and
- * brand it via the appearance prop; we never build a custom credential form
- * (Clerk Integration spec, LINA-129 §6). */
-.ob-auth-card {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-}
+/* (The `.ob-auth-card` Clerk host went with /sign-up in LINA-191 — its card is
+ * `.au-clerk` inside the split-screen shell now.) */
 
 /* Preview fallback when the publishable key is absent (build / misconfig).
  * Mirrors components/providers.tsx: the app must boot, not crash, without Clerk
