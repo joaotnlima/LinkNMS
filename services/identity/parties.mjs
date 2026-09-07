@@ -23,6 +23,12 @@ const mapParty = (r) => r && {
   displayName: r.display_name,
   email: r.email,
   role: r.role,
+  // Whether this party has been through account setup (LINA-189). Exposed
+  // because it is the ONLY way a surface can tell a finished profile from the
+  // placeholder `findOrCreateByEmail` leaves behind — a name guessed off Clerk
+  // and the default `contractor` role, neither of which the person chose. The
+  // portal root reads it to send an unfinished profile back to setup.
+  setupComplete: r.setup_complete === true,
 };
 
 const PARTY_ROLES = new Set(['owner', 'contractor', 'viewer']);

@@ -29,6 +29,20 @@ export default async function Home() {
   if (state.kind === 'anonymous') redirect('/sign-in');
   if (state.kind === 'unseated') redirect('/no-access');
 
+  // ── THE FOURTH STATE: SEATED BUT NEVER SET UP (LINA-189) ────────────────────
+  // /sign-up force-redirects to /onboarding/setup, so the happy path arrives
+  // here with a finished profile. Every OTHER way in skips that screen: signing
+  // IN rather than up (the returning claimant), abandoning the form, a failed
+  // submit, or a deep link. Those people got a party row anyway — named off
+  // Clerk, roled `contractor` by default — and nothing ever asked them again.
+  //
+  // That is not cosmetic on this product. The role is the label beside every
+  // decision they ever record, so an owner silently filed as the contractor is
+  // a wrong answer to "who decided this". Sending them back is the whole point
+  // of having the screen; it is idempotent (the setup write refuses a second
+  // run) and terminates, because completing it flips the flag that got them here.
+  if (!state.session.setupComplete) redirect('/onboarding/setup');
+
   // No `name` yet: there is no GET /me, so the heading stays un-personalised
   // rather than guessing one off an email. See EmptyPortal's header comment.
   return <EmptyPortal />;
