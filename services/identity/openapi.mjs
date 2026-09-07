@@ -89,6 +89,54 @@ export const schemas = {
     required: ['partyId', 'role', 'joinedAt'],
     properties: { partyId: { type: 'string' }, role: roleEnum, joinedAt: { type: 'string' } },
   },
+  // GET /projects — the portfolio card (ADR-0012 §A1), a projection, not the
+  // full Project payload. `role` is the acting party's role on the build,
+  // derived server-side; `updatedAt` is the record's most recent ledger
+  // activity; `counts` are the cheap server-batched folds.
+  ProjectSummary: {
+    type: 'object',
+    required: [
+      'id', 'name', 'status', 'role', 'operatingModel',
+      'baselineBudgetCents', 'currentBudgetCents', 'members', 'counts', 'updatedAt',
+    ],
+    properties: {
+      id: { type: 'string' },
+      name: { type: 'string' },
+      status: projectStatusEnum,
+      role: roleEnum,
+      operatingModel: operatingModelEnum,
+      baselineBudgetCents: { type: 'integer' },
+      currentBudgetCents: { type: 'integer' },
+      members: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['role', 'name'],
+          properties: {
+            role: roleEnum,
+            name: { type: ['string', 'null'] },
+          },
+        },
+      },
+      counts: {
+        type: 'object',
+        required: ['changeOrders', 'decisions'],
+        properties: {
+          changeOrders: { type: 'integer', minimum: 0 },
+          decisions: { type: 'integer', minimum: 0 },
+        },
+      },
+      // ISO-8601; the ledger head's occurredAt (most recent record activity).
+      updatedAt: { type: 'string' },
+    },
+  },
+  ProjectList: {
+    type: 'object',
+    required: ['projects'],
+    properties: {
+      projects: { type: 'array', items: { $ref: '#/components/schemas/ProjectSummary' } },
+    },
+  },
   Project: {
     type: 'object',
     required: [
@@ -259,6 +307,22 @@ export const spec = {
       },
     },
     '/projects': {
+      get: {
+        operationId: 'listProjects',
+        summary: 'The acting party’s own portfolio: every build they are a member of, most-recent-first (ADR-0012 §A1).',
+        description:
+          'Membership-scoped to the session — the party is NEVER a body/query param, and an ' +
+          'acting party can only ever list their own builds. Drafts are included (badged ' +
+          '`draft`) so an abandoned wizard is resumable. Budgets are ledger-authoritative ' +
+          '(baseline + Σ approved change orders); per-card counts are batched server-side.',
+        responses: {
+          200: {
+            description: 'The party’s projects, ordered most-recent-first',
+            content: json('ProjectList'),
+          },
+          401: errorResponse('No acting party in session'),
+        },
+      },
       post: {
         operationId: 'createProject',
         summary: 'Start a shared record; the creator becomes its owner (FR1).',

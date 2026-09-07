@@ -125,6 +125,15 @@ export function createMemoryStore() {
         .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a._order - b._order))
         .map(strip);
     },
+    // Portfolio card counts — one sweep over the table, mirroring the pg store's
+    // grouped query (ADR-0012 §A1). Returns projectId → decision count.
+    async countProjects(projectIds) {
+      const counts = new Map();
+      for (const d of decisions.values()) {
+        if (projectIds.includes(d.projectId)) counts.set(d.projectId, (counts.get(d.projectId) ?? 0) + 1);
+      }
+      return counts;
+    },
   };
 
   function strip(d) {

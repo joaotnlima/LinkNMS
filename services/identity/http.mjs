@@ -66,8 +66,15 @@ function originOf(headers = {}, env = process.env) {
  * @param {Object} deps
  * @param {ReturnType<import('./identity.mjs').createIdentityService>} deps.service
  * @param {ReturnType<typeof createRateLimiter>} [deps.rateLimiter]  injected so tests can trip the window
+ * @param {{ decisions(projectIds: string[]): Promise<Map<string, number>>, changeOrders(projectIds: string[]): Promise<Map<string, number>> }} [deps.counts]
+ *   Batched count providers for the portfolio card (GET /projects, ADR-0012 §A1).
+ *   Identity never reads a sibling schema, so the two folds live here at the
+ *   composition seam — the container wires them to the decision/change-order
+ *   stores' grouped `countProjects`. Absent → every card reads zero (the
+ *   identity-only tests), which is honest: this handler cannot invent counts it
+ *   has no port for, and the production container always supplies them.
  */
-export function createIdentityHttp({ service, rateLimiter = createRateLimiter() }) {
+export function createIdentityHttp({ service, rateLimiter = createRateLimiter(), counts = null }) {
   if (!service) throw new Error('createIdentityHttp requires { service }');
 
   // POST /projects — FR1, first half: a shared record with a baseline budget.
@@ -95,6 +102,40 @@ export function createIdentityHttp({ service, rateLimiter = createRateLimiter() 
         projectId: params.id,
       });
       return { status: 200, body: project };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // GET /projects — the portfolio list (LINA-197, ADR-0012 §A1): every build the
+  // acting party is a member of, most-recent-first. Session-scoped (the party is
+  // NEVER a query/body param), so one party's portfolio can never be another's.
+  // `counts` is composed here from the injected batched folds — the service
+  // cannot read siblings' schemas, and per-card list calls would be N+1.
+  async function listProjects({ session }) {
+    try {
+      const actorsProjects = await service.listProjects({ actorPartyId: actorOf(session) });
+      if (actorsProjects.length === 0) {
+        return { status: 200, body: { projects: [] }, headers: { 'cache-control': 'no-store' } };
+      }
+      const ids = actorsProjects.map((p) => p.id);
+      const [decisionCounts, changeOrderCounts] = await Promise.all([
+        counts?.decisions(ids) ?? Promise.resolve(new Map()),
+        counts?.changeOrders(ids) ?? Promise.resolve(new Map()),
+      ]);
+      return {
+        status: 200,
+        // Personal payload, scoped to the session — a shared cache must never
+        // hand one party's portfolio to another (same rule as GET /me).
+        headers: { 'cache-control': 'no-store' },
+        body: {
+          projects: actorsProjects.map((p) => ({
+            ...p,
+            counts: {
+              changeOrders: changeOrderCounts.get(p.id) ?? 0,
+              decisions: decisionCounts.get(p.id) ?? 0,
+            },
+          })),
+        },
+      };
     } catch (err) { return errorBody(err); }
   }
 
@@ -213,7 +254,7 @@ export function createIdentityHttp({ service, rateLimiter = createRateLimiter() 
   }
 
   return {
-    createProject, getProject, setOperatingModel, inviteCounterparty,
+    createProject, getProject, listProjects, setOperatingModel, inviteCounterparty,
     acceptInvitation, previewInvitation, getMe, completeProfile,
   };
 }

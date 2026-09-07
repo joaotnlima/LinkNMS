@@ -27,7 +27,10 @@
 //
 // PORT:
 //   appendEvent({ projectId, type, actorPartyId, occurredAt, payload }) -> { seq, entryHash }
-//   budgetSummary(projectId) -> { baselineBudgetCents, currentBudgetCents }
+//   budgetSummary(projectId) -> { baselineBudgetCents, currentBudgetCents, updatedAt }
+//     `updatedAt` is the project's most-recent ledger activity (the chain head's
+//     occurredAt) — the honest "when did this record last change" the portfolio
+//     card (GET /projects, ADR-0012 A1) sorts and stamps by.
 
 import { computeAppend, verifyChain } from '../ledger/hash-chain.mjs';
 
@@ -55,7 +58,14 @@ export function createMemoryLedger() {
       const delta = events
         .filter((e) => e.type === 'budget_event')
         .reduce((sum, e) => sum + (e.payload?.deltaCents ?? 0), 0);
-      return { baselineBudgetCents: baseline, currentBudgetCents: baseline + delta };
+      // The chain head is the most recent activity on the record — the timestamp
+      // the portfolio card uses for "last changed" and its most-recent-first sort.
+      const head = events[events.length - 1];
+      return {
+        baselineBudgetCents: baseline,
+        currentBudgetCents: baseline + delta,
+        updatedAt: head?.occurredAt ?? genesis?.occurredAt ?? null,
+      };
     },
 
     // Test/diagnostic surface — not part of the port Identity uses. Lets the

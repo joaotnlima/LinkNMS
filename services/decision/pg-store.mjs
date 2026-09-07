@@ -87,6 +87,21 @@ export function createPgStore({ pool = getPool() } = {}) {
     return rows.map(mapDecision);
   }
 
+  // Portfolio card counts (GET /projects, ADR-0012 §A1): how many decisions each
+  // of a batch of projects has, in ONE grouped query (no per-card list fold).
+  // Returns projectId → count; projects with zero are simply absent from the map.
+  async function countProjects(projectIds) {
+    if (projectIds.length === 0) return new Map();
+    const { rows } = await pool.query(
+      `select project_id::text as project_id, count(*)::int as n
+         from decision.decision
+        where project_id = any($1)
+        group by project_id`,
+      [projectIds],
+    );
+    return new Map(rows.map((r) => [r.project_id, r.n]));
+  }
+
   // ── Unit of work ────────────────────────────────────────────────────────────
   // `work` receives a tx that is simultaneously:
   //   * the store's mutation surface (insertDecision / insertRevision / …), and
@@ -175,5 +190,6 @@ export function createPgStore({ pool = getPool() } = {}) {
     getDecisionById,
     listRevisions,
     listDecisions,
+    countProjects,
   };
 }

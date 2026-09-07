@@ -154,6 +154,16 @@ export function createInMemoryStore() {
       .map((r) => ({ ...r }));
   }
 
+  // Portfolio card counts — one sweep over the table, mirroring the pg store's
+  // grouped query (ADR-0012 §A1). Returns projectId → changeOrder count.
+  function countProjects(projectIds) {
+    const counts = new Map();
+    for (const r of rows.values()) {
+      if (projectIds.includes(r.project_id)) counts.set(r.project_id, (counts.get(r.project_id) ?? 0) + 1);
+    }
+    return counts;
+  }
+
   // Atomic conditional decision write. Mirrors:
   //   UPDATE change_order SET status=?, decided_by=?, decided_at=?, idem=?
   //   WHERE id=? AND status='proposed'
@@ -184,5 +194,5 @@ export function createInMemoryStore() {
     return { applied: true, row: { ...r } };
   }
 
-  return { transaction, insert, get, listByProject, decide, now, _rows: rows };
+  return { transaction, insert, get, listByProject, countProjects, decide, now, _rows: rows };
 }

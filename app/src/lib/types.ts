@@ -85,6 +85,27 @@ export interface Project {
   };
 }
 
+// GET /projects (ADR-0012 §A1) — the portfolio card. A projection of the full
+// Project: per-card counts are the cheap server-batched folds, and member names
+// are resolved server-side so the home screen needs no directory mapping.
+export interface ProjectCardMember {
+  role: Role;
+  name: string | null; // null only when the store has no display name yet
+}
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  status: BuildStatus;
+  role: Role; // the ACTING party's role, derived server-side
+  operatingModel: OperatingModel | null;
+  baselineBudgetCents: number;
+  currentBudgetCents: number; // baseline + Σ approved change orders (ledger)
+  members: ProjectCardMember[];
+  counts: { changeOrders: number; decisions: number };
+  updatedAt: string; // ISO-8601 — most recent record activity (ledger head)
+}
+
 export interface Revision {
   rev: number;
   title: string;

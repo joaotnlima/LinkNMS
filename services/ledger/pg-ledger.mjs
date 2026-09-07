@@ -185,11 +185,26 @@ export function createPgLedger({ pool = getPool(), cache = createLedgerCache() }
     return value;
   }
 
-  // Identity-port shape (GET /projects/:id budget block).
+  // Identity-port shape (GET /projects/:id budget block; and the portfolio card's
+  // budget + updatedAt — ADR-0012 §A1). `updatedAt` is the chain head's
+  // occurredAt: the most recent activity on the record, the timestamp the
+  // portfolio sorts and stamps by.
   async function budgetSummary(projectId) {
     const b = await currentBudget(projectId);
     if (!b) return null;
-    return { baselineBudgetCents: b.baselineCents, currentBudgetCents: b.currentCents };
+    const { rows } = await pool.query(
+      `select to_char(occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as head
+         from ledger.project_audit
+        where project_id = $1
+        order by seq desc
+        limit 1`,
+      [projectId],
+    );
+    return {
+      baselineBudgetCents: b.baselineCents,
+      currentBudgetCents: b.currentCents,
+      updatedAt: rows[0]?.head ?? null,
+    };
   }
 
   // Fold the chain into the summed inputs the four-pillar status needs, so status

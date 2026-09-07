@@ -80,7 +80,7 @@ describe('OpenAPI artifact', () => {
   test('the Identity operations are all present', () => {
     const ops = Object.values(spec.paths).flatMap((p) => Object.values(p)).map((o) => o.operationId);
     for (const op of [
-      'createProject', 'getProject', 'setOperatingModel',
+      'createProject', 'getProject', 'listProjects', 'setOperatingModel',
       'inviteCounterparty', 'acceptInvitation', 'previewInvitation', 'getMe',
     ]) {
       assert.ok(ops.includes(op), `missing operation ${op}`);
@@ -116,6 +116,20 @@ describe('live responses conform to the published schemas', () => {
     const p = await s.createProject({ actorPartyId: o, name: 'Maple', baselineBudgetCents: 500 });
     const { token } = await s.inviteCounterparty({ actorPartyId: o, projectId: p.id });
     conforms('MembershipCreated', await s.acceptInvitation({ actorPartyId: randomUUID(), token }));
+  });
+
+  test('listProjects → ProjectList (portfolio cards, ADR-0012 §A1)', async () => {
+    const ledger = createMemoryLedger();
+    const store = createMemoryStore({ ledger });
+    const s = createIdentityService({ store, ledger });
+    const o = randomUUID();
+    await s.createProject({ actorPartyId: o, name: 'Maple', baselineBudgetCents: 500 });
+    const list = await s.listProjects({ actorPartyId: o });
+    // The service returns cards WITHOUT counts (sibling-schema folds live at the
+    // HTTP seam); attach zero-count folds here to validate the full wire shape.
+    conforms('ProjectList', {
+      projects: list.map((p) => ({ ...p, counts: { changeOrders: 0, decisions: 0 } })),
+    });
   });
 
   test('previewInvitation → InvitationPreview (LINA-182)', async () => {
