@@ -1,0 +1,170 @@
+/* D1 — portfolio list (LINA-198). Reads the shared globals.css token set (the
+ * LINA-156 migration), same as empty-portal.css. Badges (`.badge`), party pills
+ * (`.tag`) and deltas (`.delta`) are the global surfaces; only the layout is
+ * local here. */
+.pf {
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--paper);
+  min-height: 100vh;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+}
+
+.pf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.pf-title {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.pf-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--owner);
+  border-radius: var(--r-ctrl);
+  padding: 9px 14px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.pf-new svg {
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pf-new:hover {
+  filter: brightness(0.96);
+}
+
+.pf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pf-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'name   status'
+    'meta   budget'
+    'counts budget'
+    'resume budget';
+  align-items: center;
+  gap: 6px 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--outline);
+  border-radius: var(--r-overlay);
+  background: var(--raised);
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  color: var(--ink);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.pf-card:hover {
+  border-color: var(--owner);
+}
+
+.pf-card-top {
+  grid-area: name;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.pf-card-name {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pf-card .badge {
+  grid-area: status;
+  justify-self: end;
+}
+
+.pf-card-meta {
+  grid-area: meta;
+}
+
+.pf-card-budget {
+  grid-area: budget;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+.pf-budget-now {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.pf-budget-base {
+  font-size: 12px;
+  color: var(--muted);
+}
+.pf-budget-base .delta {
+  font-weight: 700;
+}
+
+.pf-card-counts {
+  grid-area: counts;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.pf-card-counts strong {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-card-resume {
+  grid-area: resume;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--owner-fg);
+}
+
+@media (max-width: 520px) {
+  .pf-card {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'name   status'
+      'meta   meta'
+      'budget budget'
+      'counts counts'
+      'resume resume';
+  }
+  .pf-card-budget {
+    align-items: flex-start;
+    text-align: left;
+    flex-direction: row;
+    gap: 8px;
+    align-items: baseline;
+  }
+}
