@@ -41,7 +41,7 @@ export { isSignedIn };
 
 import type {
   Project, Decision, ChangeOrderDetail, ChangeOrderSummary, AuditResult, Pillars, MeProfile,
-  OperatingModel, Role, InvitationPreview,
+  OperatingModel, Role, InvitationPreview, ProjectSummary,
 } from './types';
 import {
   directoryOf, countsOf, toProject, toDecision, toChangeOrderSummary, toChangeOrderDetail,
@@ -89,6 +89,10 @@ const ROUTES = {
   getMe: {
     method: 'GET', path: () => '/me',
     handler: (c) => c.http.identity.getMe,
+  },
+  listProjects: {
+    method: 'GET', path: () => '/projects',
+    handler: (c) => c.http.identity.listProjects,
   },
   getProject: {
     method: 'GET', path: (p) => `/projects/${enc(p.id)}`,
@@ -315,6 +319,19 @@ function safeJson(text: string): unknown {
  */
 export async function getMe(): Promise<MeProfile> {
   return call<MeProfile>('getMe');
+}
+
+/**
+ * GET /projects — the portfolio the home screen renders for a RETURNING user
+ * (LINA-197 / ADR-0012 §A1). Membership-scoped to the acting party (the session,
+ * never a query param), most-recent-first, drafts included so an abandoned
+ * wizard is resumable. Budgets are ledger-authoritative (baseline + Σ approved
+ * change orders) and the per-card counts arrive server-batched — nothing here
+ * sums or counts.
+ */
+export async function listProjects(): Promise<ProjectSummary[]> {
+  const res = await call<{ projects: ProjectSummary[] }>('listProjects');
+  return res.projects;
 }
 
 /**

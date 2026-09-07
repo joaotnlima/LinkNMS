@@ -22,6 +22,7 @@
 //   completeProfile({partyId,displayName,role,language})
 //     -> {status:'ok',party} | {status:'already_setup'} | {status:'not_found'}
 //   getProject(id) · getMembership(projectId, partyId) · listMemberships(projectId)
+//   listProjectsForParty(partyId) — projects the party is a member of, each with members
 //   getInvitationByTokenHash(hash) · listPendingInvitations(projectId)
 //
 // getParty(id) returns the identity.party row for a party UUID, used by GET /me
@@ -62,6 +63,28 @@ export function createMemoryStore({ ledger } = {}) {
       // owner before counterparty, then stable by joinedAt/id
       .sort((a, b) => (a.role < b.role ? -1 : a.role > b.role ? 1 : 0))
       .map(copy);
+  }
+  // The portfolio read (GET /projects, ADR-0012 §A1): the projects where the
+  // acting party is a MEMBER — owner or counterparty, draft or active — never all
+  // org projects. Each returned row carries its (display-name-joined) members so
+  // the service can shape the card's `members` without a second sweep.
+  function listProjectsForParty(partyId) {
+    const mine = new Set(
+      [...memberships.values()]
+        .filter((m) => m.partyId === partyId)
+        .map((m) => m.projectId),
+    );
+    return [...projects.values()]
+      .filter((p) => mine.has(p.id))
+      .map((p) => ({
+        ...copy(p),
+        members: listMemberships(p.id).map((m) => ({
+          ...m,
+          // the in-memory party table is its own reference (upsertParty); join
+          // its display name here, mirroring the pg store's p.display_name join.
+          displayName: parties.get(m.partyId)?.displayName ?? null,
+        })),
+      }));
   }
   function getInvitationByTokenHash(tokenHash) {
     const id = invitationByToken.get(tokenHash);
@@ -183,6 +206,7 @@ export function createMemoryStore({ ledger } = {}) {
     getProject,
     getMembership,
     listMemberships,
+    listProjectsForParty,
     getInvitationByTokenHash,
     listPendingInvitations,
     // unit of work

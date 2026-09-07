@@ -364,3 +364,63 @@ test('previewInvitation is rate-limited per token and per client IP (429)', asyn
   assert.equal((await show2(await mint())).status, 200);
   assert.equal((await show2(await mint())).status, 429);
 });
+
+// GET /projects — the portfolio handler (LINA-197 / ADR-0012 §A1). The service
+// returns cards without `counts` (Identity never reads a sibling schema); the
+// handler composes the two batched folds here at the seam. These tests prove the
+// composition: decisions/changeOrders ride their own per-card keys, zero counts
+// are never invented by an absent provider, and the payload is session-only.
+test('listProjects: counts are composed from injected batched providers, per card', async () => {
+  const ledger = createMemoryLedger();
+  const store = createMemoryStore({ ledger });
+  const service = createIdentityService({ store, ledger });
+  const ownerA = party();
+  const ownerB = party();
+
+  const mine = await service.createProject({ actorPartyId: ownerA, name: 'Maple', baselineBudgetCents: 100 });
+  const theirs = await service.createProject({ actorPartyId: ownerB, name: 'Their Build', baselineBudgetCents: 900 });
+
+  // Stub batched folds — the real store.countProjects returns Map<projectId, n>.
+  const counts = {
+    decisions: async (ids) => new Map(ids.map((id, i) => [id, 10 + i])),
+    changeOrders: async (ids) => new Map([[mine.id, 4], [theirs.id, 2]]),
+  };
+  const http = createIdentityHttp({ service, counts });
+
+  const res = await http.listProjects({ session: session(ownerA) });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['cache-control'], 'no-store', 'a personal payload must never be shared-cached');
+  assert.equal(res.body.projects.length, 1, 'owner A sees only their own build');
+  const card = res.body.projects[0];
+  assert.equal(card.id, mine.id);
+  assert.equal(card.role, 'owner');
+  assert.equal(card.counts.decisions, 10, 'decisions fold keyed to this card');
+  assert.equal(card.counts.changeOrders, 4, 'change-orders fold keyed to this card');
+  // The service-level fields flow through untouched.
+  assert.equal(card.name, 'Maple');
+  assert.equal(card.baselineBudgetCents, 100);
+  assert.equal(card.currentBudgetCents, 100);
+  // The other party's card is not in owner A's payload at all.
+  assert.ok(!res.body.projects.some((p) => p.id === theirs.id));
+});
+
+test('listProjects: absent providers yield zero counts (identity-only wiring)', async () => {
+  const ledger = createMemoryLedger();
+  const store = createMemoryStore({ ledger });
+  const service = createIdentityService({ store, ledger });
+  const o = party();
+  await service.createProject({ actorPartyId: o, name: 'Maple', baselineBudgetCents: 100 });
+
+  const http = createIdentityHttp({ service }); // no `counts` injected
+  const res = await http.listProjects({ session: session(o) });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.projects[0].counts.decisions, 0);
+  assert.equal(res.body.projects[0].counts.changeOrders, 0);
+});
+
+test('listProjects without a session is a 401 in the uniform envelope', async () => {
+  const { http } = makeHttp();
+  const res = await http.listProjects({ session: null });
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error.code, 'unauthenticated');
+});

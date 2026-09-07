@@ -149,6 +149,40 @@ export function createPgStore({ pool = getPool(), ledger }) {
     );
     return rows.map(mapMembership);
   }
+  // The portfolio read (GET /projects, ADR-0012 §A1). Membership-scoped: only the
+  // projects the acting party belongs to — owner or counterparty, draft or active
+  // — never all org projects. TWO queries, never N+1: one for the party's
+  // projects (membership → project), one for every member row across those
+  // projects (joined to identity.party for display names). The caller shapes it
+  // into cards and reads budgets from the Ledger port in the same batch.
+  async function listProjectsForParty(partyId) {
+    const projectRows = await pool.query(
+      `select p.*
+         from identity.membership m
+         join identity.project p on p.id = m.project_id
+        where m.party_id = $1
+        order by p.created_at desc, p.id`,
+      [partyId],
+    );
+    const projects = projectRows.rows.map(mapProject);
+    if (projects.length === 0) return [];
+
+    const memberRows = await pool.query(
+      `select m.*, p.display_name
+         from identity.membership m
+         left join identity.party p on p.id = m.party_id
+        where m.project_id = any($1)
+        order by (m.role <> 'owner'), m.joined_at, m.id`,
+      [projects.map((p) => p.id)],
+    );
+    const byProject = new Map();
+    for (const m of memberRows.rows.map(mapMembership)) {
+      const list = byProject.get(m.projectId) ?? [];
+      list.push(m);
+      byProject.set(m.projectId, list);
+    }
+    return projects.map((p) => ({ ...p, members: byProject.get(p.id) ?? [] }));
+  }
   async function getInvitationByTokenHash(tokenHash) {
     return mapInvitation(await one(
       'select * from identity.invitation where token_hash = $1', [tokenHash],
@@ -250,6 +284,7 @@ export function createPgStore({ pool = getPool(), ledger }) {
     getProject,
     getMembership,
     listMemberships,
+    listProjectsForParty,
     getInvitationByTokenHash,
     listPendingInvitations,
     getParty,

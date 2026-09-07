@@ -83,6 +83,100 @@ describe('getProject authorization (non-members get 403)', () => {
   });
 });
 
+describe('listProjects (GET /projects — portfolio, ADR-0012 §A1)', () => {
+  let svc, ledger, store;
+  beforeEach(() => ({ svc, ledger, store } = setup()));
+
+  // A full lifecycle: a second, unrelated build belonging to a different owner,
+  // and a shared build with a joined counterparty — the portfolio's two scoping
+  // axes (yours vs not-yours; owner vs counterparty role).
+  async function fixture() {
+    const o = owner();
+    const mine = await svc.createProject({ actorPartyId: o, name: 'My House', baselineBudgetCents: 1000 });
+    const someoneElses = await svc.createProject({ actorPartyId: owner(), name: 'Their Build', baselineBudgetCents: 999_000 });
+    const shared = await svc.createProject({ actorPartyId: owner(), name: 'Shared', baselineBudgetCents: 5000 });
+    const { token } = await svc.inviteCounterparty({ actorPartyId: shared.ownerPartyId, projectId: shared.id });
+    const gc = owner();
+    await svc.acceptInvitation({ actorPartyId: gc, token });
+    return { o, mine, someoneElses, shared, gc };
+  }
+
+  test('an authenticated member sees ONLY their own builds (never another org\'s)', async () => {
+    const { o, mine } = await fixture();
+    const list = await svc.listProjects({ actorPartyId: o });
+    const ids = list.map((p) => p.id);
+    assert.ok(ids.includes(mine.id), 'the acting party must see their own build');
+    assert.ok(!ids.some((id) => id === 'their-build'), 'someone else’s build must not leak');
+    assert.equal(list.filter((p) => p.name === 'Their Build').length, 0, 'a non-member build never appears');
+  });
+
+  test('a party with no memberships sees an empty portfolio, never an error', async () => {
+    await fixture();
+    const list = await svc.listProjects({ actorPartyId: owner() });
+    assert.deepEqual(list, []);
+  });
+
+  test('a counterparty member sees the shared build with their own role', async () => {
+    const { gc, shared } = await fixture();
+    const list = await svc.listProjects({ actorPartyId: gc });
+    const card = list.find((p) => p.id === shared.id);
+    assert.ok(card, 'the joined counterparty must see the shared build');
+    assert.equal(card.role, 'counterparty');
+  });
+
+  test('no session (401) — the party is the session, never a query param', async () => {
+    await expectError(svc.listProjects({}), 401, 'unauthenticated');
+  });
+
+  test('draft builds are included and badged draft (resumable wizard)', async () => {
+    const o = owner();
+    await svc.createProject({ actorPartyId: o, name: 'In Progress', baselineBudgetCents: 100, draft: true });
+    const list = await svc.listProjects({ actorPartyId: o });
+    const draft = list.find((p) => p.name === 'In Progress');
+    assert.ok(draft, 'draft builds must appear in the portfolio');
+    assert.equal(draft.status, 'draft');
+    assert.equal(draft.operatingModel, null);
+  });
+
+  test('currentBudgetCents = baseline + Σ approved change orders (ledger rollup)', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'Maple', baselineBudgetCents: 500_000_00 });
+    // The budget moves are ledger events (what change-order approval appends).
+    ledger.appendEvent({ projectId: p.id, type: 'budget_event', actorPartyId: o, occurredAt: new Date().toISOString(), payload: { deltaCents: 25_000_00 } });
+    ledger.appendEvent({ projectId: p.id, type: 'budget_event', actorPartyId: o, occurredAt: new Date().toISOString(), payload: { deltaCents: -10_000_00 } });
+    const [card] = await svc.listProjects({ actorPartyId: o });
+    assert.equal(card.baselineBudgetCents, 500_000_00);
+    assert.equal(card.currentBudgetCents, 515_000_00, 'baseline + 250k − 100k');
+  });
+
+  test('most-recent-first; updatedAt is the ledger head', async () => {
+    const o = owner();
+    const first = await svc.createProject({ actorPartyId: o, name: 'First', baselineBudgetCents: 100 });
+    const second = await svc.createProject({ actorPartyId: o, name: 'Second', baselineBudgetCents: 200 });
+    // A later ledger event on `first` moves it back to the top.
+    ledger.appendEvent({ projectId: first.id, type: 'decision_recorded', actorPartyId: o, occurredAt: new Date().toISOString(), payload: {} });
+    const list = await svc.listProjects({ actorPartyId: o });
+    assert.deepEqual(list.map((p) => p.name), ['First', 'Second'], 'most-recent-first');
+    assert.equal(list[0].updatedAt, ledger._chain(first.id).at(-1).occurredAt, 'updatedAt = ledger head');
+    assert.equal(list[1].updatedAt, second.createdAt, 'a build with one event falls back to creation');
+  });
+
+  test('members carry ({ role, name }) with the store-joined display names', async () => {
+    const o = owner();
+    store.upsertParty({ id: o, displayName: 'João', email: 'owner@example.com', role: 'owner' });
+    const p = await svc.createProject({ actorPartyId: o, name: 'Maple', baselineBudgetCents: 1 });
+    const { token } = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id });
+    const gc = owner();
+    store.upsertParty({ id: gc, displayName: 'The GC', email: 'gc@example.com', role: 'contractor' });
+    await svc.acceptInvitation({ actorPartyId: gc, token });
+    const [card] = await svc.listProjects({ actorPartyId: o });
+    assert.deepEqual(
+      card.members.map((m) => ({ role: m.role, name: m.name })).sort((a, b) => a.role.localeCompare(b.role)),
+      [{ role: 'counterparty', name: 'The GC' }, { role: 'owner', name: 'João' }],
+    );
+  });
+});
+
 describe('inviteCounterparty (only the owner invites)', () => {
   let svc;
   beforeEach(() => ({ svc } = setup()));

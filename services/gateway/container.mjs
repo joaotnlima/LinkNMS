@@ -161,7 +161,17 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
       schedule: scheduleService,
     },
     http: {
-      identity: createIdentityHttp({ service: identity }),
+      identity: createIdentityHttp({
+        service: identity,
+        // Batched portfolio counts (ADR-0012 §A1): Identity must not read the
+        // decision/change_order schemas, so the two grouped folds are wired here
+        // from each service's store. Both are per-batch grouped queries — never
+        // N list calls per card.
+        counts: {
+          decisions: (projectIds) => decisionStore.countProjects(projectIds),
+          changeOrders: (projectIds) => changeOrderStore.countProjects(projectIds),
+        },
+      }),
       decision: createDecisionHttp({ service: decisionService }),
       changeOrder: services.changeOrderHttp,
       schedule: services.scheduleHttp,

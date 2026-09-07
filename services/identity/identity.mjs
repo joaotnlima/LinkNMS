@@ -266,6 +266,44 @@ export function createIdentityService({
     return shapeProject(project, members, budget, await roleOf(projectId, actorPartyId));
   }
 
+  // GET /projects — the portfolio list (ADR-0012 §A1, LINA-197). Returns the
+  // builds the acting party is a MEMBER of — owner or counterparty, draft or
+  // active — most-recent-first, so a returning user's home screen is resumable
+  // (an abandoned draft is badged `draft`, never hidden). The acting party is
+  // the session's (`actorPartyId`); there is deliberately NO party/query param,
+  // so a caller can only ever list their own portfolio — and never another
+  // org's projects. Membership scoping is the STORE's join
+  // (identity.membership → project), so "only my builds" is a data-shape
+  // property, not an after-the-fact filter. Read-only: no ledger event.
+  //
+  // What this returns is the card MINUS `counts`: decisions/change-orders live in
+  // sibling schemas that Identity must not read (ADR-0006 §1), so the HTTP
+  // handler composes the two cheap batched count folds onto each card. Budget
+  // comes through the Ledger port exactly as getProject reads it — baseline +
+  // Σ approved change orders, authoritative and ledger-side.
+  async function listProjects({ actorPartyId }) {
+    if (!actorPartyId) throw unauthenticated();
+    const rows = await store.listProjectsForParty(actorPartyId);
+    if (rows.length === 0) return [];
+
+    const budgets = await Promise.all(rows.map((p) => ledger.budgetSummary(p.id)));
+    // The frozen contract orders most-recent-first; `updatedAt` is the record's
+    // last activity (ledger head, falling back to creation), which is the honest
+    // "what should surface first" for a returning user.
+    return rows
+      .map((p, i) => {
+        const budget = budgets[i] ?? {
+          baselineBudgetCents: p.baselineBudgetCents,
+          currentBudgetCents: p.baselineBudgetCents,
+        };
+        // The acting role rides the row's members list (fetching it again would be
+        // an N+1) — the acting party is a member by construction of the query.
+        const role = p.members.find((m) => m.partyId === actorPartyId)?.role ?? null;
+        return shapeProjectSummary(p, budget, role);
+      })
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
+  }
+
   // PATCH /projects/:id/operating-model — the wizard's step 2 (ADR-0011).
   // Owner-only; sets operating_model ∈ {turnkey, direct, hybrid} on a DRAFT. The
   // projection write (column-scoped UPDATE grant from 0009) and the
@@ -627,6 +665,7 @@ export function createIdentityService({
     // handlers
     createProject,
     getProject,
+    listProjects,
     setOperatingModel,
     inviteCounterparty,
     acceptInvitation,
@@ -650,6 +689,33 @@ function normalizeCents(value, field) {
 
 function shapeMembership(m) {
   return { id: m.id, projectId: m.projectId, partyId: m.partyId, role: m.role, joinedAt: m.joinedAt };
+}
+
+// The portfolio card (GET /projects, ADR-0012 §A1) — a projection, NOT the full
+// getProject payload. `role` is the ACTING party's role, derived server-side
+// from their membership (never a body/query claim). `updatedAt` is the record's
+// most-recent ledger activity from the Ledger port, falling back to the build's
+// own creation when the ledger has nothing yet. `counts` is NOT set here:
+// decisions/change-orders live in sibling schemas (ADR-0006 §1), so the HTTP
+// handler composes those two batched folds onto the card.
+function shapeProjectSummary(project, budget, role) {
+  return {
+    id: project.id,
+    name: project.name,
+    status: project.status,
+    role,
+    operatingModel: project.operatingModel ?? null,
+    baselineBudgetCents: budget?.baselineBudgetCents ?? project.baselineBudgetCents,
+    currentBudgetCents: budget?.currentBudgetCents ?? project.baselineBudgetCents,
+    // The card shows ONE name per member. displayName is null only when the
+    // store did not join identity.party (the freshly-built owner membership);
+    // the UI renders "Unknown party" rather than inventing an attribution.
+    members: (project.members ?? []).map((m) => ({
+      role: m.role,
+      name: m.displayName ?? null,
+    })),
+    updatedAt: budget?.updatedAt ?? project.createdAt,
+  };
 }
 
 function shapeInvitation(i) {

@@ -110,6 +110,22 @@ export function createPgStore({ pool = getPool() } = {}) {
     return rows.map(mapRow);
   }
 
+  // Portfolio card counts (GET /projects, ADR-0012 §A1): how many change orders
+  // each of a batch of projects has, in ONE grouped query — the portfolio's
+  // per-card fold reads this instead of N listByProject calls. Returns
+  // projectId → count (projects with zero simply absent from the map).
+  async function countProjects(projectIds) {
+    if (projectIds.length === 0) return new Map();
+    const { rows } = await pool.query(
+      `select project_id::text as project_id, count(*)::int as n
+         from change_order.change_order
+        where project_id = any($1)
+        group by project_id`,
+      [projectIds],
+    );
+    return new Map(rows.map((r) => [r.project_id, r.n]));
+  }
+
   // Atomic conditional decision write — the proposed→decided one-way transition.
   //   UPDATE … SET status,decided_by,decided_at,idem WHERE id=? AND status='proposed'
   // 0 rows updated ⇒ another writer already decided (lost race) ⇒ {applied:false};
@@ -146,5 +162,5 @@ export function createPgStore({ pool = getPool() } = {}) {
     return { applied: true, row: mapRow(rows[0]) };
   }
 
-  return { transaction, insert, get, listByProject, decide };
+  return { transaction, insert, get, listByProject, countProjects, decide };
 }
