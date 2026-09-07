@@ -17,19 +17,19 @@
 //   * The token stays in the PATH across the whole auth round trip, so Clerk's
 //     redirect back lands here with it intact.
 //
-// WHAT THE PEN ASKS FOR AND THIS CANNOT SHOW: screen 06 draws the build name, the
-// owner and the scope note on the landing. All three need an unauthenticated read
-// of the invitation by token, and no such endpoint exists (see the note in
-// AcceptInviteAuth). Rather than invent a build name, the screen is honest about
-// what it knows: someone invited you, here is what accepting means. Flagged on
-// LINA-179 for the Back-End/Architect — a `GET /invitations/:token` preview
-// endpoint returning `{ projectName, ownerName, role }` and nothing sensitive is
-// the change that completes this screen.
+// WHAT THE PEN DRAWS AND THIS NOW SHOWS (LINA-198): screen 06 draws the build
+// name, the owner and the role on the landing. The unauthenticated preview read
+// those need — `GET /invitations/:token` returning `{ projectName, invitedByName,
+// role }` and nothing sensitive — landed in LINA-182, so this screen fetches it
+// and renders build/owner/role above the CTA. The scope note is still absent:
+// the invitation carries no note column (see build-creation.ts GAPS), so there
+// is nothing to show; when that column exists it belongs here.
 import Link from 'next/link';
 
 import { ActionForm } from '@/components/ActionForm';
 import { acceptInviteAction } from '@/app/actions';
-import { isSignedIn } from '@/lib/api';
+import { isSignedIn, getInvitationPreview } from '@/lib/api';
+import { roleLabel } from '@/lib/format';
 import { AcceptInviteAuth } from './AcceptInviteAuth';
 import '../../../build-wizard.css';
 
@@ -40,16 +40,62 @@ export default async function AcceptDeepLinkPage({ params }: { params: Promise<{
   const acceptPath = `/invitations/${encodeURIComponent(token)}/accept`;
   const signedIn = await isSignedIn();
 
+  // D6 — show what you're joining (LINA-198). The preview endpoint now exists
+  // (GET /invitations/:token, LINA-182), so the screen no longer has to be
+  // vague about the build. Unknown/spent tokens are a 404 and rate-limiting is a
+  // 429; either way we fall back to the generic copy rather than 500 the page —
+  // the accept POST below re-verifies the token regardless.
+  const preview = await getInvitationPreview(token).catch(() => null);
+  const buildName = preview?.projectName?.trim() || null;
+  const ownerName = preview?.invitedByName?.trim() || null;
+
   return (
     <main className="bw-accept">
       <section className="bw-accept-card">
         <span className="bw-accept-brand">LinkNMS</span>
-        <h1 className="bw-accept-title">You have been invited to a build</h1>
+        <h1 className="bw-accept-title">
+          {buildName ? (
+            <>
+              You&rsquo;ve been invited to <span className="bw-invite-name">{buildName}</span>
+            </>
+          ) : (
+            'You have been invited to a build'
+          )}
+        </h1>
         <p className="sub">
           LinkNMS is the shared record of a build: what was agreed, what changed, and what it cost.
           When you join, everything either party records is attributed by name and time-stamped —
           and neither of you can quietly rewrite it later.
         </p>
+
+        {/* D6 — what you're joining. Only rendered when the token previews; the
+            role is always known for a real invitation, name/owner may be null
+            while the store has no display name yet. */}
+        {preview && (
+          <dl className="bw-invite-preview">
+            {buildName && (
+              <div className="bw-invite-row">
+                <dt>Build</dt>
+                <dd>{buildName}</dd>
+              </div>
+            )}
+            {ownerName && (
+              <div className="bw-invite-row">
+                <dt>Invited by</dt>
+                <dd>{ownerName}</dd>
+              </div>
+            )}
+            <div className="bw-invite-row">
+              <dt>Your role</dt>
+              <dd>
+                <span className={`tag ${preview.role}`}>
+                  <span className="pd" />
+                  {roleLabel(preview.role)}
+                </span>
+              </dd>
+            </div>
+          </dl>
+        )}
 
         {signedIn ? (
           <>
@@ -85,6 +131,12 @@ export default async function AcceptDeepLinkPage({ params }: { params: Promise<{
             </p>
           </>
         )}
+
+        {/* Decline is a plain way out, not a state change: nothing is recorded
+            until the visitor accepts, so "not now" is just leaving. */}
+        <p className="cap bw-invite-decline">
+          <Link href="/">Not now — this isn&rsquo;t for me</Link>
+        </p>
       </section>
     </main>
   );

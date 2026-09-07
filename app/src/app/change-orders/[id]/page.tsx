@@ -17,7 +17,10 @@ export default async function CoDetailPage({ params }: { params: Promise<{ id: s
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
-  const project = await getProject('maple-street').catch(() => null);
+  // Resolve the build from the CO record itself (LINA-198). The old
+  // `getProject('maple-street')` was a demo leftover that pointed every change
+  // order at one fixture project — wrong build, wrong acting role.
+  const project = await getProject(co.projectId).catch(() => null);
   const d = delta(co.costDeltaCents);
   const decided = co.status !== 'proposed';
   // Owner may also decide (ADR-0004); the core rule is proposer ≠ decider.
@@ -26,7 +29,7 @@ export default async function CoDetailPage({ params }: { params: Promise<{ id: s
   return (
     <>
       <header className="topbar">
-        <a className="back" href="/projects/maple-street/change-orders">‹ Change orders</a>
+        <a className="back" href={`/projects/${co.projectId}/change-orders`}>‹ Change orders</a>
       </header>
       <main className="screen">
         <div className="spread">

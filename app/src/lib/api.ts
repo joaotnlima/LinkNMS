@@ -378,10 +378,16 @@ export async function getChangeOrders(projectId: string): Promise<ChangeOrderSum
  *  clearly separate from `budgetAfterCents`, which for a proposal has not moved. */
 export async function getChangeOrder(
   id: string,
-): Promise<ChangeOrderDetail & { projectedIfApprovedCents: number | null }> {
+): Promise<ChangeOrderDetail & { projectId: string; projectedIfApprovedCents: number | null }> {
   const wire = await call<WireChangeOrder>('getChangeOrder', { changeOrderId: id });
   const dir = await directory(wire.projectId);
-  return { ...toChangeOrderDetail(wire, dir), projectedIfApprovedCents: projectedIfApproved(wire) };
+  // `projectId` is surfaced so the detail page resolves its build from the CO
+  // record itself — never a hard-coded demo id (LINA-198 bugfix).
+  return {
+    ...toChangeOrderDetail(wire, dir),
+    projectId: wire.projectId,
+    projectedIfApprovedCents: projectedIfApproved(wire),
+  };
 }
 
 export async function getAudit(projectId: string): Promise<AuditResult> {

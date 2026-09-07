@@ -354,6 +354,52 @@
   justify-content: center;
 }
 
+/* D6 — "what you're joining" (LINA-198). A quiet key/value panel between the
+   lede and the CTA: build, inviter, role. Reads the shared tokens; the role
+   pill reuses globals.css `.tag`. */
+.bw-invite-name {
+  color: var(--owner-fg);
+}
+
+.bw-invite-preview {
+  margin: 0;
+  padding: var(--s3);
+  border: 1px solid var(--outline);
+  border-radius: var(--r-ctrl);
+  background: var(--sunken);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bw-invite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin: 0;
+}
+
+.bw-invite-row dt {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.bw-invite-row dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  text-align: right;
+}
+
+.bw-invite-decline {
+  text-align: center;
+}
+
 /* ---- D1–D6: the desktop variants ------------------------------------------
    One block, additive only. 720px because the portal `.shell` caps at 780px:
    below that the wizard is the full width of a phone, above it there is room for

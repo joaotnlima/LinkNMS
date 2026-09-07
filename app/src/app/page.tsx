@@ -7,16 +7,15 @@
 // (LINA-132) hands off to once a profile is complete.
 //
 // KNOWN GAP, stated rather than papered over — and the reason this route can
-// render the empty state unconditionally: R0 has no "list my projects"
-// endpoint, so there is nothing to branch on. Every signed-in user's portfolio
-// is empty as far as the client can tell, and a returning owner reaches their
-// record by its URL (said plainly in the footnote). Adding GET /projects would
-// be a small Identity change; when it lands, this route branches here between
-// <EmptyPortal/> and a portfolio list. It is deliberately NOT smuggled in as a
-// client-side list of remembered ids, which would be a second, un-authorized
-// source of truth about who is on what.
+// branch here between <EmptyPortal/> and a portfolio list. That endpoint landed
+// (GET /api/v1/projects, LINA-197), so this route now makes the call and shows
+// the list when it comes back non-empty. The list is membership-scoped
+// server-side (the session, never a client-held set of remembered ids), so
+// there is still only one authorized source of truth about who is on what.
 import { redirect } from 'next/navigation';
 import { EmptyPortal } from '@/components/EmptyPortal';
+import { PortfolioList } from '@/components/PortfolioList';
+import { listProjects } from '@/lib/api';
 import { sessionState } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -43,7 +42,11 @@ export default async function Home() {
   // run) and terminates, because completing it flips the flag that got them here.
   if (!state.session.setupComplete) redirect('/onboarding/setup');
 
-  // No `name` yet: there is no GET /me, so the heading stays un-personalised
-  // rather than guessing one off an email. See EmptyPortal's header comment.
-  return <EmptyPortal />;
+  // Seated and set up: branch on the portfolio. Empty keeps the first-time
+  // screen verbatim (LINA-133); non-empty renders the D1 list. Drafts count as
+  // builds — an abandoned wizard is a build in progress, and the list is where
+  // it is resumed from.
+  const projects = await listProjects();
+  if (projects.length === 0) return <EmptyPortal />;
+  return <PortfolioList projects={projects} />;
 }
