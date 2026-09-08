@@ -42,6 +42,9 @@ const MIGRATIONS = [
   'services/identity/migrations/0008_identity.sql',
   'services/identity/migrations/0009_identity.sql',
   'services/identity/migrations/0010_identity.sql',
+  // 0011/0012 are unrelated to the seat table (schema cleanup); 0013 adds the
+  // entitlement column this suite pins below.
+  'services/identity/migrations/0013_identity.sql',
 ];
 
 const CAP = 50;
@@ -156,5 +159,58 @@ describe('Postgres founding seats (cap + writer boundary)', {
     // the gate lower-cases before looking up. If those ever drift, a claimed
     // seat silently stops matching at sign-in.
     assert.equal(await seats.hasActiveSeat('  Founder1@Example.com '), true);
+  });
+
+  // ── The entitlement column (LINA-189 / ADR-0013) ───────────────────────────
+
+  test('a seat carries the plan it was admitted under, and the portal can read it', async () => {
+    await ownerPool.query("DELETE FROM identity.seat WHERE source = 'founding'");
+    await ownerPool.query(
+      "INSERT INTO identity.seat (email, source, plan) VALUES ('paid@example.com', 'founding', 'build_plus')",
+    );
+
+    const seats = createSeatStore({ pool: identityPool });
+    const seat = await seats.activeSeat('Paid@Example.com'); // normalised, as at sign-in
+    assert.equal(seat?.plan, 'build_plus');
+    assert.equal(seat?.source, 'founding');
+
+    // A seat granted with no plan reads back as null rather than absent, so the
+    // allowance table can give it the entry default instead of guessing.
+    await ownerPool.query(
+      "INSERT INTO identity.seat (email, source) VALUES ('beta@example.com', 'beta')",
+    );
+    assert.equal((await seats.activeSeat('beta@example.com'))?.plan, null);
+    // A revoked seat is not an active one, entitlement or no entitlement.
+    await ownerPool.query(
+      "UPDATE identity.seat SET status='revoked', revoked_at=now() WHERE email='beta@example.com'",
+    );
+    assert.equal(await seats.activeSeat('beta@example.com'), null);
+    await ownerPool.query("DELETE FROM identity.seat WHERE email = 'beta@example.com'");
+  });
+
+  test('an unknown plan key is refused at the boundary, not silently seated', async () => {
+    // Three copies of the plan enum exist (this CHECK, plans.mjs, and the
+    // marketing site's PLAN_KEYS). The constraint is what makes drift LOUD:
+    // seating somebody on an allowance nobody can compute is worse than a 500.
+    await assert.rejects(
+      () =>
+        ownerPool.query(
+          "INSERT INTO identity.seat (email, source, plan) VALUES ('bogus@example.com', 'beta', 'enterprise')",
+        ),
+      (err) => err.code === '23514', // check_violation
+    );
+  });
+
+  test('the portal cannot write a plan, and the landing role cannot raise one', async () => {
+    // The whole point of putting entitlement on the seat is that the request
+    // path may READ what someone bought and can never CHANGE it. identity_app
+    // holds SELECT only; the landing role holds INSERT on four columns and no
+    // UPDATE, so a public marketing page cannot upgrade anybody — including by
+    // re-confirming their own link.
+    await assert.rejects(
+      () => identityPool.query("UPDATE identity.seat SET plan = 'construction_business'"),
+      (err) => err.code === '42501', // insufficient_privilege
+      'identity_app must never be able to change an entitlement',
+    );
   });
 });

@@ -95,16 +95,26 @@ export type GrantResult =
  * `ON CONFLICT DO NOTHING` fires the BEFORE INSERT trigger first, so a repeat
  * confirmation once the fifty are gone reports 'exhausted' rather than
  * 'alreadySeated' — see the caller, which checks for an existing seat first.
+ *
+ * `plan` is the entitlement the seat is admitted under (LINA-189 / ADR-0013) —
+ * the plan key the visitor chose on the pricing page, carried the whole way from
+ * `landing.signups.plan`. It decides how many builds the portal lets them RUN;
+ * `services/identity/plans.mjs` holds the allowances, and the column's CHECK
+ * refuses any key the record does not know rather than seating somebody on an
+ * allowance nobody can compute. Written on INSERT only: this role holds no
+ * UPDATE on identity.seat, so a marketing page can never raise an entitlement —
+ * upgrades are an out-of-band act under the billing webhook's own role.
  */
 export async function grantFoundingSeat(
   email: string,
-  note?: string
+  note?: string,
+  plan?: string | null
 ): Promise<GrantResult> {
   if (!isDbConfigured()) return { ok: false, reason: 'not_configured' };
   try {
     const rows = await getDb().execute<{ id: string }>(
-      sql`INSERT INTO identity.seat (email, source, note)
-          VALUES (${email}, ${FOUNDING_SOURCE}, ${note ?? null})
+      sql`INSERT INTO identity.seat (email, source, note, plan)
+          VALUES (${email}, ${FOUNDING_SOURCE}, ${note ?? null}, ${plan ?? null})
           ON CONFLICT (email) DO NOTHING
           RETURNING id`
     );

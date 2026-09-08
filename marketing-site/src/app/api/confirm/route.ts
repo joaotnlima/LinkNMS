@@ -102,7 +102,13 @@ export async function GET(req: Request) {
     return NextResponse.redirect(portalSignUpUrl(email, row.persona));
   }
 
-  const granted = await grantFoundingSeat(email, `founding claim · plan=${row.plan}`);
+  // The plan rides ONTO the seat, not just into the note (LINA-189 / ADR-0013).
+  // It is what the visitor chose on the pricing page, and it is the only moment
+  // it can be recorded against an address: the party does not exist yet. The
+  // portal reads it back to decide how many builds this person may run, so a
+  // plan that stopped at `landing.signups` — as it did until now — meant every
+  // tier was silently unlimited.
+  const granted = await grantFoundingSeat(email, `founding claim · plan=${row.plan}`, row.plan);
   if (granted.ok) {
     await capture('founding_seat_claimed', row.emailNorm, {
       locale,

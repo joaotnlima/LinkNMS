@@ -40,7 +40,30 @@ export function createSeatStore({ pool = getPool() } = {}) {
     return rowCount > 0;
   }
 
-  return { hasActiveSeat };
+  /**
+   * The active seat for this address, or null. Carries `plan` — the entitlement
+   * leg of ADR-0008 (LINA-189 / ADR-0013): what this person bought, which
+   * decides how many builds they may RUN. `plans.mjs` turns it into an
+   * allowance; this store never interprets it.
+   *
+   * Separate from `hasActiveSeat` on purpose. That one is the sign-in gate and
+   * runs on every request that mints a party; it must stay a single existence
+   * probe. This one runs only on the build-creation path.
+   *
+   * @param {unknown} email
+   * @returns {Promise<{ email: string, source: string, plan: string|null }|null>}
+   */
+  async function activeSeat(email) {
+    const clean = normalizeEmail(email);
+    if (!clean) return null;
+    const { rows } = await pool.query(
+      "select email, source, plan from identity.seat where email = $1 and status = 'active' limit 1",
+      [clean],
+    );
+    return rows[0] ? { email: rows[0].email, source: rows[0].source, plan: rows[0].plan ?? null } : null;
+  }
+
+  return { hasActiveSeat, activeSeat };
 }
 
 /**
@@ -49,18 +72,32 @@ export function createSeatStore({ pool = getPool() } = {}) {
  * @param {{ seats?: string[] }} [opts]
  */
 export function createMemorySeatStore({ seats = [] } = {}) {
-  const seated = new Set(seats.map((e) => normalizeEmail(e)).filter(Boolean));
+  // email -> { source, plan }. Accepts a bare address (no plan, like a beta or
+  // invite seat) or `{ email, plan, source }` so a test can seat somebody on a
+  // specific entitlement.
+  const seated = new Map();
+  const put = (entry) => {
+    const raw = typeof entry === 'string' ? { email: entry } : entry ?? {};
+    const clean = normalizeEmail(raw.email);
+    if (clean) seated.set(clean, { source: raw.source ?? 'beta', plan: raw.plan ?? null });
+  };
+  seats.forEach(put);
+
   return {
     async hasActiveSeat(email) {
       const clean = normalizeEmail(email);
       return Boolean(clean && seated.has(clean));
     },
+    async activeSeat(email) {
+      const clean = normalizeEmail(email);
+      const row = clean ? seated.get(clean) : null;
+      return row ? { email: clean, source: row.source, plan: row.plan } : null;
+    },
     // Test affordance only — production seats are granted out of band, and
     // identity_app holds no INSERT on identity.seat precisely so the request
     // path cannot seat anybody (0004_identity.sql).
-    grant(email) {
-      const clean = normalizeEmail(email);
-      if (clean) seated.add(clean);
+    grant(email, { plan = null, source = 'beta' } = {}) {
+      put({ email, plan, source });
     },
   };
 }
