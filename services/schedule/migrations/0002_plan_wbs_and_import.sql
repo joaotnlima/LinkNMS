@@ -62,6 +62,14 @@ CREATE TABLE schedule.plan_import (
 
 CREATE INDEX plan_import_project_idx ON schedule.plan_import (project_id);
 
+-- Provenance FK (contract §3): a stage's import_id must reference a real batch.
+-- Added here — after plan_import exists — rather than inline on the ALTER above,
+-- since the column is created before this table. NULL is allowed (hand-added
+-- stages have no import); a non-NULL value must resolve to a plan_import row.
+ALTER TABLE schedule.stage
+  ADD CONSTRAINT stage_import_id_fkey
+  FOREIGN KEY (import_id) REFERENCES schedule.plan_import (id);
+
 -- ── schedule.stage_dependency — intra-import predecessors (m2m) ────────────
 -- A stage may list several predecessors. Append-only (INSERT + SELECT only).
 -- The self-dep CHECK forbids a stage depending on itself.
