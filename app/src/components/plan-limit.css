@@ -1,0 +1,156 @@
+/* The plan-limit surface (LINA-205). See PlanLimitNotice.tsx for the why.
+
+   PALETTE. Everything resolves through globals.css / tokens.css. No colour
+   literals and no re-declared tokens — the drift class LINA-155/156 was spent
+   killing.
+
+   THE WARNING RAMP, NOT THE DANGER RAMP, AND THAT IS THE WHOLE POINT. `.form-error`
+   in globals.css is `--bad-*`, correct for "that budget is not a valid amount":
+   the owner typed something wrong and red says so. This panel is not that. The
+   request was well-formed and the person is exactly who they claim to be; the
+   answer is still no, because of a commercial fact about their plan. Dressing
+   that in the same red as a typo tells an owner they broke something. `--warn-*`
+   is the ramp `.bw-pending` already uses for the other "this is a true state of
+   the world, not your fault" moment in this flow.
+
+   NEVER COLOUR ALONE (FR9). The ramp carries none of the meaning: the heading
+   says it in words, the count says "2 of 2" in text, and the glyph is a
+   character rather than a painted shape. Strip every colour out and the panel
+   still reads identically.
+
+   MOBILE FIRST, matching build-wizard.css: this panel renders inside the wizard
+   card on a phone at the jobsite, and the one `min-width: 720px` block at the
+   bottom may only ADD. */
+
+.pl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: 14px;
+  border: 1px solid var(--warn-bd);
+  border-radius: var(--r-overlay);
+  background: var(--warn-bg);
+  color: var(--fg);
+}
+
+.pl-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.1px;
+  color: var(--warn-fg);
+}
+
+.pl-glyph {
+  flex: none;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* The two facts the owner will quote back at us. A grid rather than a row of
+   inline pairs so the label sits above its value at every width — on a phone a
+   three-column layout puts "Builds it runs" on two lines and its number a
+   thumb-width away from it. */
+.pl-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--s2) var(--s3);
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--warn-bd);
+  border-radius: var(--r-ctrl);
+  background: var(--raised);
+}
+
+.pl-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pl-fact dt {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pl-fact dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  /* Wraps rather than truncating. "Real Estate Investor" is a plan somebody pays
+     €99 a month for; an ellipsis on the name of the thing they bought is the one
+     place this panel must not save space. */
+  overflow-wrap: anywhere;
+}
+
+.pl-body,
+.pl-caveat {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 56ch;
+}
+
+.pl-next-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pl-next {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 60ch;
+}
+
+/* Underlined, not tinted. These two are the only way out of this screen, and a
+   link identified by colour alone is invisible to the reader this panel is most
+   likely to strand. */
+.pl-link {
+  font-weight: 650;
+  color: var(--warn-fg);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pl-link:focus-visible {
+  outline: 2px solid var(--outline-strong);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.pl-caveat {
+  margin-top: 2px;
+  padding-top: var(--s3);
+  border-top: 1px dashed var(--warn-bd);
+}
+
+@media (min-width: 720px) {
+  .pl {
+    padding: var(--s4);
+    gap: var(--s3);
+  }
+
+  .pl-title {
+    font-size: 17px;
+  }
+
+  .pl-facts {
+    padding: 12px var(--s4);
+  }
+}
