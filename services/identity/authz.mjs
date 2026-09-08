@@ -38,6 +38,12 @@ export const ACTION = Object.freeze({
   // Slice B1 plan import (LINA-199, contract §5): GC/counterparty only.
   IMPORT_PLAN: 'import_plan',
   UPLOAD_PLAN_DOCUMENT: 'upload_plan_document',
+  // Slice B2 plan baseline (LINA-200, contract §6): either project party may
+  // PROPOSE_PLAN (author) or REVIEW_PLAN (the other party's proposal). The actor-vs-
+  // proposer pairing is resolved from the plan version row by the schedule service;
+  // `can` enforces the two-sided rule that a party may not review its own proposal.
+  PROPOSE_PLAN: 'propose_plan',
+  REVIEW_PLAN: 'review_plan',
 });
 
 const ALL_ACTIONS = new Set(Object.values(ACTION));
@@ -53,6 +59,8 @@ const OWNER = new Set([
   ACTION.REVISE_DECISION,
   ACTION.PROPOSE_CHANGE_ORDER,
   ACTION.DECIDE_CHANGE_ORDER, // "owner may always decide" — still subject to ≠ proposer below
+  ACTION.PROPOSE_PLAN,
+  ACTION.REVIEW_PLAN,
 ]);
 
 const COUNTERPARTY = new Set([
@@ -66,6 +74,8 @@ const COUNTERPARTY = new Set([
   ACTION.REPORT_PROGRESS,
   ACTION.IMPORT_PLAN,
   ACTION.UPLOAD_PLAN_DOCUMENT,
+  ACTION.PROPOSE_PLAN,
+  ACTION.REVIEW_PLAN,
 ]);
 
 // Band B (ADR-0011) direct/hybrid builds invite a `subcontractor` who is on the
@@ -97,8 +107,9 @@ const CAPABILITIES = {
  * @param {string} ctx.action          one of ACTION.*
  * @param {Role|null} ctx.role         the acting party's role on the project, or
  *                                     null when they have no membership (non-member)
- * @param {string} [ctx.actorPartyId]  required for DECIDE_CHANGE_ORDER
- * @param {string} [ctx.proposedByPartyId] the CO proposer, for the two-sided rule
+ * @param {string} [ctx.actorPartyId]  required for DECIDE_CHANGE_ORDER / REVIEW_PLAN
+ * @param {string} [ctx.proposedByPartyId] the CO proposer (DECIDE_CHANGE_ORDER) or
+ *                                     plan-proposal author (REVIEW_PLAN), for the two-sided rule
  * @returns {Decision}
  */
 export function can({ action, role, actorPartyId, proposedByPartyId }) {
@@ -126,6 +137,21 @@ export function can({ action, role, actorPartyId, proposedByPartyId }) {
     }
     if (actorPartyId && actorPartyId === proposedByPartyId) {
       return deny('the proposer of a change order cannot decide it');
+    }
+  }
+
+  // Slice B2 (LINA-200, contract §6): REVIEW_PLAN is the OTHER party's action — a
+  // party may not review (accept/reject/request-changes) its own proposal. `can`
+  // receives `proposedByPartyId` from the version row (resolved by the schedule
+  // service, never the request) and denies the proposer, mirroring the change-order
+  // two-sided rule. PROPOSE_PLAN/withdraw is the proposer's own action and is
+  // authorised by the schedule service against proposed_by_party_id.
+  if (action === ACTION.REVIEW_PLAN) {
+    if (!proposedByPartyId) {
+      return deny('proposer unknown — cannot evaluate the reviewer rule');
+    }
+    if (actorPartyId && actorPartyId === proposedByPartyId) {
+      return deny('a party may not review its own plan proposal');
     }
   }
 

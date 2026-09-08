@@ -1,0 +1,518 @@
+// Slice B2 — plan proposal → review → baseline v1 lifecycle (LINA-200-BE; frozen
+// contract docs/architecture/slice-b2-plan-baseline-contract.md §4–§6; anchors
+// ADR-0012 §B, ADR-0002 §4/§5, ADR-0004, ADR-0006 §1).
+//
+// This is the service orchestration for the D11–D13 plan-baseline flow:
+//   - GET  /plan            → { baseline, current, history } (the D11–D13 view)
+//   - POST …:withdraw       → proposer retracts an open proposal (terminal)
+//   - POST …:accept         → reviewer stamps 'accepted'; the SECOND stamp (the
+//                             proposer's authorship + the reviewer's acceptance)
+//                             freezes the version → project_baseline upsert
+//   - POST …:reject         → reviewer rejects (terminal)
+//   - POST …:request-changes→ reviewer forks a NEW version authoring dates-and-
+//                             money-only edits; the original stays visible, marked
+//                             superseded.
+//
+// TRUST RULES (ADR-0002 §4/§5, ADR-0004, contract §6):
+//   - actor + time are server-authoritative: actorPartyId comes from the session,
+//     occurredAt from the server clock — never the body.
+//   - Every transition is ONE ledger.append_event in the SAME transaction as its
+//     projection write. No silent projection-only transition.
+//   - proposer-vs-reviewer is resolved from the plan_version row
+//     (proposed_by_party_id), never the request. REVIEW_PLAN denies the proposer
+//     (via can()'s two-sided rule + proposedByPartyId). PROPOSE_PLAN/withdraw is
+//     the proposer's own action, checked against proposed_by_party_id here.
+//   - Freeze is DB-enforced (stage_freeze_guard trigger); the service mirrors it.
+//   - None of these events move the budget — B3 owns the money.
+import { randomUUID } from 'node:crypto';
+import { ACTION, DomainError } from './ports.mjs';
+
+const now = () => new Date().toISOString();
+
+// The only editable fields on a StageEdit (contract §5): dates + money only. No
+// structural (WBS/name/position) edits in B2.
+// Forbidden structural keys: D12a cannot restructure the WBS in B2.
+const STAGE_EDIT_FORBIDDEN = ['id', 'name', 'position', 'parentId', 'trade', 'importId'];
+
+function normalizeCents(v) {
+  if (!Number.isInteger(v)) {
+    throw new DomainError(400, 'invalid_cost', 'plannedCostCents must be an integer (cents)');
+  }
+  return v;
+}
+
+function normalizeDate(v, field) {
+  if (v == null) return null;
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    throw new DomainError(400, `invalid_${field}`, `${field} must be a YYYY-MM-DD date or null`);
+  }
+  return v;
+}
+
+// Parents-before-children DFS pre-order over the WBS stage rows, so a fork can
+// insert parent stages before their children (the stage.plan_version_id FK plus
+// the self-referential parent FK both need an existing row). Tree-safe: children
+// are visited only via their parent, so no stage is emitted before its parent.
+function topoOrder(stages) {
+  const childrenOf = new Map();
+  for (const s of stages) {
+    if (s.parent_id != null) {
+      if (!childrenOf.has(s.parent_id)) childrenOf.set(s.parent_id, []);
+      childrenOf.get(s.parent_id).push(s);
+    }
+  }
+  const order = [];
+  const roots = stages.filter((s) => s.parent_id == null).sort((a, b) => a.position - b.position);
+  const visit = (s) => {
+    order.push(s);
+    for (const c of childrenOf.get(s.id) ?? []) visit(c);
+  };
+  for (const root of roots) visit(root);
+  return order;
+}
+
+export function createPlanVersionService({ store, ledger, identity }) {
+  if (!store || !ledger || !identity) {
+    throw new Error('createPlanVersionService requires { store, ledger, identity } ports');
+  }
+
+  async function getVersionOr404(versionId) {
+    const v = await store.getPlanVersion(versionId);
+    if (!v) throw new DomainError(404, 'not_found', 'plan version not found');
+    return v;
+  }
+
+  // The reviewer is "the other party" — resolved from the version row, never the
+  // request (contract §6). authorizes REVIEW_PLAN; can() denies the proposer.
+  async function authorizeReview(version, actorPartyId) {
+    return identity.authorize({
+      actorPartyId,
+      action: ACTION.REVIEW_PLAN,
+      projectId: version.project_id,
+      proposedByPartyId: version.proposed_by_party_id,
+    });
+  }
+
+  // PROPOSE_PLAN / withdraw is the proposer's own action (contract §6). The
+  // capability check runs through the authorizer; the `=== proposed_by_party_id`
+  // pairing is the proposer-only guard, applied here (no way to pass the acting
+  // party through can() for "same-as" — the row is the authority).
+  async function authorizeProposer(version, actorPartyId) {
+    await identity.authorize({
+      actorPartyId,
+      action: ACTION.PROPOSE_PLAN,
+      projectId: version.project_id,
+    });
+    if (actorPartyId !== version.proposed_by_party_id) {
+      throw new DomainError(403, 'forbidden', 'only the proposing party may withdraw this plan');
+    }
+  }
+
+  // ── GET /projects/:projectId/plan (D11–D13) ────────────────────────────────
+  async function getPlan(projectId, actorPartyId) {
+    await identity.requireMember(actorPartyId, projectId);
+
+    const versions = await store.listPlanVersions(projectId);
+    const baseline = await store.getProjectBaseline(projectId);
+
+    const open = versions.find((v) => v.status === 'proposed');
+    const others = versions.filter((v) => v !== open);
+
+    const view = async (v) => ({
+      ...(await versionView(projectId, v)),
+      stages: await stageTree(v.id),
+      acceptances: await acceptanceViews(projectId, await store.listPlanAcceptances(v.id)),
+    });
+
+    const current = open ? await view(open) : null;
+    const history = [];
+    for (const v of others) {
+      history.push({
+        id: v.id,
+        versionNo: v.version_no,
+        status: v.status,
+        sourceImportId: v.source_import_id,
+        supersedesVersionId: v.supersedes_version_id,
+        proposedByPartyId: v.proposed_by_party_id,
+        createdAt: v.created_at,
+        frozenAt: v.frozen_at,
+        acceptances: await acceptanceViews(projectId, await store.listPlanAcceptances(v.id)),
+      });
+    }
+    history.sort((a, b) => a.versionNo - b.versionNo);
+
+    return {
+      baseline: baseline
+        ? { planVersionId: baseline.plan_version_id, versionNo: baseline.version_no, frozenAt: baseline.frozen_at }
+        : null,
+      current,
+      history,
+    };
+  }
+
+  // The version envelope + its acceptance stamps, plus each party's role (for the
+  // "who has stamped / who is awaited" banner, D11/D13).
+  async function versionView(projectId, v) {
+    return {
+      id: v.id,
+      versionNo: v.version_no,
+      status: v.status,
+      sourceImportId: v.source_import_id,
+      supersedesVersionId: v.supersedes_version_id,
+      proposedByPartyId: v.proposed_by_party_id,
+      createdAt: v.created_at,
+      frozenAt: v.frozen_at,
+    };
+  }
+
+  // The WBS stage tree for a version, rooted at top-level actions (parent_id null),
+  // children nested. Dates preserved as plain date strings.
+  async function stageTree(versionId) {
+    const stages = await store.listStagesByPlanVersion(versionId);
+    const roots = stages.filter((s) => s.parent_id == null).sort((a, b) => a.position - b.position);
+    const childrenOf = new Map();
+    for (const s of stages) {
+      if (s.parent_id != null) {
+        if (!childrenOf.has(s.parent_id)) childrenOf.set(s.parent_id, []);
+        childrenOf.get(s.parent_id).push(s);
+      }
+    }
+    for (const list of childrenOf.values()) list.sort((a, b) => a.position - b.position);
+
+    const node = (s) => ({
+      id: s.id,
+      name: s.name,
+      position: s.position,
+      trade: s.trade ?? null,
+      plannedStartDate: s.planned_start_date ?? null,
+      plannedEndDate: s.planned_end_date ?? null,
+      plannedCostCents: s.planned_cost_cents ?? null,
+      children: (childrenOf.get(s.id) ?? []).map(node),
+    });
+    return roots.map(node);
+  }
+
+  async function acceptanceViews(projectId, acceptances) {
+    const out = [];
+    for (const a of acceptances) {
+      const role = (await identity.roleOf?.(projectId, a.party_id)) ?? null;
+      out.push({ partyId: a.party_id, role, kind: a.kind, stampedAt: a.stamped_at });
+    }
+    return out;
+  }
+
+  // ── POST …:withdraw (D11) — proposer only; terminal ───────────────────────
+  async function withdraw(versionId, actorPartyId) {
+    const version = await getVersionOr404(versionId);
+    await authorizeProposer(version, actorPartyId);
+    if (version.status !== 'proposed') {
+      throw new DomainError(409, 'not_proposed',
+        'only an open (proposed) plan may be withdrawn');
+    }
+
+    const occurredAt = now();
+    await store.transaction(async (tx) => {
+      await ledger.append(tx, {
+        projectId: version.project_id,
+        type: 'plan_withdrawn',
+        actorPartyId,
+        occurredAt,
+        payload: { planVersionId: version.id, versionNo: version.version_no },
+      });
+      await store.updatePlanVersionStatus(tx, version.id, { status: 'withdrawn' });
+    });
+
+    return { status: 'withdrawn' };
+  }
+
+  // ── POST …:accept (D12/D13) — reviewer; idempotent-by-state; 2nd stamp freezes ─
+  async function accept(versionId, actorPartyId) {
+    const version = await getVersionOr404(versionId);
+    await authorizeReview(version, actorPartyId);
+
+    // Idempotent-by-state (contract §5): a party accepting a version it already
+    // stamped returns the current state and writes nothing.
+    const existing = await store.getPlanAcceptance(version.id, actorPartyId);
+    if (existing) {
+      if (version.status === 'accepted') {
+        const baseline = await store.getProjectBaseline(version.project_id);
+        return {
+          status: 'accepted',
+          baseline: baseline
+            ? { planVersionId: baseline.plan_version_id, versionNo: baseline.version_no, frozenAt: baseline.frozen_at }
+            : null,
+        };
+      }
+      throw new DomainError(409, 'already_stamped',
+        'this party has already taken an action on this plan version');
+    }
+    if (version.status !== 'proposed') {
+      throw new DomainError(409, 'not_proposed',
+        'only an open (proposed) plan may be accepted');
+    }
+
+    const occurredAt = now();
+    const acceptance = { id: randomUUID(), plan_version_id: version.id };
+    let baseline = null;
+
+    await store.transaction(async (tx) => {
+      // 1. The reviewer's acceptance stamp ledgered first (its audit_event_id is
+      //    needed by the plan_acceptance row — append-only, INSERT only).
+      const event = await ledger.append(tx, {
+        projectId: version.project_id,
+        type: 'plan_accepted',
+        actorPartyId,
+        occurredAt,
+        payload: { planVersionId: version.id, versionNo: version.version_no, kind: 'accepted' },
+      });
+
+      // 2. The acceptance projection (append-only).
+      await store.insertPlanAcceptance(tx, {
+        id: acceptance.id,
+        plan_version_id: version.id,
+        project_id: version.project_id,
+        party_id: actorPartyId,
+        kind: 'accepted',
+        stamped_at: occurredAt,
+        audit_event_id: event.id,
+      });
+
+      // 3. Dual acceptance → freeze. A version freezes only when BOTH the
+      //    proposer's authorship stamp ('proposed') AND the reviewer's acceptance
+      //    stamp ('accepted') exist (contract §2). On that second stamp, in ONE
+      //    transaction: accept the version, append baseline_frozen, upsert the
+      //    project_baseline pointer.
+      const stamps = await store.listPlanAcceptances(version.id);
+      const hasProposer = stamps.some((s) => s.kind === 'proposed');
+      const hasReviewer = stamps.some((s) => s.kind === 'accepted');
+      if (hasProposer && hasReviewer) {
+        await store.updatePlanVersionStatus(tx, version.id, { status: 'accepted', frozenAt: occurredAt });
+
+        const frozen = await ledger.append(tx, {
+          projectId: version.project_id,
+          type: 'baseline_frozen',
+          actorPartyId,
+          occurredAt,
+          payload: {
+            planVersionId: version.id,
+            versionNo: version.version_no,
+            proposedByPartyId: version.proposed_by_party_id,
+            acceptedByPartyId: actorPartyId,
+          },
+        });
+
+        await store.upsertProjectBaseline(tx, {
+          project_id: version.project_id,
+          plan_version_id: version.id,
+          version_no: version.version_no,
+          frozen_at: occurredAt,
+          baseline_audit_event_id: frozen.id,
+        });
+        baseline = {
+          planVersionId: version.id,
+          versionNo: version.version_no,
+          frozenAt: occurredAt,
+        };
+      }
+    });
+
+    if (baseline) return { status: 'accepted', baseline };
+    // First stamp only — awaiting the other party's acceptance.
+    return { status: 'proposed' };
+  }
+
+  // ── POST …:reject (D12) — reviewer; terminal ──────────────────────────────
+  async function reject(versionId, actorPartyId, { reason } = {}) {
+    const version = await getVersionOr404(versionId);
+    await authorizeReview(version, actorPartyId);
+    if (version.status !== 'proposed') {
+      throw new DomainError(409, 'not_proposed',
+        'only an open (proposed) plan may be rejected');
+    }
+    if (reason != null && (typeof reason !== 'string' || reason.length > 2000)) {
+      throw new DomainError(400, 'invalid_reason', 'reason must be a string ≤ 2000 chars or null');
+    }
+
+    const occurredAt = now();
+    await store.transaction(async (tx) => {
+      await ledger.append(tx, {
+        projectId: version.project_id,
+        type: 'plan_rejected',
+        actorPartyId,
+        occurredAt,
+        payload: { planVersionId: version.id, versionNo: version.version_no, reason: reason ?? null },
+      });
+      await store.updatePlanVersionStatus(tx, version.id, { status: 'rejected' });
+    });
+
+    return { status: 'rejected' };
+  }
+
+  // ── POST …:request-changes (D12a) — reviewer forks a new version ───────────
+  async function requestChanges(versionId, actorPartyId, { stages } = {}) {
+    const version = await getVersionOr404(versionId);
+    await authorizeReview(version, actorPartyId);
+    if (version.status !== 'proposed') {
+      throw new DomainError(409, 'not_proposed',
+        'only an open (proposed) plan may be changed');
+    }
+
+    const edits = validateStageEdits(stages);
+
+    // The edits must reference stages that belong to THIS version.
+    const versionStages = await store.listStagesByPlanVersion(version.id);
+    const versionStageIds = new Set(versionStages.map((s) => s.id));
+    for (const e of edits.keys()) {
+      if (!versionStageIds.has(e)) {
+        throw new DomainError(400, 'unknown_stage',
+          'a requested edit references a stage that is not in this plan version');
+      }
+    }
+
+    const occurredAt = now();
+    const newVersionId = randomUUID();
+    const newVersionNo = await store.nextPlanVersionNo(version.project_id);
+
+    await store.transaction(async (tx) => {
+      // 1. The reviewer's request event, then the fork's plan_proposed (two events
+      //    in this one transaction — contract §4). plan_proposed's stageCount rides
+      //    the payload so the hash reproduces on verify.
+      await ledger.append(tx, {
+        projectId: version.project_id,
+        type: 'plan_change_requested',
+        actorPartyId,
+        occurredAt,
+        payload: {
+          fromVersionId: version.id,
+          fromVersionNo: version.version_no,
+          newVersionId,
+          newVersionNo,
+        },
+      });
+
+      const stageCount = versionStages.length;
+      const proposed = await ledger.append(tx, {
+        projectId: version.project_id,
+        type: 'plan_proposed',
+        actorPartyId,
+        occurredAt,
+        payload: {
+          planVersionId: newVersionId,
+          versionNo: newVersionNo,
+          sourceImportId: null,
+          supersedesVersionId: version.id,
+          stageCount,
+        },
+      });
+
+      // 2. The new version envelope — authored by the REVIEWER (roles swap, D12a),
+      //    superseding the original.
+      await store.insertPlanVersion(tx, {
+        id: newVersionId,
+        project_id: version.project_id,
+        version_no: newVersionNo,
+        status: 'proposed',
+        source_import_id: null,
+        supersedes_version_id: version.id,
+        proposed_by_party_id: actorPartyId,
+        created_at: occurredAt,
+        frozen_at: null,
+      });
+
+      // 3. The fork author's authorship stamp ('proposed') on the new version.
+      await store.insertPlanAcceptance(tx, {
+        id: randomUUID(),
+        plan_version_id: newVersionId,
+        project_id: version.project_id,
+        party_id: actorPartyId,
+        kind: 'proposed',
+        stamped_at: occurredAt,
+        audit_event_id: proposed.id,
+      });
+
+      // 4. Fork the stages: the original version's STAGES ARE UNTOUCHED (it stays
+      //    visible underneath, D12a) — a copy bound to the new version has the
+      //    dates-and-money-only patch applied, structure (names/positions/WBS)
+      //    preserved. The copy is inserted with its REMAPPED parent_id, in
+      //    parents-before-children order (the DB FK requires an existing parent),
+      //    so no post-insert parent UPDATE (and none past the store's UPDATABLE
+      //    whitelist) is needed.
+      const oldToNew = new Map();
+      for (const s of versionStages) oldToNew.set(s.id, randomUUID());
+
+      for (const s of topoOrder(versionStages)) {
+        const newId = oldToNew.get(s.id);
+        await store.insertStage(tx, {
+          id: newId,
+          project_id: version.project_id,
+          name: s.name,
+          position: s.position,
+          parent_id: s.parent_id != null ? oldToNew.get(s.parent_id) : null,
+          trade: s.trade,
+          import_id: null,
+          source_row_ref: s.source_row_ref,
+          scope_note: s.scope_note,
+          planned_start_date: s.planned_start_date,
+          planned_end_date: s.planned_end_date,
+          planned_cost_cents: s.planned_cost_cents,
+          plan_version_id: newVersionId,
+          created_at: occurredAt,
+          updated_at: occurredAt,
+        });
+
+        // Apply the dates-and-money-only patch to the new stage.
+        const patch = {};
+        if (edits.has(s.id)) {
+          const e = edits.get(s.id);
+          if (e.plannedStartDate !== undefined) patch.planned_start_date = e.plannedStartDate;
+          if (e.plannedEndDate !== undefined) patch.planned_end_date = e.plannedEndDate;
+          if (e.plannedCostCents !== undefined) patch.planned_cost_cents = e.plannedCostCents;
+        }
+        if (Object.keys(patch).length > 0) {
+          await store.updateStage(tx, newId, { ...patch, updated_at: occurredAt });
+        }
+      }
+
+      // 5. The original is now superseded (stays visible in history/current tree).
+      await store.updatePlanVersionStatus(tx, version.id, { status: 'superseded' });
+    });
+
+    return { newVersionId, versionNo: newVersionNo, status: 'proposed' };
+  }
+
+  // Validate the StageEdit patch: an array of { stageId, plannedStartDate?,
+  // plannedEndDate?, plannedCostCents? }; returns a Map(stageId → clean edit).
+  // Dates and money only; any other key, or a non-array/empty body, is a 400.
+  function validateStageEdits(stages) {
+    if (!Array.isArray(stages) || stages.length === 0) {
+      throw new DomainError(400, 'invalid_stages', 'stages is required (a non-empty array of edits)');
+    }
+    const edits = new Map();
+    for (const raw of stages) {
+      if (!raw || typeof raw !== 'object') {
+        throw new DomainError(400, 'invalid_stages', 'each stage edit must be an object');
+      }
+      const { stageId } = raw ?? {};
+      if (!stageId || typeof stageId !== 'string') {
+        throw new DomainError(400, 'invalid_stages', 'each stage edit requires a stageId');
+      }
+      const forbidden = STAGE_EDIT_FORBIDDEN.filter((k) => k in (raw ?? {}));
+      if (forbidden.length > 0) {
+        throw new DomainError(400, 'invalid_stages',
+          `structural stage fields are not editable in B2: ${forbidden.join(', ')}`);
+      }
+      const clean = {};
+      if (raw.plannedStartDate !== undefined) clean.plannedStartDate = normalizeDate(raw.plannedStartDate, 'plannedStartDate');
+      if (raw.plannedEndDate !== undefined) clean.plannedEndDate = normalizeDate(raw.plannedEndDate, 'plannedEndDate');
+      if (raw.plannedCostCents !== undefined) clean.plannedCostCents = normalizeCents(raw.plannedCostCents);
+      if (Object.keys(clean).length === 0) {
+        throw new DomainError(400, 'invalid_stages',
+          'each stage edit must change a date or the planned cost');
+      }
+      edits.set(stageId, clean);
+    }
+    return edits;
+  }
+
+  return { getPlan, withdraw, accept, reject, requestChanges };
+}

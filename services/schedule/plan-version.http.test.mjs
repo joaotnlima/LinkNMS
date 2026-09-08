@@ -1,0 +1,140 @@
+// Route-level tests for the Slice B2 plan-baseline HTTP surface (LINA-200-BE;
+// frozen contract §5). Mirrors http.test.mjs but additionally wires the
+// plan-version service so `getPlan` serves the B2 { baseline, current, history }
+// shape and the four lifecycle routes are mounted. See plan-version.test.mjs for
+// the service-level contract coverage.
+//
+// Run: node --test services/schedule/plan-version.http.test.mjs
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { createScheduleHttp } from './http.mjs';
+import { createScheduleService } from './schedule.mjs';
+import { createPlanVersionService } from './plan-version.mjs';
+import { createInMemoryStore, createInMemoryLedger, createInMemoryIdentity } from './ports.mjs';
+
+const PROJECT = 'proj-1';
+const GC = 'gc-1';
+const OWNER = 'owner-1';
+
+function build() {
+  const store = createInMemoryStore();
+  const ledger = createInMemoryLedger();
+  const identity = createInMemoryIdentity({
+    memberships: [
+      { projectId: PROJECT, partyId: OWNER, role: 'owner' },
+      { projectId: PROJECT, partyId: GC, role: 'counterparty' },
+    ],
+  });
+  const service = createScheduleService({ store, ledger, identity });
+  const planVersion = createPlanVersionService({ store, ledger, identity });
+  return { http: createScheduleHttp({ service, planVersion }), store };
+}
+
+// Seed a proposed v1 (like the import backfill) authored by the GC.
+function seedV1(store) {
+  const versionId = randomUUID();
+  const createdAt = new Date().toISOString();
+  store.insertPlanVersion({}, {
+    id: versionId, project_id: PROJECT, version_no: 1, status: 'proposed',
+    source_import_id: null, supersedes_version_id: null,
+    proposed_by_party_id: GC, created_at: createdAt, frozen_at: null,
+  });
+  const stageId = randomUUID();
+  store.insertStage({}, {
+    id: stageId, project_id: PROJECT, name: 'Foundation', position: 1,
+    parent_id: null, trade: 'Civil', import_id: null, source_row_ref: null,
+    scope_note: null, planned_start_date: '2026-01-05', planned_end_date: '2026-02-02',
+    planned_cost_cents: 1_000_000, plan_version_id: versionId,
+    created_at: createdAt, updated_at: createdAt,
+  });
+  store.insertPlanAcceptance({}, {
+    id: randomUUID(), plan_version_id: versionId, project_id: PROJECT,
+    party_id: GC, kind: 'proposed', stamped_at: createdAt, audit_event_id: randomUUID(),
+  });
+  return { versionId, stageId };
+}
+
+const gc = { partyId: GC };
+const owner = { partyId: OWNER };
+
+test('GET /projects/:id/plan returns the B2 { baseline, current, history } shape (contract §5 route 1)', async () => {
+  const { http, store } = build();
+  seedV1(store);
+
+  const res = await http.getPlan({ session: owner, params: { projectId: PROJECT } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.baseline, null);
+  assert.equal(res.body.current.status, 'proposed');
+  assert.equal(res.body.current.stages[0].name, 'Foundation');
+  assert.equal(res.body.history.length, 0);
+});
+
+test('POST :withdraw — proposer withdraws → 200 withdrawn; reviewer → 403', async () => {
+  const { http, store } = build();
+  const { versionId } = seedV1(store);
+
+  const forbidden = await http.withdrawPlan({ session: owner, params: { versionId } });
+  assert.equal(forbidden.status, 403);
+  assert.equal(forbidden.body.error.code, 'forbidden');
+
+  const res = await http.withdrawPlan({ session: gc, params: { versionId } });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { status: 'withdrawn' });
+});
+
+test('POST :accept — second stamp freezes → baseline in body; replay is idempotent', async () => {
+  const { http, store } = build();
+  const { versionId } = seedV1(store);
+
+  const first = await http.acceptPlan({ session: owner, params: { versionId } });
+  assert.equal(first.status, 200);
+  assert.equal(first.body.status, 'accepted');
+  assert.equal(first.body.baseline.planVersionId, versionId);
+
+  const replay = await http.acceptPlan({ session: owner, params: { versionId } });
+  assert.equal(replay.status, 200);
+  assert.deepEqual(replay.body, first.body);
+});
+
+test('POST :reject — reviewer rejects with reason → 200; reason too long → 400', async () => {
+  const { http, store } = build();
+  const { versionId } = seedV1(store);
+
+  const res = await http.rejectPlan({
+    session: owner, params: { versionId }, body: { reason: 'needs dates shifted' },
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { status: 'rejected' });
+
+  const { versionId: v2 } = seedV1(store);
+  const bad = await http.rejectPlan({ session: owner, params: { versionId: v2 }, body: { reason: 'x'.repeat(2001) } });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.error.code, 'invalid_reason');
+});
+
+test('POST :request-changes — reviewer forks a new proposed version; original superseded', async () => {
+  const { http, store } = build();
+  const { versionId, stageId } = seedV1(store);
+
+  const res = await http.requestChangesPlan({
+    session: owner, params: { versionId },
+    body: { stages: [{ stageId, plannedCostCents: 1_200_000 }] },
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.status, 'proposed');
+  assert.equal(res.body.versionNo, 2);
+  assert.notEqual(res.body.newVersionId, versionId);
+
+  const view = await http.getPlan({ session: gc, params: { projectId: PROJECT } });
+  assert.equal(view.body.current.versionNo, 2);
+  assert.equal(view.body.history[0].status, 'superseded');
+});
+
+test('unauthenticated B2 action → 401 envelope', async () => {
+  const { http, store } = build();
+  const { versionId } = seedV1(store);
+  const res = await http.acceptPlan({ session: undefined, params: { versionId } });
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error.code, 'unauthenticated');
+});
