@@ -53,10 +53,12 @@ export function createInMemoryIdentity({ memberships = [] } = {}) {
 
   // Same contract as the identity service: throws typed {status,code} errors the
   // HTTP layer maps to the platform error envelope; returns { role } on allow.
-  function authorize({ actorPartyId, action, projectId }) {
+  // Extra context (proposedByPartyId for the REVIEW_PLAN two-sided rule) is
+  // forwarded to the pure authorizer, mirroring the identity service's authorize.
+  function authorize({ actorPartyId, action, projectId, ...extra }) {
     if (!actorPartyId) throw new DomainError(401, 'unauthenticated', 'acting party is required');
     const role = roleOf(projectId, actorPartyId);
-    const decision = can({ action, role, actorPartyId });
+    const decision = can({ action, role, actorPartyId, ...extra });
     if (!decision.allow) {
       throw new DomainError(403, 'forbidden', decision.reason ?? 'not permitted');
     }
@@ -118,6 +120,9 @@ export function createInMemoryStore() {
   const progress = [];        // append-only stage_progress rows
   const imports = [];         // append-only plan_import headers
   const dependencies = [];    // append-only stage_dependency rows
+  const versions = [];        // plan_version rows (envelope; status is mutable)
+  const acceptances = [];     // append-only plan_acceptance stamps
+  const baselines = new Map(); // schedule.project_baseline pointer (upsert, per project)
   let stageSeq = 0;
   let progressSeq = 0;
 
@@ -127,7 +132,24 @@ export function createInMemoryStore() {
     return fn({});
   }
 
+  // The DB freeze guard (ADR-0002 §4) mirrored in code: a stage bound to a
+  // frozen/terminal plan version cannot be inserted or mutated. Mirrors the
+  // `reject_frozen_stage_write` trigger exactly.
+  function assertStageMutable(planVersionId) {
+    if (planVersionId == null) return;
+    const v = versions.find((x) => x.id === planVersionId);
+    if (v && ['accepted', 'superseded', 'withdrawn', 'rejected'].includes(v.status)) {
+      const err = new Error(
+        `stage belongs to a frozen/terminal plan version — a baseline is changed, never edited`,
+      );
+      err.code = 'P0001';
+      err.trigger = 'stage_freeze_guard';
+      throw err;
+    }
+  }
+
   function insertStage(_tx, row) {
+    assertStageMutable(row.plan_version_id);
     const stored = { ...row, seq: ++stageSeq };
     stages.set(row.id, stored);
     return { ...stored };
@@ -143,6 +165,7 @@ export function createInMemoryStore() {
   function updateStage(_tx, id, patch) {
     const r = stages.get(id);
     if (!r) return null;
+    assertStageMutable(r.plan_version_id);
     Object.assign(r, patch);
     return { ...r };
   }
@@ -243,13 +266,102 @@ export function createInMemoryStore() {
     return out;
   }
 
+  // ── Slice B2 plan versioning (LINA-200, contract §3) ──────────────────────
+
+  function insertPlanVersion(_tx, row) {
+    versions.push({ ...row });
+    return { ...row };
+  }
+
+  function getPlanVersion(id) {
+    const r = versions.find((x) => x.id === id);
+    return r ? { ...r } : null;
+  }
+
+  function getOpenPlanVersion(projectId) {
+    const r = versions.find((x) => x.project_id === projectId && x.status === 'proposed');
+    return r ? { ...r } : null;
+  }
+
+  // version_no is assigned server-side (mirroring the append-txn advisory lock);
+  // the next number is max(existing)+1, seeded 1 when none exists.
+  function nextPlanVersionNo(projectId) {
+    const nums = versions
+      .filter((x) => x.project_id === projectId)
+      .map((x) => x.version_no);
+    return nums.length === 0 ? 1 : Math.max(...nums) + 1;
+  }
+
+  // The only mutation to a plan_version envelope: status + (on freeze) frozen_at.
+  function updatePlanVersionStatus(_tx, id, { status, frozenAt }) {
+    const r = versions.find((x) => x.id === id);
+    if (!r) return null;
+    r.status = status;
+    if (frozenAt !== undefined) r.frozen_at = frozenAt;
+    return { ...r };
+  }
+
+  function listPlanVersions(projectId) {
+    return versions
+      .filter((x) => x.project_id === projectId)
+      .sort((a, b) => a.version_no - b.version_no)
+      .map((x) => ({ ...x }));
+  }
+
+  function insertPlanAcceptance(_tx, row) {
+    acceptances.push({ ...row });
+    return { ...row };
+  }
+
+  function listPlanAcceptances(planVersionId) {
+    return acceptances.filter((a) => a.plan_version_id === planVersionId).map((a) => ({ ...a }));
+  }
+
+  // addressable stamps so :accept can be idempotent-by-state (a party may stamp a
+  // version at most once — UNIQUE (plan_version_id, party_id)).
+  function getPlanAcceptance(planVersionId, partyId) {
+    const r = acceptances.find((a) => a.plan_version_id === planVersionId && a.party_id === partyId);
+    return r ? { ...r } : null;
+  }
+
+  function upsertProjectBaseline(_tx, row) {
+    const existing = baselines.get(row.project_id);
+    const stored = { ...existing, ...row };
+    baselines.set(row.project_id, stored);
+    return { ...stored };
+  }
+
+  function getProjectBaseline(projectId) {
+    const r = baselines.get(projectId);
+    return r ? { ...r } : null;
+  }
+
+  // The WBS stage rows bound to a version, in plan order (parents before children
+  // by position; the service remaps parent_id when forking).
+  function listStagesByPlanVersion(planVersionId) {
+    return [...stages.values()]
+      .filter((s) => s.plan_version_id === planVersionId)
+      .sort((a, b) => (a.position - b.position) || (a.seq - b.seq))
+      .map((s) => ({ ...s }));
+  }
+
+  function stageCountByPlanVersion(planVersionId) {
+    return listStagesByPlanVersion(planVersionId).length;
+  }
+
   return {
     transaction,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
     insertStageDependency, listStageDependencies,
     insertPlanImport, getPlanImportByIdempotencyKey, importStageCounts,
     insertProgress, listProgressByStage, latestProgressByProject,
+    insertPlanVersion, getPlanVersion, getOpenPlanVersion, nextPlanVersionNo,
+    updatePlanVersionStatus, listPlanVersions,
+    insertPlanAcceptance, listPlanAcceptances, getPlanAcceptance,
+    upsertProjectBaseline, getProjectBaseline,
+    listStagesByPlanVersion, stageCountByPlanVersion,
     _stages: stages, _progress: progress, _imports: imports, _dependencies: dependencies,
+    _versions: versions, _acceptances: acceptances, _baselines: baselines,
   };
 }
 

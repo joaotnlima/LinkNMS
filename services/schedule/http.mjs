@@ -36,15 +36,19 @@ const actorOf = (session) => session?.partyId ?? null;
  * @param {Object} deps
  * @param {ReturnType<import('./schedule.mjs').createScheduleService>} deps.service
  * @param {import('./plan-import.mjs').createPlanImportService} [deps.planImport]
+ * @param {import('./plan-version.mjs').createPlanVersionService} [deps.planVersion]
  */
-export function createScheduleHttp({ service, planImport = null }) {
+export function createScheduleHttp({ service, planImport = null, planVersion = null }) {
   if (!service) throw new Error('createScheduleHttp requires { service }');
 
-  // GET /projects/:projectId/plan — the timeline + rollup (FR-P4, FR-P6, §8.3)
+  // GET /projects/:projectId/plan — the plan-baseline D11–D13 view (B2 contract
+  // §5 route 1): { baseline, current, history }. Both parties read.
   async function getPlan({ session, params }) {
     try {
-      const plan = await service.getPlan(params.projectId, actorOf(session));
-      return { status: 200, body: plan };
+      const view = planVersion
+        ? await planVersion.getPlan(params.projectId, actorOf(session))
+        : await service.getPlan(params.projectId, actorOf(session));
+      return { status: 200, body: view };
     } catch (err) { return errorBody(err); }
   }
 
@@ -106,7 +110,7 @@ export function createScheduleHttp({ service, planImport = null }) {
     } catch (err) { return errorBody(err); }
   }
 
-  // POST /projects/:projectId/plan-imports:confirm — the single write txn
+  // POST /projects/:projectId/plan-versions:confirm — the single write txn
   async function confirmPlanImport({ session, params, file }) {
     try {
       const out = await planImport.confirm(params.projectId, actorOf(session), file ?? {});
@@ -114,6 +118,42 @@ export function createScheduleHttp({ service, planImport = null }) {
     } catch (err) { return errorBody(err); }
   }
 
+  // ── Slice B2 plan baseline (LINA-200) — D11–D13 lifecycle ────────────────────
+
+  // POST …/plan-versions/:versionId:withdraw — proposer only; terminal
+  async function withdrawPlan({ session, params }) {
+    try {
+      const out = await planVersion.withdraw(params.versionId, actorOf(session));
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST …/plan-versions/:versionId:accept — reviewer; idempotent-by-state; the
+  // second stamp freezes → baseline.
+  async function acceptPlan({ session, params }) {
+    try {
+      const out = await planVersion.accept(params.versionId, actorOf(session));
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST …/plan-versions/:versionId:reject — reviewer; terminal
+  async function rejectPlan({ session, params, body }) {
+    try {
+      const out = await planVersion.reject(params.versionId, actorOf(session), body ?? {});
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST …/plan-versions/:versionId:request-changes — reviewer forks a new version
+  async function requestChangesPlan({ session, params, body }) {
+    try {
+      const out = await planVersion.requestChanges(params.versionId, actorOf(session), body ?? {});
+      return { status: 201, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
   return { getPlan, addStage, getStage, updateStage, reportProgress,
-    inspectPlanImport, columnsPlanImport, previewPlanImport, confirmPlanImport };
+    inspectPlanImport, columnsPlanImport, previewPlanImport, confirmPlanImport,
+    withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan };
 }
