@@ -108,9 +108,29 @@ describe('mounted HTTP surface over real Postgres', { skip: URL_ ? false : 'set 
     homeowner = await c.parties.findOrCreateByEmail({ email: email('homeowner'), role: 'owner' });
     gc = await c.parties.findOrCreateByEmail({ email: email('gc'), role: 'contractor' });
     stranger = await c.parties.findOrCreateByEmail({ email: email('stranger'), role: 'contractor' });
+
+    // Seats, because the deployed container enforces the plan allowance
+    // (ADR-0013) and this suite IS the deployed shape. In production none of
+    // these parties could exist unseated — an unseated Clerk account gets
+    // /no-access and no party row — so seating them here makes the fixture
+    // faithful rather than lenient. The homeowner is put on a multi-build plan:
+    // this suite creates several records for one owner to assert authorization,
+    // and its subject is who may act, not how many builds they bought. The cap
+    // itself is asserted on its own below, and in identity/plans.test.mjs.
+    for (const p of [homeowner, gc, stranger]) {
+      await admin.query(
+        `INSERT INTO identity.seat (email, source, note, plan) VALUES ($1, 'beta', 'container.pg.test', 'build_plus')
+         ON CONFLICT (email) DO UPDATE SET plan = excluded.plan, status = 'active', revoked_at = NULL`,
+        [p.email],
+      );
+    }
   });
 
   after(async () => {
+    // Seats outlive the parties that used them (a seat is keyed on email, not on
+    // a party id), so a run that left them behind would silently entitle the next
+    // suite in the same database.
+    await admin?.query("DELETE FROM identity.seat WHERE note = 'container.pg.test'");
     await c?.close();
     await admin?.end();
   });
@@ -181,6 +201,44 @@ describe('mounted HTTP surface over real Postgres', { skip: URL_ ? false : 'set 
     test('a stranger still cannot read the project', async () => {
       const res = await c.http.identity.getProject({ session: as(stranger.id), params: forProject(projectId) });
       assert.equal(res.status, 403);
+    });
+  });
+
+  // ── The plan allowance at the HTTP boundary (ADR-0013) ─────────────────────
+  // The unit tests pin the rule; this pins that the DEPLOYED composition reads
+  // it — that the seat store is wired into the identity service through the
+  // container and not merely available beside it. That wiring is exactly the
+  // kind of thing that exists in a test fixture and is missing in production.
+  describe('the plan allowance is enforced by the mounted surface', () => {
+    test('a one-build plan takes the first build and refuses the second, over real Postgres', async () => {
+      const solo = await c.parties.findOrCreateByEmail({ email: email('solo'), role: 'owner' });
+      await admin.query(
+        `INSERT INTO identity.seat (email, source, note, plan) VALUES ($1, 'beta', 'container.pg.test', 'personal')
+         ON CONFLICT (email) DO UPDATE SET plan = excluded.plan, status = 'active', revoked_at = NULL`,
+        [solo.email],
+      );
+
+      const first = await c.http.identity.createProject({
+        session: as(solo.id), body: { name: 'Only Build', baselineBudgetCents: 100_00 },
+      });
+      assert.equal(first.status, 201, JSON.stringify(first.body));
+
+      const second = await c.http.identity.createProject({
+        session: as(solo.id), body: { name: 'Second Build', baselineBudgetCents: 100_00 },
+      });
+      assert.equal(second.status, 409, JSON.stringify(second.body));
+      assert.equal(second.body.error.code, 'plan_limit_reached');
+      // The numbers the upgrade surface needs, carried on the wire rather than
+      // re-derived from a client-side copy of the pricing table.
+      assert.equal(second.body.error.plan, 'personal');
+      assert.equal(second.body.error.limit, 1);
+      assert.equal(second.body.error.owned, 1);
+
+      // The refusal wrote nothing — one project row, not two.
+      const { rows } = await admin.query(
+        'select count(*)::int as cnt from identity.project where owner_party_id = $1', [solo.id],
+      );
+      assert.equal(rows[0].cnt, 1);
     });
   });
 
