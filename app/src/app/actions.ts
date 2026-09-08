@@ -15,15 +15,36 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
 import {
-  ApiError, createProject, createBuildDraft, setOperatingModel, inviteCounterparty, acceptInvitation,
+  ApiError, PlanLimitError, type PlanLimit,
+  createProject, createBuildDraft, setOperatingModel, inviteCounterparty, acceptInvitation,
 } from '@/lib/api';
 import { parseBudgetToCents } from '@/lib/format';
 import { OPERATING_MODELS, inviteRoleFor, type OperatingModel } from '@/lib/build-creation';
 
-export interface FormState { error?: string }
+export interface FormState {
+  error?: string;
+  /** Set on `409 plan_limit_reached` — see `refusal()` and PlanLimitNotice (LINA-205). */
+  planLimit?: PlanLimit;
+}
 
 const message = (err: unknown, fallback: string): string =>
   (err instanceof ApiError ? err.message : null) ?? (err instanceof Error ? err.message : null) ?? fallback;
+
+/**
+ * `message()`, plus the plan allowance when the refusal carried one (LINA-205).
+ *
+ * Used on the CREATE paths only — they are the only ones the allowance gates.
+ * Everywhere else keeps calling `message()` directly, so this cannot quietly
+ * change what any other form renders.
+ *
+ * `error` is ALWAYS set, including when `planLimit` is: the service's own
+ * sentence is the fallback for any surface that has not been taught the panel,
+ * and a state that carried only numbers would render as silence there.
+ */
+const refusal = (err: unknown, fallback: string): FormState => ({
+  error: message(err, fallback),
+  ...(err instanceof PlanLimitError ? { planLimit: err.entitlement } : {}),
+});
 
 // ── FR1: start a shared record ───────────────────────────────────────────────
 
@@ -42,7 +63,7 @@ export async function createProjectAction(_prev: FormState, form: FormData): Pro
   try {
     ({ id } = await createProject({ name, baselineBudgetCents }));
   } catch (err) {
-    return { error: message(err, 'Could not create the project.') };
+    return refusal(err, 'Could not create the project.');
   }
   // Straight to the invite step: a shared record with one party on it is not yet
   // doing anything for anyone (FR1 is create AND invite).
@@ -80,7 +101,9 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
   try {
     ({ id } = await createBuildDraft({ name, baselineBudgetCents }));
   } catch (err) {
-    return { error: message(err, 'Could not create the build.') };
+    // The path that fires for real today: a founding seat runs one build, so the
+    // owner's SECOND trip through the wizard lands here (ADR-0013).
+    return refusal(err, 'Could not create the build.');
   }
   redirect(`/projects/${id}/operating-model`);
 }

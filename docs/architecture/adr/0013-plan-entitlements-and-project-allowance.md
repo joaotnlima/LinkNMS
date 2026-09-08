@@ -123,9 +123,26 @@ allowance ladder is re-priced by editing one frozen object.
   ("up to 1 project"), but it is a behaviour change for existing accounts, and
   raising one is a deliberate SQL act rather than a self-serve click.
 - The enum is duplicated three ways. Mitigated by the CHECK, not eliminated.
-- The portal shows the service's sentence rather than a designed upgrade screen.
-  A real "you are at 1 of 1 — see plans" surface is follow-up work; the error
-  body already carries everything it needs.
+- ~~The portal shows the service's sentence rather than a designed upgrade
+  screen.~~ **Done in LINA-205.** The wizard now renders a plan-aware panel —
+  which plan, what it runs, how much is in use — built entirely from the `plan`,
+  `limit` and `owned` the refusal already carried. Nothing about the allowance is
+  re-derived client-side; `app/src/lib/plans.ts` holds display NAMES only, and
+  the note in it explains why a second copy of the ladder is the failure this
+  design exists to prevent.
+- **This ADR names two ways forward and only one of them exists.** "…resolves by
+  upgrading or by closing a build" — there is no closing. Migration 0009 admits
+  `status IN ('draft', 'active')` and no operation transitions out of either, so
+  an owner at their limit whose builds are all live has exactly one move. The
+  LINA-205 surface therefore draws no close control and says so in as many words
+  rather than sending the owner looking for a button that is not there. Ending or
+  archiving a build is unbuilt work, not an oversight in the screen.
+- The refusal is only reachable by SUBMITTING. There is no entitlement read, so
+  the portal cannot grey out "New build" for an owner already at their limit or
+  warn before the wizard collects a name and a baseline. Adding one means a new
+  read on the identity surface; until then the owner types a form that will be
+  refused, which is a worse first minute than it needs to be but is honest at the
+  point it matters.
 - Paid plans are still collected through the waitlist rather than Stripe while
   founding seats remain (the founder's charge-mode decision, LINA-173), so today
   a paid plan key is recorded on a seat that was granted free. That is correct
@@ -146,3 +163,18 @@ allowance ladder is re-priced by editing one frozen object.
   that has no seats at all; the deployed container always passes it.
 - `marketing-site/src/app/api/confirm/route.ts` — the plan rides onto the seat at
   the moment of the claim.
+
+The portal half (LINA-205):
+
+- `app/src/lib/api.ts` — `PlanLimitError` / `PlanLimit`. `raise()` promotes the
+  refusal to the typed error only when the numbers are actually present, so a
+  malformed envelope degrades to the plain `ApiError` the surfaces already show.
+- `app/src/lib/plans.ts` — plan display names and the pricing URL. Names only,
+  deliberately; an unmapped key returns `null` and the screen says "your current
+  seat", which stays true of every plan there will ever be.
+- `app/src/components/PlanLimitNotice.tsx` + `plan-limit.css` — the surface.
+  Warning ramp rather than the danger ramp used by `.form-error`: the request was
+  well-formed and the person is who they say they are, so this is not a typo.
+- `app/src/components/ActionForm.tsx`, `app/src/app/actions.ts` — the panel
+  replaces the red strip on the create paths. `error` is still always set, so any
+  surface not yet taught the panel keeps printing the service's own sentence.
