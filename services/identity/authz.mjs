@@ -35,6 +35,8 @@ export const ACTION = Object.freeze({
   ADD_STAGE: 'add_stage',
   UPDATE_STAGE: 'update_stage',
   REPORT_PROGRESS: 'report_progress',
+  // Slice B1 plan import (LINA-199, contract §5): GC/counterparty only.
+  IMPORT_PLAN: 'import_plan',
   UPLOAD_PLAN_DOCUMENT: 'upload_plan_document',
 });
 
@@ -62,6 +64,7 @@ const COUNTERPARTY = new Set([
   ACTION.ADD_STAGE,
   ACTION.UPDATE_STAGE,
   ACTION.REPORT_PROGRESS,
+  ACTION.IMPORT_PLAN,
   ACTION.UPLOAD_PLAN_DOCUMENT,
 ]);
 

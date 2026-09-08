@@ -20,11 +20,14 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
+import ExcelJS from 'exceljs';
 
 import { sslFor } from '../ledger/db.mjs';
 import { createPgLedger } from '../ledger/pg-ledger.mjs';
 import { createPgStore } from './pg-store.mjs';
 import { createScheduleService, HEADLINE } from './schedule.mjs';
+import { createPlanImportService } from './plan-import.mjs';
+import { PARSER } from './plan-import-parser.mjs';
 import { DomainError } from './ports.mjs';
 
 const { Pool } = pg;
@@ -74,6 +77,11 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
         catch (err) { if (err.code !== '42P07' && err.code !== '42P06') throw err; }
       }
     }
+    // Slice B1 (LINA-206): plan_import / stage_dependency tables + the WBS
+    // columns on schedule.stage. Applied when the base exists but this is still
+    // missing (a fresh branch), or no-op when the Architect has applied it.
+    try { await pool.query(await readFile(join(here, 'migrations', '0002_plan_wbs_and_import.sql'), 'utf8')); }
+    catch (err) { if (!['42P07', '42P06', '42701'].includes(err.code)) throw err; }
     ledger = createPgLedger({ pool });
     store = createPgStore({ pool });
   });
@@ -181,5 +189,114 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
       assert.equal(plan.stages[0].currentStatus, 'blocked');
       assert.equal(plan.headline, HEADLINE.ATTENTION);
     }
+  });
+
+  describe('plan import (Slice B1, LINA-206)', () => {
+    // A tiny valid workbook: two top-level Actions, one sub-action each, one
+    // intra-import predecessor. Build in memory — no binary fixtures in the repo.
+    async function makeWorkbook() {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Plan');
+      ws.addRow(['Action', 'Sub-action', 'Start', 'End', 'Trade', 'Dependency']);
+      ws.addRow(['Foundation', '', '2026-01-05', '2026-02-02', 'Civil', '']);
+      ws.addRow(['Foundation', 'Excavate', '2026-01-05', '2026-01-15', 'Civil', 'R2']);
+      ws.addRow(['Framing', '', '2026-02-10', '2026-03-20', 'Carpentry', 'R3']);
+      ws.addRow(['Framing', 'Walls', '2026-02-10', '2026-03-01', 'Carpentry', 'R3']);
+      return Buffer.from(await wb.xlsx.writeBuffer());
+    }
+
+    async function planHarness() {
+      const { projectId, gc, homeowner } = await seed();
+      const identity = identityFor(new Map([[homeowner, 'owner'], [gc, 'counterparty']]));
+      const planImport = createPlanImportService({ store, parser: PARSER, ledger, identity });
+      return { planImport, projectId, gc, homeowner };
+    }
+
+    test('confirm commits projection + ONE plan_import event; stage ids ride the event in WBS pre-order', async () => {
+      const { planImport, projectId, gc } = await planHarness();
+      const buf = await makeWorkbook();
+      const res = await planImport.confirm(projectId, gc, {
+        filename: 'plan.xlsx', buffer: buf, sheet: 'Plan',
+        mapping: { action: 1, subAction: 2, start: 3, end: 4, trade: 5, dependency: 6 },
+        idempotencyKey: `idem-${randomUUID()}`,
+      });
+      assert.equal(res.stageCount, 4);
+      assert.equal(res.rootCount, 2);
+
+      const ev = await pool.query(
+        'select payload from ledger.audit_event where project_id = $1 and type = $2',
+        [projectId, 'plan_import'],
+      );
+      assert.equal(ev.rows.length, 1, 'the whole batch is exactly ONE audit event');
+      const { stageIds, importId } = ev.rows[0].payload;
+
+      const stages = await pool.query(
+        `select source_row_ref, position, parent_id, import_id
+           from schedule.stage where project_id = $1 order by position`,
+        [projectId],
+      );
+      const rows = stages.rows;
+      assert.equal(rows.length, 4);
+      assert.deepEqual(stages.rows.map((r) => r.source_row_ref), ['R2', 'R3', 'R4', 'R5']);
+      assert.equal(rows[0].parent_id, null, 'roots carry no parent');
+      assert.notEqual(rows[1].parent_id, null, 'sub-actions chain to their root');
+      assert.equal(rows.every((r) => r.import_id === importId), true);
+      // Stage ids written == ids on the audit event, in order.
+      const writtenIds = await pool.query('select id from schedule.stage where project_id = $1 order by position', [projectId]);
+      assert.deepEqual(writtenIds.rows.map((r) => r.id), stageIds);
+
+      const deps = await pool.query(
+        `select s.source_row_ref as from, d.source_row_ref as to
+           from schedule.stage_dependency sd
+           join schedule.stage s on s.id = sd.stage_id
+           join schedule.stage d on d.id = sd.depends_on_stage_id
+          where s.project_id = $1 order by 1, 2`,
+        [projectId],
+      );
+      assert.deepEqual(deps.rows.map((r) => `${r.from}->${r.to}`), ['R3->R2', 'R4->R3', 'R5->R3']);
+    });
+
+    test('the DB enforces idempotent confirm: a replay writes nothing and returns the original', async () => {
+      const { planImport, projectId, gc } = await planHarness();
+      const buf = await makeWorkbook();
+      const opts = {
+        filename: 'plan.xlsx', buffer: buf, sheet: 'Plan',
+        mapping: { action: 1, subAction: 2, start: 3, end: 4, trade: 5, dependency: 6 },
+        idempotencyKey: `retry-${randomUUID()}`,
+      };
+      const first = await planImport.confirm(projectId, gc, opts);
+      const second = await planImport.confirm(projectId, gc, opts);
+      assert.deepEqual(second, first, 'replay returns the ORIGINAL result');
+
+      const count = await pool.query('select count(*)::int n from schedule.plan_import where project_id = $1', [projectId]);
+      assert.equal(count.rows[0].n, 1, 'no second header');
+      const events = await pool.query(
+        'select count(*)::int n from ledger.audit_event where project_id = $1 and type = $2',
+        [projectId, 'plan_import'],
+      );
+      assert.equal(events.rows[0].n, 1, 'the phantom event rolled back with the txn');
+    });
+
+    test('duplicate idempotency_key is a 23505 on plan_import for the given constraint', async () => {
+      const { projectId, gc } = await planHarness();
+      const key = `raw-${randomUUID()}`;
+      await pool.query(
+        `insert into schedule.plan_import
+           (id, project_id, filename, sheet_name, column_mapping, row_count,
+            idempotency_key, imported_by_party_id, imported_at, audit_event_id)
+         values ($1,$2,'p.xlsx','Plan','{"action":1}'::jsonb,1,$3,$4,now(),$5)`,
+        [randomUUID(), projectId, key, gc, randomUUID()],
+      );
+      await assert.rejects(
+        () => pool.query(
+          `insert into schedule.plan_import
+             (id, project_id, filename, sheet_name, column_mapping, row_count,
+              idempotency_key, imported_by_party_id, imported_at, audit_event_id)
+           values ($1,$2,'p.xlsx','Plan','{"action":1}'::jsonb,1,$3,$4,now(),$5)`,
+          [randomUUID(), projectId, key, gc, randomUUID()],
+        ),
+        (err) => err.code === '23505' && err.constraint === 'plan_import_idempotency_key_key',
+      );
+    });
   });
 });

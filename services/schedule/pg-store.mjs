@@ -37,6 +37,10 @@ function mapStage(r) {
     project_id: r.project_id,
     name: r.name,
     position: r.position,
+    parent_id: r.parent_id,
+    trade: r.trade,
+    import_id: r.import_id,
+    source_row_ref: r.source_row_ref,
     scope_note: r.scope_note,
     planned_start_date: toDate(r.planned_start_date),
     planned_end_date: toDate(r.planned_end_date),
@@ -75,17 +79,20 @@ export function createPgStore({ pool = getPool() } = {}) {
   }
 
   // INSERT a stage. `seq` is GENERATED ALWAYS AS IDENTITY — never supplied.
+  // parent_id/trade/import_id/source_row_ref are the Slice B1 WBS/import columns
+  // (nullable; null for hand-added stages).
   async function insertStage(client, row) {
     const { rows } = await client.query(
       `insert into schedule.stage
-         (id, project_id, name, position, scope_note,
-          planned_start_date, planned_end_date, planned_cost_cents,
+         (id, project_id, name, position, parent_id, trade, import_id, source_row_ref,
+          scope_note, planned_start_date, planned_end_date, planned_cost_cents,
           created_at, updated_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        returning *`,
       [
-        row.id, row.project_id, row.name, row.position, row.scope_note,
-        row.planned_start_date, row.planned_end_date, row.planned_cost_cents,
+        row.id, row.project_id, row.name, row.position, row.parent_id ?? null,
+        row.trade ?? null, row.import_id ?? null, row.source_row_ref ?? null,
+        row.scope_note, row.planned_start_date, row.planned_end_date, row.planned_cost_cents,
         row.created_at, row.updated_at,
       ],
     );
@@ -167,9 +174,74 @@ export function createPgStore({ pool = getPool() } = {}) {
     return out;
   }
 
+  // ── Slice B1 plan import (LINA-199; contract §3) ────────────────────────────
+
+  // Append-only import header INSERT. audit_event_id is known before this runs
+  // because the Confirm transaction appends the ledger event FIRST (the header
+  // row is INSERT+SELECT only — no UPDATE backfill exists, mirroring the grant).
+  async function insertPlanImport(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.plan_import
+         (id, project_id, filename, sheet_name, column_mapping, row_count,
+          idempotency_key, imported_by_party_id, imported_at, audit_event_id)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       returning *`,
+      [
+        row.id, row.project_id, row.filename, row.sheet_name,
+        JSON.stringify(row.column_mapping), row.row_count,
+        row.idempotency_key, row.imported_by_party_id, row.imported_at, row.audit_event_id,
+      ],
+    );
+    return rows[0];
+  }
+
+  // The idempotent-confirm lookup: a retried confirm with a used key returns the
+  // ORIGINAL import, writes nothing (contract §2).
+  async function getPlanImportByIdempotencyKey(idempotencyKey) {
+    const { rows } = await pool.query(
+      `select * from schedule.plan_import where idempotency_key = $1`,
+      [idempotencyKey],
+    );
+    return rows[0] ?? null;
+  }
+
+  async function insertStageDependency(client, stageId, dependsOnStageId) {
+    const { rows } = await client.query(
+      `insert into schedule.stage_dependency (stage_id, depends_on_stage_id)
+       values ($1,$2)
+       returning *`,
+      [stageId, dependsOnStageId],
+    );
+    return rows[0];
+  }
+
+  // The highest plan position in a project — imported stages append after it so
+  // hand-added and imported stages never collide on position.
+  async function maxStagePosition(projectId) {
+    const { rows } = await pool.query(
+      'select coalesce(max(position), 0) as m from schedule.stage where project_id = $1',
+      [projectId],
+    );
+    return Number(rows[0].m ?? 0);
+  }
+
+  // The idempotent-confirm summary for a prior import (root = top-level Action,
+  // parent_id IS NULL).
+  async function importStageCounts(importId) {
+    const { rows } = await pool.query(
+      `select count(*)::int as stage_count,
+              count(*) filter (where parent_id is null)::int as root_count
+         from schedule.stage where import_id = $1`,
+      [importId],
+    );
+    return { stageCount: rows[0].stage_count, rootCount: rows[0].root_count };
+  }
+
   return {
     transaction,
-    insertStage, getStage, updateStage, listStages,
+    insertStage, getStage, updateStage, listStages, maxStagePosition,
+    insertPlanImport, getPlanImportByIdempotencyKey, insertStageDependency,
+    importStageCounts,
     insertProgress, listProgressByStage, latestProgressByProject,
   };
 }

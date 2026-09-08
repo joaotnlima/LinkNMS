@@ -31,6 +31,8 @@ import { createDecisionLog } from './decision/decision-log.mjs';
 import { createChangeOrderService } from './change_order/change-order.mjs';
 import { createChangeOrderHttp } from './change_order/http.mjs';
 import { createScheduleService } from './schedule/schedule.mjs';
+import { createPlanImportService } from './schedule/plan-import.mjs';
+import { PARSER } from './schedule/plan-import-parser.mjs';
 import { createScheduleHttp } from './schedule/http.mjs';
 
 // ── The per-process analytics singleton ─────────────────────────────────────
@@ -154,6 +156,18 @@ export function createServices({
       })
     : null;
 
+  // Slice B1 plan import (LINA-199): a second Schedule-service surface over the
+  // SAME store, ledger binding and identity authorizer. Stateless parse (only
+  // via the server-side xlsx parser) until :confirm, which writes one transaction.
+  const planImport = scheduleStore
+    ? createPlanImportService({
+        store: scheduleStore,
+        parser: PARSER,
+        ledger: ledgers.schedule ?? ledger,
+        identity,
+      })
+    : null;
+
   // NOTE (LINA-189): there is no waitlist service here any more. The portal used
   // to compose one over `waitlist.signup` — a SECOND waitlist that captured an
   // address and did nothing else with it, while the marketing site's funnel
@@ -168,7 +182,7 @@ export function createServices({
     changeOrder,
     schedule,
     changeOrderHttp: createChangeOrderHttp({ service: changeOrder, identity }),
-    scheduleHttp: schedule ? createScheduleHttp({ service: schedule }) : null,
+    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport }) : null,
   };
 }
 
