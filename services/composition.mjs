@@ -32,6 +32,7 @@ import { createChangeOrderService } from './change_order/change-order.mjs';
 import { createChangeOrderHttp } from './change_order/http.mjs';
 import { createScheduleService } from './schedule/schedule.mjs';
 import { createPlanImportService } from './schedule/plan-import.mjs';
+import { createPlanVersionService } from './schedule/plan-version.mjs';
 import { PARSER } from './schedule/plan-import-parser.mjs';
 import { createScheduleHttp } from './schedule/http.mjs';
 
@@ -168,6 +169,19 @@ export function createServices({
       })
     : null;
 
+  // Slice B2 plan baseline (LINA-200): the proposal → review → baseline v1
+  // lifecycle over the SAME store, ledger binding and identity authorizer. Every
+  // transition appends one plan_* ledger event in the same transaction as its
+  // projection write; the reviewer-vs-proposer pairing is resolved from the
+  // version row via can()'s two-sided rule (ADR-0004).
+  const planVersion = scheduleStore
+    ? createPlanVersionService({
+        store: scheduleStore,
+        ledger: ledgers.schedule ?? ledger,
+        identity,
+      })
+    : null;
+
   // NOTE (LINA-189): there is no waitlist service here any more. The portal used
   // to compose one over `waitlist.signup` — a SECOND waitlist that captured an
   // address and did nothing else with it, while the marketing site's funnel
@@ -182,7 +196,7 @@ export function createServices({
     changeOrder,
     schedule,
     changeOrderHttp: createChangeOrderHttp({ service: changeOrder, identity }),
-    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport }) : null,
+    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion }) : null,
   };
 }
 

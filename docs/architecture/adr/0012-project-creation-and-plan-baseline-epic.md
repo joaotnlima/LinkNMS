@@ -148,4 +148,7 @@ domain and may itself split further when B2 lands.
   frozen contract other work builds against (`GET /projects`) is settled here.
 - Tech debt / open questions carried forward: Excel parser choice (B1),
   baseline-versioning table shape (B2), and the materials schema (B3) are each
-  finalised in their slice's issue, anchored to this ADR.
+  finalised in their slice's issue, anchored to this ADR. **B1 frozen** in
+  `slice-b1-plan-import-contract.md`; **B2 frozen** in
+  `slice-b2-plan-baseline-contract.md` (plan-version lifecycle, dual-stamped
+  acceptance, DB-enforced freeze).

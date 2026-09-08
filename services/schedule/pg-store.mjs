@@ -40,6 +40,7 @@ function mapStage(r) {
     parent_id: r.parent_id,
     trade: r.trade,
     import_id: r.import_id,
+    plan_version_id: r.plan_version_id,
     source_row_ref: r.source_row_ref,
     scope_note: r.scope_note,
     planned_start_date: toDate(r.planned_start_date),
@@ -65,6 +66,49 @@ function mapProgress(r) {
   };
 }
 
+// Slice B2 plan versioning (LINA-200, contract §3) shapers. plan_version /
+// plan_acceptance / project_baseline rows are snake_case in the DB; these map
+// them to the same camelCase-less snake_case shape the in-memory store returns,
+// normalising num/date/timestamp columns so both adapters agree.
+function mapPlanVersion(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    project_id: r.project_id,
+    version_no: Number(r.version_no),
+    status: r.status,
+    source_import_id: r.source_import_id,
+    supersedes_version_id: r.supersedes_version_id,
+    proposed_by_party_id: r.proposed_by_party_id,
+    created_at: toIso(r.created_at),
+    frozen_at: r.frozen_at == null ? null : toIso(r.frozen_at),
+  };
+}
+
+function mapAcceptance(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    plan_version_id: r.plan_version_id,
+    project_id: r.project_id,
+    party_id: r.party_id,
+    kind: r.kind,
+    stamped_at: toIso(r.stamped_at),
+    audit_event_id: r.audit_event_id,
+  };
+}
+
+function mapBaseline(r) {
+  if (!r) return null;
+  return {
+    project_id: r.project_id,
+    plan_version_id: r.plan_version_id,
+    version_no: Number(r.version_no),
+    frozen_at: toIso(r.frozen_at),
+    baseline_audit_event_id: r.baseline_audit_event_id,
+  };
+}
+
 // Whitelisted updatable columns (edit / reorder — FR-P1). `set` keys already come
 // from the service's own whitelist; this second gate means a stray key can never
 // reach the SQL string.
@@ -86,14 +130,14 @@ export function createPgStore({ pool = getPool() } = {}) {
       `insert into schedule.stage
          (id, project_id, name, position, parent_id, trade, import_id, source_row_ref,
           scope_note, planned_start_date, planned_end_date, planned_cost_cents,
-          created_at, updated_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+          plan_version_id, created_at, updated_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        returning *`,
       [
         row.id, row.project_id, row.name, row.position, row.parent_id ?? null,
         row.trade ?? null, row.import_id ?? null, row.source_row_ref ?? null,
         row.scope_note, row.planned_start_date, row.planned_end_date, row.planned_cost_cents,
-        row.created_at, row.updated_at,
+        row.plan_version_id ?? null, row.created_at, row.updated_at,
       ],
     );
     return mapStage(rows[0]);
@@ -237,11 +281,150 @@ export function createPgStore({ pool = getPool() } = {}) {
     return { stageCount: rows[0].stage_count, rootCount: rows[0].root_count };
   }
 
+  // ── Slice B2 plan versioning (LINA-200, contract §3) ──────────────────────
+
+  async function insertPlanVersion(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.plan_version
+         (id, project_id, version_no, status, source_import_id, supersedes_version_id,
+          proposed_by_party_id, created_at, frozen_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       returning *`,
+      [
+        row.id, row.project_id, row.version_no, row.status,
+        row.source_import_id ?? null, row.supersedes_version_id ?? null,
+        row.proposed_by_party_id, row.created_at, row.frozen_at ?? null,
+      ],
+    );
+    return mapPlanVersion(rows[0]);
+  }
+
+  async function getPlanVersion(id) {
+    const { rows } = await pool.query(
+      'select * from schedule.plan_version where id = $1', [id]);
+    return mapPlanVersion(rows[0] ?? null);
+  }
+
+  // The single open (proposed) version for a project — the negotiation thread.
+  async function getOpenPlanVersion(projectId) {
+    const { rows } = await pool.query(
+      `select * from schedule.plan_version
+        where project_id = $1 and status = 'proposed'
+        limit 1`, [projectId]);
+    return mapPlanVersion(rows[0] ?? null);
+  }
+
+  // Assign the next version_no server-side, inside the append transaction. Reads
+  // the max existing number; the per-project advisory lock the ledger takes on
+  // append serialises concurrent forks/creations, so no gap-free race here.
+  async function nextPlanVersionNo(projectId) {
+    const { rows } = await pool.query(
+      `select coalesce(max(version_no), 0)::int as n
+         from schedule.plan_version where project_id = $1`, [projectId]);
+    return Number(rows[0].n ?? 0) + 1;
+  }
+
+  // The only envelope mutation: status + (on freeze) frozen_at. Mirrored by a
+  // ledger event in the same transaction. Returns the updated row or null. The
+  // DB CHECK plan_version_frozen_iff_accepted keeps `accepted` ⟺ `frozen_at`
+  // consistent; the service always supplies frozenAt when freezing.
+  async function updatePlanVersionStatus(client, id, { status, frozenAt }) {
+    const { rows } = await client.query(
+      `update schedule.plan_version
+          set status = $2,
+              frozen_at = $3
+        where id = $1
+        returning *`,
+      [id, status, frozenAt ?? null],
+    );
+    return rows.length ? mapPlanVersion(rows[0]) : null;
+  }
+
+  async function listPlanVersions(projectId) {
+    const { rows } = await pool.query(
+      `select * from schedule.plan_version
+        where project_id = $1
+        order by version_no`, [projectId]);
+    return rows.map(mapPlanVersion);
+  }
+
+  async function insertPlanAcceptance(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.plan_acceptance
+         (id, plan_version_id, project_id, party_id, kind, stamped_at, audit_event_id)
+       values ($1,$2,$3,$4,$5,$6,$7)
+       returning *`,
+      [row.id, row.plan_version_id, row.project_id, row.party_id, row.kind,
+        row.stamped_at, row.audit_event_id],
+    );
+    return mapAcceptance(rows[0]);
+  }
+
+  async function listPlanAcceptances(planVersionId) {
+    const { rows } = await pool.query(
+      `select * from schedule.plan_acceptance
+        where plan_version_id = $1
+        order by stamped_at, id`, [planVersionId]);
+    return rows.map(mapAcceptance);
+  }
+
+  async function getPlanAcceptance(planVersionId, partyId) {
+    const { rows } = await pool.query(
+      `select * from schedule.plan_acceptance
+        where plan_version_id = $1 and party_id = $2`, [planVersionId, partyId]);
+    return mapAcceptance(rows[0] ?? null);
+  }
+
+  async function upsertProjectBaseline(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.project_baseline
+         (project_id, plan_version_id, version_no, frozen_at, baseline_audit_event_id)
+       values ($1,$2,$3,$4,$5)
+       on conflict (project_id) do update
+         set plan_version_id = excluded.plan_version_id,
+             version_no = excluded.version_no,
+             frozen_at = excluded.frozen_at,
+             baseline_audit_event_id = excluded.baseline_audit_event_id
+       returning *`,
+      [row.project_id, row.plan_version_id, row.version_no, row.frozen_at,
+        row.baseline_audit_event_id],
+    );
+    return mapBaseline(rows[0]);
+  }
+
+  async function getProjectBaseline(projectId) {
+    const { rows } = await pool.query(
+      'select * from schedule.project_baseline where project_id = $1', [projectId]);
+    return mapBaseline(rows[0] ?? null);
+  }
+
+  // The WBS stage rows bound to a version, in plan order. Parent forks remap
+  // parent_id to the new stage ids in the service.
+  async function listStagesByPlanVersion(planVersionId) {
+    const { rows } = await pool.query(
+      `select * from schedule.stage
+        where plan_version_id = $1
+        order by position, seq`, [planVersionId]);
+    return rows.map(mapStage);
+  }
+
+  async function stageCountByPlanVersion(planVersionId) {
+    const { rows } = await pool.query(
+      'select count(*)::int as n from schedule.stage where plan_version_id = $1',
+      [planVersionId]);
+    return Number(rows[0].n ?? 0);
+  }
+
   return {
     transaction,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
     insertPlanImport, getPlanImportByIdempotencyKey, insertStageDependency,
     importStageCounts,
     insertProgress, listProgressByStage, latestProgressByProject,
+    insertPlanVersion, getPlanVersion, getOpenPlanVersion, nextPlanVersionNo,
+    updatePlanVersionStatus, listPlanVersions,
+    insertPlanAcceptance, listPlanAcceptances, getPlanAcceptance,
+    upsertProjectBaseline, getProjectBaseline,
+    listStagesByPlanVersion, stageCountByPlanVersion,
   };
 }
