@@ -1,0 +1,166 @@
+/* D11–D13, the plan proposal → review → baseline surface (LINA-212).
+
+   Every colour is a token from tokens.css via globals.css's aliases (ADR-0009 /
+   LINA-156). No new palette block, no colour literal, nothing that redefines a
+   token — and no second copy of the plan table: the rows, the bars and the month
+   axis are `.pi-*` from plan-import.css, because the plan the owner accepts must
+   be drawn by the same code the GC confirmed the import with. Only the columns
+   this screen adds (the VALUE column the pen puts between dates and the gantt)
+   and the states B2 introduces live here. */
+
+.pb { display: flex; flex-direction: column; gap: var(--s4); }
+
+/* ---- the row grid, extended by one column ----
+   plan-import.css lays the row out as name / trade / dates / gantt. D11 replaces
+   the trade chip with the VALUE the pen puts on every line, so the grid is
+   restated for this screen rather than the shared rule being widened for a
+   column D10 does not have. */
+.pb .pi-planhdr,
+.pb .pi-planrow {
+  grid-template-columns: minmax(180px, 2fr) 140px 120px minmax(200px, 3fr);
+}
+.pb-cell-value { font-size: 12px; font-weight: 600; text-align: right; }
+.pi-planhdr .pb-cell-value { font-weight: 700; }
+
+.pb-caption {
+  padding: var(--s2) var(--s4); font-size: 12px; color: var(--muted);
+  background: var(--sunken); border-bottom: 1px solid var(--outline);
+}
+/* The pre-edit version while the editor is open: still readable, visibly not the
+   thing being edited. Opacity alone would be colour-as-the-only-signal, so the
+   caption above says which version this is in words (FR9). */
+.pb .is-under { opacity: .72; }
+
+.pb-total {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  flex-wrap: wrap; padding: var(--s3) var(--s4);
+  background: var(--sunken); border-top: 1px solid var(--outline);
+}
+.pb-total-r { display: flex; align-items: baseline; gap: var(--s2); }
+.pb-total-n { font-size: 15px; font-weight: 650; }
+
+/* ---- head ---- */
+.pb-head { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.pb-title { font-size: 20px; font-weight: 600; letter-spacing: -.3px; }
+
+/* ---- D11 / D12 · whose move it is ---- */
+.pb-banner {
+  border: 1px solid var(--outline); border-left: 4px solid var(--plan-baseline);
+  background: var(--raised); border-radius: var(--r-ctrl);
+  padding: var(--s3) var(--s4);
+  display: flex; flex-direction: column; gap: 3px;
+}
+/* Waiting on YOU reads differently from waiting on them — a rule and a tint, and
+   the sentence says it too. */
+.pb-banner.is-yours { border-left-color: var(--owner); background: var(--owner-muted); }
+.pb-banner-t { font-size: 14px; font-weight: 650; }
+.pb-banner-b { font-size: 13px; color: var(--muted); max-width: 68ch; }
+
+/* ---- D13 · frozen ---- */
+.pb-frozen {
+  border: 1px solid var(--ok-bd); background: var(--ok-bg); color: var(--ok-fg);
+  border-radius: var(--r-overlay); padding: var(--s4);
+  display: flex; flex-direction: column; gap: var(--s2);
+}
+.pb-frozen-t { font-size: 15px; font-weight: 650; }
+.pb-frozen .cap { color: inherit; opacity: .88; }
+.pb-stamps { list-style: none; display: flex; flex-direction: column; gap: 6px; margin-top: var(--s2); }
+.pb-stamp {
+  display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap;
+  padding-top: 6px; border-top: 1px solid var(--ok-bd);
+}
+.pb-stamp-who { font-size: 13.5px; font-weight: 600; }
+.pb-stamp .cap { color: inherit; opacity: .8; }
+.pb-stamp-at { font-size: 12px; margin-left: auto; opacity: .9; }
+
+/* ---- acceptance ---- */
+.pb-acc { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+.pb-acc-t { font-size: 15px; font-weight: 600; }
+.pb-parties { list-style: none; display: flex; flex-direction: column; }
+.pb-party {
+  display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap;
+  padding: 10px 0; border-bottom: 1px solid var(--outline);
+}
+.pb-party:last-child { border-bottom: 0; }
+.pb-party-n { font-size: 13.5px; font-weight: 600; }
+.pb-party-s { margin-left: auto; display: flex; align-items: baseline; gap: var(--s2); }
+.pb-party-s .is-ok { font-size: 12px; font-weight: 650; color: var(--success-fg); }
+.pb-party-s .is-wait { font-size: 12px; font-weight: 650; color: var(--warn-fg); }
+.pb-onaccept { display: flex; flex-direction: column; gap: 4px; }
+.pb-onaccept ul { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.pb-onaccept li { font-size: 12.5px; color: var(--muted); padding-left: var(--s4); position: relative; }
+.pb-onaccept li::before { content: '✓'; position: absolute; left: 0; color: var(--success-fg); }
+
+/* ---- actions ---- */
+.pb-actions { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+
+.pb-reject { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
+.pb-label { font-size: 13px; font-weight: 600; }
+.pb-textarea {
+  font: inherit; font-size: 13.5px; color: var(--fg); background: var(--paper);
+  border: 1px solid var(--outline-strong); border-radius: var(--r-ctrl);
+  padding: var(--s2) var(--s3); width: 100%; resize: vertical;
+}
+.pb-textarea:focus { outline: 2px solid var(--owner); border-color: var(--owner); }
+
+/* ---- D12a · the editor ---- */
+.pb-editor { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+.pb-editor-hd { display: flex; flex-direction: column; gap: 3px; }
+.pb-editor-t { font-size: 16px; font-weight: 600; }
+
+.pb-editrow {
+  display: grid; gap: var(--s3); align-items: end;
+  grid-template-columns: minmax(160px, 2fr) 150px 150px 130px;
+  padding: var(--s3) 0; border-bottom: 1px solid var(--outline);
+}
+.pb-editrow:last-of-type { border-bottom: 0; }
+@media (max-width: 720px) {
+  .pb-editrow { grid-template-columns: 1fr 1fr; }
+  .pb-edit-name { grid-column: 1 / -1; }
+}
+.pb-editrow.is-sub .pb-edit-name { font-weight: 400; color: var(--muted); padding-left: var(--s4); }
+/* A changed row is marked by a rule as well as a tint, and the "was" line below
+   states the change in words (FR9). */
+.pb-editrow.is-changed {
+  border-left: 3px solid var(--owner); background: var(--owner-muted);
+  padding-left: var(--s3); margin-left: calc(-1 * var(--s3));
+}
+.pb-edit-name { font-size: 13.5px; font-weight: 600; align-self: center; overflow-wrap: anywhere; }
+.pb-field { display: flex; flex-direction: column; gap: 3px; }
+.pb-input {
+  font: inherit; font-size: 12.5px; color: var(--fg); background: var(--paper);
+  border: 1px solid var(--outline-strong); border-radius: var(--r-ctrl);
+  padding: 6px 8px; width: 100%;
+}
+.pb-input:focus { outline: 2px solid var(--owner); border-color: var(--owner); }
+.pb-input.num { text-align: right; }
+.pb-was { grid-column: 1 / -1; }
+
+.pb-summary {
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl);
+  background: var(--sunken); padding: var(--s3) var(--s4);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.pb-changelist { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.pb-changelist li { display: flex; flex-direction: column; gap: 1px; }
+.pb-change-name { font-size: 13px; font-weight: 600; }
+.pb-delta { font-size: 13px; font-weight: 600; }
+.pb-delta .is-up { color: var(--bad-fg); }
+.pb-delta .is-down { color: var(--success-fg); }
+
+/* ---- history ---- */
+.pb-history { display: flex; flex-direction: column; gap: var(--s2); }
+.pb-history-t { margin-bottom: 2px; }
+.pb-versions { list-style: none; display: flex; flex-direction: column; }
+.pb-version {
+  display: flex; align-items: baseline; gap: var(--s3);
+  padding: 10px var(--s3); border-left: 3px solid var(--outline-strong);
+  border-bottom: 1px solid var(--outline); background: var(--raised);
+}
+.pb-version:last-child { border-bottom: 0; }
+.pb-version.is-accepted { border-left-color: var(--success); }
+.pb-version.is-rejected, .pb-version.is-withdrawn { border-left-color: var(--danger); }
+.pb-version.is-superseded { border-left-color: var(--plan-baseline); }
+.pb-version-n { font-size: 12px; font-weight: 700; color: var(--muted); min-width: 28px; }
+.pb-version-b { display: flex; flex-direction: column; gap: 1px; }
+.pb-version-t { font-size: 13px; font-weight: 600; }

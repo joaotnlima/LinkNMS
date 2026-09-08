@@ -1,29 +1,32 @@
-// D7 — "No plan yet: the routes in", and what the same URL shows once a plan
-// exists (LINA-207).
+// The plan surface: D7 "no plan yet" (LINA-207) and D11–D13, the proposal →
+// review → baseline v1 record (LINA-212).
 //
-// Pen: "Desktop — Bootstrap flow (lg)" › Band C › D7. Contract §7.
+// Pen: "Desktop — Bootstrap flow (lg)" › Band C › D7, and D11/D12/D12a/D13.
+// Contracts: slice-b1-plan-import-contract §7, slice-b2-plan-baseline-contract §7.
 //
-// ── ONE URL, TWO STATES ──────────────────────────────────────────────────────
-// D7 is an EMPTY-build state, so it needs somewhere to stop being. `:confirm`
-// says the flow ends "route to the plan/record" (contract §7) and this is that
-// record: the same `/projects/:id/plan` renders the routes-in when the build has
-// no stages and the imported plan when it has some. A separate /plan/empty URL
-// would go stale the moment the import lands and would leave the post-confirm
-// redirect pointing at a screen about not having a plan.
+// ── ONE URL, THREE STATES ────────────────────────────────────────────────────
+// `/projects/:id/plan` is the plan, whatever the plan currently is:
+//   - nothing imported yet          → D7, the routes in
+//   - a version open for review     → D11 / D12 / D12a, per who is looking
+//   - a version accepted and frozen → D13, the baseline banner
+// A separate URL per state would go stale the moment the state changed and would
+// leave every redirect (the import's, the acceptance's) pointing at a screen
+// about a moment that has passed.
 //
-// ── WHAT THIS PAGE DOES NOT TRY TO BE ────────────────────────────────────────
-// The populated state is a LIST, not the Band D/E schedule surface. `getPlan`
-// returns flat stages (name, dates, status) — the WBS parentage and trade that
-// the import wrote are in the schema but not on that projection yet, and
-// inventing a hierarchy here by re-deriving it from names is exactly the kind of
-// inference the whole slice refuses. The tree the GC just approved is in the
-// preview they confirmed; the durable answer to "who imported this and when" is
-// the audit stamp below, which links to the ledger.
+// ── WHY THE ACTING PARTY IS READ HERE ────────────────────────────────────────
+// The screen needs it to decide which affordances exist (proposer → withdraw,
+// reviewer → accept/request-changes/reject). It is read from the VERIFIED
+// session server-side and passed down, never sent back up: every transition
+// derives its actor from the session again on the server (contract §6), so this
+// value shapes buttons and authorises nothing.
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 
-import { getBuild, getPlan, isSignedIn, type PlanHeadline } from '@/lib/api';
+import { getBuild, getPlan, isSignedIn } from '@/lib/api';
+import { currentSession } from '@/server/session';
+import { directoryOf } from '@/lib/view';
 import { TopBar, BottomNav } from '@/components/chrome';
+import { PlanBaseline, type PartyRef } from './PlanBaseline';
 import '@/components/plan-import.css';
 
 export const dynamic = 'force-dynamic';
@@ -37,9 +40,22 @@ export default async function PlanPage({
   const { id } = await params;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan`);
 
-  const [build, plan] = await Promise.all([getBuild(id), getPlan(id)]);
+  const [build, plan, session] = await Promise.all([getBuild(id), getPlan(id), currentSession()]);
   const { imported } = await searchParams;
   const isGC = build.actingRole === 'counterparty';
+
+  const directory = directoryOf(build);
+  const parties: PartyRef[] = build.members.map((m) => ({
+    partyId: m.partyId,
+    name: directory.get(m.partyId)?.name ?? 'Unknown party',
+    role: m.role,
+  }));
+
+  // "Is there a plan?" is `current || baseline || history`, not a stage count:
+  // a withdrawn v1 leaves a build with no open version and a real history, and
+  // showing "add your plan" over the top of a negotiation that happened would be
+  // the record forgetting it.
+  const hasPlan = plan.current !== null || plan.baseline !== null || plan.history.length > 0;
 
   return (
     <>
@@ -51,9 +67,9 @@ export default async function PlanPage({
           <span aria-current="page">Plan</span>
         </nav>
 
-        {/* The stamp the import returned (contract §7). It is shown once, on the
-            redirect that carried it — the durable copy is the ledger event, which
-            is why this links there rather than pretending to be it. */}
+        {/* The stamp the import returned (B1 contract §7). It is shown once, on
+            the redirect that carried it — the durable copy is the ledger event,
+            which is why this links there rather than pretending to be it. */}
         {imported ? (
           <div className="pi-stamp" role="status">
             <p className="pi-stamp-t">Plan imported</p>
@@ -65,30 +81,15 @@ export default async function PlanPage({
           </div>
         ) : null}
 
-        {plan.totalStages === 0 ? <NoPlanYet projectId={id} isGC={isGC} /> : (
-          <>
-            <div className="pi-head">
-              <h1 className="pi-title">Plan</h1>
-              <p className="pi-lede">
-                {plan.totalStages} stage{plan.totalStages === 1 ? '' : 's'} · {headlineText(plan.headline)}
-              </p>
-            </div>
-            <ul className="card pi-stages">
-              {plan.stages.map((s) => (
-                <li key={s.id} className="pi-stagerow">
-                  <span className="pi-stage-name">{s.name}</span>
-                  <span className="cap num">
-                    {s.plannedStartDate ?? '—'} → {s.plannedEndDate ?? '—'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {isGC ? (
-              <p className="cap">
-                Importing again adds a second stamped import — it never overwrites what is here.
-              </p>
-            ) : null}
-          </>
+        {hasPlan ? (
+          <PlanBaseline
+            projectId={id}
+            view={plan}
+            actorPartyId={session?.partyId ?? null}
+            parties={parties}
+          />
+        ) : (
+          <NoPlanYet projectId={id} isGC={isGC} />
         )}
       </main>
       <BottomNav projectId={id} active="plan" />
@@ -96,29 +97,16 @@ export default async function PlanPage({
   );
 }
 
-// `headline` is a rollup TOKEN, not a sentence — the service is deliberate that
-// an empty plan has no headline at all rather than "0% complete" (R1.5). Printing
-// the token would put `not_started` on the screen; this is the one place it turns
-// into English, and the empty case is handled by the branch above, not here.
-const headlineText = (h: PlanHeadline): string => {
-  switch (h) {
-    case 'attention_needed': return 'needs attention';
-    case 'complete': return 'complete';
-    case 'in_progress': return 'under way';
-    case 'not_started': return 'not started yet';
-    default: return 'no progress reported yet';
-  }
-};
-
 /**
  * The three routes in (pen D7).
  *
- * Route 1 is live. Route 2 ("build it here") and route 3 ("the owner drafted one
- * for you") are NOT, and they are drawn as what they are rather than as buttons
- * that go nowhere: there is no hand-authoring flow in B1, and an owner-drafted
- * plan needs the proposal→baseline lifecycle that B2 (LINA-200) adds. The pen
- * itself says route 3 appears "only when a draft is actually waiting"; in B1 one
- * never is, so it is described in the note rather than mocked as a live card.
+ * Route 1 is live. Route 2 ("build it here") is not, and it is drawn as what it
+ * is rather than as a button that goes nowhere: there is no hand-authoring flow
+ * yet. Route 3 in the pen ("the owner drafted one for you") appears "only when a
+ * draft is actually waiting" — with B2 shipped, an owner-authored version DOES
+ * exist as a shape (a request-changes fork is authored by the reviewer), but
+ * nothing lets an owner start one from empty, so the route stays described
+ * rather than mocked.
  */
 function NoPlanYet({ projectId, isGC }: { projectId: string; isGC: boolean }) {
   return (
@@ -143,8 +131,9 @@ function NoPlanYet({ projectId, isGC }: { projectId: string; isGC: boolean }) {
           {isGC ? (
             <Link className="btn primary" href={`/projects/${projectId}/plan/import`}>Upload plan</Link>
           ) : (
-            // Contract §5: importing is the GC's, not the owner's. An owner sees
-            // the route and why it is not theirs rather than a button that 403s.
+            // B1 contract §5: importing is the GC's, not the owner's. An owner
+            // sees the route and why it is not theirs rather than a button that
+            // 403s.
             <p className="cap">The plan is the contractor&apos;s to bring in.</p>
           )}
         </section>

@@ -255,13 +255,27 @@ export function assign(m: PlanMapping, column: number, field: PlanField | null):
   return next;
 }
 
+/**
+ * The minimum a node must carry to be laid out on the mini-gantt: a tree and two
+ * plain calendar dates. Stated structurally rather than as `WBSNode` because B2
+ * (LINA-212) draws the SAME chart from `GET /plan`'s stage tree, whose rows
+ * carry an id and a cost the import preview has no idea about. Widening the
+ * parameter is what makes that reuse real — the alternative was a second copy of
+ * `barGeometry`, i.e. a second place a bar can land in the wrong month.
+ */
+export interface DatedNode {
+  start: string | null;
+  end: string | null;
+}
+
 /** WBS pre-order, the same order the server writes and stamps in (contract §4). */
-export function preorder(roots: WBSNode[]): { node: WBSNode; depth: number }[] {
-  const out: { node: WBSNode; depth: number }[] = [];
-  for (const r of roots) {
-    out.push({ node: r, depth: 0 });
-    for (const c of r.children) out.push({ node: c, depth: 1 });
-  }
+export function preorder<T extends { children: T[] }>(roots: T[]): { node: T; depth: number }[] {
+  const out: { node: T; depth: number }[] = [];
+  const visit = (n: T, depth: number) => {
+    out.push({ node: n, depth });
+    for (const c of n.children) visit(c, depth + 1);
+  };
+  for (const r of roots) visit(r, 0);
   return out;
 }
 
@@ -283,7 +297,7 @@ export function dayNumber(iso: string | null): number | null {
   return Math.floor(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 86_400_000);
 }
 
-export function ganttScale(roots: WBSNode[]): GanttScale | null {
+export function ganttScale<T extends DatedNode & { children: T[] }>(roots: T[]): GanttScale | null {
   let min: number | null = null;
   let max: number | null = null;
   for (const { node } of preorder(roots)) {
@@ -317,7 +331,7 @@ export function ganttScale(roots: WBSNode[]): GanttScale | null {
 }
 
 /** A node's bar as left/width percentages of the scale, or null when undated. */
-export function barGeometry(node: WBSNode, scale: GanttScale): { left: number; width: number } | null {
+export function barGeometry(node: DatedNode, scale: GanttScale): { left: number; width: number } | null {
   const s = dayNumber(node.start);
   const e = dayNumber(node.end);
   if (s == null && e == null) return null;
@@ -334,7 +348,7 @@ export function barGeometry(node: WBSNode, scale: GanttScale): { left: number; w
 }
 
 /** "2 Mar – 20 Mar" for the D10 dates column; a dash when a date is missing. */
-export function dateRange(node: WBSNode): string {
+export function dateRange(node: DatedNode): string {
   const fmt = (iso: string | null) => {
     if (!iso) return '—';
     const d = new Date(`${iso}T00:00:00Z`);

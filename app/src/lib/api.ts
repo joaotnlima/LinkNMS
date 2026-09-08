@@ -43,6 +43,7 @@ import type {
   Project, Decision, ChangeOrderDetail, ChangeOrderSummary, AuditResult, Pillars, MeProfile,
   OperatingModel, Role, InvitationPreview, ProjectSummary,
 } from './types';
+import type { PlanBaselineView } from './plan-baseline';
 import {
   directoryOf, countsOf, toProject, toDecision, toChangeOrderSummary, toChangeOrderDetail,
   toAuditResult, projectedIfApproved,
@@ -484,47 +485,24 @@ export async function getBuild(id: string): Promise<WireProject> {
 }
 
 /**
- * The plan/schedule read (LINA-207). `/projects/:id/plan` in the schedule
- * service — both parties may read it; only the GC may import into it.
+ * The plan read. `/projects/:id/plan` in the schedule service — both parties may
+ * read it; only the GC may import into it.
  *
- * A projection of the projection: the service returns the rollup, the allocation
- * hint and the full timeline, and the plan surface needs the count, the headline
- * and the stage rows. The rest is not re-shaped here because nothing on that
- * screen makes a claim about budget — `allocation` is explicitly NOT the budget
- * (FR-P6) and the one place it could be mistaken for one is a screen that never
- * shows it.
+ * ⚠ THE SHAPE CHANGED WITH SLICE B2 (LINA-211/212). It used to return the flat
+ * progress rollup (headline / percent / flat stages). It now returns the
+ * PROPOSAL surface — `{ baseline, current, history }` (B2 contract §5 route 1) —
+ * because the plan a party looks at is a version of a negotiation, not a list of
+ * rows: which version is open, who has stamped it, and whether one is frozen as
+ * the baseline are the questions D11–D13 exist to answer.
  *
- * NOTE for whoever builds Band D/E on top of this: `stages` is FLAT. The WBS
- * parentage and trade that the import writes (contract §3) exist in
- * `schedule.stage` but `shapeStage()` does not project them yet, so no consumer
- * of this function can draw the hierarchy. That is a BE projection change, not
- * something a front end should re-derive from names.
+ * The rollup is not lost, it is elsewhere: it belongs to the Band D/E schedule
+ * surface, which reads progress, and is deliberately not re-derived here. B2
+ * freezes the PLAN; B3 owns the money and the movement against it (§8).
  */
-export interface PlanStage {
-  id: string;
-  name: string;
-  position: number;
-  plannedStartDate: string | null;
-  plannedEndDate: string | null;
-  currentStatus: string;
-}
+export type { PlanBaselineView };
 
-/** The rollup token, NOT display text — `null` when the plan is empty. */
-export type PlanHeadline = 'attention_needed' | 'complete' | 'in_progress' | 'not_started' | null;
-
-export interface PlanView {
-  projectId: string;
-  headline: PlanHeadline;
-  totalStages: number;
-  doneStages: number;
-  /** null — not 0 — while the plan is empty. "0% done" is a claim; this is the
-   *  absence of one, and the service is careful about the difference (R1.5). */
-  percentComplete: number | null;
-  stages: PlanStage[];
-}
-
-export async function getPlan(projectId: string): Promise<PlanView> {
-  return call<PlanView>('getPlan', { id: projectId });
+export async function getPlan(projectId: string): Promise<PlanBaselineView> {
+  return call<PlanBaselineView>('getPlan', { id: projectId });
 }
 
 /**
