@@ -84,12 +84,17 @@ export function resetAnalyticsForTests() {
  * @param {Function} [ports.clock]              Decision clock
  * @param {Function} [ports.ids]                Decision id generator
  * @param {Object} [ports.analytics]            Override the singleton (tests only)
+ * @param {Object} [ports.seats]                Seat/entitlement store — read-only
+ *   `activeSeat(email)`. Omit and the plan allowance is not enforced, which is
+ *   correct only for a composition that has no seats at all (unit fixtures); the
+ *   deployed container always passes it (ADR-0008 / ADR-0013).
  */
 export function createServices({
   ledger,
   ledgers = {},
   identityStore,
   changeOrderStore,
+  seats = null,
   scheduleStore = null,
   decisionStore = null,
   decisionAuthz = null,
@@ -105,6 +110,7 @@ export function createServices({
     store: identityStore,
     ledger: ledgers.identity ?? ledger,
     analytics,
+    seats,
   });
 
   // Change Order consumes the Identity SERVICE as its authorization port

@@ -33,6 +33,14 @@ function errorBody(err) {
           // conditionally so every other error body is byte-for-byte what it
           // was before rather than gaining a misleading `field: undefined`.
           ...(err.field ? { field: err.field } : {}),
+          // Only the plan allowance sets these (LINA-189 / ADR-0013). The
+          // portal needs the numbers to say "1 of 1 build used — upgrade to run
+          // more" instead of a bare conflict, and re-deriving them client-side
+          // would be a second, drifting copy of the pricing table. Same
+          // conditional spread rule: every other error body is unchanged.
+          ...(typeof err.limit === 'number'
+            ? { plan: err.plan ?? null, limit: err.limit, owned: err.owned }
+            : {}),
         },
       },
     };

@@ -116,8 +116,17 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
   // against in-memory ports — including the analytics injection, without which
   // every service silently falls back to the no-op sink and no event ever leaves
   // the process (LINA-55/58). Only the ports differ here.
+  // The seat store (ADR-0008). Runs on the identity pool / role, which holds
+  // SELECT and nothing else on identity.seat — reading a seat is the only thing
+  // the request path is ever allowed to do with one. It answers two questions:
+  // the sign-in gate ("may this address come in", app/src/server/session.ts) and
+  // the plan allowance ("how many builds may it run", ADR-0013), which is why it
+  // is composed BEFORE the services and handed in as a port.
+  const seats = createSeatStore({ pool: pools.identity });
+
   const services = createServices({
     analytics,
+    seats,
     // Identity reads the ledger (budget summaries) through the ledger role and
     // writes through its own pool inside the store — see (1) above.
     ledger: ledgerReader,
@@ -143,11 +152,6 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
     schedule: scheduleService,
   } = services;
   const parties = createPartyStore({ pool: pools.identity });
-
-  // The seat gate (ADR-0008). Runs on the identity pool / role, which holds
-  // SELECT and nothing else on identity.seat — asking whether an address may
-  // come in is the only thing the request path is ever allowed to do with it.
-  const seats = createSeatStore({ pool: pools.identity });
 
   return {
     pools,

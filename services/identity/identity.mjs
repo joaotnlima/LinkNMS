@@ -25,6 +25,7 @@ import { createNoopAnalytics } from '../analytics/analytics.mjs';
 // invite form and the same address arriving from anywhere else are one key
 // (LINA-84). It moved out of the deleted sign-in service in LINA-124.
 import { normalizeEmail } from './email-normalize.mjs';
+import { activeProjectLimit } from './plans.mjs';
 import { sendEmail, isEmailConfigured } from '../email/sender.mjs';
 
 const sha256Hex = (s) => createHash('sha256').update(s).digest('hex');
@@ -129,6 +130,16 @@ export function createIdentityService({
   clock = defaultClock,
   analytics = createNoopAnalytics(),
   sender = { send: sendEmail, isConfigured: isEmailConfigured },
+  // The entitlement port (ADR-0008 / ADR-0013). Read-only: `activeSeat(email)`
+  // answers what this address bought, which decides how many builds it may run.
+  //
+  // OPTIONAL, and the omission is meaningful rather than lax: a composition with
+  // no seat store is one that has no notion of seats at all (the in-memory unit
+  // fixtures), and in such a world there is no entitlement to enforce — a limit
+  // invented out of nothing would be a policy this service made up. Production
+  // is the opposite case and wires it unconditionally in the composition root,
+  // where a missing port is a hard error. See services/composition.mjs.
+  seats = null,
   env = process.env,
 }) {
   if (!store) throw new Error('identity service requires a store');
@@ -174,6 +185,59 @@ export function createIdentityService({
     return { partyId, projectId, role };
   }
 
+  // ── The plan allowance (LINA-189 / ADR-0013) ───────────────────────────────
+  //
+  // "Up to 1 active project" has been printed on the pricing page since LINA-173
+  // and enforced nowhere. This is where it becomes true.
+  //
+  // WHAT COUNTS. Builds this party OWNS — the pricing page's rule verbatim: "A
+  // project counts towards your plan when your organisation is the Managing
+  // Organisation. Collaborators are always free." So a sub, an inspector or an
+  // architect invited onto somebody else's record consumes nothing, which is
+  // load-bearing for the product: a shared record that charges you per person
+  // you invite stops being shared.
+  //
+  // DRAFTS COUNT. A draft is a build the wizard has started; it holds a name and
+  // a baseline and it is on the owner's portfolio. Excluding drafts would make
+  // the allowance trivially avoidable — abandon at step 1, forever, for free —
+  // and would also mean an owner at their limit could still fill the portfolio
+  // with rows they cannot commit. Ending a draft is a deletion, not a discount.
+  //
+  // WHY IT READS THE SEAT AND NOT THE PARTY. The seat is the entitlement record
+  // (ADR-0008) and it is keyed on email, which is what let the plan be written
+  // at claim time, before this party existed. `party.email` is the same
+  // normalised address the seat gate matched at sign-in, so this lookup can only
+  // miss if the person is not seated at all — and an unseated caller never gets
+  // a party in the first place (app/src/server/session.ts).
+  async function requireProjectAllowance(actorPartyId) {
+    if (!seats?.activeSeat) return; // no entitlement port composed — see the factory
+    const party = await store.getParty(actorPartyId);
+    if (!party) throw notFound('party');
+
+    const seat = await seats.activeSeat(party.email);
+    const limit = activeProjectLimit(seat?.plan ?? null);
+    if (limit === null) return; // unlimited tier
+
+    const mine = await store.listProjectsForParty(actorPartyId);
+    const owned = mine.filter((p) => p.ownerPartyId === actorPartyId).length;
+    if (owned < limit) return;
+
+    // 409, not 403. A 403 says "you may never do this"; the honest statement is
+    // "you already have as many as your plan runs", which is a collision with
+    // reality that the caller resolves by upgrading or by closing a build. The
+    // code is distinct so the portal can show an upgrade path rather than a
+    // generic conflict banner, and the numbers ride along so it does not have to
+    // re-derive them.
+    const err = conflict(
+      `this plan runs ${limit} active ${limit === 1 ? 'build' : 'builds'}; you already have ${owned}`,
+    );
+    err.code = 'plan_limit_reached';
+    err.plan = seat?.plan ?? null;
+    err.limit = limit;
+    err.owned = owned;
+    throw err;
+  }
+
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   // POST /projects — the homeowner starts a shared record and becomes its owner
@@ -193,6 +257,12 @@ export function createIdentityService({
     if (!cleanName) throw badRequest('name is required');
     if (cleanName.length > MAX_NAME) throw badRequest(`name exceeds ${MAX_NAME} chars`);
     const baseline = normalizeCents(baselineBudgetCents, 'baselineBudgetCents');
+
+    // The plan allowance (LINA-189 / ADR-0013). Checked AFTER authorization and
+    // input validation and BEFORE any write: a refusal here must never be the
+    // thing that tells an unauthenticated caller a party exists, and a malformed
+    // request must be a 400 rather than a misleading "upgrade your plan".
+    await requireProjectAllowance(actorPartyId);
 
     const now = clock.now();
     const project = {
