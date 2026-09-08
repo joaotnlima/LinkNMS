@@ -1,0 +1,226 @@
+/* The plan surface and the import wizard — D7–D10 (LINA-207).
+
+   Every colour here is a token from tokens.css via globals.css's aliases
+   (ADR-0009 / LINA-156). No new palette block, no colour literal, and nothing
+   that redefines a token — the `:root` migration exists so a screen like this
+   one cannot start a second palette.
+
+   Layout note: the portal shell caps at 780px (globals `.shell`), which is right
+   for the record surfaces and wrong for D9 — the mapping screen is two panes
+   side by side and is the screen the pen says "desktop exists for". `.pi-wide`
+   opts out of the cap on wide viewports only; below that the panes stack and the
+   screen stays usable on a phone at a jobsite. */
+
+.pi {
+  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  max-width: 780px;
+  margin: 0 auto;
+}
+
+.pi-wide,
+.pi-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+@media (min-width: 1000px) {
+  /* Only the wide step escapes the reading measure. `.pi` is the wrapper for
+     all three, so the widening lives on the step that needs it. */
+  .pi:has(.pi-wide) { max-width: 1180px; }
+}
+
+.pi-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.pi-crumbs a:hover { text-decoration: underline; }
+.pi-crumbs [aria-current] { color: var(--fg); font-weight: 600; }
+
+/* ---- step rail (D8/D9/D10) ---- */
+.pi-steps { display: flex; align-items: center; gap: var(--s4); list-style: none; }
+.pi-step { display: flex; align-items: center; gap: 7px; }
+.pi-step-n {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  border: 1px solid var(--outline-strong); color: var(--muted); background: var(--raised);
+}
+.pi-step.is-current .pi-step-n { background: var(--owner); border-color: var(--owner); color: #fff; }
+.pi-step.is-done .pi-step-n { border-color: var(--success); color: var(--success-fg); }
+.pi-step-label { font-size: 13px; color: var(--muted); }
+.pi-step.is-current .pi-step-label { color: var(--fg); font-weight: 600; }
+/* The dots are decoration; the caption is the answer, and it is the form that
+   survives a 360px screen. Same discipline as the Band B wizard rail. */
+@media (max-width: 520px) { .pi-steps { display: none; } }
+.pi-steps-caption { font-size: 12px; color: var(--muted); }
+
+/* ---- headings ---- */
+.pi-head { display: flex; flex-direction: column; gap: var(--s2); align-items: flex-start; }
+.pi-title { font-size: 22px; font-weight: 650; letter-spacing: -.3px; }
+.pi-lede { font-size: 14px; color: var(--muted); max-width: 62ch; }
+.pi-chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
+
+/* ---- D7 · the routes in ---- */
+.pi-routes { display: grid; gap: var(--s3); }
+@media (min-width: 720px) { .pi-routes { grid-template-columns: 1fr 1fr; } }
+.pi-route {
+  border: 1px solid var(--outline); border-radius: var(--r-overlay);
+  background: var(--raised); padding: var(--s4);
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+}
+.pi-route-n { font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--builder-fg); }
+.pi-route-t { font-size: 17px; font-weight: 600; }
+.pi-route-b { font-size: 13px; color: var(--muted); }
+.pi-route-meta { font-size: 12px; font-weight: 500; color: var(--outline-strong); margin-bottom: var(--s2); }
+/* A route that is not built yet reads as a description, not an offer: no CTA,
+   sunken surface, dashed edge. */
+.pi-route.is-later { background: var(--sunken); border-style: dashed; }
+
+/* ---- D8 · file + sheet ---- */
+.pi-drop {
+  border: 2px dashed var(--outline-strong); border-radius: var(--r-overlay);
+  background: var(--sunken); padding: var(--s8) var(--s4);
+  display: flex; flex-direction: column; align-items: center; gap: var(--s2); text-align: center;
+}
+.pi-drop.is-over { border-color: var(--owner); background: var(--owner-muted); }
+.pi-drop-title { font-size: 16px; font-weight: 600; }
+.pi-drop-sub { font-size: 13px; color: var(--muted); margin-bottom: var(--s2); }
+.pi-file-input { display: none; }
+
+.pi-filerow {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl);
+  background: var(--raised); padding: var(--s3) var(--s4);
+}
+.pi-filename { font-size: 13.5px; font-weight: 600; word-break: break-all; }
+.pi-filemeta { font-size: 12px; color: var(--muted); }
+
+.pi-sheets { border: 0; display: flex; flex-direction: column; gap: var(--s2); }
+.pi-sheets legend { margin-bottom: var(--s2); }
+.pi-sheet {
+  display: flex; align-items: center; gap: var(--s3);
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl);
+  background: var(--raised); padding: var(--s3); cursor: pointer;
+}
+.pi-sheet:has(input:checked) { border-color: var(--owner); box-shadow: inset 0 0 0 1px var(--owner); }
+.pi-sheet:has(input:focus-visible) { outline: 2px solid var(--owner); outline-offset: 2px; }
+.pi-sheet.is-empty { background: var(--sunken); cursor: not-allowed; color: var(--muted); }
+.pi-sheet-b { display: flex; flex-direction: column; gap: 2px; }
+.pi-sheet-name { font-size: 13.5px; font-weight: 600; }
+
+/* ---- D9 · the two panes ---- */
+.pi-panes { display: grid; gap: var(--s4); align-items: start; }
+@media (min-width: 1000px) { .pi-panes { grid-template-columns: 380px 1fr; } }
+.pi-pane {
+  border: 1px solid var(--outline); border-radius: var(--r-overlay);
+  background: var(--raised); overflow: hidden;
+}
+.pi-pane-hdr { padding: var(--s3) var(--s4); border-bottom: 1px solid var(--outline); margin: 0; }
+.pi-cols { list-style: none; }
+.pi-colrow {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  padding: var(--s2) var(--s4); border-bottom: 1px solid var(--outline);
+}
+.pi-colrow:last-child { border-bottom: 0; }
+/* An assigned column is marked by a rule as well as a tint — colour is never the
+   only signal (FR9), and the select beside it already names the field in words. */
+.pi-colrow.is-mapped { border-left: 3px solid var(--owner); background: var(--owner-muted); }
+.pi-colinfo { display: flex; flex-direction: column; gap: 1px; min-width: 0; cursor: pointer; }
+.pi-colname { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.pi-colsample { font-size: 11.5px; color: var(--outline-strong); overflow-wrap: anywhere; }
+.pi-select {
+  font: inherit; font-size: 12.5px; color: var(--fg); background: var(--paper);
+  border: 1px solid var(--outline-strong); border-radius: var(--r-ctrl);
+  padding: 6px 8px; min-width: 148px; flex: none;
+}
+.pi-select:focus { outline: 2px solid var(--owner); border-color: var(--owner); }
+
+.pi-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pi-table caption { text-align: left; padding: var(--s2) var(--s4); }
+.pi-table th, .pi-table td {
+  text-align: left; padding: 7px var(--s3); border-bottom: 1px solid var(--outline);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px;
+}
+.pi-table th { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); }
+.pi-table tbody td:first-child { font-weight: 600; }
+.pi-dash { color: var(--outline-strong); }
+.pi-tally { padding: var(--s3) var(--s4); }
+
+/* ---- D10 · preview + confirm ---- */
+.pi-stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+@media (min-width: 720px) { .pi-stats { grid-template-columns: repeat(4, 1fr); } }
+.pi-stat {
+  border: 1px solid var(--outline); border-left-width: 4px; border-radius: var(--r-ctrl);
+  background: var(--raised); padding: var(--s3);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.pi-stat-n { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.pi-stat.is-warn { border-left-color: var(--warning); }
+.pi-stat.is-warn .pi-stat-n { color: var(--warn-fg); }
+.pi-stat.is-bad { border-left-color: var(--danger); }
+.pi-stat.is-bad .pi-stat-n { color: var(--bad-fg); }
+
+.pi-plan { overflow-x: auto; }
+.pi-planhdr, .pi-planrow {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) 110px 150px minmax(220px, 3fr);
+  gap: var(--s3); align-items: center;
+  padding: 9px var(--s4); border-bottom: 1px solid var(--outline);
+  min-width: 700px;
+}
+.pi-planrow:last-child { border-bottom: 0; }
+.pi-planhdr { background: var(--sunken); }
+.pi-cell-name { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.pi-planrow.is-sub .pi-cell-name { font-weight: 400; font-size: 12.5px; color: var(--muted); padding-left: var(--s4); }
+.pi-cell-dates { font-size: 12px; color: var(--muted); }
+.pi-cell-gantt { position: relative; height: 16px; display: flex; align-items: center; }
+.pi-planhdr .pi-cell-gantt { justify-content: space-between; }
+.pi-month { font-size: 8.5px; font-weight: 600; color: var(--outline-strong); }
+/* The plan bar is a COMMITMENT state, not a party — hence --plan-baseline and
+   never --builder, even though the GC is the one importing it. */
+.pi-bar {
+  position: absolute; height: 9px; border-radius: 999px;
+  background: var(--plan-baseline); border: 1px solid var(--plan-baseline-line);
+}
+.pi-planrow.is-sub .pi-bar { height: 6px; background: var(--plan-baseline-muted); border-color: var(--plan-baseline); }
+
+.pi-problems {
+  border: 1px solid; border-radius: var(--r-ctrl); padding: var(--s3) var(--s4);
+  display: flex; flex-direction: column; gap: 6px; font-size: 12.5px;
+}
+.pi-problems ul { padding-left: var(--s4); }
+.pi-problems-t { font-size: 13px; font-weight: 650; }
+.pi-problems.is-bad { color: var(--bad-fg); background: var(--bad-bg); border-color: var(--bad-bd); }
+.pi-problems.is-warn { color: var(--warn-fg); background: var(--warn-bg); border-color: var(--warn-bd); }
+.pi-problems.is-bad .cap, .pi-problems.is-warn .cap { color: inherit; opacity: .85; }
+
+.pi-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  flex-wrap: wrap; padding-top: var(--s2);
+}
+
+/* ---- the stamp, and the plan once it exists ---- */
+.pi-stamp {
+  border: 1px solid var(--ok-bd); background: var(--ok-bg); color: var(--ok-fg);
+  border-radius: var(--r-ctrl); padding: var(--s3) var(--s4);
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+}
+.pi-stamp-t { font-size: 14px; font-weight: 650; }
+.pi-stamp .cap { color: inherit; opacity: .9; }
+.pi-stamp-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; overflow-wrap: anywhere; }
+
+.pi-stages { list-style: none; }
+.pi-stagerow {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  padding: 11px var(--s4); border-bottom: 1px solid var(--outline);
+}
+.pi-stagerow:last-child { border-bottom: 0; }
+.pi-stage-name { font-size: 13.5px; font-weight: 600; }

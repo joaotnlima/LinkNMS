@@ -24,7 +24,11 @@ export function TopBar({ back }: { back?: { href: string; label: string } }) {
   );
 }
 
-type Tab = 'home' | 'decisions' | 'change-orders' | 'audit';
+// 'plan' is a valid place to BE without being one of the four tabs (LINA-207).
+// The plan surface is reached from the dashboard, not from this nav, and marking
+// Home as current there would tell a screen-reader user they are somewhere they
+// are not. No item matches it, so nothing is highlighted — which is the truth.
+type Tab = 'home' | 'decisions' | 'change-orders' | 'audit' | 'plan';
 
 export function BottomNav({ projectId, active }: { projectId: string; active: Tab }) {
   const items: { key: Tab; href: string; label: string; Icon: (p: { className?: string }) => React.JSX.Element }[] = [

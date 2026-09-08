@@ -72,6 +72,15 @@ export default async function DashboardPage({ params }: { params: Promise<{ id: 
         </section>
 
         <section className="card">
+          {/* The way in to D7 (LINA-207). The dashboard is where both parties
+              land, and until this row existed the plan surface was reachable
+              only by typing the URL. It is listed for BOTH roles — the owner
+              reads the plan, the GC brings it in — and the plan page itself is
+              what states which of those the reader is. */}
+          <Link className="row" href={`/projects/${id}/plan`}>
+            <span style={{ fontWeight: 600 }}>🗓️ Plan</span>
+            <span className="cap">actions, sub-actions and dates →</span>
+          </Link>
           <Link className="row" href={`/projects/${id}/decisions`}>
             <span style={{ fontWeight: 600 }}>📋 Decision log</span>
             <span className="cap">{p.counts.decisions} decisions →</span>
