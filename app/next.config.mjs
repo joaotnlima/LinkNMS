@@ -19,8 +19,11 @@ const nextConfig = {
   outputFileTracingRoot: repoRoot,
 
   // `pg` is a Node driver with optional native/dynamic requires; leaving it
-  // external keeps the bundler from trying to statically resolve them.
-  serverExternalPackages: ['pg'],
+  // external keeps the bundler from trying to statically resolve them. `exceljs`
+  // (the LINA-206 plan-import parser in services/schedule) is a heavy server-only
+  // workbook reader with the same dynamic-require shape — keep it external too so
+  // the .xlsx parse never leaks into a client bundle.
+  serverExternalPackages: ['pg', 'exceljs'],
 
   // `services/ledger/db.mjs` does `import pg from 'pg'`, and webpack resolves a
   // bare specifier from the IMPORTING file's directory — <repo>/services/…,
@@ -32,11 +35,14 @@ const nextConfig = {
   // Aliasing (rather than widening resolve.modules) is deliberate: it pins the
   // driver to the one copy the app declares, so the services can never be built
   // against a second, differently-versioned `pg` that happens to be hoisted
-  // somewhere above the repo.
+  // somewhere above the repo. `exceljs` (imported the same way from
+  // services/schedule/plan-import-parser.mjs) needs the identical pin — without
+  // it the production build dies with "Can't resolve 'exceljs'".
   webpack(config) {
     config.resolve.alias = {
       ...config.resolve.alias,
       pg: path.join(appDir, 'node_modules', 'pg'),
+      exceljs: path.join(appDir, 'node_modules', 'exceljs'),
     };
     return config;
   },

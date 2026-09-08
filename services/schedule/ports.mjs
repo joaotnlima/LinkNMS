@@ -22,10 +22,11 @@ import { randomUUID } from 'node:crypto';
 import { can, ACTION } from '../identity/authz.mjs';
 
 export class DomainError extends Error {
-  constructor(status, code, message) {
+  constructor(status, code, message, details) {
     super(message);
     this.status = status;
     this.code = code;
+    if (details !== undefined) this.details = details;
   }
 }
 
@@ -86,7 +87,9 @@ export function createInMemoryLedger({ baselines = new Map() } = {}) {
   function append(_tx, { projectId, type, actorPartyId, occurredAt, payload }) {
     const seq = (seqByProject.get(projectId) ?? 0) + 1;
     seqByProject.set(projectId, seq);
-    const e = { projectId, seq, type, actorPartyId, occurredAt, payload };
+    // The pg ledger's append_event inserts its own id; mirror that here so the
+    // audit_event_id a service stores in its projection is always populated.
+    const e = { id: randomUUID(), projectId, seq, type, actorPartyId, occurredAt, payload };
     events.push(e);
     return e;
   }
@@ -104,14 +107,17 @@ export function createInMemoryLedger({ baselines = new Map() } = {}) {
 
 // ---------------------------------------------------------------------------
 // In-memory ScheduleStore — the schema `schedule` this service owns. Stages are
-// mutable rows; stage_progress is append-only (there is no update/delete method,
-// mirroring the missing SQL grant). `seq` is a gap-free counter mirroring
-// `bigint GENERATED ALWAYS AS IDENTITY`, so "latest by (reported_at, seq)" is a
-// deterministic total order regardless of clock resolution.
+// mutable rows; stage_progress, plan_import and stage_dependency are append-only
+// (there is no update/delete method, mirroring the missing SQL grants). `seq` is
+// a gap-free counter mirroring `bigint GENERATED ALWAYS AS IDENTITY`, so
+// "latest by (reported_at, seq)" is a deterministic total order regardless of
+// clock resolution.
 // ---------------------------------------------------------------------------
 export function createInMemoryStore() {
   const stages = new Map();   // id -> stage row
   const progress = [];        // append-only stage_progress rows
+  const imports = [];         // append-only plan_import headers
+  const dependencies = [];    // append-only stage_dependency rows
   let stageSeq = 0;
   let progressSeq = 0;
 
@@ -149,6 +155,61 @@ export function createInMemoryStore() {
       .map((s) => ({ ...s }));
   }
 
+  function maxStagePosition(projectId) {
+    let max = 0;
+    for (const s of stages.values()) {
+      if (s.project_id !== projectId) continue;
+      if (s.position != null && s.position > max) max = s.position;
+    }
+    return max;
+  }
+
+  function insertStageDependency(_tx, stageId, dependsOnStageId) {
+    const row = { stage_id: stageId, depends_on_stage_id: dependsOnStageId };
+    dependencies.push(row);
+    return { ...row };
+  }
+
+  function listStageDependencies(stageId) {
+    return dependencies.filter((d) => d.stage_id === stageId).map((d) => d.depends_on_stage_id);
+  }
+
+  function insertPlanImport(_tx, row) {
+    // Mirror the DB UNIQUE on idempotency_key (23505) so contract tests see the
+    // same idempotent-confirm behaviour as production.
+    if (imports.some((i) => i.idempotency_key === row.idempotency_key)) {
+      const err = new Error(`duplicate key value violates unique constraint "plan_import_idempotency_key_key"`);
+      err.code = '23505';
+      err.constraint = 'plan_import_idempotency_key_key';
+      throw err;
+    }
+    imports.push({ ...row });
+    return { ...row };
+  }
+
+  function getPlanImportByIdempotencyKey(idempotencyKey) {
+    const r = imports.find((i) => i.idempotency_key === idempotencyKey);
+    return r ? { ...r } : null;
+  }
+
+  function importStageCounts(importId) {
+    let stageCount = 0;
+    let rootCount = 0;
+    for (const s of stages.values()) {
+      if (s.import_id !== importId) continue;
+      stageCount += 1;
+      if (s.parent_id == null) rootCount += 1;
+    }
+    return { stageCount, rootCount };
+  }
+
+  function listDependenciesOf(projectId) {
+    const ids = new Set(
+      [...stages.values()].filter((s) => s.project_id === projectId).map((s) => s.id),
+    );
+    return dependencies.filter((d) => ids.has(d.stage_id)).map((d) => ({ ...d }));
+  }
+
   function insertProgress(_tx, row) {
     const stored = { ...row, seq: ++progressSeq };
     progress.push(stored);
@@ -184,9 +245,11 @@ export function createInMemoryStore() {
 
   return {
     transaction,
-    insertStage, getStage, updateStage, listStages,
+    insertStage, getStage, updateStage, listStages, maxStagePosition,
+    insertStageDependency, listStageDependencies,
+    insertPlanImport, getPlanImportByIdempotencyKey, importStageCounts,
     insertProgress, listProgressByStage, latestProgressByProject,
-    _stages: stages, _progress: progress,
+    _stages: stages, _progress: progress, _imports: imports, _dependencies: dependencies,
   };
 }
 

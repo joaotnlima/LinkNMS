@@ -492,6 +492,13 @@ describe('the pure authorizer can() (ADR-0004)', () => {
     assert.equal(can({ action: ACTION.INVITE_COUNTERPARTY, role: 'owner' }).allow, true);
     assert.equal(can({ action: ACTION.INVITE_COUNTERPARTY, role: 'counterparty' }).allow, false);
   });
+
+  test('plan import is counterparty/GC-only; the owner must view, not write (Slice B1, ADR-0004)', () => {
+    assert.equal(can({ action: ACTION.IMPORT_PLAN, role: 'counterparty' }).allow, true);
+    assert.equal(can({ action: ACTION.IMPORT_PLAN, role: 'owner' }).allow, false);
+    assert.equal(can({ action: ACTION.IMPORT_PLAN, role: 'subcontractor' }).allow, false);
+    assert.equal(can({ action: ACTION.IMPORT_PLAN, role: null }).allow, false, 'a non-member sees nothing');
+  });
 });
 
 describe('cross-service port (requireMember / roleOf)', () => {

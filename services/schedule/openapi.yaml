@@ -26,6 +26,16 @@ info:
     The acting party is **server-derived** from the authenticated session
     (ADR-0004); it is never accepted in a request body. Money is signed integer
     cents.
+
+    **Slice B1 plan import (LINA-199)**: the GC uploads a `.xlsx` workbook
+    (multipart) and the server parses it — `:inspect` lists the sheets,
+    `:columns` shows each source column's header + samples, `:preview` builds the
+    two-level WBS tree (Action row / Sub-action row) with validation problems
+    returned *in the 200 payload*, and `:confirm` writes the whole batch in ONE
+    transaction behind a single `plan_import` audit event, idempotent on
+    `idempotencyKey`. Nothing is inferred from the file — the GC's `mapping`
+    names the source columns; required fields (`action`, `start`, `end`) unmapped
+    is a 400.
 servers:
   - url: /api
     description: R0 single-instance gateway (services share one Postgres, one schema each)
@@ -33,6 +43,11 @@ servers:
 tags:
   - name: schedule
     description: The plan timeline, stages, and append-only progress.
+  - name: plan-import
+    description: >-
+      Slice B1 (LINA-199) — the GC imports a plan from an `.xlsx` workbook. Read
+      the file with `:inspect`/`:columns`/`:preview` (no writes), then commit it
+      with `:confirm` (exactly one transaction).
 
 paths:
   /projects/{projectId}/plan:
@@ -134,6 +149,110 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /projects/{projectId}/plan-imports:inspect:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [plan-import]
+      summary: List the workbook's sheets (LINA-199 D8) — GC only, no writes
+      description: >-
+        Reads the uploaded `.xlsx` (extension + size + archive are validated
+        server-side) and reports every sheet with its data-row count so the GC can
+        pick one. The server NEVER auto-picks a sheet.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/FileUpload' }
+      responses:
+        '200':
+          description: The sheets, plus the import limits the app should echo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InspectResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /projects/{projectId}/plan-imports:columns:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [plan-import]
+      summary: Inspect source columns of one sheet (LINA-199 D9) — GC only, no writes
+      description: >-
+        Header + up to three sample values per source column, so the GC can build
+        the field→column `mapping`. No writes.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/SheetUpload' }
+      responses:
+        '200':
+          description: The source columns and the data-row count.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ColumnsResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /projects/{projectId}/plan-imports:preview:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [plan-import]
+      summary: Build the two-level WBS tree (LINA-199 D9→D10) — GC only, no writes
+      description: >-
+        Applies the GC's `mapping` server-side and returns the WBS tree (Action
+        rows as roots, Sub-action rows as children). Data-quality problems are
+        returned IN THE 200 PAYLOAD as `errors[]` — never a 500 and never a modal
+        bomb; `:confirm` refuses to commit a tree with errors.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/MappingUpload' }
+      responses:
+        '200':
+          description: The WBS tree, warnings, errors and import stats.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PreviewResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /projects/{projectId}/plan-imports:confirm:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [plan-import]
+      summary: Commit the plan (LINA-199 D10) — GC only, the single write
+      description: >-
+        Re-parses the re-sent file server-side (the preview the client rendered is
+        never trusted as the write payload), then writes the whole batch in ONE
+        transaction: a single `plan_import` audit event, the import header, the
+        stage rows (parents before children, positions appended after any
+        hand-added stages) and the intra-import predecessor links. Idempotent on
+        `idempotencyKey`: a serverless retry with a used key writes nothing and
+        returns the ORIGINAL `importId`/`auditEventId`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/ConfirmUpload' }
+      responses:
+        '201':
+          description: The committed import.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConfirmResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
 components:
   parameters:
@@ -268,3 +387,129 @@ components:
           properties:
             code: { type: string }
             message: { type: string }
+            details:
+              description: >-
+                Optional machine-readable detail (e.g. `errors[]` from a refused
+                plan-import `:confirm`). Present only when a 4xx carries one.
+              type: object
+
+    # ── Slice B1 plan import (LINA-199) ─────────────────────────────────────
+
+    FileUpload:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+          description: The `.xlsx` workbook. Max 5&nbsp;MB, up to 100 sheets.
+    SheetUpload:
+      description: 'The `.xlsx` upload plus the sheet the GC selected.'
+      type: object
+      required: [file, sheet]
+      properties:
+        file: { type: string, format: binary }
+        sheet: { type: string }
+    MappingUpload:
+      description: >-
+        `.xlsx` + sheet + the GC's field→column mapping. JSON-encode `mapping`
+        into the multipart field.
+      type: object
+      required: [file, sheet, mapping]
+      properties:
+        file: { type: string, format: binary }
+        sheet: { type: string }
+        mapping:
+          type: string
+          description: JSON object of field→column index, e.g. {"action":1}.
+    ConfirmUpload:
+      description: >-
+        Like `MappingUpload` plus an idempotency key. The GC re-sends the SAME
+        file the preview rendered — the server re-parses it and never trusts the
+        preview as the write payload.
+      type: object
+      required: [file, sheet, mapping, idempotencyKey]
+      properties:
+        file: { type: string, format: binary }
+        sheet: { type: string }
+        mapping: { type: string, description: JSON object of field→column index. }
+        idempotencyKey:
+          type: string
+          maxLength: 200
+          description: Required; a serverless retry with a used key is a no-op replay.
+    ImportLimits:
+      type: object
+      description: The server-side limits the app should echo to the GC.
+      properties:
+        maxFileBytes: { type: integer }
+        maxSheets: { type: integer }
+        maxRows: { type: integer }
+        maxCols: { type: integer }
+        maxDependencies: { type: integer }
+        acceptedExtensions:
+          type: array
+          items: { type: string }
+    SheetInfo:
+      type: object
+      properties:
+        name: { type: string }
+        rowCount: { type: integer, description: Data rows below the header row. }
+    ColumnInfo:
+      type: object
+      properties:
+        index: { type: integer, description: 1-based source column. }
+        header: { type: string }
+        sampleValues: { type: array, items: { type: string }, description: Up to 3. }
+    InspectResult:
+      type: object
+      properties:
+        sheets: { type: array, items: { $ref: '#/components/schemas/SheetInfo' } }
+        limits: { $ref: '#/components/schemas/ImportLimits' }
+    ColumnsResult:
+      type: object
+      properties:
+        columns: { type: array, items: { $ref: '#/components/schemas/ColumnInfo' } }
+        rowCount: { type: integer }
+        limits: { $ref: '#/components/schemas/ImportLimits' }
+    WBSNode:
+      description: >-
+        One stage in the imported WBS. Exactly two levels: a root has
+        `subActionOf` null and `children[]`; a sub-action carries `subActionOf`
+        and no children. `ref` is the sheet row it came from (R{row}); a
+        dependency token is a `ref` of the same import.
+      type: object
+      required: [ref, action, subActionOf, start, end, trade, dependsOn, children]
+      properties:
+        ref: { type: string, description: 'Sheet ref, e.g. R4 (sheet row 4).' }
+        action: { type: string, description: The stage name (sub-action name for a child). }
+        subActionOf: { type: [string, 'null'], description: The parent root's ref, or null. }
+        start: { type: [string, 'null'], format: date }
+        end: { type: [string, 'null'], format: date }
+        trade: { type: [string, 'null'] }
+        dependsOn: { type: array, items: { type: string }, description: refs in the same import. }
+        children: { type: array, items: { $ref: '#/components/schemas/WBSNode' } }
+    PreviewStats:
+      type: object
+      properties:
+        stageCount: { type: integer }
+        rootCount: { type: integer }
+        subActionCount: { type: integer }
+    PreviewResult:
+      type: object
+      properties:
+        roots:
+          type: array
+          items: { $ref: '#/components/schemas/WBSNode' }
+        warnings: { type: array, items: { type: string } }
+        errors:
+          type: array
+          items: { type: string }
+          description: Data-quality problems. A non-empty list blocks :confirm.
+        stats: { $ref: '#/components/schemas/PreviewStats' }
+    ConfirmResult:
+      type: object
+      properties:
+        importId: { type: string, format: uuid }
+        auditEventId: { type: string, format: uuid, description: The one plan_import audit event for the batch. }
+        stageCount: { type: integer }
+        rootCount: { type: integer }
