@@ -80,11 +80,13 @@ export async function createProjectAction(_prev: FormState, form: FormData): Pro
  * phone is resumable rather than lost. It is not yet a shared record — nobody
  * else is on it until step 3's invite commits it.
  *
- * The baseline budget is collected HERE, not because the pen's screen 02 draws it
- * (it does not — it draws site address and build type, for which no column
- * exists) but because `createProject` requires it and it is the number every
- * later claim is measured against. Asking for it after the build is live would
- * mean a live record with no baseline.
+ * The pen's Basics fields — site address, build type, expected start — are
+ * collected here and persisted (LINA-219, migration 0014); all three are optional
+ * and blank posts store null server-side, so the required minimum stays name +
+ * baseline. The baseline budget is a deliberate departure the pen does not draw:
+ * `createProject` requires it and it is the number every later claim is measured
+ * against, so collecting it after the build is live would mean a live record with
+ * no baseline (see build-creation's GAPS note).
  */
 export async function createBuildAction(_prev: FormState, form: FormData): Promise<FormState> {
   const name = String(form.get('name') ?? '').trim();
@@ -97,9 +99,15 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
     return { error: message(err, 'That baseline budget is not a valid amount.') };
   }
 
+  // Optional Basics fields. Trimmed here and only forwarded when non-empty; the
+  // service is the authority on caps and stores null for blanks regardless.
+  const siteAddress = String(form.get('siteAddress') ?? '').trim() || undefined;
+  const buildType = String(form.get('buildType') ?? '').trim() || undefined;
+  const expectedStart = String(form.get('expectedStart') ?? '').trim() || undefined;
+
   let id: string;
   try {
-    ({ id } = await createBuildDraft({ name, baselineBudgetCents }));
+    ({ id } = await createBuildDraft({ name, baselineBudgetCents, siteAddress, buildType, expectedStart }));
   } catch (err) {
     // The path that fires for real today: a founding seat runs one build, so the
     // owner's SECOND trip through the wizard lands here (ADR-0013).

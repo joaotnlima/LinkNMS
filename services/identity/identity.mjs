@@ -104,6 +104,22 @@ const defaultIds = { uuid: () => randomUUID(), token: () => randomBytes(24).toSt
 const defaultClock = { now: () => new Date().toISOString() };
 
 const MAX_NAME = 200;
+// The pen's Basics descriptive fields (LINA-219). Free text the UI guides — a
+// generous cap that stops an unbounded write, not a validation of shape (there
+// is no DB CHECK; see migration 0014). `expected_start` is a "YYYY-MM" month
+// string from the picker but stays text, so a short cap covers it too.
+const MAX_BASICS_FIELD = 300;
+
+/** Trim, cap, and normalise an optional Basics text field to a value or null.
+ *  Empty/blank → null (the honest "not given"), never an empty string. */
+function optionalBasicsField(value, label) {
+  if (value == null) return null;
+  if (typeof value !== 'string') throw badRequest(`${label} must be text`);
+  const clean = value.trim();
+  if (!clean) return null;
+  if (clean.length > MAX_BASICS_FIELD) throw badRequest(`${label} exceeds ${MAX_BASICS_FIELD} chars`);
+  return clean;
+}
 
 // The three Band B operating models (ADR-0011 decision 1) and the launch role
 // each may invite (design §7; migration 0009 widened the invitation.role CHECK to
@@ -250,13 +266,21 @@ export function createIdentityService({
   // one-shot path omits `draft`, so the row lands `status='active'` — the DB
   // default — exactly as before. `status` is stamped server-side in both paths
   // so the in-memory reference store and the pg adapter stay byte-consistent.
-  async function createProject({ actorPartyId, name, baselineBudgetCents, draft = false }) {
+  async function createProject({
+    actorPartyId, name, baselineBudgetCents, draft = false,
+    // The pen's Basics descriptive fields (LINA-219). All optional: a draft may
+    // be named and left, and the legacy one-shot path never sends them.
+    siteAddress, buildType, expectedStart,
+  }) {
     await authorize({ actorPartyId, action: ACTION.CREATE_PROJECT });
 
     const cleanName = typeof name === 'string' ? name.trim() : '';
     if (!cleanName) throw badRequest('name is required');
     if (cleanName.length > MAX_NAME) throw badRequest(`name exceeds ${MAX_NAME} chars`);
     const baseline = normalizeCents(baselineBudgetCents, 'baselineBudgetCents');
+    const address = optionalBasicsField(siteAddress, 'siteAddress');
+    const type = optionalBasicsField(buildType, 'buildType');
+    const start = optionalBasicsField(expectedStart, 'expectedStart');
 
     // The plan allowance (LINA-189 / ADR-0013). Checked AFTER authorization and
     // input validation and BEFORE any write: a refusal here must never be the
@@ -272,6 +296,10 @@ export function createIdentityService({
       baselineBudgetCents: baseline,
       operatingModel: null, // a step-1 build has not chosen one yet (ADR-0011)
       status: draft ? 'draft' : 'active',
+      // Basics descriptive fields (LINA-219): null when not given, never ''.
+      siteAddress: address,
+      buildType: type,
+      expectedStart: start,
       createdAt: now,
     };
     const ownerMembership = {
@@ -292,7 +320,19 @@ export function createIdentityService({
         occurredAt: now,
         // Baseline rides the genesis payload so the authoritative budget is
         // computed ledger-side (design §5); Identity never re-sums budget rows.
-        payload: { name: cleanName, baselineBudgetCents: baseline, ownerPartyId: actorPartyId },
+        // The Basics descriptive fields ride it too (LINA-219): they are facts
+        // about the build agreed at genesis, and the audit trail is the product —
+        // so they are stamped into the immutable event, not only the projection.
+        // Additive keys, omitted when null so the genesis payload stays minimal
+        // for a build that skipped them.
+        payload: {
+          name: cleanName,
+          baselineBudgetCents: baseline,
+          ownerPartyId: actorPartyId,
+          ...(address ? { siteAddress: address } : {}),
+          ...(type ? { buildType: type } : {}),
+          ...(start ? { expectedStart: start } : {}),
+        },
       });
     });
 
@@ -815,6 +855,11 @@ function shapeProject(project, memberships, budget, actingRole) {
     // legacy active project predates the concept and stays null too.
     operatingModel: project.operatingModel ?? null,
     status: project.status,
+    // Basics descriptive fields (LINA-219): null on legacy rows and on drafts
+    // that skipped them. Read-only after genesis (no request-path writer).
+    siteAddress: project.siteAddress ?? null,
+    buildType: project.buildType ?? null,
+    expectedStart: project.expectedStart ?? null,
     actingRole, // derived server-side from the session (never the body)
     createdAt: project.createdAt,
     // `displayName` is null when the store did not join identity.party (the

@@ -46,10 +46,10 @@ export default async function OperatingModelPage({ params }: { params: Promise<{
 
         <div className="bw-head">
           <div className="crumbs">{build.name}</div>
-          <h1 className="bw-title">How is this build run?</h1>
+          <h1 className="bw-title">How is this build contracted?</h1>
           <p className="bw-lede">
-            This decides who you can invite onto the record and who has to approve what. It is asked
-            once, now — the rest of the build assumes your answer.
+            This shapes who you invite and who fills in the plan. It is asked once, now — the rest
+            of the build assumes your answer, and you will not be asked again.
           </p>
         </div>
 

@@ -151,6 +151,11 @@ export const schemas = {
       currentBudgetCents: { type: 'integer' },
       operatingModel: operatingModelEnum,
       status: projectStatusEnum,
+      // Basics descriptive fields (LINA-219): null on legacy rows and drafts
+      // that skipped them, set once at genesis otherwise. Nullable, not required.
+      siteAddress: { type: ['string', 'null'] },
+      buildType: { type: ['string', 'null'] },
+      expectedStart: { type: ['string', 'null'] },
       actingRole: roleEnum,
       createdAt: { type: 'string' },
       members: { type: 'array', items: { $ref: '#/components/schemas/Member' } },
@@ -234,6 +239,12 @@ export const schemas = {
       // created `status='draft'` with `operatingModel=null`. Absent/false keeps
       // the legacy one-shot path: an immediately `active` project, unchanged.
       draft: { type: 'boolean', default: false, description: 'Create the build as a draft (Band B wizard step 1).' },
+      // Basics descriptive fields (LINA-219). Optional; the service trims, caps at
+      // 300 chars, and stores null for blanks. `expectedStart` is a "YYYY-MM"
+      // month string from the picker, kept as free text (no DB CHECK).
+      siteAddress: { type: 'string', description: 'Site address (Basics).' },
+      buildType: { type: 'string', description: 'Build type slug (Basics).' },
+      expectedStart: { type: 'string', description: 'Expected start month, YYYY-MM (Basics).' },
     },
   },
   InviteRequest: {

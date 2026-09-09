@@ -47,6 +47,12 @@ export interface WireProject {
   // required field would turn a rolling deploy into a type lie.
   status?: BuildStatus;
   operatingModel?: OperatingModel | null;
+  // Basics descriptive fields (LINA-219, migration 0014). Optional and nullable
+  // for the same reason as status/operatingModel above: legacy rows, drafts that
+  // skipped them, and any pre-0014 API all legitimately return none.
+  siteAddress?: string | null;
+  buildType?: string | null;
+  expectedStart?: string | null;
   members: WireMember[];
 }
 

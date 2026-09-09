@@ -571,6 +571,18 @@ components:
           enum:
             - draft
             - active
+        siteAddress:
+          type:
+            - string
+            - null
+        buildType:
+          type:
+            - string
+            - null
+        expectedStart:
+          type:
+            - string
+            - null
         actingRole:
           type: string
           enum:
@@ -703,6 +715,15 @@ components:
           type: boolean
           default: false
           description: Create the build as a draft (Band B wizard step 1).
+        siteAddress:
+          type: string
+          description: Site address (Basics).
+        buildType:
+          type: string
+          description: Build type slug (Basics).
+        expectedStart:
+          type: string
+          description: 'Expected start month, YYYY-MM (Basics).'
     InviteRequest:
       type: object
       properties:

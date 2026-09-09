@@ -23,6 +23,8 @@ import {
   OPERATING_MODEL_COPY,
   INVITE_ROLE_COPY,
   TOTAL_STEPS,
+  BUILD_TYPES,
+  buildTypeLabel,
 } from './build-creation.ts';
 
 // ── stepFor ─────────────────────────────────────────────────────────────────
@@ -108,4 +110,26 @@ test('every model carries screen copy, and every invite role a human noun', () =
 
 test('the wizard is three steps — the invite-sent state is a result, not a step', () => {
   assert.equal(TOTAL_STEPS, 3);
+});
+
+// ── Basics build type (LINA-219) ─────────────────────────────────────────────
+
+test('build types have unique slugs and non-empty labels', () => {
+  const slugs = new Set();
+  for (const t of BUILD_TYPES) {
+    assert.ok(t.value && t.label, `${JSON.stringify(t)} is malformed`);
+    assert.ok(!slugs.has(t.value), `duplicate build-type slug ${t.value}`);
+    slugs.add(t.value);
+  }
+  assert.ok(BUILD_TYPES.length >= 2);
+});
+
+test('buildTypeLabel maps a known slug, echoes an unknown one, and nulls a blank', () => {
+  const first = BUILD_TYPES[0];
+  assert.equal(buildTypeLabel(first.value), first.label);
+  // An old stored value that predates a list change must never render blank.
+  assert.equal(buildTypeLabel('legacy-slug'), 'legacy-slug');
+  for (const empty of [null, undefined, '']) {
+    assert.equal(buildTypeLabel(empty), null, `${String(empty)} should map to null`);
+  }
 });

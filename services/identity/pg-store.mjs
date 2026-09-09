@@ -45,6 +45,10 @@ const mapProject = (r) => r && {
   baselineBudgetCents: Number(r.baseline_budget_cents),
   operatingModel: r.operating_model ?? null,
   status: r.status,
+  // Basics descriptive fields (LINA-219, migration 0014); null on legacy rows.
+  siteAddress: r.site_address ?? null,
+  buildType: r.build_type ?? null,
+  expectedStart: r.expected_start ?? null,
   createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
 };
 const mapMembership = (r) => r && {
@@ -204,9 +208,13 @@ export function createPgStore({ pool = getPool(), ledger }) {
           try {
             const { rows } = await client.query(
               `insert into identity.project
-                 (id, name, owner_party_id, baseline_budget_cents, operating_model, status, created_at)
-               values ($1, $2, $3, $4, $5, $6, $7) returning *`,
-              [p.id, p.name, p.ownerPartyId, p.baselineBudgetCents, p.operatingModel ?? null, p.status, p.createdAt],
+                 (id, name, owner_party_id, baseline_budget_cents, operating_model, status,
+                  site_address, build_type, expected_start, created_at)
+               values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning *`,
+              [
+                p.id, p.name, p.ownerPartyId, p.baselineBudgetCents, p.operatingModel ?? null, p.status,
+                p.siteAddress ?? null, p.buildType ?? null, p.expectedStart ?? null, p.createdAt,
+              ],
             );
             return mapProject(rows[0]);
           } catch (e) { throw asConflict(e); }
