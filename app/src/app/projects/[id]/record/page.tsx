@@ -98,7 +98,7 @@ export default async function RecordPage({
         ) : null}
         {tab === 'history' ? <HistoryTab events={record.tabs.history.events} nameOf={nameOf} /> : null}
       </main>
-      <BottomNav projectId={id} active="home" />
+      <BottomNav projectId={id} active="plan" />
     </>
   );
 }

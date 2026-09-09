@@ -227,7 +227,8 @@ describe('Postgres ledger (trust anchor)', { skip: DB ? false : 'set DATABASE_UR
       occurredAt: '2026-08-26T11:00:00.000Z',
       payload: { changeOrderId: coOpen, scopeImpactNote: 'adds a bay window' },
     });
-    // An approved CO with +8 schedule days → time amber; over budget → cost red.
+    // An approved CO with +8 schedule days → schedule amber; over budget →
+    // budget red.
     await ledger.appendEvent({
       projectId, type: 'change_order_approved', actorPartyId: gc,
       occurredAt: '2026-08-26T11:05:00.000Z',
@@ -240,13 +241,15 @@ describe('Postgres ledger (trust anchor)', { skip: DB ? false : 'set DATABASE_UR
       }), pool));
 
     const s = await ledger.status(projectId);
-    assert.equal(s.cost.status, 'red'); // 30% over 1,000,000 baseline
-    assert.equal(s.cost.currentCents, 1_300_000);
-    assert.equal(s.time.status, 'amber');
-    assert.equal(s.time.approvedScheduleImpactDays, 8);
+    assert.equal(s.budget.status, 'red'); // 30% over 1,000,000 baseline
+    assert.equal(s.budget.currentCents, 1_300_000);
+    assert.equal(s.schedule.status, 'amber');
+    assert.equal(s.schedule.approvedScheduleImpactDays, 8);
     assert.equal(s.scope.status, 'amber');
     assert.equal(s.scope.openScopeNoteCount, 1);
-    assert.equal(s.quality.status, 'amber');
+    // Safety is static "not tracked yet" — never green, never derived (ADR-0015 §2).
+    assert.equal(s.safety.status, 'none');
+    assert.equal(s.safety.tracked, false);
     // Every pillar carries a non-colour signal (FR9).
     for (const pillar of Object.values(s)) {
       assert.ok(pillar.label && pillar.icon, 'pillar must have label + icon, not colour alone');
@@ -254,15 +257,15 @@ describe('Postgres ledger (trust anchor)', { skip: DB ? false : 'set DATABASE_UR
   });
 
   // REGRESSION (LINA-57). The test above hand-writes an approval payload carrying
-  // scheduleImpactDays/qualityFlag — a shape services/change_order never actually
-  // emits. Its real approval event is { decidedBy, changeOrderId, costDeltaCents };
-  // the schedule/quality fields exist only on the PROPOSAL. Reading them off the
-  // approval therefore summed nothing in production, and Time + Quality were
-  // permanently green however much had been approved.
+  // scheduleImpactDays — a shape services/change_order never actually emits. Its
+  // real approval event is { decidedBy, changeOrderId, costDeltaCents }; the
+  // schedule field exists only on the PROPOSAL. Reading it off the approval
+  // therefore summed nothing in production, and Schedule was permanently green
+  // however much had been approved.
   //
   // This test uses the payloads the service really writes, so it fails against the
   // old fold and passes only when the approval is correlated back to its proposal.
-  test('four-pillar status: approved schedule/quality come from the PROPOSAL payload', async () => {
+  test('four-pillar status: approved schedule days come from the PROPOSAL payload', async () => {
     const { projectId } = await seedProject({ baselineBudgetCents: 1_000_000 });
     const gc = randomUUID();
     const co = randomUUID();
@@ -285,11 +288,9 @@ describe('Postgres ledger (trust anchor)', { skip: DB ? false : 'set DATABASE_UR
     });
 
     const s = await ledger.status(projectId);
-    assert.equal(s.time.approvedScheduleImpactDays, 5, 'approved schedule days must come from the proposal');
-    assert.equal(s.time.status, 'amber');
-    assert.match(s.time.label, /~5 days/);
-    assert.equal(s.quality.approvedQualityFlagCount, 1, 'approved quality flag must come from the proposal');
-    assert.equal(s.quality.status, 'amber');
+    assert.equal(s.schedule.approvedScheduleImpactDays, 5, 'approved schedule days must come from the proposal');
+    assert.equal(s.schedule.status, 'amber');
+    assert.match(s.schedule.label, /~5 days/);
     // Approving closes the scope question — it is decided, no longer open.
     assert.equal(s.scope.openScopeNoteCount, 0);
   });

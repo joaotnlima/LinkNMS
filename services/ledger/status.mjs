@@ -1,14 +1,19 @@
-// Four-pillar project status — the FR9 derivation (design §5).
+// Four-pillar project status — the M14 derivation (pen "S · M14 · The record,
+// live"; ADR-0015, superseding the R0 design §5 keys).
 //
 // Pure functions over already-summed inputs, so this is unit-testable without a
 // database and the Postgres adapter just feeds it numbers. Every pillar returns
 // colour PLUS a label AND an icon name — never colour alone (FR9 accessibility).
 //
-// Hard rules from the design:
-//   - Cost is the only quantified pillar; it always exposes the numbers.
-//   - Time = Σ schedule_impact_days on APPROVED change orders. It NEVER claims
-//     "on track vs baseline" — R0 holds no schedule baseline.
-//   - Scope/Quality are qualitative signals and NEVER move the budget.
+// The four pillars are SCHEDULE · BUDGET · SCOPE · SAFETY (ADR-0015 §1):
+//   - BUDGET (was `cost`) is the only quantified pillar; it always exposes the
+//     numbers — current vs baseline, never a spent figure the ledger lacks (§3).
+//   - SCHEDULE (was `time`) = Σ schedule_impact_days on APPROVED change orders.
+//     It NEVER claims "on track vs baseline" — R0 holds no schedule baseline.
+//   - SCOPE is a qualitative signal and NEVER moves the budget.
+//   - SAFETY has NO backing data: it is a STATIC "not tracked yet", status
+//     `none` — never a green "no incidents", which would assert a safety record
+//     that does not exist (§2). The `quality` pillar is gone with the R0 keys.
 
 // Icon names are semantic tokens the UI maps to glyphs; the point is that the
 // signal survives with colour stripped out.
@@ -17,6 +22,7 @@ const ICON = {
   info: 'info',
   warn: 'alert-triangle',
   over: 'alert-octagon',
+  shield: 'shield',
 };
 
 function centsToLabel(cents) {
@@ -25,9 +31,11 @@ function centsToLabel(cents) {
   return `${sign}$${(abs / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// Cost pillar (FR5/FR9): green at/under baseline, amber when over by ≤ threshold%,
-// red beyond it. Always carries the numbers.
-export function costPillar({ baselineCents, currentCents, amberThresholdPct = 10 }) {
+// Budget pillar (was `cost`; FR5/FR9): green at/under baseline, amber when over
+// by ≤ threshold%, red beyond it. Always carries the numbers — current vs
+// baseline. It never reports a spent figure: the ledger holds the contract
+// budget (baseline + Σ approved change orders), not money paid out (ADR-0015 §3).
+export function budgetPillar({ baselineCents, currentCents, amberThresholdPct = 10 }) {
   const deltaCents = currentCents - baselineCents;
   const overPct = baselineCents > 0 ? (deltaCents / baselineCents) * 100 : (deltaCents > 0 ? Infinity : 0);
 
@@ -47,7 +55,7 @@ export function costPillar({ baselineCents, currentCents, amberThresholdPct = 10
   }
 
   return {
-    pillar: 'cost',
+    pillar: 'budget',
     status,
     label,
     icon: status === 'green' ? ICON.ok : status === 'amber' ? ICON.warn : ICON.over,
@@ -57,13 +65,13 @@ export function costPillar({ baselineCents, currentCents, amberThresholdPct = 10
   };
 }
 
-// Time pillar (FR8/FR9): purely the sum of approved schedule-impact days. Never
-// framed against a baseline we do not hold.
-export function timePillar({ approvedScheduleImpactDays = 0 }) {
+// Schedule pillar (was `time`; FR8/FR9): purely the sum of approved
+// schedule-impact days. Never framed against a baseline we do not hold.
+export function schedulePillar({ approvedScheduleImpactDays = 0 }) {
   const days = approvedScheduleImpactDays;
   const status = days === 0 ? 'green' : 'amber';
   return {
-    pillar: 'time',
+    pillar: 'schedule',
     status,
     label: days === 0 ? 'No schedule changes recorded' : `Changes added ~${days} day${days === 1 ? '' : 's'}`,
     icon: days === 0 ? ICON.ok : ICON.info,
@@ -86,28 +94,29 @@ export function scopePillar({ openScopeNoteCount = 0 }) {
   };
 }
 
-// Quality pillar (FR8/FR9): amber if any APPROVED change order was flagged for
-// quality impact.
-export function qualityPillar({ approvedQualityFlagCount = 0 }) {
-  const status = approvedQualityFlagCount === 0 ? 'green' : 'amber';
+// Safety pillar (ADR-0015 §2): STATIC. There is no incidents/safety surface and
+// no safety data in the ledger, so this reports "not tracked yet" at status
+// `none` — muted, and deliberately NOT a green "no incidents", which would be
+// the record asserting a safety history it does not have. It takes no input; it
+// becomes a real derivation only when an incidents surface exists.
+export function safetyPillar() {
   return {
-    pillar: 'quality',
-    status,
-    label: approvedQualityFlagCount === 0
-      ? 'No quality concerns flagged'
-      : `${approvedQualityFlagCount} approved change${approvedQualityFlagCount === 1 ? '' : 's'} flagged`,
-    icon: approvedQualityFlagCount === 0 ? ICON.ok : ICON.warn,
-    approvedQualityFlagCount,
+    pillar: 'safety',
+    status: 'none',
+    label: 'Not tracked yet',
+    icon: ICON.shield,
+    tracked: false,
   };
 }
 
-// The whole four-pillar panel in one call (design §5). `inputs` are already-summed
-// figures the ledger produces; keeping this pure makes FR9 unit-testable.
+// The whole four-pillar panel in one call (pen M14; ADR-0015 §1). `inputs` are
+// already-summed figures the ledger produces; keeping this pure makes FR9
+// unit-testable. Order matches the pen: SCHEDULE · BUDGET · SCOPE · SAFETY.
 export function deriveStatus(inputs) {
   return {
-    cost: costPillar(inputs),
-    time: timePillar(inputs),
+    schedule: schedulePillar(inputs),
+    budget: budgetPillar(inputs),
     scope: scopePillar(inputs),
-    quality: qualityPillar(inputs),
+    safety: safetyPillar(),
   };
 }

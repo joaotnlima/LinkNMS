@@ -62,7 +62,7 @@ export default async function AuditPage({ params }: { params: Promise<{ id: stri
           ))}
         </div>
       </main>
-      <BottomNav projectId={id} active="audit" />
+      <BottomNav projectId={id} active="more" />
     </>
   );
 }

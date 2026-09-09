@@ -1,113 +1,148 @@
-// Surface 1 — Project dashboard. Status before detail: the four-pillar panel a
-// stressed owner reads in one glance, then current budget vs baseline, then the
-// entry points into the record. (design §7, FR8/FR9)
+// M14 — The record, live (LINA-223).
+//
+// Pen: "S · M14 · The record, live" in cowork/pen/linkNMS.pen. Decision:
+// ADR-0015. This is the build's HOME — the four-pillar glance a stressed owner
+// reads before a single number, a progress line, and the master timeline. It is
+// NOT the four-tab record at /record (D14); those tabs are reached from the
+// pillars, the timeline's Compare links, and the More nav.
+//
+// ── WHAT THE PEN DRAWS THAT WE WILL NOT FAKE (ADR-0015 §2/§3/§5) ──────────────
+// The record renders persisted data or omits it — no fixtures (LINA-57). So:
+//   - SAFETY has no backing data → "Not tracked yet", muted, never a green.
+//   - BUDGET shows current-vs-baseline, never a spent figure the ledger lacks.
+//   - "Week X of Y" comes from the baseline plan's dates, or the line is omitted.
+//   - The timeline carries no per-stage day-delta — there are no executed dates;
+//     it shows reported progress against the plan instead.
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { getProject } from '@/lib/api';
+
+import { getProject, getRecord, isSignedIn } from '@/lib/api';
 import { PillarPanel } from '@/components/PillarPanel';
 import { TopBar, BottomNav } from '@/components/chrome';
-import { Check } from '@/components/icons';
-import { money, moneyPrecise, delta } from '@/lib/format';
+import type { ScheduleLine } from '@/lib/record';
+import { weekLine, timelineTone, timelineStateLabel } from '@/lib/record-home';
+import './record-home.css';
 
-export default async function DashboardPage({ params }: { params: Promise<{ id: string }> }) {
+export const dynamic = 'force-dynamic';
+
+export default async function RecordHomePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const p = await getProject(id);
-  const d = delta(p.currentBudgetCents - p.baselineBudgetCents);
-  const overBaseline = p.currentBudgetCents > p.baselineBudgetCents;
-  // Bar width: current relative to baseline, clamped so a small overage still reads.
-  const pct = Math.min(100, Math.round((p.currentBudgetCents / p.baselineBudgetCents) * 100));
-  const co = p.counts.changeOrders;
+  if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}`);
+
+  const [p, record] = await Promise.all([getProject(id), getRecord(id)]);
+
+  const lines = [...record.tabs.schedule.lines].sort((a, b) => a.position - b.position);
+  // "Week X of Y" is derived from the baseline plan's dates; null (omitted) when
+  // there is no accepted baseline or no dated stage (ADR-0015 §4).
+  const wl = record.baseline ? weekLine(lines, new Date()) : null;
+
+  // The header's on-track word reads the SAME schedule pillar the tile does, so
+  // the two can never disagree. green → on track; amber → the schedule moved.
+  const sched = p.pillars.schedule;
+  const onTrack = sched.status === 'green';
+
+  const hasCounterparty = p.members.some((m) => m.role === 'counterparty' || m.role === 'subcontractor');
 
   return (
     <>
-      <TopBar />
-      <main className="screen">
-        <div>
-          <div className="crumbs">Shared record</div>
-          <h1 className="scr">{p.name}</h1>
-          <p className="sub">
-            {p.members.map((m) => `${m.name} (${m.role === 'owner' ? 'Owner' : 'GC'})`).join(' · ')}
-          </p>
-        </div>
+      <TopBar back={{ href: '/projects', label: 'Builds' }} />
+      <main className="m14">
+        <header className="m14-head">
+          <div className="m14-head-badges">
+            {wl ? (
+              <span className="m14-week">
+                <span className="m14-week-ic" aria-hidden>◷</span>
+                Week {wl.week} of {wl.total}
+              </span>
+            ) : null}
+            <span className={`m14-track ${onTrack ? 'on' : 'off'}`}>
+              {onTrack ? 'On track' : 'Schedule moved'}
+            </span>
+          </div>
+          <h1 className="m14-title">{p.name}</h1>
+        </header>
 
-        {/* FR1 is not finished until the second party is actually on the record —
-            a "shared" record with one member shares nothing. Surfaced here as a
-            live prompt rather than buried in a settings screen, and only for the
-            owner, who is the only party allowed to invite. */}
-        {p.actingRole === 'owner' && !p.members.some((m) => m.role === 'counterparty') ? (
-          <Link className="card row" href={`/projects/${id}/invite`}>
-            <span style={{ fontWeight: 600 }}>👷 Invite your general contractor</span>
-            <span className="cap">no GC on this record yet →</span>
+        {/* FR1: a "shared" record with one party shares nothing. Owner-only, and
+            only while no counterparty has joined — the honest empty state, not a
+            hub row. Dropped the moment a GC/sub is on the record. */}
+        {p.actingRole === 'owner' && !hasCounterparty ? (
+          <Link className="m14-invite" href={`/projects/${id}/invite`}>
+            <span className="m14-invite-t">Invite your general contractor</span>
+            <span className="m14-invite-c">No second party on this record yet →</span>
           </Link>
         ) : null}
 
-        <section aria-labelledby="status-h" className="stack">
-          <h2 id="status-h" className="grp">Project status</h2>
-          <PillarPanel pillars={p.pillars} />
-        </section>
+        <PillarPanel pillars={p.pillars} projectId={id} />
 
-        <section aria-labelledby="budget-h" className="card">
-          <div className="row">
-            <div>
-              <div className="metric-lbl">Current budget</div>
-              <div className="amt" style={{ fontSize: 22 }}>{moneyPrecise(p.currentBudgetCents)}</div>
-            </div>
-            <span className={`badge ${overBaseline ? 'warn' : 'ok'}`}>
-              <Check className="ok-stroke" />
-              {overBaseline ? `${d.text} vs baseline` : 'On budget'}
-            </span>
+        <section className="m14-timeline-sec" aria-labelledby="m14-tl-h">
+          <div className="m14-tl-head">
+            <h2 id="m14-tl-h" className="m14-tl-title">Master timeline</h2>
+            <Legend />
           </div>
-          <div className="row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-            <div className="spread">
-              <span className="cap">Baseline {money(p.baselineBudgetCents)}</span>
-              <span className={`cap delta ${d.dir}`}>{d.text}</span>
-            </div>
-            <div className={`budgetbar ${overBaseline ? 'over' : ''}`}>
-              <span style={{ width: `${pct}%` }} />
-            </div>
-            <span className="cap">
-              {co.approved} approved change{co.approved === 1 ? '' : 's'} applied ·{' '}
-              {co.proposed} pending review
-            </span>
-          </div>
-        </section>
-
-        <section className="card">
-          {/* The way in to D14 (LINA-218), listed FIRST. The record is the thing
-              this product is: the plan, the schedule, the money and the history
-              of all three in one place. Everything below it is a slice of the
-              same record reached directly. */}
-          <Link className="row" href={`/projects/${id}/record`}>
-            <span style={{ fontWeight: 600 }}>📖 The record</span>
-            <span className="cap">plan · schedule · money · history →</span>
-          </Link>
-          <Link className="row" href={`/projects/${id}/budget`}>
-            <span style={{ fontWeight: 600 }}>💷 Budget movement</span>
-            <span className="cap">scope changes and price movements →</span>
-          </Link>
-          {/* The way in to D7 (LINA-207). The dashboard is where both parties
-              land, and until this row existed the plan surface was reachable
-              only by typing the URL. It is listed for BOTH roles — the owner
-              reads the plan, the GC brings it in — and the plan page itself is
-              what states which of those the reader is. */}
-          <Link className="row" href={`/projects/${id}/plan`}>
-            <span style={{ fontWeight: 600 }}>🗓️ Plan</span>
-            <span className="cap">actions, sub-actions and dates →</span>
-          </Link>
-          <Link className="row" href={`/projects/${id}/decisions`}>
-            <span style={{ fontWeight: 600 }}>📋 Decision log</span>
-            <span className="cap">{p.counts.decisions} decisions →</span>
-          </Link>
-          <Link className="row" href={`/projects/${id}/change-orders`}>
-            <span style={{ fontWeight: 600 }}>🔁 Change orders</span>
-            <span className="cap">{co.total} total · {co.proposed} pending →</span>
-          </Link>
-          <Link className="row" href={`/projects/${id}/audit`}>
-            <span style={{ fontWeight: 600 }}>🛡️ Audit trail</span>
-            <span className="cap">integrity: verified →</span>
-          </Link>
+          <Timeline projectId={id} lines={lines} />
         </section>
       </main>
-      <BottomNav projectId={id} active="home" />
+      <BottomNav projectId={id} active="plan" />
     </>
+  );
+}
+
+function Legend() {
+  return (
+    <div className="m14-legend" aria-hidden>
+      <span className="m14-lg"><span className="m14-sw plan" /> Plan</span>
+      <span className="m14-lg"><span className="m14-sw actual" /> Actual</span>
+      <span className="m14-lg"><span className="m14-sw closed" /> Closed</span>
+    </div>
+  );
+}
+
+function Timeline({ projectId, lines }: { projectId: string; lines: ScheduleLine[] }) {
+  if (lines.length === 0) {
+    return (
+      <div className="m14-timeline">
+        <p className="notice">
+          No plan on this record yet. Import or agree a plan and its stages appear here.
+        </p>
+        <Link className="btn" href={`/projects/${projectId}/plan`}>Go to the plan</Link>
+      </div>
+    );
+  }
+  return (
+    <ol className="m14-timeline">
+      {lines.map((l) => (
+        <TimelineRow key={l.stageId} projectId={projectId} line={l} />
+      ))}
+    </ol>
+  );
+}
+
+function TimelineRow({ projectId, line }: { projectId: string; line: ScheduleLine }) {
+  const tone = timelineTone(line.status);
+  const stateLabel = timelineStateLabel(line.status);
+  // Reported progress is the only "actual" the record holds — not a calendar
+  // range (ADR-0015 §5). A missing percent on an in-progress line reads as 0.
+  const pct = tone === 'closed' ? 100 : Math.max(0, Math.min(100, line.percent ?? 0));
+
+  return (
+    <li className="m14-row">
+      <div className="m14-row-top">
+        <span className="m14-row-name">{line.name}</span>
+        <span className={`m14-state ${tone}`}>{stateLabel}</span>
+      </div>
+      <div className="m14-row-bar">
+        <div className={`m14-bar ${tone}`}>
+          {/* closed → full green; progress → blue plan track + orange actual fill;
+              blocked → plan track + amber marker; not_started → muted plan track. */}
+          {tone === 'progress' ? <span className="m14-bar-fill" style={{ width: `${pct}%` }} /> : null}
+        </div>
+        <Link className="m14-compare" href={`/projects/${projectId}/record/${line.stageId}`}>
+          <span aria-hidden>⇄</span> Compare
+        </Link>
+      </div>
+      {line.status === 'in_progress' && line.percent != null ? (
+        <span className="m14-row-pct">{line.percent}% reported</span>
+      ) : null}
+    </li>
   );
 }

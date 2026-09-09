@@ -93,7 +93,7 @@ export default async function LineDetailPage({
           }))}
         />
       </main>
-      <BottomNav projectId={id} active="home" />
+      <BottomNav projectId={id} active="plan" />
     </>
   );
 }

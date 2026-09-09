@@ -210,27 +210,29 @@ export function createPgLedger({ pool = getPool(), cache = createLedgerCache() }
   // Fold the chain into the summed inputs the four-pillar status needs, so status
   // stays ledger-side (design §5).
   //
-  // The schedule/quality/scope fields live ONLY on `change_order_proposed` — the
-  // approval event carries just { decidedBy, changeOrderId, costDeltaCents },
-  // because the decision does not restate the change, it points at it. So the
-  // approved totals are correlated back to the proposal by changeOrderId rather
-  // than read off the approval payload.
+  // The schedule/scope fields live ONLY on `change_order_proposed` — the approval
+  // event carries just { decidedBy, changeOrderId, costDeltaCents }, because the
+  // decision does not restate the change, it points at it. So the approved totals
+  // are correlated back to the proposal by changeOrderId rather than read off the
+  // approval payload.
   //
-  // Reading them off the approval directly (what this did before) made the Time
-  // and Quality pillars permanently green: `p.scheduleImpactDays` was always
-  // undefined there, so every approved change added 0 days and flagged 0 quality
-  // concerns no matter what had actually been approved. Two of the four FR9
-  // pillars silently reported "nothing to see" on a product whose entire promise
-  // is that the record tells you what changed (found by the LINA-57 cutover
-  // walking FR1→FR9 against real data).
+  // Reading them off the approval directly (what this did before) made the
+  // Schedule pillar permanently green: `p.scheduleImpactDays` was always
+  // undefined there, so every approved change added 0 days no matter what had
+  // actually been approved — a pillar silently reporting "nothing to see" on a
+  // product whose entire promise is that the record tells you what changed (found
+  // by the LINA-57 cutover walking FR1→FR9 against real data).
   //
   // Correlating on read — rather than fixing the emitted payload — is deliberate:
   // the chain is append-only and hash-linked, so already-written histories cannot
   // be restated. This heals them. The `?? p.x` fallbacks keep it correct if a
   // future approval event does carry the fields.
+  //
+  // The old `quality` fold (approvedQualityFlagCount) is GONE with the M14 keys
+  // (ADR-0015 §1): the panel has no quality pillar. Change orders still record
+  // qualityFlag/qualityNote — it is simply no longer folded into status.
   function statusInputsFromChain(events) {
     let approvedScheduleImpactDays = 0;
-    let approvedQualityFlagCount = 0;
     const openScopeByCo = new Map(); // changeOrderId -> has open scope note
     const proposedByCo = new Map();  // changeOrderId -> its proposal payload
 
@@ -244,7 +246,6 @@ export function createPgLedger({ pool = getPool(), cache = createLedgerCache() }
       } else if (e.type === 'change_order_approved') {
         const proposed = (p.changeOrderId != null && proposedByCo.get(p.changeOrderId)) || {};
         approvedScheduleImpactDays += Number(p.scheduleImpactDays ?? proposed.scheduleImpactDays ?? 0);
-        if (p.qualityFlag ?? proposed.qualityFlag) approvedQualityFlagCount += 1;
         if (p.changeOrderId != null) openScopeByCo.delete(p.changeOrderId); // no longer open
       } else if (e.type === 'change_order_rejected') {
         if (p.changeOrderId != null) openScopeByCo.delete(p.changeOrderId);
@@ -252,7 +253,7 @@ export function createPgLedger({ pool = getPool(), cache = createLedgerCache() }
     }
     let openScopeNoteCount = 0;
     for (const hasNote of openScopeByCo.values()) if (hasNote) openScopeNoteCount += 1;
-    return { approvedScheduleImpactDays, approvedQualityFlagCount, openScopeNoteCount };
+    return { approvedScheduleImpactDays, openScopeNoteCount };
   }
 
   async function status(projectId, { amberThresholdPct = 10 } = {}) {

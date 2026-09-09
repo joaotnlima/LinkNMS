@@ -17,9 +17,13 @@ export type OperatingModel = 'turnkey' | 'direct' | 'hybrid';
 // a first-class "not chosen yet" — a draft mid-wizard, or a pre-Band-B project.
 export type BuildStatus = 'draft' | 'active';
 
-export type RagStatus = 'green' | 'amber' | 'red';
-export type IconName = 'check-circle' | 'info' | 'alert-triangle' | 'alert-octagon';
-export type PillarKey = 'cost' | 'time' | 'scope' | 'quality';
+// `none` is the M14 SAFETY state (ADR-0015 §2): a pillar with no signal to
+// report — muted, and deliberately distinct from a green that would claim an
+// all-clear the record cannot back.
+export type RagStatus = 'green' | 'amber' | 'red' | 'none';
+export type IconName = 'check-circle' | 'info' | 'alert-triangle' | 'alert-octagon' | 'shield';
+// The M14 four pillars (ADR-0015 §1): SCHEDULE · BUDGET · SCOPE · SAFETY.
+export type PillarKey = 'schedule' | 'budget' | 'scope' | 'safety';
 export type CoStatus = 'proposed' | 'approved' | 'rejected';
 
 export interface Party {
@@ -54,17 +58,23 @@ export interface Pillar {
   status: RagStatus;
   label: string;
   icon: IconName;
-  // cost pillar only:
+  // budget pillar only (the sole quantified pillar):
   baselineCents?: number;
   currentCents?: number;
   deltaCents?: number;
+  // schedule pillar only — Σ approved schedule-impact days:
+  approvedScheduleImpactDays?: number;
+  // scope pillar only — count of open (proposed) scope notes:
+  openScopeNoteCount?: number;
+  // safety pillar only — false until an incidents surface exists (ADR-0015 §2):
+  tracked?: boolean;
 }
 
 export interface Pillars {
-  cost: Pillar;
-  time: Pillar;
+  schedule: Pillar;
+  budget: Pillar;
   scope: Pillar;
-  quality: Pillar;
+  safety: Pillar;
 }
 
 export interface Project {

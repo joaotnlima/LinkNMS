@@ -109,24 +109,8 @@ h1.scr { font-size: 22px; font-weight: 650; letter-spacing: -.3px; }
 .card > a.row:hover { background: var(--sunken); }
 .metric-lbl { font-size: 13px; color: var(--muted); }
 
-/* ---- pillars ---- */
-.pillars { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
-@media (min-width: 620px) { .pillars { grid-template-columns: repeat(4, 1fr); } }
-.pillar { border: 1px solid var(--outline); border-left-width: 4px; border-radius: var(--r-ctrl); padding: 12px; background: var(--raised); display: flex; flex-direction: column; gap: 6px; }
-.pillar.green { border-left-color: var(--success); }
-.pillar.amber { border-left-color: var(--warning); }
-.pillar.red { border-left-color: var(--danger); }
-.pillar .p-top { display: flex; align-items: center; gap: 6px; }
-.pillar .p-ic { width: 16px; height: 16px; stroke-width: 2; fill: none; }
-.pillar.green .p-ic { stroke: var(--success); }
-.pillar.amber .p-ic { stroke: var(--warning); }
-.pillar.red .p-ic { stroke: var(--danger); }
-.pillar .p-name { font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: var(--muted); }
-.pillar .p-state { font-size: 14px; font-weight: 650; display: flex; align-items: center; gap: 5px; }
-.pillar.green .p-state { color: var(--success); }
-.pillar.amber .p-state { color: var(--warning); }
-.pillar.red .p-state { color: var(--danger); }
-.pillar .p-sub { font-size: 12px; color: var(--muted); }
+/* The R0 `.pillar(s)` block is retired: the M14 four-pillar panel styles itself
+   under `.m14-pillar*` in projects/[id]/record-home.css (ADR-0015 §1). */
 
 /* ---- badges / chips ---- */
 .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 650; padding: 3px 9px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
@@ -233,11 +217,33 @@ details.revs summary::-webkit-details-marker { display: none; }
    aloud and copied by hand as often as it gets pasted. */
 .token { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; width: 100%; padding: 10px 11px; border: 1px solid var(--outline-strong); border-radius: var(--r-ctrl); background: var(--sunken); color: var(--fg); }
 
-/* ---- bottom nav ---- */
-.botnav { position: sticky; bottom: 0; display: flex; border-top: 1px solid var(--outline); background: var(--raised); }
-.botnav a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 0 10px; font-size: 11px; font-weight: 600; color: var(--muted); }
+/* ---- bottom nav (M14 tab bar: Builds · Plan · Docs · More — ADR-0015 §6) ---- */
+.botnav { position: sticky; bottom: 0; display: flex; border-top: 1px solid var(--outline); background: var(--raised); z-index: 20; }
+.botnav > a, .botnav > .botnav-disabled, .botnav-more > summary {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 9px 0 10px; font-size: 11px; font-weight: 600; color: var(--muted);
+}
 .botnav a.active { color: var(--owner); }
-.botnav a svg { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.botnav svg { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+/* Docs: no surface yet — visibly not-ready, not clickable. */
+.botnav .botnav-disabled { color: var(--ink-35); cursor: default; }
+/* More: a native <details> popover, so the whole nav stays a server component. */
+.botnav-more { flex: 1; position: relative; }
+.botnav-more > summary { list-style: none; cursor: pointer; width: 100%; }
+.botnav-more > summary::-webkit-details-marker { display: none; }
+.botnav-more[open] > summary { color: var(--owner); }
+.botnav-menu {
+  position: absolute; bottom: calc(100% + 6px); right: 8px; min-width: 190px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--raised); border: 1px solid var(--outline-strong);
+  border-radius: var(--r-ctrl); box-shadow: var(--shadow-lg);
+}
+.botnav-menu a {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  font-size: 13px; font-weight: 600; color: var(--fg); border-radius: 8px;
+}
+.botnav-menu a:hover { background: var(--sunken); }
+.botnav-menu svg { width: 18px; height: 18px; stroke: var(--muted); }
 
 /* ---- misc ---- */
 .stack { display: flex; flex-direction: column; gap: var(--s3); }
