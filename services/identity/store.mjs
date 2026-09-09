@@ -160,6 +160,18 @@ export function createMemoryStore({ ledger } = {}) {
       return copy(p);
     },
 
+    // ADR-0016 §4: bind the homeowner to a GC-founded build, ONCE. Mirrors the pg
+    // adapter's `WHERE owner_party_id IS NULL` guard so an already-owned build can
+    // never have its owner re-pointed — owner_party_id moves NULL → value and never
+    // again (a conflict, not a silent overwrite).
+    stampOwnerParty(projectId, partyId) {
+      const p = projects.get(projectId);
+      if (!p) throw notFound('project');
+      if (p.ownerPartyId != null) throw conflict('project already has an owner');
+      p.ownerPartyId = partyId;
+      return copy(p);
+    },
+
     // Read-within-tx: accept must re-read the invite under the same unit so a
     // concurrent accept cannot double-spend it (the pg adapter uses SELECT … FOR
     // UPDATE / the status guard on markInvitationAccepted).

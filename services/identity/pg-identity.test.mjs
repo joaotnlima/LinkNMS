@@ -223,16 +223,26 @@ describe('Postgres identity (membership + authz + ledger seam)', { skip: DB ? fa
     );
     assert.equal(moved.rows[0].status, 'active');
 
-    // The audit-sensitive fields stay locked: rewriting baseline means a silent
-    // projection edit, which the grant deliberately forbids (ADR-0002 intent).
+    // Baseline stays LOCKED at the grant layer: rewriting it means a silent budget
+    // edit, which the column-scoped grant forbids outright (ADR-0002 intent) — no
+    // WHERE clause can get past a missing privilege.
     await assert.rejects(
       appPool.query(`update identity.project set baseline_budget_cents = 1 where id = $1`, [draft.id]),
       /permission denied/i,
     );
-    await assert.rejects(
-      appPool.query(`update identity.project set owner_party_id = $2 where id = $1`, [draft.id, randomUUID()]),
-      /permission denied/i,
+
+    // owner_party_id is now GRANTABLE (ADR-0016: the accept path stamps the
+    // homeowner onto a GC-founded build), so the lock moved from the grant to a
+    // ONE-WAY, guarded write. The grant permits the UPDATE — proven by the query
+    // running without a permission error — but the production path only ever runs
+    // it `WHERE owner_party_id IS NULL`, so this already-owned (owner-created)
+    // draft is untouched: zero rows, an existing owner is never re-pointed.
+    const repoint = await appPool.query(
+      `update identity.project set owner_party_id = $2
+        where id = $1 and owner_party_id is null returning id`,
+      [draft.id, randomUUID()],
     );
+    assert.equal(repoint.rowCount, 0, 'an existing owner is never re-pointed');
   });
 
   // GET /me (LINA-154): resolve a party UUID to its identity.party row. The party
