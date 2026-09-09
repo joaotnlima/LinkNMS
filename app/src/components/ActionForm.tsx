@@ -47,6 +47,7 @@ export function ActionForm({
   pendingLabel,
   children,
   render,
+  footer,
 }: {
   action: (prev: ActionState, form: FormData) => Promise<ActionState>;
   initialState?: ActionState;
@@ -55,6 +56,14 @@ export function ActionForm({
   children?: React.ReactNode;
   /** Optional extra output driven by the returned state (e.g. the invite token). */
   render?: (state: ActionState) => React.ReactNode;
+  /**
+   * Replaces the default submit button with a caller-owned footer that still
+   * receives the live `pending` flag (LINA-219). The Band B wizard uses it to
+   * put its Back / Continue nav BELOW the card while keeping the button inside
+   * the form and correctly disabled mid-submit — the pending guarantee this
+   * primitive exists to make is not something each wizard step should re-earn.
+   */
+  footer?: (args: { pending: boolean }) => React.ReactNode;
 }) {
   const [state, formAction, pending] = useActionState(action, initialState);
   return (
@@ -80,9 +89,13 @@ export function ActionForm({
           this page is open, resolves it without a reload. Taking the button away
           would strand them on a dead screen with their typed name and budget
           still in it. */}
-      <button type="submit" className="btn primary" disabled={pending} aria-busy={pending}>
-        {pending ? (pendingLabel ?? 'Working…') : submitLabel}
-      </button>
+      {footer ? (
+        footer({ pending })
+      ) : (
+        <button type="submit" className="btn primary" disabled={pending} aria-busy={pending}>
+          {pending ? (pendingLabel ?? 'Working…') : submitLabel}
+        </button>
+      )}
       {render ? render(state) : null}
     </form>
   );

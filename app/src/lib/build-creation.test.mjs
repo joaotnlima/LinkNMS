@@ -25,6 +25,7 @@ import {
   TOTAL_STEPS,
   BUILD_TYPES,
   buildTypeLabel,
+  expectedStartOptions,
 } from './build-creation.ts';
 
 // ── stepFor ─────────────────────────────────────────────────────────────────
@@ -122,6 +123,21 @@ test('build types have unique slugs and non-empty labels', () => {
     slugs.add(t.value);
   }
   assert.ok(BUILD_TYPES.length >= 2);
+});
+
+test('expectedStartOptions lists months from the given now, YYYY-MM value + human label', () => {
+  // A fixed "now" so the list is deterministic. 2026-03-14 → first option is
+  // March 2026, and the list rolls over the year boundary correctly.
+  const now = new Date(2026, 2, 14); // month is 0-based: 2 = March
+  const opts = expectedStartOptions(now, 12);
+  assert.equal(opts.length, 12);
+  assert.deepEqual(opts[0], { value: '2026-03', label: 'March 2026' });
+  // Zero-padded month.
+  assert.deepEqual(opts[1], { value: '2026-04', label: 'April 2026' });
+  // Ten months on from March is January of the next year.
+  assert.deepEqual(opts[10], { value: '2027-01', label: 'January 2027' });
+  // Default count is a year and a half.
+  assert.equal(expectedStartOptions(now).length, 18);
 });
 
 test('buildTypeLabel maps a known slug, echoes an unknown one, and nulls a blank', () => {

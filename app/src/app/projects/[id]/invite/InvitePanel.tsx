@@ -30,15 +30,20 @@ import { useState } from 'react';
 import Link from 'next/link';
 
 import { ActionForm, type ActionState } from '@/components/ActionForm';
+import { WizardNav, ArrowRight } from '@/components/WizardNav';
 import { inviteAction } from '@/app/actions';
 import { INVITE_ROLE_COPY, inviteRoleFor, type OperatingModel } from '@/lib/build-creation';
 
 export function InvitePanel({
   projectId,
   operatingModel,
+  buildName,
+  isDraft,
 }: {
   projectId: string;
   operatingModel: OperatingModel | null;
+  buildName: string;
+  isDraft: boolean;
 }) {
   const role = inviteRoleFor(operatingModel);
   const copy = INVITE_ROLE_COPY[role];
@@ -46,15 +51,18 @@ export function InvitePanel({
   return (
     <ActionForm
       action={inviteAction}
-      submitLabel="Send invitation"
+      submitLabel="Send invite"
       pendingLabel="Sending…"
+      footer={({ pending }) => (
+        <WizardNav back={{ href: `/projects/${projectId}/operating-model` }}>
+          <button type="submit" className="btn primary" disabled={pending} aria-busy={pending}>
+            {pending ? 'Sending…' : 'Send invite'}
+            <ArrowRight />
+          </button>
+        </WizardNav>
+      )}
       render={(state) =>
-        state.token ? <InviteSent projectId={projectId} state={state} noun={copy.noun} /> : (
-          <p className="cap">
-            Add their email and we will send the invitation for you. Leave it blank and you will get
-            a link to pass on yourself.
-          </p>
-        )
+        state.token ? <InviteSent projectId={projectId} state={state} noun={copy.noun} /> : null
       }
     >
       <input type="hidden" name="projectId" value={projectId} />
@@ -63,20 +71,30 @@ export function InvitePanel({
           build does not admit. */}
       <input type="hidden" name="operatingModel" value={operatingModel ?? ''} />
 
-      <label className="field">
-        <span className="metric-lbl">Their email (optional)</span>
-        <input
-          type="email"
-          name="email"
-          autoComplete="email"
-          inputMode="email"
-          placeholder={copy.emailPlaceholder}
-          aria-describedby="invite-email-help"
-        />
-        <span id="invite-email-help" className="hint">
-          We only use this to send the invitation.
-        </span>
-      </label>
+      <section className="bwx-card">
+        <h1 className="bwx-card-title">Invite your {copy.noun}</h1>
+        <p className="bwx-card-sub">
+          {isDraft
+            ? `They accept, then upload or build the plan. The moment you send it, ${buildName} becomes a shared record — everything either of you writes on it is attributed and time-stamped.`
+            : `They join the shared record for ${buildName}. Everything either of you writes on it is attributed and time-stamped.`}
+        </p>
+
+        <label className="field">
+          <span className="metric-lbl">Their email (optional)</span>
+          <input
+            type="email"
+            name="email"
+            autoComplete="email"
+            inputMode="email"
+            placeholder={copy.emailPlaceholder}
+            aria-describedby="invite-email-help"
+          />
+          <span id="invite-email-help" className="hint">
+            Add their email and we will send the invitation. Leave it blank and you will get a link
+            to pass on yourself.
+          </span>
+        </label>
+      </section>
     </ActionForm>
   );
 }

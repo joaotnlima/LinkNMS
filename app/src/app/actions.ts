@@ -82,22 +82,19 @@ export async function createProjectAction(_prev: FormState, form: FormData): Pro
  *
  * The pen's Basics fields — site address, build type, expected start — are
  * collected here and persisted (LINA-219, migration 0014); all three are optional
- * and blank posts store null server-side, so the required minimum stays name +
- * baseline. The baseline budget is a deliberate departure the pen does not draw:
- * `createProject` requires it and it is the number every later claim is measured
- * against, so collecting it after the build is live would mean a live record with
- * no baseline (see build-creation's GAPS note).
+ * and blank posts store null server-side, so the required minimum is just the
+ * name.
+ *
+ * NO BASELINE HERE (LINA-219 pen-rebuild). The pen dropped the baseline field and
+ * post-Slices-B1–B3 that is correct: the plan is the baseline's source, so the
+ * draft is created with a 0 baseline and the accepted plan sets the real figure.
+ * A draft is not a live record — it commits on the first invite (step 3) — and by
+ * then the owner has walked through the plan; collecting a number twice, from two
+ * competing sources, is the drift this avoids. See build-creation's GAPS note.
  */
 export async function createBuildAction(_prev: FormState, form: FormData): Promise<FormState> {
   const name = String(form.get('name') ?? '').trim();
   if (!name) return { error: 'Give the build a name.' };
-
-  let baselineBudgetCents: number;
-  try {
-    baselineBudgetCents = parseBudgetToCents(String(form.get('baselineBudget') ?? ''));
-  } catch (err) {
-    return { error: message(err, 'That baseline budget is not a valid amount.') };
-  }
 
   // Optional Basics fields. Trimmed here and only forwarded when non-empty; the
   // service is the authority on caps and stores null for blanks regardless.
@@ -107,7 +104,8 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
 
   let id: string;
   try {
-    ({ id } = await createBuildDraft({ name, baselineBudgetCents, siteAddress, buildType, expectedStart }));
+    // Draft baseline is 0; the plan establishes the authoritative figure.
+    ({ id } = await createBuildDraft({ name, baselineBudgetCents: 0, siteAddress, buildType, expectedStart }));
   } catch (err) {
     // The path that fires for real today: a founding seat runs one build, so the
     // owner's SECOND trip through the wizard lands here (ADR-0013).
