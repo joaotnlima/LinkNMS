@@ -235,10 +235,14 @@ paths:
         Re-parses the re-sent file server-side (the preview the client rendered is
         never trusted as the write payload), then writes the whole batch in ONE
         transaction: a single `plan_import` audit event, the import header, the
-        stage rows (parents before children, positions appended after any
-        hand-added stages) and the intra-import predecessor links. Idempotent on
-        `idempotencyKey`: a serverless retry with a used key writes nothing and
-        returns the ORIGINAL `importId`/`auditEventId`.
+        proposal the import seeds (`plan_version` v1 proposed +
+        `plan_proposed` audit event + the importer's authorship stamp, per the B2
+        contract §4 "import-seed" half), the stage rows bound to that version
+        (parents before children, positions appended after any hand-added stages)
+        and the intra-import predecessor links. The seeded D11 proposal is served
+        by `GET /plan` as `current`. Idempotent on `idempotencyKey`: a serverless
+        retry with a used key writes nothing and returns the ORIGINAL
+        `importId`/`auditEventId`.
       requestBody:
         required: true
         content:

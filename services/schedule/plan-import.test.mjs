@@ -57,13 +57,20 @@ function makeHarness() {
     stages: new Map([...store._stages].map(([k, v]) => [k, { ...v }])),
     imports: store._imports.map((i) => ({ ...i })),
     deps: store._dependencies.map((d) => ({ ...d })),
-    events: ledger._events.map((e) => ({ ...e, payload: { ...e.payload, stageIds: [...e.payload.stageIds] } })),
+    versions: store._versions.map((v) => ({ ...v })),
+    acceptances: store._acceptances.map((a) => ({ ...a })),
+    events: ledger._events.map((e) => ({ ...e, payload: {
+      ...e.payload,
+      ...(Array.isArray(e.payload.stageIds) ? { stageIds: [...e.payload.stageIds] } : {}),
+    } })),
   });
   const restore = (s) => {
     store._stages.clear();
     for (const [k, v] of s.stages) store._stages.set(k, v);
     store._imports.length = 0; store._imports.push(...s.imports);
     store._dependencies.length = 0; store._dependencies.push(...s.deps);
+    store._versions.length = 0; store._versions.push(...s.versions);
+    store._acceptances.length = 0; store._acceptances.push(...s.acceptances);
     ledger._events.length = 0; ledger._events.push(...s.events);
   };
 
@@ -150,7 +157,7 @@ test('preview: WBS tree keeps parents-before-children refs and deps', async () =
   assert.deepEqual(out.roots[1].children[0].dependsOn, ['R3', 'R4']);
 });
 
-test('confirm: one transaction writes header + stages + deps + ONE plan_import event', async () => {
+test('confirm: one transaction writes header + version + stages + deps + plan_import + plan_proposed', async () => {
   const { service, store, ledger } = makeHarness();
   const buf = await makeWorkbook(PLAN);
   const before = ledger._events.length;
@@ -159,9 +166,9 @@ test('confirm: one transaction writes header + stages + deps + ONE plan_import e
   assert.equal(res.stageCount, 5);
   assert.equal(res.rootCount, 2);
 
-  // Exactly ONE plan_import audit event for the whole batch (contract §0/§4).
+  // The import audit event + the import-seed plan_proposed (B2 contract §4).
   const planEvents = ledger._events.slice(before);
-  assert.equal(planEvents.length, 1);
+  assert.equal(planEvents.length, 2);
   const ev = planEvents[0];
   assert.equal(ev.type, 'plan_import');
   assert.equal(ev.projectId, PROJECT);
@@ -173,6 +180,17 @@ test('confirm: one transaction writes header + stages + deps + ONE plan_import e
   assert.equal(ev.payload.stageCount, 5);
   assert.equal(ev.payload.stageIds.length, 5);
 
+  // The import seeds the proposal v1: plan_proposed rides the same txn with the
+  // version id it creates (sourceImportId = the import, LINA-215 #1).
+  const proposed = planEvents[1];
+  assert.equal(proposed.type, 'plan_proposed');
+  assert.equal(proposed.actorPartyId, GC);
+  assert.deepEqual(Object.keys(proposed.payload).sort(),
+    ['planVersionId', 'sourceImportId', 'stageCount', 'supersedesVersionId', 'versionNo']);
+  assert.equal(proposed.payload.sourceImportId, res.importId);
+  assert.equal(proposed.payload.supersedesVersionId, null);
+  assert.equal(proposed.payload.stageCount, 5);
+
   // Header row exists + links the audit event (event is appended first in the txn).
   const header = store._imports[0];
   assert.equal(header.audit_event_id, ev.id, 'plan_import.audit_event_id = the event the ledger append returned');
@@ -180,13 +198,35 @@ test('confirm: one transaction writes header + stages + deps + ONE plan_import e
   assert.equal(header.project_id, PROJECT);
   assert.equal(header.imported_by_party_id, GC);
 
-  // Stages written in WBS pre-order at positions 1..5 → ids match the event, in order.
+  // The import-seeded v1 envelope (proposed, authored by the importer, linked to
+  // the import) + the importer's authorship stamp, exactly like the 0003 backfill.
+  assert.equal(store._versions.length, 1);
+  const version = store._versions[0];
+  assert.equal(version.id, proposed.payload.planVersionId);
+  assert.equal(version.project_id, PROJECT);
+  assert.equal(version.version_no, 1);
+  assert.equal(version.status, 'proposed');
+  assert.equal(version.source_import_id, res.importId);
+  assert.equal(version.supersedes_version_id, null);
+  assert.equal(version.proposed_by_party_id, GC);
+  assert.equal(version.frozen_at, null);
+
+  assert.equal(store._acceptances.length, 1);
+  assert.equal(store._acceptances[0].plan_version_id, version.id);
+  assert.equal(store._acceptances[0].party_id, GC);
+  assert.equal(store._acceptances[0].kind, 'proposed');
+  assert.equal(store._acceptances[0].audit_event_id, proposed.id,
+    'the authorship stamp links the plan_proposed event (append-only)');
+
+  // Stages written in WBS pre-order at positions 1..5 → ids match the event, in
+  // order, and EVERY stage is bound to the seeded version (LINA-215 #1).
   const written = [...store._stages.values()].sort((a, b) => a.position - b.position);
   assert.equal(written.length, 5);
   assert.deepEqual(written.map((s) => s.id), ev.payload.stageIds, 'stage ids ride the audit event in pre-order');
   assert.deepEqual(written.map((s) => s.position), [1, 2, 3, 4, 5]);
   assert.deepEqual(written.map((s) => s.source_row_ref), ['R2', 'R3', 'R4', 'R5', 'R6']);
   assert.equal(written.every((s) => s.import_id === res.importId), true);
+  assert.equal(written.every((s) => s.plan_version_id === version.id), true);
 
   // Parent linkage: sub-actions point at their root, roots at null.
   const byRef = Object.fromEntries(written.map((s) => [s.source_row_ref, s]));
@@ -205,6 +245,30 @@ test('confirm: one transaction writes header + stages + deps + ONE plan_import e
   function byRefId(written, id) {
     return written.find((s) => s.id === id).source_row_ref;
   }
+});
+
+test('confirm: the seeded proposal renders as the D11 current plan (LINA-215: import → plan version)', async () => {
+  const { service, store, ledger, identity } = makeHarness();
+  // The SAME store/ledger/identity drive the plan-baseline service, exactly as
+  // composition.mjs wires both against one port set — so the import is the plan.
+  const { createPlanVersionService } = await import('./plan-version.mjs');
+  const planVersion = createPlanVersionService({ store, ledger, identity });
+
+  const buf = await makeWorkbook(PLAN);
+  await service.confirm(PROJECT, GC, { filename: 'p.xlsx', buffer: buf, sheet: SHEET, mapping: MAPPING, idempotencyKey: 'seed-1' });
+
+  const view = await planVersion.getPlan(PROJECT, OWNER);
+  assert.equal(view.baseline, null);
+  assert.equal(view.current.versionNo, 1);
+  assert.equal(view.current.status, 'proposed');
+  assert.equal(view.current.sourceImportId, store._imports[0].id);
+  assert.equal(view.current.acceptances.length, 1);
+  assert.equal(view.current.acceptances[0].partyId, GC);
+  assert.equal(view.current.acceptances[0].kind, 'proposed');
+  assert.equal(view.current.stages.length, 2, 'D10 imports both roots');
+  assert.equal(view.current.stages[0].name, 'Foundation');
+  assert.deepEqual(view.current.stages[0].children.map((c) => c.name), ['Excavate', 'Pour footings']);
+  assert.equal(view.history.length, 0);
 });
 
 test('confirm: positions append after hand-added stages, not from 1', async () => {
@@ -229,13 +293,33 @@ test('confirm: idempotent on a used key — same result, nothing new written', a
 
   const first = await service.confirm(PROJECT, GC, opts);
   assert.equal(store._imports.length, 1);
-  assert.equal(ledger._events.length, 1);
+  // plan_import + plan_proposed (the import-led proposal, B2 contract §4).
+  assert.equal(ledger._events.length, 2);
 
   const second = await service.confirm(PROJECT, GC, opts);
   assert.deepEqual(second, first, 'replay returns the ORIGINAL result');
   assert.equal(store._imports.length, 1, 'no second header');
   assert.equal(store._stages.size, 5, 'no duplicate stages');
-  assert.equal(ledger._events.length, 1, 'the rolled-back ledger append leaves exactly ONE event');
+  assert.equal(store._versions.length, 1, 'no second seeded version');
+  assert.equal(ledger._events.length, 2, 'the rolled-back ledger append leaves exactly the original two events');
+});
+
+test('confirm: refuses a second import while a proposal is open — 409 open_plan_exists (one thread, B2 §1)', async () => {
+  const { service, store, ledger } = makeHarness();
+  const buf = await makeWorkbook(PLAN);
+
+  await service.confirm(PROJECT, GC, { filename: 'p.xlsx', buffer: buf, sheet: SHEET, mapping: MAPPING, idempotencyKey: 't1' });
+
+  await assert.rejects(
+    service.confirm(PROJECT, GC, { filename: 'p.xlsx', buffer: buf, sheet: SHEET, mapping: MAPPING, idempotencyKey: 't2' }),
+    (e) => e.status === 409 && e.code === 'open_plan_exists',
+    'a second import must not open a second negotiation thread',
+  );
+
+  // Nothing from the refused txn leaked in.
+  assert.equal(store._imports.length, 1);
+  assert.equal(store._versions.length, 1);
+  assert.equal(ledger._events.length, 2, 'plan_import + plan_proposed for the first import only');
 });
 
 test('confirm: refuses a tree with validation errors — 400 validation_failed with the error list', async () => {
@@ -293,12 +377,22 @@ test('contract §4: the confirm payload hashes reproducibly and its stageIds mat
   assert.equal(payloadHash(ev), payloadHash(ev));
 
   // The in-memory ledger keeps raw events; hash them into a chain the way the pg
-  // append does, then prove the whole thing verifies — i.e. the payload the plan
-  // imported (stage ids in WBS pre-order) is exactly what the chain anchors.
-  const chained = computeAppend(null, ev);
-  assert.equal(chained.seq, 1);
-  assert.equal(chained.prevHash, GENESIS_HASH);
-  assert.deepEqual(verifyChain([chained]), { verified: true });
+  // append does, then prove the whole thing verifies — the imported stage ids
+  // (WBS pre-order) plus the import-seed plan_proposed both anchor the chain.
+  const chain = [];
+  let prev = null;
+  for (const e of ledger._events) {
+    const appended = computeAppend(prev, e);
+    chain.push(appended);
+    prev = appended;
+  }
+  assert.equal(chain.length, 2, 'plan_import + plan_proposed in one confirm txn');
+  assert.equal(chain[0].seq, 1);
+  assert.equal(chain[0].prevHash, GENESIS_HASH);
+  assert.equal(chain[1].type, 'plan_proposed');
+  assert.equal(chain[0].entryHash, chain[1].prevHash, 'plan_proposed chains onto the import event');
+  assert.deepEqual(verifyChain(chain), { verified: true },
+    'chain-verify stays green across plan_import + plan_proposed');
 
   const written = [...store._stages.values()].sort((a, b) => a.position - b.position);
   assert.deepEqual(written.map((s) => s.id), ev.payload.stageIds, 'stage ids on the event == stages written, in order');

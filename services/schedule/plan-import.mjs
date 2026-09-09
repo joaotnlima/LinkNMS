@@ -5,11 +5,14 @@
 //   :inspect  — sheet list (no writes)
 //   :columns  — header + samples (no writes)
 //   :preview  — WBS tree / warnings / errors (no writes)
-//   :confirm  — ONE transaction: stage ids (WBS pre-order) → ledger append →
-//               plan_import header → stage rows (parents before children) →
-//               stage_dependency rows. Exactly ONE `plan_import` audit event for
-//               the whole batch (contract §0), and idempotent on `idempotencyKey`
-//               (contract §2).
+//   :confirm  — ONE transaction: stage ids (WBS pre-order) → plan_import ledger
+//               append → plan_import header → plan_version v1 (proposed,
+//               source_import_id) + plan_proposed append + proposer's 'proposed'
+//               stamp → stage rows (parents before children, every stage bound to
+//               the version) → stage_dependency rows (contract §0; B2 contract §4
+//               "import-seed" half, LINA-215). Exactly ONE `plan_import` audit
+//               event for the whole batch (contract §0), idempotent on
+//               `idempotencyKey` (contract §2).
 //
 // Authorization: `IMPORT_PLAN` via the identity port, counterparty/GC only, and
 // always scoped to projectId. `actorPartyId` comes from the session (ADR-0004),
@@ -145,8 +148,63 @@ export function createPlanImportService({ store, parser, ledger, identity }) {
         audit_event_id: event.id,
       });
 
-      // 3. Stage rows, parents before children, WBS pre-order; positions append
-      //   after any hand-added stages so plan order stays deterministic.
+      // 3. A project holds ONE negotiation thread (B2 contract §1; the
+      //    plan_version_one_open_per_project partial unique index enforces it in
+      //    the DB). A second import while a proposal is open is a clean 409 here,
+      //    above the advisory-lock serialization the plan_import append just
+      //    took — never a 500. The GC withdraws before re-importing (D11).
+      if (await store.getOpenPlanVersion(projectId)) {
+        throw new DomainError(409, 'open_plan_exists',
+          'this project already has an open (proposed) plan — withdraw it before importing a new plan');
+      }
+
+      // 4. Import-seeding CREATES the plan proposal — the "import-seed" half of
+      //    plan_proposed (B2 contract §4; LINA-215). A fresh import must land as a
+      //    resumable D11 proposal, exactly like the 0003 migration backfill does
+      //    for pre-B2 imports: one plan_version (v1 proposed, source_import_id =
+      //    this import), the plan_proposed ledger event, and the importer's
+      //    authorship ('proposed') stamp. version_no rides the same per-project
+      //    serialization as the plan_import append above (the ledger's advisory
+      //    lock), so a confirm can never race a fork onto the same version_no.
+      const versionNo = await store.nextPlanVersionNo(projectId);
+      const versionId = randomUUID();
+      const proposed = await ledger.append(tx, {
+        projectId,
+        type: 'plan_proposed',
+        actorPartyId,
+        occurredAt: importedAt,
+        payload: {
+          planVersionId: versionId,
+          versionNo,
+          sourceImportId: importId,
+          supersedesVersionId: null,
+          stageCount: tree.stats.stageCount,
+        },
+      });
+      await store.insertPlanVersion(tx, {
+        id: versionId,
+        project_id: projectId,
+        version_no: versionNo,
+        status: 'proposed',
+        source_import_id: importId,
+        supersedes_version_id: null,
+        proposed_by_party_id: actorPartyId,
+        created_at: importedAt,
+        frozen_at: null,
+      });
+      await store.insertPlanAcceptance(tx, {
+        id: randomUUID(),
+        plan_version_id: versionId,
+        project_id: projectId,
+        party_id: actorPartyId,
+        kind: 'proposed',
+        stamped_at: importedAt,
+        audit_event_id: proposed.id,
+      });
+
+      // 5. Stage rows, parents before children, WBS pre-order; positions append
+      //    after any hand-added stages so plan order stays deterministic. Every
+      //    stage the import writes is bound to the seeded version.
       const base = await store.maxStagePosition(projectId);
       const idByRef = new Map();
       const stages = [];
@@ -168,13 +226,14 @@ export function createPlanImportService({ store, parser, ledger, identity }) {
           planned_start_date: node.start ?? null,
           planned_end_date: node.end ?? null,
           planned_cost_cents: null,
+          plan_version_id: versionId,
           created_at: created,
           updated_at: created,
         });
       }
       for (const s of stages) await store.insertStage(tx, s);
 
-      // 4. Intra-import predecessors.
+      // 6. Intra-import predecessors.
       for (const node of tree.order) {
         const stageId = idByRef.get(node.ref);
         for (const depRef of node.dependsOn) {

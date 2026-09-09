@@ -95,6 +95,17 @@ test('POST :accept — second stamp freezes → baseline in body; replay is idem
   const replay = await http.acceptPlan({ session: owner, params: { versionId } });
   assert.equal(replay.status, 200);
   assert.deepEqual(replay.body, first.body);
+
+  // D13 frozen-plan surface: no open proposal → the accepted version renders
+  // READ-ONLY as current with its stages + both stamps (LINA-215 #2).
+  const view = await http.getPlan({ session: owner, params: { projectId: PROJECT } });
+  assert.equal(view.status, 200);
+  assert.equal(view.body.baseline.planVersionId, versionId);
+  assert.equal(view.body.current.status, 'accepted');
+  assert.equal(view.body.current.stages.length, 1);
+  assert.equal(view.body.current.stages[0].name, 'Foundation');
+  assert.equal(view.body.current.acceptances.length, 2);
+  assert.deepEqual(view.body.current.acceptances.map((a) => a.kind).sort(), ['accepted', 'proposed']);
 });
 
 test('POST :reject — reviewer rejects with reason → 200; reason too long → 400', async () => {

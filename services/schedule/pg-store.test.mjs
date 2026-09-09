@@ -254,6 +254,45 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
         [projectId],
       );
       assert.deepEqual(deps.rows.map((r) => `${r.from}->${r.to}`), ['R3->R2', 'R4->R3', 'R5->R3']);
+
+      // The import SEEDS the proposal (LINA-215 #1, B2 contract §4 "import-seed"):
+      // a plan_proposed event, a proposed v1 plan_version bound to the import, the
+      // importer's authorship stamp, and every stage bound to the version.
+      const proposedEv = await pool.query(
+        'select id, payload from ledger.audit_event where project_id = $1 and type = $2',
+        [projectId, 'plan_proposed'],
+      );
+      assert.equal(proposedEv.rows.length, 1, 'exactly one import-seed plan_proposed event');
+      assert.equal(proposedEv.rows[0].payload.sourceImportId, importId);
+
+      const versions = await pool.query(
+        'select * from schedule.plan_version where project_id = $1',
+        [projectId],
+      );
+      assert.equal(versions.rows.length, 1);
+      assert.equal(versions.rows[0].version_no, 1);
+      assert.equal(versions.rows[0].status, 'proposed');
+      assert.equal(versions.rows[0].source_import_id, importId);
+      assert.equal(versions.rows[0].supersedes_version_id, null);
+      assert.equal(versions.rows[0].proposed_by_party_id, gc);
+      assert.equal(proposedEv.rows[0].payload.planVersionId, versions.rows[0].id,
+        'the plan_proposed event names the version it creates');
+
+      const votes = await pool.query(
+        'select * from schedule.plan_acceptance where plan_version_id = $1',
+        [versions.rows[0].id],
+      );
+      assert.equal(votes.rows.length, 1);
+      assert.equal(votes.rows[0].kind, 'proposed');
+      assert.equal(votes.rows[0].party_id, gc);
+      assert.equal(votes.rows[0].audit_event_id, proposedEv.rows[0].id,
+        'the authorship stamp links the plan_proposed event (append-only)');
+      const bound = await pool.query(
+        'select plan_version_id from schedule.stage where project_id = $1',
+        [projectId],
+      );
+      assert.equal(bound.rows.every((r) => r.plan_version_id === versions.rows[0].id), true,
+        'every imported stage belongs to the seeded version');
     });
 
     test('the DB enforces idempotent confirm: a replay writes nothing and returns the original', async () => {
@@ -275,6 +314,16 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
         [projectId, 'plan_import'],
       );
       assert.equal(events.rows[0].n, 1, 'the phantom event rolled back with the txn');
+      const versions = await pool.query(
+        'select count(*)::int n from schedule.plan_version where project_id = $1',
+        [projectId],
+      );
+      assert.equal(versions.rows[0].n, 1, 'the replay creates no second seeded version');
+      const proposedEvs = await pool.query(
+        'select count(*)::int n from ledger.audit_event where project_id = $1 and type = $2',
+        [projectId, 'plan_proposed'],
+      );
+      assert.equal(proposedEvs.rows[0].n, 1, 'the phantom plan_proposed rolled back with the txn');
     });
 
     test('duplicate idempotency_key is a 23505 on plan_import for the given constraint', async () => {

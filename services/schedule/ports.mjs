@@ -268,7 +268,26 @@ export function createInMemoryStore() {
 
   // ── Slice B2 plan versioning (LINA-200, contract §3) ──────────────────────
 
+  // Mirrors the DB plan_version_one_open_per_project partial unique index: at most
+  // ONE 'proposed' version may exist per project (a single negotiation thread, B2
+  // contract §1). The real adapter's unique index enforces it; mirroring it here
+  // keeps contract tests honest about the same invariant. The caller keeps the
+  // ONE-open invariant by superseding/withdrawing the open version before
+  // inserting the next (see plan-version.mjs requestChanges).
+  function assertOneOpenPerProject(row) {
+    if (row.status !== 'proposed') return;
+    if (versions.some((v) => v.project_id === row.project_id && v.status === 'proposed')) {
+      const err = new Error(
+        `duplicate key value violates unique constraint "plan_version_one_open_per_project"`,
+      );
+      err.code = '23505';
+      err.constraint = 'plan_version_one_open_per_project';
+      throw err;
+    }
+  }
+
   function insertPlanVersion(_tx, row) {
+    assertOneOpenPerProject(row);
     versions.push({ ...row });
     return { ...row };
   }

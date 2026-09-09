@@ -116,7 +116,13 @@ export function createPlanVersionService({ store, ledger, identity }) {
     const baseline = await store.getProjectBaseline(projectId);
 
     const open = versions.find((v) => v.status === 'proposed');
-    const others = versions.filter((v) => v !== open);
+    // Zero open proposal → the agreed baseline is the plan. Return the accepted
+    // version as `current` so the plan surface never disappears once both parties
+    // agree (D13; LINA-215). The FE keys every affordance off `status`: anything
+    // non-'proposed' renders read-only, so no contract change is needed.
+    const fallbackAccepted = open ? null : versions.find((v) => v.status === 'accepted');
+    const currentSource = open ?? fallbackAccepted ?? null;
+    const others = versions.filter((v) => v !== currentSource);
 
     const view = async (v) => ({
       ...(await versionView(projectId, v)),
@@ -124,7 +130,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
       acceptances: await acceptanceViews(projectId, await store.listPlanAcceptances(v.id)),
     });
 
-    const current = open ? await view(open) : null;
+    const current = currentSource ? await view(currentSource) : null;
     const history = [];
     for (const v of others) {
       history.push({
@@ -405,7 +411,13 @@ export function createPlanVersionService({ store, ledger, identity }) {
         },
       });
 
-      // 2. The new version envelope — authored by the REVIEWER (roles swap, D12a),
+      // 2. The original is superseded BEFORE the fork is inserted — the DB's
+      //    plan_version_one_open_per_project partial unique index admits exactly
+      //    ONE 'proposed' version per project, so the fork must not exist while
+      //    the original is still open (it stays visible in history; LINA-215).
+      await store.updatePlanVersionStatus(tx, version.id, { status: 'superseded' });
+
+      // 3. The new version envelope — authored by the REVIEWER (roles swap, D12a),
       //    superseding the original.
       await store.insertPlanVersion(tx, {
         id: newVersionId,
@@ -419,7 +431,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
         frozen_at: null,
       });
 
-      // 3. The fork author's authorship stamp ('proposed') on the new version.
+      // 4. The fork author's authorship stamp ('proposed') on the new version.
       await store.insertPlanAcceptance(tx, {
         id: randomUUID(),
         plan_version_id: newVersionId,
@@ -430,7 +442,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
         audit_event_id: proposed.id,
       });
 
-      // 4. Fork the stages: the original version's STAGES ARE UNTOUCHED (it stays
+      // 5. Fork the stages: the original version's STAGES ARE UNTOUCHED (it stays
       //    visible underneath, D12a) — a copy bound to the new version has the
       //    dates-and-money-only patch applied, structure (names/positions/WBS)
       //    preserved. The copy is inserted with its REMAPPED parent_id, in
@@ -472,9 +484,6 @@ export function createPlanVersionService({ store, ledger, identity }) {
           await store.updateStage(tx, newId, { ...patch, updated_at: occurredAt });
         }
       }
-
-      // 5. The original is now superseded (stays visible in history/current tree).
-      await store.updatePlanVersionStatus(tx, version.id, { status: 'superseded' });
     });
 
     return { newVersionId, versionNo: newVersionNo, status: 'proposed' };

@@ -223,20 +223,51 @@ test('accept: freezing makes the version stages immutable — a stage edit is re
     'the DB-enforced freeze is mirrored in the store');
 });
 
-test('getPlan: accepted version becomes the baseline and drops into history; current = no open', async () => {
+test('getPlan: accepted version stays as current so the frozen plan renders (LINA-215 #2)', async () => {
   const { service, store } = build();
   const { versionId } = seedV1({ store });
   await service.accept(versionId, OWNER);
 
   const view = await service.getPlan(PROJECT, OWNER);
   assert.equal(view.baseline.planVersionId, versionId);
-  assert.equal(view.current, null, 'nothing open once accepted');
-  assert.equal(view.history.length, 1);
-  assert.equal(view.history[0].status, 'accepted');
-  assert.equal(view.history[0].acceptances.length, 2, 'D13 shows both stamps');
+  // No open proposal → the accepted baseline renders READ-ONLY as current: the
+  // D13 frozen plan surface (stages + both stamps) must never disappear.
+  assert.equal(view.current.versionNo, 1);
+  assert.equal(view.current.status, 'accepted');
+  assert.ok(view.current.frozenAt, 'the dismissed banner carries the freeze time');
+  assert.equal(view.current.stages.length, 1);
+  assert.equal(view.current.stages[0].name, 'Foundation');
+  assert.equal(view.current.stages[0].children[0].name, 'Excavate', 'the frozen WBS tree renders on current');
+  assert.equal(view.current.acceptances.length, 2, 'D13 shows both stamps on current');
+  assert.deepEqual(view.current.acceptances.map((a) => a.kind).sort(), ['accepted', 'proposed']);
+  assert.equal(view.history.length, 0, 'the accepted baseline is the plan, not a history entry');
 });
 
 // ── request-changes fork (contract §1, §5 → D12a) ──────────────────────────
+
+test("store: one 'proposed' version per project (mirror of plan_version_one_open_per_project)", async () => {
+  const { store } = build();
+  seedV1({ store });
+
+  await assert.throws(
+    () => store.insertPlanVersion({}, {
+      id: randomUUID(), project_id: PROJECT, version_no: 2, status: 'proposed',
+      source_import_id: null, supersedes_version_id: null,
+      proposed_by_party_id: OWNER, created_at: new Date().toISOString(), frozen_at: null,
+    }),
+    (e) => e.code === '23505' && e.constraint === 'plan_version_one_open_per_project',
+  );
+
+  // A terminal version frees the slot: the same insert now lands.
+  store.updatePlanVersionStatus({}, store._versions[0].id, { status: 'withdrawn' });
+  assert.doesNotThrow(
+    () => store.insertPlanVersion({}, {
+      id: randomUUID(), project_id: PROJECT, version_no: 2, status: 'proposed',
+      source_import_id: null, supersedes_version_id: null,
+      proposed_by_party_id: OWNER, created_at: new Date().toISOString(), frozen_at: null,
+    }),
+  );
+});
 
 test('request-changes: forks a new version the reviewer authors; original stays visible superseded', async () => {
   const { service, store, ledger } = build();
