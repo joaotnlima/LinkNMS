@@ -258,6 +258,128 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  # ── Slice B3 live record + materials + budget movement (LINA-217) ───────────
+
+  /projects/{projectId}/record:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [schedule]
+      summary: The live record (B3 D14, contract §3a) — derived states + 4 tabs
+      description: >-
+        The 4-tab projection over the baseline plan + materials + movements +
+        budget + audit read: plan lines with derived line state and Compare,
+        schedule (planned vs executed), the money breakdown (D16 MoneyView), and
+        the project's hash-chained ledger history. `state` is a whole-record
+        rollup of per-line states — a line is `deviation` when a movement has
+        touched it; `closed_and_verified` is deferred in v1 (contract §7). Read
+        by any seated party.
+      responses:
+        '200':
+          description: The live record.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecordView' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /stages/{stageId}/materials:
+    parameters:
+      - $ref: '#/components/parameters/StageId'
+    get:
+      tags: [schedule]
+      summary: The materials + movements behind a line (B3 D15, contract §3b r2)
+      description: >-
+        Each material/labour behind the stage's price, rendered at its CURRENT
+        state (baseline overridden by the latest movement), plus every movement
+        row that produced it. Read by any seated party.
+      responses:
+        '200':
+          description: The line materials + movements.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LineMaterials' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [schedule]
+      summary: Author the materials behind a line (B3 D15, contract §3b r3) — proposer, proposed only
+      description: >-
+        Full-replaces the stage's materials. Allowed only while the stage's plan
+        version is `proposed` and only for the proposing party (PROPOSE_PLAN);
+        the DB freeze trigger is the backstop. Once frozen, materials move only by
+        swap (route 4) — never by re-authoring.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MaterialAuthor' }
+      responses:
+        '201':
+          description: The authored materials.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LineMaterials' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Forbidden' }
+
+  /stages/{stageId}/materials:swap:
+    parameters:
+      - $ref: '#/components/parameters/StageId'
+    post:
+      tags: [schedule]
+      summary: Record a post-baseline material movement (B3 D15/D16, contract §3b r4) — GC
+      description: >-
+        The ONLY way a frozen line changes. `valueDeltaCents = newExtended −
+        priorExtended` is computed server-side. `scope_change` opens a change
+        order (cost delta = valueDelta, server-derived) via the change_order
+        service, then writes the linked movement + `material_movement_recorded`
+        ledger event; the CO carries its own two-sided approval to actually move
+        the budget. `price_movement` writes the movement + ledger event only — no
+        CO, no budget move. The material row stays frozen (ADR-0014 §1).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SwapInput' }
+      responses:
+        '201':
+          description: The movement (and, for a scope change, the opened change order).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SwapResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Forbidden' }
+
+  /projects/{projectId}/budget-movement:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [schedule]
+      summary: The MoneyView (B3 D16, contract §3c route 5)
+      description: >-
+        Two structurally separate arrays — `scopeChanges` (each an approved or
+        pending change order; they moved the contract total) vs `priceMovements`
+        (recorded, sourced, attributable; they did NOT move the contract total,
+        shown against the baseline unit price). They are never summed together.
+        `currentBudgetCents` is read from the ledger, never recomputed. Read by
+        any seated party.
+      responses:
+        '200':
+          description: The MoneyView.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MoneyView' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
 components:
   parameters:
     ProjectId:
@@ -517,3 +639,191 @@ components:
         auditEventId: { type: string, format: uuid, description: The one plan_import audit event for the batch. }
         stageCount: { type: integer }
         rootCount: { type: integer }
+
+    # ── Slice B3 live record + materials + budget movement (LINA-217) ────────
+
+    RecordState:
+      type: string
+      enum: [accepted, deviation]
+      description: >-
+        Derived per-line (a movement = deviation), rolled up for the record.
+        `closed_and_verified` is deferred to v1 (contract §7).
+    LineMaterial:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        stageId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        planVersionId: { type: string, format: uuid }
+        kind: { type: string, enum: [material, labour] }
+        name: { type: string }
+        unit: { type: string }
+        quantity: { type: number, description: numeric(14,3) — fractional units are real (m², hr). }
+        unitPriceCents: { type: integer, description: Integer cents. }
+        position: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    MovementView:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        seq: { type: integer }
+        projectId: { type: string, format: uuid }
+        lineMaterialId: { type: string, format: uuid }
+        stageId: { type: string, format: uuid }
+        movementKind: { type: string, enum: [scope_change, price_movement] }
+        priceCause: { type: [string, 'null'], enum: [index, supplier_quote, correction, null] }
+        newQuantity: { type: [number, 'null'] }
+        newUnitPriceCents: { type: [integer, 'null'] }
+        valueDeltaCents: { type: integer, description: Signed; a credit is negative. }
+        source: { type: [string, 'null'] }
+        changeOrderId: { type: [string, 'null'], format: uuid }
+        movedByPartyId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        auditEventId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+    RecordLine:
+      type: object
+      properties:
+        stageId: { type: string, format: uuid }
+        name: { type: string }
+        trade: { type: [string, 'null'] }
+        position: { type: integer }
+        state: { $ref: '#/components/schemas/RecordState' }
+        plannedCostCents: { type: integer }
+        currentValueCents: { type: integer }
+        materials:
+          type: array
+          items: { $ref: '#/components/schemas/LineMaterial' }
+        compare:
+          type: object
+          description: Always present — Compare stays available on a closed line (contract §3a).
+          properties:
+            plannedCostCents: { type: integer }
+            currentValueCents: { type: integer }
+    BaselineRef:
+      type: object
+      properties:
+        planVersionId: { type: string, format: uuid }
+        versionNo: { type: integer }
+        frozenAt: { type: string, format: date-time }
+    ScheduleLine:
+      type: object
+      properties:
+        stageId: { type: string, format: uuid }
+        name: { type: string }
+        position: { type: integer }
+        plannedStartDate: { type: [string, 'null'], format: date }
+        plannedEndDate: { type: [string, 'null'], format: date }
+        status: { $ref: '#/components/schemas/Status' }
+        percent: { type: [integer, 'null'], description: Advisory; present only while in_progress. }
+    AuditEvent:
+      type: object
+      properties:
+        eventId: { type: string, format: uuid }
+        seq: { type: integer }
+        type: { type: string }
+        actorPartyId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        payload: { type: object }
+    RecordView:
+      type: object
+      properties:
+        state: { $ref: '#/components/schemas/RecordState' }
+        baseline: { type: [object, 'null'], description: null until a baseline exists. }
+        tabs:
+          type: object
+          properties:
+            plan:
+              type: object
+              properties:
+                lines: { type: array, items: { $ref: '#/components/schemas/RecordLine' } }
+            schedule:
+              type: object
+              properties:
+                lines: { type: array, items: { $ref: '#/components/schemas/ScheduleLine' } }
+            money: { $ref: '#/components/schemas/MoneyView' }
+            history:
+              type: object
+              properties:
+                events: { type: array, items: { $ref: '#/components/schemas/AuditEvent' } }
+    MaterialInput:
+      type: object
+      required: [name, unit, quantity, unitPriceCents]
+      properties:
+        kind: { type: string, enum: [material, labour], default: material }
+        name: { type: string, maxLength: 200 }
+        unit: { type: string, maxLength: 200, description: 'm2, each, hr, …' }
+        quantity:
+          type: number
+          minimum: 0
+          maximum: 1000000
+          description: numeric(14,3); cents extended = quantity × unitPriceCents.
+        unitPriceCents: { type: integer, minimum: 0, maximum: 1000000000000 }
+        position: { type: integer, minimum: 0, default: 0 }
+    MaterialAuthor:
+      type: object
+      required: [materials]
+      properties:
+        materials: { type: array, items: { $ref: '#/components/schemas/MaterialInput' } }
+    LineMaterials:
+      type: object
+      properties:
+        lineMaterials: { type: array, items: { $ref: '#/components/schemas/LineMaterial' } }
+        movements: { type: array, items: { $ref: '#/components/schemas/MovementView' } }
+    SwapInput:
+      type: object
+      required: [lineMaterialId, movementKind]
+      properties:
+        lineMaterialId: { type: string, format: uuid }
+        movementKind: { type: string, enum: [scope_change, price_movement] }
+        priceCause: { type: [string, 'null'], enum: [index, supplier_quote, correction], description: Required iff price_movement. }
+        newQuantity: { type: [number, 'null'], description: For a scope_change (qty changed); optional for price_movement. }
+        newUnitPriceCents: { type: [integer, 'null'], description: For a price_movement, or a scope re-spec. }
+        source: { type: [string, 'null'], maxLength: 500, description: Provenance — 'ACME steel index 2026-09', 'quote #4471'. }
+        changeOrder:
+          type: [object, 'null']
+          description: scope_change only — cost delta is DERIVED server-side = valueDelta; never client-supplied.
+          properties:
+            title: { type: string }
+    ChangeOrderRef:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string }
+        title: { type: string }
+    SwapResult:
+      type: object
+      properties:
+        movement: { $ref: '#/components/schemas/MovementView' }
+        changeOrder: { type: [object, 'null'], description: Present iff scope_change. }
+    ScopeChangeItem:
+      type: object
+      properties:
+        movementId: { type: string, format: uuid }
+        stageId: { type: string, format: uuid }
+        lineMaterialId: { type: string, format: uuid }
+        valueDeltaCents: { type: integer }
+        changeOrder: { $ref: '#/components/schemas/ChangeOrderRef' }
+        movedByPartyId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+    PriceMovementItem:
+      type: object
+      properties:
+        movementId: { type: string, format: uuid }
+        stageId: { type: string, format: uuid }
+        lineMaterialId: { type: string, format: uuid }
+        priceCause: { type: string }
+        source: { type: [string, 'null'] }
+        baselineUnitPriceCents: { type: integer, description: Shown vs baseline so an index rise reads as a price delta. }
+        newUnitPriceCents: { type: integer }
+        valueDeltaCents: { type: integer }
+        movedByPartyId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+    MoneyView:
+      type: object
+      properties:
+        baselineBudgetCents: { type: integer }
+        currentBudgetCents: { type: integer, description: Read from the ledger — baseline + approved CO deltas; never recomputed. }
+        scopeChanges: { type: array, items: { $ref: '#/components/schemas/ScopeChangeItem' } }
+        priceMovements: { type: array, items: { $ref: '#/components/schemas/PriceMovementItem' } }
