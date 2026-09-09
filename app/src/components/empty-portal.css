@@ -1,30 +1,16 @@
-/* D1-new — first-time empty portal (LINA-133; palette migrated by LINA-156).
+/* D1-new — first-time empty portal body (LINA-133; palette migrated LINA-156;
+ * re-homed inside PortalShell by LINA-216).
  *
- * This screen was built (LINA-133) with the pen palette scoped locally under
- * `.onb`, beside globals.css's then-stale LINA-27 `:root`. LINA-156 / ADR-0009
- * migrated `:root` onto the same pen palette via the generated token pipeline,
- * so the local `--onb-*` alias block is gone and every surface below now reads
- * the shared globals.css tokens directly. Ink #16181D is `--ink`, Owner Blue
- * `--owner`, Builder Orange `--builder` (with `--builder-fg` for type on tints),
- * Paper `--paper`, and Inter loads globally from the portal layout via `--font`.
+ * This file now styles only the empty-state block itself — the icon disc,
+ * heading, lede and the two CTAs. The surrounding chrome (rail, top bar, tab
+ * bar) and the full-bleed / centring live in portal-shell.css; the `.psh-body`
+ * there is what vertically centres `.onb-state`. The old `.onb` full-screen
+ * wrapper, the "Getting started" list and the footnote are gone (LINA-216
+ * reverted them to match the pen as drawn).
  *
- * Same convention as onboarding/setup/onboarding-setup.css (`.ob`), migrated in
- * the same pass.
+ * Reads the shared globals.css / tokens.css set: Ink is `--ink`, Owner Blue
+ * `--owner`, body copy `--muted`, and Inter loads globally from the layout.
  */
-.onb {
-  font-family: var(--font);
-  color: var(--ink);
-  background: var(--paper);
-  min-height: 100vh;
-
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 32px;
-  padding: 56px 24px 64px;
-  text-align: center;
-}
 
 /* ---- the empty state proper (pen: Main > Body > EmptyState) ---- */
 .onb-state {
@@ -33,6 +19,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  text-align: center;
 }
 
 .onb-disc {
@@ -95,6 +82,7 @@
   gap: 8px;
   border: 1px solid transparent;
   cursor: pointer;
+  text-decoration: none;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 
@@ -134,117 +122,61 @@
   outline-offset: 2px;
 }
 
-/* ---- getting started (three steps, left-aligned so they read as a sequence) ---- */
-.onb-steps {
-  width: 100%;
-  max-width: 560px;
-  text-align: left;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 20px 22px;
-}
-
-.onb-steps-head {
-  margin: 0 0 14px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.onb-steps ol {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  counter-reset: onb-step;
-}
-
-.onb-step {
-  display: grid;
-  grid-template-columns: 24px 1fr;
-  gap: 12px;
-  align-items: start;
-}
-
-.onb-step::before {
-  counter-increment: onb-step;
-  content: counter(onb-step);
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: var(--owner-muted);
-  color: var(--owner);
-  font-size: 12px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.onb-step-name {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.onb-step-blurb {
-  display: block;
-  margin-top: 2px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--muted);
-}
-
-/* The third step is the counterpart's, not yours — flagged in Builder Orange so
- * the handover is visible before it happens rather than a surprise. The numeral
- * uses the darkened `--builder-fg` (#8a4522), not the brand orange: #B4633B on
- * its own 12% tint measures 3.75:1, which fails AA for 12px text. The tint
- * carries the brand colour; the glyph on top of it has to stay legible. And the
- * colour is never the only signal — this is an <ol>, so the step order survives
- * with no colour at all (FR9). */
-.onb-step--builder::before {
-  background: color-mix(in srgb, var(--builder) 12%, #fff);
-  color: var(--builder-fg);
-}
-
-/* ---- footnote: the returning-user / invited-party escape hatch ---- */
-.onb-note {
-  margin: 0;
-  max-width: 560px;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--muted);
-}
-
-.onb-note a {
-  color: var(--owner);
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-@media (max-width: 520px) {
-  .onb {
-    justify-content: flex-start;
-    padding: 40px 18px 48px;
+/* ---- mobile (pen: M1) ----
+ * The phone frame restates the CTA: a full-width primary bar and a plain text
+ * link, not two pill buttons side by side. Icon disc, heading and lede also
+ * step up a size to match the mobile artboard. Gated below the shell's 860px
+ * desktop breakpoint but kept to real phone widths so the mid-width no-rail
+ * range keeps the desktop pills. */
+@media (max-width: 560px) {
+  .onb-disc {
+    width: 60px;
+    height: 60px;
+    border-radius: 14px;
+  }
+  .onb-disc svg {
+    width: 29px;
+    height: 29px;
   }
 
   .onb-title {
-    font-size: 24px;
+    font-size: 25px;
+    line-height: 1.25;
+  }
+
+  .onb-lede {
+    font-size: 15px;
+    line-height: 1.55;
   }
 
   .onb-cta {
     flex-direction: column;
     align-self: stretch;
+    gap: 10px;
+    margin-top: 28px;
   }
 
   .onb-btn {
     justify-content: center;
+    height: 52px;
+    padding: 0 18px;
+    font-size: 15.5px;
+    font-weight: 600;
+  }
+
+  .onb-btn--primary {
+    border-radius: 10px;
+  }
+
+  /* Secondary drops to a bare text link on mobile — the pen gives it no fill or
+     border, just muted weight-600 type under the primary bar. */
+  .onb-btn--secondary {
+    background: transparent;
+    border-color: transparent;
+    color: var(--muted);
+  }
+  .onb-btn--secondary:hover {
+    background: transparent;
+    border-color: transparent;
   }
 }
