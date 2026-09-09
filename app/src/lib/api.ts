@@ -550,6 +550,11 @@ export async function getStageMaterials(stageId: string): Promise<StageMaterials
 export async function createBuildDraft(input: {
   name: string;
   baselineBudgetCents: number;
+  // Basics descriptive fields (LINA-219). Optional; the service trims/caps and
+  // stores null for blanks, so an unfilled field is simply omitted here.
+  siteAddress?: string;
+  buildType?: string;
+  expectedStart?: string;
 }): Promise<{ id: string }> {
   return call<{ id: string }>('createProject', {}, { ...input, draft: true });
 }

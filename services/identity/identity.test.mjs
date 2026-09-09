@@ -49,6 +49,47 @@ describe('createProject (FR1)', () => {
     assert.equal(ledger._verify(p.id).verified, true);
   });
 
+  test('Basics fields (LINA-219) persist, project them, and ride the genesis event', async () => {
+    const o = owner();
+    const p = await svc.createProject({
+      actorPartyId: o, name: 'Casa da Encosta', baselineBudgetCents: 300_000_00,
+      siteAddress: '  Rua da Encosta 14  ', buildType: 'renovation', expectedStart: '2026-03',
+    });
+    // Trimmed and projected on the read shape.
+    assert.equal(p.siteAddress, 'Rua da Encosta 14');
+    assert.equal(p.buildType, 'renovation');
+    assert.equal(p.expectedStart, '2026-03');
+    // Stamped into the immutable genesis event — the record is the product.
+    const [genesis] = ledger._chain(p.id);
+    assert.equal(genesis.payload.siteAddress, 'Rua da Encosta 14');
+    assert.equal(genesis.payload.buildType, 'renovation');
+    assert.equal(genesis.payload.expectedStart, '2026-03');
+  });
+
+  test('Basics fields are optional; blanks store null and never reach the genesis payload', async () => {
+    const o = owner();
+    const p = await svc.createProject({
+      actorPartyId: o, name: 'Bare build', baselineBudgetCents: 100,
+      siteAddress: '   ', buildType: '', // whitespace / empty
+    });
+    assert.equal(p.siteAddress, null);
+    assert.equal(p.buildType, null);
+    assert.equal(p.expectedStart, null);
+    const [genesis] = ledger._chain(p.id);
+    // Additive keys only when present — a bare build keeps a minimal payload.
+    assert.ok(!('siteAddress' in genesis.payload));
+    assert.ok(!('buildType' in genesis.payload));
+    assert.ok(!('expectedStart' in genesis.payload));
+  });
+
+  test('an over-long Basics field is a 400, not a silent truncation', async () => {
+    const o = owner();
+    await expectError(
+      svc.createProject({ actorPartyId: o, name: 'x', baselineBudgetCents: 0, siteAddress: 'a'.repeat(301) }),
+      400,
+    );
+  });
+
   test('requires an authenticated party (401), not from the body', async () => {
     await expectError(svc.createProject({ name: 'x', baselineBudgetCents: 0 }), 401, 'unauthenticated');
   });

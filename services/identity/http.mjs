@@ -97,6 +97,11 @@ export function createIdentityHttp({ service, rateLimiter = createRateLimiter(),
         name: body?.name,
         baselineBudgetCents: body?.baselineBudgetCents,
         draft: Boolean(body?.draft),
+        // Basics descriptive fields (LINA-219). Body-supplied and optional; the
+        // service trims/caps and stores null for blanks, so a missing key is fine.
+        siteAddress: body?.siteAddress,
+        buildType: body?.buildType,
+        expectedStart: body?.expectedStart,
       });
       return { status: 201, body: project };
     } catch (err) { return errorBody(err); }

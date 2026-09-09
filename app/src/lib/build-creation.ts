@@ -108,12 +108,39 @@ export const INVITE_ROLE_COPY: Readonly<
 
 export const WIZARD_STEPS = Object.freeze([
   { key: 'basics', n: 1, label: 'Basics' },
-  { key: 'model', n: 2, label: 'How it is run' },
+  { key: 'model', n: 2, label: 'Operating model' },
   { key: 'invite', n: 3, label: 'Invite' },
 ] as const);
 
 export type WizardStepKey = (typeof WIZARD_STEPS)[number]['key'];
 export const TOTAL_STEPS = WIZARD_STEPS.length;
+
+// ── Basics: build type (LINA-219) ────────────────────────────────────────────
+//
+// The pen's Basics screen draws Build type as a dropdown (example value "New
+// single-family home"). The option list lives here as a frozen table so the
+// <select> and any future validation read the same source. The VALUE is a stable
+// slug and the LABEL is what the owner reads; the slug is what persists, so
+// re-wording a label never rewrites stored data. The column has no DB CHECK
+// (migration 0014) — this list is a UI affordance, not a schema constraint, so
+// adding a type later is a one-line change here.
+export const BUILD_TYPES = Object.freeze([
+  { value: 'new-single-family', label: 'New single-family home' },
+  { value: 'renovation', label: 'Renovation / remodel' },
+  { value: 'extension', label: 'Extension / addition' },
+  { value: 'multi-unit', label: 'Multi-unit / apartments' },
+  { value: 'commercial', label: 'Commercial / mixed-use' },
+  { value: 'other', label: 'Other' },
+] as const);
+
+export type BuildType = (typeof BUILD_TYPES)[number]['value'];
+
+/** The label an owner reads for a stored build-type slug; the slug itself as a
+ *  fallback so an old value that predates a list change never renders blank. */
+export function buildTypeLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return BUILD_TYPES.find((t) => t.value === value)?.label ?? value;
+}
 
 /**
  * The step a build is on, derived from the server's projection alone.
@@ -153,18 +180,28 @@ export function hrefForStep(projectId: string, step: WizardStepKey | 'done'): st
 
 // ── GAPS against the pen, recorded not silently dropped ─────────────────────
 //
-// Pen screen 02 draws a "Site address" field and a "Build type" selector; pen
-// screen 04 draws a "Scope note" textarea. Migration 0009 added exactly two
-// columns to `identity.project` (`operating_model`, `status`) and
-// `identity.invitation` gained no note column, so there is nowhere for any of the
-// three to land. They are NOT rendered: a field that accepts what an owner types
-// about their site and then discards it is worse than its absence on a product
-// whose promise is that the record is what was agreed.
+// CLOSED by LINA-219 (migration 0014): the Basics screen's "Site address",
+// "Build type" and "Expected start" fields. They were originally omitted because
+// migration 0009 added no columns for them, and a field that accepts what an
+// owner types and then discards it is worse than its absence. Migration 0014 adds
+// the three columns; createProject persists them and stamps them into the
+// `project_created` genesis event, so the fields now render and are honoured.
 //
-// Tracked for the Architect / Back-End on LINA-179's follow-up; when the columns
-// exist the fields belong on screens 02 and 04 respectively, with no other change
-// to this flow.
+// STILL OPEN:
+//   * Pen screen 04's "Scope note" textarea — `identity.invitation` has no note
+//     column, so it is still not rendered. Same rule: no column, no field.
+//   * The pen's "D2 · Your role" screen (owner OR general contractor can create a
+//     build). The shipped wizard hard-codes the creator as the owner; a
+//     GC-created build inverts project ownership and the first invite's role and
+//     touches RBAC, so it is a feature deferred to its own issue, not a fidelity
+//     tweak. Until then the Basics copy addresses the owner directly.
+//   * Pen screen 05's "Resend / cancel invite" controls: ADR-0011 OQ-1 defers a
+//     re-send CTA to a fast follow and settles on copy-link for V1, which is what
+//     the invite-sent state ships.
 //
-// Likewise the pen's screen 05 "Resend / cancel invite" controls: ADR-0011 OQ-1
-// defers a re-send CTA to a fast follow and settles on copy-link for V1, which is
-// what the invite-sent state ships.
+// DELIBERATE DEPARTURE (not a gap): the Basics screen also collects a baseline
+// budget, which the pen does not draw. Budgets are ledger-authoritative and
+// seeded by the `project_created` baseline; nothing re-baselines a live build, so
+// collecting it here is what stops a committed build from carrying a 0 baseline.
+// The pen's "baseline from plan import" is a not-yet-built model (its own note
+// flags the price columns as an addition to a dates-only spec).
