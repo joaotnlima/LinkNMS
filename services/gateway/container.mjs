@@ -124,6 +124,15 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
   // is composed BEFORE the services and handed in as a port.
   const seats = createSeatStore({ pool: pools.identity });
 
+  // Hoisted to named bindings because the portfolio-counts wiring in `http`
+  // below reads them directly (the batched decision/change-order folds, ADR-0012
+  // §A1). They used to be inline arguments to createServices() only, so the
+  // counts callbacks closed over free identifiers that did not exist — a
+  // ReferenceError that only fired once a party had ≥1 build (an empty portfolio
+  // returns before the fold), crashing the returning-user landing.
+  const decisionStore = createDecisionPgStore({ pool: pools.decision });
+  const changeOrderStore = createChangeOrderPgStore({ pool: pools.changeOrder });
+
   const services = createServices({
     analytics,
     seats,
@@ -139,11 +148,11 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
       pool: pools.identity,
       ledger: ledgerFor(pools.identity),
     }),
-    decisionStore: createDecisionPgStore({ pool: pools.decision }),
+    decisionStore,
     // A factory: the authorizer is built over the Identity service that
     // createServices composes (ADR-0004 — one authorizer, no second copy).
     decisionAuthz: (identity) => createIdentityAuthz({ identity }),
-    changeOrderStore: createChangeOrderPgStore({ pool: pools.changeOrder }),
+    changeOrderStore,
     scheduleStore: createSchedulePgStore({ pool: pools.schedule }),
   });
 
