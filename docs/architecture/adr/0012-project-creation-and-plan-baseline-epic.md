@@ -151,4 +151,7 @@ domain and may itself split further when B2 lands.
   finalised in their slice's issue, anchored to this ADR. **B1 frozen** in
   `slice-b1-plan-import-contract.md`; **B2 frozen** in
   `slice-b2-plan-baseline-contract.md` (plan-version lifecycle, dual-stamped
-  acceptance, DB-enforced freeze).
+  acceptance, DB-enforced freeze); **B3 frozen** in
+  `slice-b3-live-record-materials-contract.md` + **ADR-0014** (materials domain,
+  the two movement kinds separated by a DB CHECK, and the "budget moves only
+  through change orders" invariant preserved).

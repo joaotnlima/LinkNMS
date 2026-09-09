@@ -35,6 +35,7 @@ handed work.
 | ADR-0008 — seats & access control | **In force** — governs the Clerk + Neon RBAC bridge |
 | ADR-0009 — portal :root palette sequencing | **In force** — prereq for Band B portal screens (LINA-156) |
 | ADR-0010 — per-resource subcontractor scoping | **Accepted, dormant** — predicate shipped; activation gated on multi-party invite |
+| ADR-0014 — materials & price-movement money flow (Slice B3) | **Accepted** — frozen in `slice-b3-live-record-materials-contract.md` (LINA-201) |
 | Tooling, integrations & cost | **Approved** (CEO, 2026-08-25) |
 
 **R0 is complete and in production (2026-09-04).** All nine functional requirements
