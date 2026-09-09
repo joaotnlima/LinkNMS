@@ -153,6 +153,10 @@ const ROUTES = {
     method: 'GET', path: (p) => `/projects/${enc(p.id)}/audit`,
     handler: (c) => c.http.ledger.getAudit,
   },
+  getPlan: {
+    method: 'GET', path: (p) => `/projects/${enc(p.id)}/plan`,
+    handler: (c) => c.http.schedule.getPlan,
+  },
   createProject: {
     method: 'POST', path: () => '/projects',
     handler: (c) => c.http.identity.createProject,
@@ -477,6 +481,50 @@ export async function createProject(input: { name: string; baselineBudgetCents: 
  */
 export async function getBuild(id: string): Promise<WireProject> {
   return call<WireProject>('getProject', { id });
+}
+
+/**
+ * The plan/schedule read (LINA-207). `/projects/:id/plan` in the schedule
+ * service — both parties may read it; only the GC may import into it.
+ *
+ * A projection of the projection: the service returns the rollup, the allocation
+ * hint and the full timeline, and the plan surface needs the count, the headline
+ * and the stage rows. The rest is not re-shaped here because nothing on that
+ * screen makes a claim about budget — `allocation` is explicitly NOT the budget
+ * (FR-P6) and the one place it could be mistaken for one is a screen that never
+ * shows it.
+ *
+ * NOTE for whoever builds Band D/E on top of this: `stages` is FLAT. The WBS
+ * parentage and trade that the import writes (contract §3) exist in
+ * `schedule.stage` but `shapeStage()` does not project them yet, so no consumer
+ * of this function can draw the hierarchy. That is a BE projection change, not
+ * something a front end should re-derive from names.
+ */
+export interface PlanStage {
+  id: string;
+  name: string;
+  position: number;
+  plannedStartDate: string | null;
+  plannedEndDate: string | null;
+  currentStatus: string;
+}
+
+/** The rollup token, NOT display text — `null` when the plan is empty. */
+export type PlanHeadline = 'attention_needed' | 'complete' | 'in_progress' | 'not_started' | null;
+
+export interface PlanView {
+  projectId: string;
+  headline: PlanHeadline;
+  totalStages: number;
+  doneStages: number;
+  /** null — not 0 — while the plan is empty. "0% done" is a claim; this is the
+   *  absence of one, and the service is careful about the difference (R1.5). */
+  percentComplete: number | null;
+  stages: PlanStage[];
+}
+
+export async function getPlan(projectId: string): Promise<PlanView> {
+  return call<PlanView>('getPlan', { id: projectId });
 }
 
 /**
