@@ -32,15 +32,23 @@ import Link from 'next/link';
 import { ActionForm, type ActionState } from '@/components/ActionForm';
 import { WizardNav, ArrowRight } from '@/components/WizardNav';
 import { inviteAction } from '@/app/actions';
-import { type OperatingModel } from '@/lib/build-creation';
+import {
+  inviteRoleOptions, inviteRoleIsChoice, type OperatingModel,
+} from '@/lib/build-creation';
 
 /** The subset of the role-copy tables this panel renders (INVITE_ROLE_COPY[x] or
- *  OWNER_INVITE_COPY — see the invite page, which resolves which). */
+ *  OWNER_INVITE_COPY — see the invite page, which resolves which). `access` is
+ *  the "What they will be able to do" consent-callout copy (LINA-222). */
 export interface InviteCopy {
   noun: string;
   nounPlural: string;
   emailPlaceholder: string;
+  access: string;
 }
+
+/** Sentence-case a lowercase role noun for a field value ("general contractor"
+ *  → "General contractor"), matching the pen — not title case. */
+const sentence = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 export function InvitePanel({
   projectId,
@@ -100,6 +108,30 @@ export function InvitePanel({
             : `They join the shared record for ${buildName}. Everything either of you writes on it is attributed and time-stamped.`}
         </p>
 
+        {/* Name + Role — the pen's 2-col row (screen 04): who you're inviting and
+            as what. Both stack on a phone, share a row ≥720px (.bwx-row2). */}
+        <div className="bwx-row2">
+          <label className="field">
+            <span className="metric-lbl">Name or company</span>
+            <input
+              type="text"
+              name="inviteeName"
+              maxLength={200}
+              autoComplete="off"
+              placeholder={inviteOwner ? 'Their name' : 'Their name or company'}
+            />
+          </label>
+
+          <div className="field">
+            <span className="metric-lbl" id="invite-role-lbl">Role</span>
+            <RoleControl
+              operatingModel={operatingModel}
+              inviteOwner={inviteOwner}
+              noun={copy.noun}
+            />
+          </div>
+        </div>
+
         <label className="field">
           <span className="metric-lbl">Their email (optional)</span>
           <input
@@ -115,8 +147,89 @@ export function InvitePanel({
             to pass on yourself.
           </span>
         </label>
+
+        <label className="field">
+          <span className="metric-lbl">Scope note (optional)</span>
+          <textarea
+            name="scopeNote"
+            maxLength={1000}
+            rows={3}
+            placeholder={
+              inviteOwner
+                ? 'Anything you want them to know before they join.'
+                : 'What are they responsible for? e.g. Full build, foundations through finishes.'
+            }
+          />
+        </label>
+
+        {/* Consent before access (pen callout): what the invited party can DO
+            once they accept, stated plainly rather than buried in a settings
+            permissions table. Copy is role-aware and V1-honest (see access in
+            @/lib/build-creation — no per-contract isolation promise). */}
+        <aside className="bwx-callout" role="note">
+          <EyeIcon />
+          <div className="bwx-callout-body">
+            <p className="bwx-callout-title">What they will be able to do</p>
+            <p className="bwx-callout-text">{copy.access}</p>
+          </div>
+        </aside>
       </section>
     </ActionForm>
+  );
+}
+
+// ── Role control — read-only for the model-derived roles, a real <select> only
+//    for Hybrid (ADR-0011 OQ-3) and never for the inverted homeowner invite ────
+function RoleControl({
+  operatingModel,
+  inviteOwner,
+  noun,
+}: {
+  operatingModel: OperatingModel | null;
+  inviteOwner: boolean;
+  noun: string;
+}) {
+  // The homeowner invite and the single-role models show a fixed, non-editable
+  // value: the role is decided by the flow, not chosen here. Presentational only
+  // (no form field) — the action derives `owner` from the inviteOwner flag and
+  // the single role from the operating model, and the service is the authority.
+  if (inviteOwner || !inviteRoleIsChoice(operatingModel)) {
+    return (
+      <div className="bwx-rolefixed" aria-labelledby="invite-role-lbl">
+        {sentence(noun)}
+      </div>
+    );
+  }
+  // Hybrid: a genuine choice between the GC and a specialty. The service still
+  // rules on which the build admits, so this can only pick among allowed roles.
+  return (
+    <select name="role" defaultValue="counterparty" aria-labelledby="invite-role-lbl">
+      {inviteRoleOptions(operatingModel).map((o) => (
+        <option key={o.value} value={o.value}>
+          {sentence(o.label)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg
+      className="bwx-callout-icon"
+      viewBox="0 0 20 20"
+      width="17"
+      height="17"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M1.5 10S4.5 4 10 4s8.5 6 8.5 6-3 6-8.5 6-8.5-6-8.5-6Z" />
+      <circle cx="10" cy="10" r="2.5" />
+    </svg>
   );
 }
 

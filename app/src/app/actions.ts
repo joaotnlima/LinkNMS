@@ -185,12 +185,31 @@ export async function inviteAction(_prev: InviteState, form: FormData): Promise<
   // acting party is its counterparty creator; the service still rules — it admits
   // `owner` ONLY while no owner exists, so a tampered flag cannot mint a second
   // owner.
+  //
+  // Hybrid is the one model with a REAL role choice (ADR-0011 OQ-3): the first
+  // invite is the GC OR a specialty, so the screen posts the picked `role`. Every
+  // other model derives its single role from the model and ignores any posted
+  // role. The service stays the authority — it 400s on a role the build's model
+  // doesn't admit — so honouring the posted role can only NARROW to what the model
+  // already allows, never widen access.
+  const model = String(form.get('operatingModel') ?? '') as OperatingModel;
+  const posted = String(form.get('role') ?? '');
   const role = form.get('inviteOwner') === '1'
     ? 'owner'
-    : inviteRoleFor(String(form.get('operatingModel') ?? '') as OperatingModel);
+    : model === 'hybrid' && (posted === 'counterparty' || posted === 'subcontractor')
+      ? posted
+      : inviteRoleFor(model);
+
+  // The pen's Invite screen descriptive fields (LINA-222). Optional free text; the
+  // service trims, caps and stores null for blanks, so an empty field drops to
+  // undefined here rather than posting a blank string.
+  const inviteeName = String(form.get('inviteeName') ?? '').trim() || undefined;
+  const scopeNote = String(form.get('scopeNote') ?? '').trim() || undefined;
 
   try {
-    const { token, emailed } = await inviteCounterparty(projectId, email || undefined, role);
+    const { token, emailed } = await inviteCounterparty(
+      projectId, email || undefined, role, { inviteeName, scopeNote },
+    );
     // This invite is what commits a draft build (draft→active). Revalidate the
     // build's own route so the record the owner lands on is the committed one,
     // not a cached draft.
