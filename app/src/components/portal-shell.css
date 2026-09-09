@@ -81,10 +81,35 @@
   display: none;
 }
 
-/* The create-build button is desktop-only; on mobile the primary CTA lives in
-   the body's empty state. */
+/* The create-build button is desktop-only for the empty state; on mobile that
+   screen's primary CTA lives in its body. */
 .psh-create {
   display: none;
+}
+
+/* The populated portfolio (align="start") has no body CTA, so it shows a compact
+   create button in the mobile top bar instead (LINA-219). Desktop keeps the
+   full rail-era button from the >=860px block below. */
+@media (max-width: 859px) {
+  .psh--list .psh-create {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: var(--owner);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .psh--list .psh-create svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2;
+  }
 }
 
 .psh-account {
@@ -335,5 +360,129 @@
 
   .psh-tabs {
     display: none;
+  }
+}
+
+/* ── Body: list variant (LINA-219) ──────────────────────────────────────────
+ * The base body centres a single column (the empty state). The portfolio is a
+ * scrolling list, so it top-aligns and stretches instead. */
+.psh-body--start {
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow-y: auto;
+}
+
+/* ── Account menu (LINA-219) ─────────────────────────────────────────────────
+ * A native <details> popover that carries the identity and, at last, Sign out.
+ * `bar` is the mobile top-bar glyph; `rail` is the desktop left-rail footer.
+ * Only one is visible per breakpoint (rules below), so both render. */
+.psh-acct {
+  position: relative;
+}
+.psh-acct > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.psh-acct > summary::-webkit-details-marker {
+  display: none;
+}
+.psh-acct > summary:focus-visible {
+  outline: 2px solid var(--owner);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* The popover. Anchored to the touchpoint; the bar drops down, the rail rises. */
+.psh-acct-pop {
+  position: absolute;
+  z-index: 30;
+  min-width: 208px;
+  padding: 6px;
+  background: var(--surface-raised, var(--raised));
+  border: 1px solid var(--outline);
+  border-radius: var(--r-overlay, 12px);
+  box-shadow: var(--shadow, 0 10px 30px rgba(0, 0, 0, 0.14));
+}
+.psh-acct-id {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--outline);
+  margin-bottom: 4px;
+}
+.psh-acct-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.psh-acct-role {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.psh-acct-out {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.psh-acct-out svg {
+  width: 16px;
+  height: 16px;
+}
+.psh-acct-out:hover {
+  background: var(--surface-sunken, var(--owner-muted));
+}
+
+/* Mobile: only the bar glyph shows; the rail (and its menu) live in the hidden
+ * rail. The bar popover drops down from the top-right. */
+.psh-acct--rail {
+  display: none;
+}
+.psh-acct--bar .psh-acct-pop {
+  top: calc(100% + 8px);
+  right: 0;
+}
+
+@media (min-width: 860px) {
+  /* Desktop: the rail footer menu shows; the bar glyph is gone. */
+  .psh-acct--bar {
+    display: none;
+  }
+  .psh-acct--rail {
+    display: block;
+    margin-top: auto;
+    padding: 14px 12px 0;
+    border-top: 1px solid var(--outline);
+  }
+  .psh-acct-rail-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 6px;
+    border-radius: 8px;
+  }
+  .psh-acct-rail-btn:hover {
+    background: var(--surface-sunken, var(--owner-muted));
+  }
+  .psh-acct-caret {
+    width: 15px;
+    height: 15px;
+    margin-left: auto;
+    color: var(--muted);
+  }
+  .psh-acct--rail .psh-acct-pop {
+    bottom: calc(100% + 8px);
+    left: 12px;
+    right: 12px;
   }
 }

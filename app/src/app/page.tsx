@@ -49,14 +49,14 @@ export default async function Home() {
   // Drafts count as builds — an abandoned wizard is a build in progress, and the
   // list is where it is resumed from.
   const projects = await listProjects();
+  // The shell's user footer/account menu is real identity, not decoration: it is
+  // the label beside every decision this party records, so it comes from the
+  // authoritative /me profile (LINA-154), never an email local-part. Both the
+  // empty and populated portfolios wear the shell now (LINA-219), so both need it.
+  const me = await getMe();
+  const user = { displayName: me.displayName, roleLabel: roleLabel(me.role as Role) };
   if (projects.length === 0) {
-    // The shell's user footer/account glyph is real identity, not decoration:
-    // it is the label beside every decision this party records, so it comes from
-    // the authoritative /me profile (LINA-154), never an email local-part.
-    const me = await getMe();
-    return (
-      <EmptyPortal user={{ displayName: me.displayName, roleLabel: roleLabel(me.role as Role) }} />
-    );
+    return <EmptyPortal user={user} />;
   }
-  return <PortfolioList projects={projects} />;
+  return <PortfolioList projects={projects} user={user} />;
 }

@@ -20,24 +20,31 @@
 // AuthShell uses (see auth-shell.css).
 import Link from 'next/link';
 
+import { AccountMenu } from './AccountMenu';
 import './portal-shell.css';
 
 const NEW_BUILD_HREF = '/projects/new';
 
 export type PortalUser = { displayName: string; roleLabel: string };
 
-// "Marta Silva" → "MS". First and last initial; a single name gives one letter.
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  const first = parts[0][0] ?? '';
-  const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? '') : '';
-  return (first + last).toUpperCase();
-}
-
-export function PortalShell({ user, children }: { user: PortalUser; children: React.ReactNode }) {
+export function PortalShell({
+  user,
+  children,
+  // The build switcher's value. The empty state has none ("No builds yet", the
+  // default); the populated portfolio passes its build count so the rail does
+  // not lie about an empty portfolio it is not showing.
+  switcherLabel = 'No builds yet',
+  // How the body lays its child out. The empty state is a centred column;
+  // `start` top-aligns and stretches for a scrolling list (the portfolio).
+  align = 'center',
+}: {
+  user: PortalUser;
+  children: React.ReactNode;
+  switcherLabel?: string;
+  align?: 'center' | 'start';
+}) {
   return (
-    <div className="psh">
+    <div className={`psh${align === 'start' ? ' psh--list' : ''}`}>
       {/* ── Left rail (desktop) ─────────────────────────────────────────── */}
       <aside className="psh-rail" aria-label="Portal">
         <div className="psh-brand">
@@ -48,7 +55,7 @@ export function PortalShell({ user, children }: { user: PortalUser; children: Re
         <div className="psh-switch" aria-disabled="true">
           <span className="psh-switch-col">
             <span className="psh-switch-kicker">BUILD</span>
-            <span className="psh-switch-val">No builds yet</span>
+            <span className="psh-switch-val">{switcherLabel}</span>
           </span>
           <ChevronsUpDown />
         </div>
@@ -78,15 +85,7 @@ export function PortalShell({ user, children }: { user: PortalUser; children: Re
           </span>
         </nav>
 
-        <div className="psh-user">
-          <span className="psh-avatar" aria-hidden="true">
-            {initials(user.displayName)}
-          </span>
-          <span className="psh-user-col">
-            <span className="psh-user-name">{user.displayName}</span>
-            <span className="psh-user-role">{user.roleLabel}</span>
-          </span>
-        </div>
+        <AccountMenu displayName={user.displayName} roleLabel={user.roleLabel} variant="rail" />
       </aside>
 
       {/* ── Main column ─────────────────────────────────────────────────── */}
@@ -100,16 +99,10 @@ export function PortalShell({ user, children }: { user: PortalUser; children: Re
             Create build
           </Link>
 
-          <span
-            className="psh-account"
-            title={`${user.displayName} · ${user.roleLabel}`}
-            aria-label={`Signed in as ${user.displayName}`}
-          >
-            <UserCircle />
-          </span>
+          <AccountMenu displayName={user.displayName} roleLabel={user.roleLabel} variant="bar" />
         </header>
 
-        <main className="psh-body">{children}</main>
+        <main className={`psh-body${align === 'start' ? ' psh-body--start' : ''}`}>{children}</main>
 
         <nav className="psh-tabs" aria-label="Primary">
           <span className="psh-tab is-active" aria-current="page">
@@ -212,16 +205,6 @@ function PlusIcon() {
   return (
     <svg viewBox="0 0 24 24" role="presentation">
       <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
-
-function UserCircle() {
-  return (
-    <svg viewBox="0 0 24 24" role="presentation">
-      <circle cx="12" cy="12" r="9" />
-      <circle cx="12" cy="10" r="3" />
-      <path d="M6.5 18.5a6 6 0 0 1 11 0" />
     </svg>
   );
 }

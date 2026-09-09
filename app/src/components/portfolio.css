@@ -2,14 +2,14 @@
  * LINA-156 migration), same as empty-portal.css. Badges (`.badge`), party pills
  * (`.tag`) and deltas (`.delta`) are the global surfaces; only the layout is
  * local here. */
+/* The list body sits INSIDE PortalShell's `.psh-body` (LINA-219): the shell owns
+ * the page canvas, min-height and the header chrome, so this is just a centred,
+ * capped content column. */
 .pf {
-  font-family: var(--font);
-  color: var(--ink);
-  background: var(--paper);
-  min-height: 100vh;
+  width: 100%;
   max-width: 720px;
   margin: 0 auto;
-  padding: 40px 24px 64px;
+  padding: 24px 0 48px;
 }
 
 .pf-head {

@@ -15,27 +15,28 @@ import Link from 'next/link';
 import type { ProjectSummary } from '@/lib/types';
 import { money, roleLabel, delta } from '@/lib/format';
 import { stepFor, hrefForStep } from '@/lib/build-creation';
+import { PortalShell, type PortalUser } from './PortalShell';
 import './portfolio.css';
 
-export function PortfolioList({ projects }: { projects: ProjectSummary[] }) {
+export function PortfolioList({ projects, user }: { projects: ProjectSummary[]; user: PortalUser }) {
+  // The populated portfolio wears the SAME pen app-shell as the empty state
+  // (rail + account menu + tab bar) — before LINA-219 it rendered bare, which is
+  // why it "did not mimic the pen" and offered no way to sign out. The shell owns
+  // the "Your builds"/"Portfolio" title, the Create-build control and the account
+  // menu; this body is just the list of cards.
+  const label = projects.length === 1 ? '1 build' : `${projects.length} builds`;
   return (
-    <main className="pf">
-      <header className="pf-head">
-        <h1 className="pf-title">Your builds</h1>
-        <Link className="pf-new" href="/projects/new">
-          <PlusIcon />
-          New build
-        </Link>
-      </header>
-
-      <ul className="pf-list">
-        {projects.map((p) => (
-          <li key={p.id}>
-            <PortfolioCard project={p} />
-          </li>
-        ))}
-      </ul>
-    </main>
+    <PortalShell user={user} switcherLabel={label} align="start">
+      <div className="pf">
+        <ul className="pf-list">
+          {projects.map((p) => (
+            <li key={p.id}>
+              <PortfolioCard project={p} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </PortalShell>
   );
 }
 
@@ -93,14 +94,5 @@ function PortfolioCard({ project: p }: { project: ProjectSummary }) {
 
       {isDraft && <span className="pf-card-resume">Finish setting this up →</span>}
     </Link>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg viewBox="0 0 24 24" role="presentation" width="16" height="16">
-      <path d="M12 5v14" />
-      <path d="M5 12h14" />
-    </svg>
   );
 }
