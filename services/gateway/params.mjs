@@ -33,7 +33,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // invitation/sign-in secret and must never be forced into this shape, and a
 // param added later should have to opt in deliberately rather than start
 // silently unvalidated.
-const UUID_PARAMS = new Set(['id', 'projectId', 'decisionId', 'changeOrderId']);
+// `stageId` opted in with Slice B3 (LINA-218): D15 puts a stage id in the URL
+// (/projects/:id/record/:stageId) and reads /stages/:stageId/materials off it, so
+// a stale or hand-edited link is now a routine way for a non-UUID to reach the
+// `uuid` column — exactly the 500 this module exists to prevent.
+const UUID_PARAMS = new Set(['id', 'projectId', 'decisionId', 'changeOrderId', 'stageId']);
 
 export function isUuid(value) {
   return typeof value === 'string' && UUID_RE.test(value);

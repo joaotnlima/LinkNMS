@@ -1,0 +1,198 @@
+/* D14–D16, the live record, line detail and budget movement (LINA-218).
+
+   Every colour is a token from tokens.css via globals.css's aliases (ADR-0009 /
+   LINA-156). No new palette block, no colour literal, nothing that redefines a
+   token — the same discipline as plan-baseline.css.
+
+   TWO RULES THIS SHEET IS RESPONSIBLE FOR:
+
+   1. A price movement never looks like a scope change. The two D16 sections and
+      the two swap-preview tints are visually distinct, and in BOTH cases the
+      distinction is also stated in words on the screen (FR9: colour is never the
+      only signal). The tints are decoration on a fact the copy already carries.
+
+   2. The record reads on a phone. These screens are looked at on a jobsite as
+      often as at a desk, so every grid collapses to stacked rows under 720px
+      rather than scrolling sideways: an argument about a number is not a good
+      moment to discover a horizontal scrollbar. */
+
+.rc { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s4); }
+.rc-crumbs { font-size: 12px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; }
+.rc-crumbs a { color: var(--owner); font-weight: 600; }
+
+/* ---- head ---- */
+.rc-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--s4); flex-wrap: wrap;
+}
+.rc-head-l { display: flex; flex-direction: column; gap: 4px; }
+.rc-head-r { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; }
+.rc-title { font-size: 20px; font-weight: 600; letter-spacing: -.3px; }
+.rc-lede { font-size: 13px; color: var(--muted); max-width: 62ch; }
+.rc-state-note { max-width: 74ch; }
+
+/* ---- the four tabs ----
+   Links, not buttons: they carry ?tab= so the record can be sent to someone.
+   The current one is marked by weight and a rule, and by aria-current in the
+   markup — the underline is not the only thing saying where you are. */
+.rc-tabs {
+  display: flex; gap: var(--s1); border-bottom: 1px solid var(--outline);
+  overflow-x: auto; scrollbar-width: none;
+}
+.rc-tabs::-webkit-scrollbar { display: none; }
+.rc-tab {
+  font-size: 14px; font-weight: 600; color: var(--muted);
+  padding: 10px var(--s3); border-bottom: 2px solid transparent; white-space: nowrap;
+}
+.rc-tab:hover { color: var(--fg); }
+.rc-tab.is-on { color: var(--fg); font-weight: 700; border-bottom-color: var(--owner); }
+
+.rc-panel { display: flex; flex-direction: column; gap: var(--s3); }
+.rc-panel-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s3); flex-wrap: wrap;
+}
+.rc-panel-t { font-size: 16px; font-weight: 650; }
+
+/* ---- the plan lines (D14 tab 1) ---- */
+.rc-lines { display: flex; flex-direction: column; }
+.rc-linehdr,
+.rc-line {
+  display: grid; align-items: center; gap: var(--s3);
+  grid-template-columns: minmax(180px, 3fr) 130px repeat(auto-fit, minmax(96px, 1fr));
+  padding: 12px var(--s4); border-bottom: 1px solid var(--outline);
+}
+.rc-linehdr { background: var(--sunken); padding-top: 8px; padding-bottom: 8px; }
+.rc-lines > :last-child { border-bottom: none; }
+.rc-line { color: var(--fg); }
+a.rc-line:hover { background: var(--sunken); }
+.rc-line.is-static { cursor: default; }
+.rc-line-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rc-line-n { font-size: 14px; font-weight: 600; }
+.rc-cell-n { text-align: right; font-size: 13px; }
+.rc-cell-a { text-align: right; }
+/* The advisory reconciliation (contract §7). Muted on purpose: it is a "worth a
+   look", and anything louder would read as a defect on a line that may simply
+   not be broken down yet. */
+.rc-soft { font-style: italic; }
+.rc-sched-s { display: flex; align-items: center; gap: var(--s2); justify-content: flex-end; }
+
+/* ---- history (D14 tab 4) ---- */
+.rc-events { display: flex; flex-direction: column; }
+.rc-event {
+  display: flex; gap: var(--s3); align-items: baseline;
+  padding: 12px var(--s4); border-bottom: 1px solid var(--outline);
+}
+.rc-events > :last-child { border-bottom: none; }
+.rc-event-seq { font-size: 12px; color: var(--muted); min-width: 44px; }
+.rc-event-main { display: flex; flex-direction: column; gap: 2px; }
+.rc-event-t { font-size: 14px; font-weight: 600; }
+
+/* ---- D16 · budget movement ---- */
+.rc-money { display: flex; flex-direction: column; gap: var(--s4); }
+.rc-budget { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+.rc-budget-t { font-size: 16px; font-weight: 650; }
+.rc-budget-figs { display: flex; gap: var(--s6); flex-wrap: wrap; }
+.rc-fig { display: flex; flex-direction: column; gap: 2px; }
+.rc-fig-n { font-size: 18px; font-weight: 650; }
+
+.rc-sect { display: flex; flex-direction: column; gap: var(--s2); }
+.rc-sect-hd { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.rc-sect-t { font-size: 15px; font-weight: 650; }
+
+.rc-rows { display: flex; flex-direction: column; }
+.rc-row {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3);
+  padding: 12px var(--s4); border-bottom: 1px solid var(--outline);
+}
+.rc-rows > :last-child { border-bottom: none; }
+.rc-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rc-row-t { font-size: 14px; font-weight: 600; }
+.rc-row-price { font-size: 13px; }
+.rc-row-src { font-size: 12px; font-weight: 600; color: var(--owner); }
+.rc-row-amt { font-size: 14px; white-space: nowrap; }
+.rc-subtotal {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  padding: var(--s3) var(--s4); background: var(--sunken); border-top: 1px solid var(--outline);
+}
+
+/* ---- D15 · line detail ---- */
+.rc-line-detail { display: flex; flex-direction: column; gap: var(--s4); }
+.rc-mats { display: flex; flex-direction: column; }
+.rc-mathdr,
+.rc-mat {
+  display: grid; align-items: center; gap: var(--s3);
+  grid-template-columns: minmax(160px, 2fr) 120px 110px 110px 90px;
+  padding: 12px var(--s4); border-bottom: 1px solid var(--outline);
+}
+.rc-mathdr { background: var(--sunken); padding-top: 8px; padding-bottom: 8px; }
+.rc-mat-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rc-mat-n { font-size: 14px; font-weight: 600; }
+.rc-mat-total {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--s3) var(--s4); background: var(--sunken); border-top: 1px solid var(--outline);
+  font-weight: 650;
+}
+
+/* ---- the authoring / swap editors ---- */
+.rc-editor { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+.rc-editor-hd { display: flex; flex-direction: column; gap: 4px; }
+.rc-editor-t { font-size: 16px; font-weight: 650; }
+.rc-editor-ft { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; }
+.rc-editrow,
+.rc-swapfields {
+  display: flex; gap: var(--s3); flex-wrap: wrap; align-items: flex-end;
+  padding-bottom: var(--s3); border-bottom: 1px solid var(--outline);
+}
+.rc-swapfields { border-bottom: none; }
+.rc-field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 130px; min-width: 0; }
+.rc-field-wide { flex: 2 1 280px; }
+.rc-input {
+  font: inherit; font-size: 14px; padding: 8px 10px;
+  border: 1px solid var(--outline-strong); border-radius: var(--r-ctrl);
+  background: var(--paper); color: var(--fg); width: 100%;
+}
+.rc-input:focus-visible { outline: 2px solid var(--owner); outline-offset: 1px; }
+.rc-drop { flex: 0 0 auto; }
+.rc-actions { display: flex; gap: var(--s2); flex-wrap: wrap; }
+
+/* ---- the swap choice: two cards, not a dropdown ----
+   Sized and spaced so the decision is unmissable. The consequence line is part
+   of the card because the difference between these two options is not what they
+   are called, it is what they do to the budget. */
+.rc-kinds { display: flex; gap: var(--s3); flex-wrap: wrap; border: none; padding: 0; margin: 0; }
+.rc-kinds legend { margin-bottom: var(--s2); }
+.rc-kind {
+  flex: 1 1 260px; display: flex; gap: var(--s2); align-items: flex-start;
+  border: 1px solid var(--outline-strong); border-radius: var(--r-ctrl);
+  padding: var(--s3); cursor: pointer; background: var(--raised);
+}
+.rc-kind:hover { background: var(--sunken); }
+.rc-kind.is-on { border-color: var(--owner); box-shadow: 0 0 0 1px var(--owner) inset; }
+.rc-kind-b { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rc-kind-t { font-size: 14px; font-weight: 650; }
+.rc-kind-c { font-size: 12px; font-weight: 600; color: var(--fg); }
+
+/* The preview, tinted by kind. Warning tint for a scope change because it is
+   about to open a change order someone must answer; neutral for a price
+   movement because nothing is asked of anyone. The copy inside says both. */
+.rc-preview {
+  border: 1px solid var(--outline); border-left-width: 4px; border-radius: var(--r-ctrl);
+  padding: var(--s3); display: flex; flex-direction: column; gap: 4px;
+}
+.rc-preview.is-scope { border-left-color: var(--warning); background: var(--warn-bg); }
+.rc-preview.is-price { border-left-color: var(--plan-baseline); background: var(--sunken); }
+.rc-preview-n { font-size: 16px; font-weight: 650; }
+
+.rc-compare.is-on { border-color: var(--owner); color: var(--owner); }
+
+/* ---- jobsite width ---- */
+@media (max-width: 720px) {
+  .rc-linehdr, .rc-mathdr { display: none; }
+  .rc-line, .rc-mat {
+    grid-template-columns: 1fr auto; row-gap: 6px; align-items: start;
+  }
+  .rc-cell-n, .rc-cell-a { text-align: left; }
+  .rc-head-r { align-items: flex-start; text-align: left; }
+  .rc-budget-figs { gap: var(--s4); }
+}

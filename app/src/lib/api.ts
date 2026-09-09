@@ -44,6 +44,7 @@ import type {
   OperatingModel, Role, InvitationPreview, ProjectSummary,
 } from './types';
 import type { PlanBaselineView } from './plan-baseline';
+import type { MoneyView, RecordView, StageMaterialsView } from './record';
 import {
   directoryOf, countsOf, toProject, toDecision, toChangeOrderSummary, toChangeOrderDetail,
   toAuditResult, projectedIfApproved,
@@ -157,6 +158,18 @@ const ROUTES = {
   getPlan: {
     method: 'GET', path: (p) => `/projects/${enc(p.id)}/plan`,
     handler: (c) => c.http.schedule.getPlan,
+  },
+  getRecord: {
+    method: 'GET', path: (p) => `/projects/${enc(p.id)}/record`,
+    handler: (c) => c.http.schedule.getRecord,
+  },
+  getBudgetMovement: {
+    method: 'GET', path: (p) => `/projects/${enc(p.id)}/budget-movement`,
+    handler: (c) => c.http.schedule.getBudgetMovement,
+  },
+  getStageMaterials: {
+    method: 'GET', path: (p) => `/stages/${enc(p.stageId)}/materials`,
+    handler: (c) => c.http.schedule.getStageMaterials,
   },
   createProject: {
     method: 'POST', path: () => '/projects',
@@ -503,6 +516,29 @@ export type { PlanBaselineView };
 
 export async function getPlan(projectId: string): Promise<PlanBaselineView> {
   return call<PlanBaselineView>('getPlan', { id: projectId });
+}
+
+/**
+ * The Slice B3 reads (LINA-218; contract §3 routes 1, 2 and 5). All three are
+ * members-only reads — any seated party sees the record, including a settled
+ * line (§3a): the audit story is not a privilege, it is the product.
+ *
+ * They are three separate calls rather than one because they answer three
+ * questions at three depths, and D15 is reached with a stage id and nothing
+ * else. `getRecord` already embeds the MoneyView as its Money tab, so D14 costs
+ * one round trip; `getBudgetMovement` exists for the standalone budget surface,
+ * where re-reading the whole WBS to render two lists would be waste.
+ */
+export async function getRecord(projectId: string): Promise<RecordView> {
+  return call<RecordView>('getRecord', { id: projectId });
+}
+
+export async function getBudgetMovement(projectId: string): Promise<MoneyView> {
+  return call<MoneyView>('getBudgetMovement', { id: projectId });
+}
+
+export async function getStageMaterials(stageId: string): Promise<StageMaterialsView> {
+  return call<StageMaterialsView>('getStageMaterials', { stageId });
 }
 
 /**
