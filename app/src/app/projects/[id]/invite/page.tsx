@@ -22,7 +22,9 @@ import { WizardChrome } from '@/components/WizardChrome';
 import { WizardSteps } from '@/components/WizardSteps';
 import { InvitePanel } from './InvitePanel';
 import { getBuild } from '@/lib/api';
-import { INVITE_ROLE_COPY, inviteRoleFor, stepFor, type OperatingModel } from '@/lib/build-creation';
+import {
+  INVITE_ROLE_COPY, OWNER_INVITE_COPY, inviteRoleFor, stepFor, type OperatingModel,
+} from '@/lib/build-creation';
 import '../../../build-wizard.css';
 
 export const dynamic = 'force-dynamic';
@@ -31,9 +33,17 @@ export default async function InvitePage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   const build = await getBuild(id);
 
-  // Owner-only. The service enforces this too (it is the authority); checking
-  // here as well is what turns a would-be 403 into a sensible screen.
-  if (build.actingRole !== 'owner') redirect(`/projects/${id}`);
+  // Who may commit this draft (ADR-0016 §3): an ACTIVE build's invites are
+  // owner-only (unchanged); a DRAFT is driven by its sole creator — the owner of
+  // an owner-created build OR the counterparty of a GC-created one, whose first
+  // invite is the missing HOMEOWNER. A draft only ever has one member, so
+  // "draft + no owner yet" uniquely identifies a GC creator driving their own
+  // draft. The service is the authority; this mirrors it to turn a would-be 403
+  // into a sensible screen.
+  const hasOwner = build.members.some((m) => m.role === 'owner');
+  const inviteOwner = !hasOwner && build.actingRole !== 'owner';
+  const canDrive = build.actingRole === 'owner' || (build.status === 'draft' && inviteOwner);
+  if (!canDrive) redirect(`/projects/${id}`);
 
   // A draft with no operating model cannot be invited against — the service 409s
   // rather than committing a build whose model was never chosen. Send them to the
@@ -42,8 +52,10 @@ export default async function InvitePage({ params }: { params: Promise<{ id: str
   if (stepFor(build) === 'model') redirect(`/projects/${id}/operating-model`);
 
   const operatingModel = (build.operatingModel ?? null) as OperatingModel | null;
-  const role = inviteRoleFor(operatingModel);
-  const copy = INVITE_ROLE_COPY[role];
+  // The role this build's first invite creates. Normally the operating model
+  // decides it; a GC-created build inverts it to the homeowner (ADR-0016 §4).
+  const role = inviteOwner ? 'owner' : inviteRoleFor(operatingModel);
+  const copy = inviteOwner ? OWNER_INVITE_COPY : INVITE_ROLE_COPY[inviteRoleFor(operatingModel)];
 
   // V1 invites one party per wizard pass (ADR-0011 OQ-3), so a build that already
   // has this role filled has nothing to do here.
@@ -56,7 +68,7 @@ export default async function InvitePage({ params }: { params: Promise<{ id: str
 
       {joined ? (
         <section className="bwx-card">
-          <h1 className="bwx-card-title">Invite your {copy.noun}</h1>
+          <h1 className="bwx-card-title">Invite the {copy.noun}</h1>
           <p className="bwx-card-sub">
             <strong>{joined.displayName?.trim() || 'Someone'}</strong> has already joined this build
             as the {copy.noun}.
@@ -71,6 +83,8 @@ export default async function InvitePage({ params }: { params: Promise<{ id: str
           operatingModel={operatingModel}
           buildName={build.name}
           isDraft={isDraft}
+          inviteOwner={inviteOwner}
+          copy={copy}
         />
       )}
     </WizardChrome>

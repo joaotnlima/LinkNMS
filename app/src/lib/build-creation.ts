@@ -28,6 +28,63 @@ export type OperatingModel = 'turnkey' | 'direct' | 'hybrid';
 export type BuildStatus = 'draft' | 'active';
 export type InviteRole = 'counterparty' | 'subcontractor';
 
+// ── Creator role: "Who are you on this build?" (LINA-227, ADR-0016) ───────────
+//
+// The republished pen opens the New-build flow with a PRE-BASICS question —
+// General contractor OR Owner — because the same account can be the owner on one
+// build and the GC on another; the role is per build (ADR-0016 §1). The choice
+// sets `creatorRole` on createProject:
+//   * 'owner' (default) is the legacy owner-first path — creator is the owner,
+//     owner_party_id is stamped at genesis, the first invite is the GC.
+//   * 'counterparty' is a GC-created build — creator joins as the counterparty,
+//     owner_party_id stays NULL until the invited HOMEOWNER accepts, and the
+//     first invite's role inverts to `owner`.
+//
+// It is a PRE-WIZARD question, not a counted step: WIZARD_STEPS below is
+// unchanged, so an owner's Basics/Model/Invite flow past this screen is
+// byte-identical to before. Owner is pre-selected — the common case, and the
+// default the service already assumes when `creatorRole` is absent.
+export type CreatorRole = 'owner' | 'counterparty';
+
+export const CREATOR_ROLES: readonly CreatorRole[] = Object.freeze(['owner', 'counterparty']);
+
+export function isCreatorRole(v: unknown): v is CreatorRole {
+  return v === 'owner' || v === 'counterparty';
+}
+
+/**
+ * Copy for the two role cards on the pen's D2 "Your role" screen, plus the
+ * Continue label the selection drives ("Continue as owner" / "…as general
+ * contractor"). `tag` is the pen's small pill under each card — the one-line
+ * consequence of the choice.
+ */
+export const CREATOR_ROLE_COPY: Readonly<
+  Record<CreatorRole, { label: string; desc: string; tag: string; continueLabel: string }>
+> = Object.freeze({
+  owner: {
+    label: 'Owner',
+    desc: "I'm having this built. I create the project and invite my contractor to run the day-to-day, while I keep full visibility.",
+    tag: 'Follows & approves',
+    continueLabel: 'Continue as owner',
+  },
+  counterparty: {
+    label: 'General contractor',
+    desc: 'I run the build day-to-day — schedule, trades and budget. I set up the plan and invite the owner to follow along.',
+    tag: 'Runs the timeline',
+    continueLabel: 'Continue as general contractor',
+  },
+});
+
+/**
+ * The Basics screen's lede. It must read for a GC creator too (LINA-227) — the
+ * screen no longer assumes the creator is the owner. Keyed by the creator role
+ * the D2 screen chose and carried forward as `?as=`.
+ */
+export const BASICS_LEDE: Readonly<Record<CreatorRole, string>> = Object.freeze({
+  owner: "You're setting up a build you own. Next you'll choose how it's run, then invite your contractor.",
+  counterparty: "You're setting up a build you'll run. Next you'll choose how it's run, then invite the homeowner to follow along.",
+});
+
 /** The three models, in the pen's segmented-control order (screen 03). */
 export const OPERATING_MODELS: readonly OperatingModel[] = Object.freeze([
   'turnkey',
@@ -98,6 +155,20 @@ export const INVITE_ROLE_COPY: Readonly<
     nounPlural: 'specialty contractors',
     emailPlaceholder: 'electrician@example.com',
   },
+});
+
+/**
+ * The inverted first invite (ADR-0016 §4). A GC-created build's first invite is
+ * the HOMEOWNER — role `owner`, not one of the operating-model roles — so its
+ * copy lives apart from INVITE_ROLE_COPY (which is keyed by InviteRole, a set
+ * that never yields `owner`). Reached only while the build has no owner member
+ * yet; once the homeowner joins, `owner` drops out of the invitable set
+ * server-side, so this is exactly the one inverted invite and nothing after it.
+ */
+export const OWNER_INVITE_COPY = Object.freeze({
+  noun: 'homeowner',
+  nounPlural: 'homeowners',
+  emailPlaceholder: 'owner@example.com',
 });
 
 // ── Steps ───────────────────────────────────────────────────────────────────
@@ -214,7 +285,11 @@ export function stepFor(build: {
 export function hrefForStep(projectId: string, step: WizardStepKey | 'done'): string {
   switch (step) {
     case 'basics':
-      return '/projects/new';
+      // The wizard entry `/projects/new` is now the pre-Basics "Your role"
+      // screen (LINA-227); Basics itself moved one level down. `stepFor` never
+      // returns 'basics' for a persisted build (a draft is already past it), so
+      // this case is only the theoretical start-of-wizard target.
+      return '/projects/new/basics';
     case 'model':
       return `/projects/${projectId}/operating-model`;
     case 'invite':
@@ -243,18 +318,20 @@ export function hrefForStep(projectId: string, step: WizardStepKey | 'done'): st
 // the earlier "deliberate departure": the field's whole justification was that
 // nothing else set the baseline, and B1–B3 now do.
 //
+// CLOSED by LINA-227 (ADR-0016): the pen's screen 01 "Who are you on this
+// build?" role screen (owner OR general contractor can create a build). The
+// backend inversion shipped in LINA-221 (creatorRole, nullable owner_party_id,
+// the inverted first invite); this FE adds the pre-Basics D2 screen at
+// `/projects/new`, carries the choice forward as `?as=`, and inverts the invite
+// step's target to the homeowner for a GC-created build. Owner stays the default,
+// so the owner path is unchanged.
+//
 // STILL OPEN (deferred to their own issues — backend features, not fidelity):
 //   * The pen's new-build screen 04 Invite fields — invitee "Name or company",
 //     the Role picker, and the "Scope note" textarea. `identity.invitation`
 //     stores none of these (it is email + derived role only), so rendering them
 //     would discard what the owner types. Same rule as always: no column, no
 //     field. Adding the columns + the Hybrid role choice is its own slice.
-//   * The pen's screen 01 "Who are you on this build?" role screen (owner OR
-//     general contractor can create a build). The shipped wizard hard-codes the
-//     creator as the owner; a GC-created build inverts project ownership and the
-//     first invite's role and touches RBAC, so it is a feature deferred to its own
-//     issue with an ADR, not a fidelity tweak. Until then the flow starts at
-//     Basics and the creator is the owner.
 //   * Pen "Resend / cancel invite" controls: ADR-0011 OQ-1 defers a re-send CTA
 //     to a fast follow and settles on copy-link for V1, which is what the
 //     invite-sent state ships.

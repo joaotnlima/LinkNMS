@@ -19,7 +19,7 @@ import {
   createProject, createBuildDraft, setOperatingModel, inviteCounterparty, acceptInvitation,
 } from '@/lib/api';
 import { parseBudgetToCents } from '@/lib/format';
-import { OPERATING_MODELS, inviteRoleFor, type OperatingModel } from '@/lib/build-creation';
+import { OPERATING_MODELS, inviteRoleFor, isCreatorRole, type OperatingModel } from '@/lib/build-creation';
 
 export interface FormState {
   error?: string;
@@ -96,6 +96,13 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
   const name = String(form.get('name') ?? '').trim();
   if (!name) return { error: 'Give the build a name.' };
 
+  // Who the creator is on this build (LINA-227, ADR-0016). Set by the pre-Basics
+  // "Your role" screen and carried through Basics as a hidden field. Anything but
+  // the two valid values is dropped to undefined so the service default ('owner')
+  // applies — the service validates and is the authority regardless.
+  const creatorRoleRaw = String(form.get('creatorRole') ?? '');
+  const creatorRole = isCreatorRole(creatorRoleRaw) ? creatorRoleRaw : undefined;
+
   // Optional Basics fields. Trimmed here and only forwarded when non-empty; the
   // service is the authority on caps and stores null for blanks regardless.
   const siteAddress = String(form.get('siteAddress') ?? '').trim() || undefined;
@@ -105,7 +112,7 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
   let id: string;
   try {
     // Draft baseline is 0; the plan establishes the authoritative figure.
-    ({ id } = await createBuildDraft({ name, baselineBudgetCents: 0, siteAddress, buildType, expectedStart }));
+    ({ id } = await createBuildDraft({ name, baselineBudgetCents: 0, creatorRole, siteAddress, buildType, expectedStart }));
   } catch (err) {
     // The path that fires for real today: a founding seat runs one build, so the
     // owner's SECOND trip through the wizard lands here (ADR-0013).
@@ -171,7 +178,16 @@ export async function inviteAction(_prev: InviteState, form: FormData): Promise<
   // different model, and the service then rejects a role that build does not
   // admit. A legacy project (no model) falls through to `counterparty`, R0's
   // behaviour, unchanged.
-  const role = inviteRoleFor(String(form.get('operatingModel') ?? '') as OperatingModel);
+  //
+  // The one exception (LINA-227, ADR-0016 §4): a GC-created build's first invite
+  // is the HOMEOWNER (role `owner`). The invite screen renders `inviteOwner` only
+  // when the server's projection says the build has no owner member yet and the
+  // acting party is its counterparty creator; the service still rules — it admits
+  // `owner` ONLY while no owner exists, so a tampered flag cannot mint a second
+  // owner.
+  const role = form.get('inviteOwner') === '1'
+    ? 'owner'
+    : inviteRoleFor(String(form.get('operatingModel') ?? '') as OperatingModel);
 
   try {
     const { token, emailed } = await inviteCounterparty(projectId, email || undefined, role);

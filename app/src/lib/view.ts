@@ -36,7 +36,10 @@ export interface WireMember { partyId: string; role: string; joinedAt: string; d
 export interface WireProject {
   id: string;
   name: string;
-  ownerPartyId: string;
+  // NULL for a GC-created build until the invited homeowner accepts (ADR-0016
+  // §1). Authorization never reads this field — it decides on membership role —
+  // so a null owner is a build with no homeowner member yet, not an authz hole.
+  ownerPartyId: string | null;
   baselineBudgetCents: number;
   currentBudgetCents: number;
   actingRole: Role;

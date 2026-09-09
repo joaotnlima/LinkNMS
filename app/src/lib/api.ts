@@ -43,6 +43,7 @@ import type {
   Project, Decision, ChangeOrderDetail, ChangeOrderSummary, AuditResult, Pillars, MeProfile,
   OperatingModel, Role, InvitationPreview, ProjectSummary,
 } from './types';
+import type { CreatorRole } from './build-creation';
 import type { PlanBaselineView } from './plan-baseline';
 import type { MoneyView, RecordView, StageMaterialsView } from './record';
 import {
@@ -550,6 +551,11 @@ export async function getStageMaterials(stageId: string): Promise<StageMaterials
 export async function createBuildDraft(input: {
   name: string;
   baselineBudgetCents: number;
+  // Who the creator is on this build (LINA-227, ADR-0016). Omitted → the service
+  // defaults to 'owner', the legacy owner-first path; 'counterparty' is a
+  // GC-created build (creator joins as counterparty, owner is invited later).
+  // Validated server-side — never trusted as a membership claim.
+  creatorRole?: CreatorRole;
   // Basics descriptive fields (LINA-219). Optional; the service trims/caps and
   // stores null for blanks, so an unfilled field is simply omitted here.
   siteAddress?: string;
@@ -588,15 +594,16 @@ export async function setOperatingModel(
 /**
  * `role` defaults to `counterparty` — the R0 behaviour and, since ADR-0011 §4,
  * the GC's unchanged name. Band B's Direct-to-specialty and Hybrid models pass
- * `subcontractor`. The service is the authority on which role THIS build's
- * operating model admits and 400s on a mismatch; sending the role we intend and
- * letting it rule is the point, because the alternative is the client deciding
- * who may join a record.
+ * `subcontractor`; a GC-created build's inverted first invite passes `owner`
+ * (LINA-227, ADR-0016 §4). The service is the authority on which role THIS build
+ * admits — it 400s on a mismatch and only admits `owner` while the build has no
+ * owner member yet — so sending the role we intend and letting it rule is the
+ * point, because the alternative is the client deciding who may join a record.
  */
 export async function inviteCounterparty(
   projectId: string,
   email?: string,
-  role: Exclude<Role, 'owner'> = 'counterparty',
+  role: Role = 'counterparty',
 ): Promise<{ token: string; emailed: boolean }> {
   const res = await call<{ token: string; emailed?: boolean; invitation: { id: string } }>(
     'inviteCounterparty',
