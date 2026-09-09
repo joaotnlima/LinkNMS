@@ -69,6 +69,10 @@ const MIGRATIONS = [
   'services/identity/migrations/0010_identity.sql',
   'services/identity/migrations/0011_identity.sql',
   'services/identity/migrations/0012_identity.sql',
+  'services/identity/migrations/0013_identity.sql',
+  'services/identity/migrations/0014_identity.sql',
+  'services/identity/migrations/0015_identity.sql',
+  'services/identity/migrations/0016_identity.sql',
 ];
 
 describe('Postgres identity (membership + authz + ledger seam)', { skip: DB ? false : 'set DATABASE_URL to run' }, () => {
@@ -181,8 +185,19 @@ describe('Postgres identity (membership + authz + ledger seam)', { skip: DB ? fa
     assert.equal(modeled.status, 'draft', 'choosing a model does not commit');
 
     // Step 3: the first invite flips draft→active and writes project_committed.
-    const invited = await svc.inviteCounterparty({ actorPartyId: owner, projectId: draft.id, role: 'subcontractor' });
+    // The pen's Invite screen name + scope note (LINA-222) ride the same INSERT
+    // through identity_app's existing grants (0016 added columns, no new grant)
+    // and round-trip back out of pg-store.
+    const invited = await svc.inviteCounterparty({
+      actorPartyId: owner,
+      projectId: draft.id,
+      role: 'subcontractor',
+      inviteeName: 'Silva Electricidade, Lda.',
+      scopeNote: 'Electrical rough-in and finish only.',
+    });
     assert.equal(invited.invitation.role, 'subcontractor');
+    assert.equal(invited.invitation.inviteeName, 'Silva Electricidade, Lda.');
+    assert.equal(invited.invitation.scopeNote, 'Electrical rough-in and finish only.');
 
     const afterCommit = await svc.getProject({ actorPartyId: owner, projectId: draft.id });
     assert.equal(afterCommit.status, 'active');

@@ -124,6 +124,14 @@ function optionalText(value, label, max) {
 /** The Basics descriptive fields' cap (LINA-219). */
 const optionalBasicsField = (value, label) => optionalText(value, label, MAX_BASICS_FIELD);
 
+// The pen's Invite screen descriptive fields (LINA-222). The invitee's
+// Name/company is a party label (same cap as a display name); the Scope note is
+// a short free-text paragraph the inviter writes for their own record, so it gets
+// a more generous cap. Both are optional and, like the Basics fields, carry no DB
+// CHECK — the cap here just stops an unbounded write (migration 0016).
+const MAX_INVITEE_NAME = 200;
+const MAX_SCOPE_NOTE = 1000;
+
 // The three Band B operating models (ADR-0011 decision 1) and the launch role
 // each may invite (design §7; migration 0009 widened the invitation.role CHECK to
 // {counterparty, subcontractor} to admit this). A legacy project with
@@ -519,7 +527,7 @@ export function createIdentityService({
   // below (same unit of work as the invitation, per the brief) — the seam is
   // marked there.
   async function inviteCounterparty({
-    actorPartyId, projectId, role = 'counterparty', email, baseUrl,
+    actorPartyId, projectId, role = 'counterparty', email, inviteeName, scopeNote, baseUrl,
   }) {
     // Authorize by build STATE (ADR-0016 §3). A DRAFT is driven by its sole
     // creator — the owner of an owner-created build OR the counterparty of a
@@ -578,6 +586,14 @@ export function createIdentityService({
     const cleanEmail = offered ? normalizeEmail(offered) : null;
     if (offered && !cleanEmail) throw badRequest('that does not look like an email address');
 
+    // The pen's Invite screen descriptive fields (LINA-222). Both optional; blank
+    // → null (the honest "not given"). Validated before minting so a too-long
+    // note fails cleanly rather than after a token exists. They are the inviter's
+    // own record of who and what — never shown to a third party, never in the
+    // ledger payload.
+    const cleanInviteeName = optionalText(inviteeName, 'inviteeName', MAX_INVITEE_NAME);
+    const cleanScopeNote = optionalText(scopeNote, 'scopeNote', MAX_SCOPE_NOTE);
+
     // Fail closed BEFORE minting: if the deploy cannot send mail, an invite-by-email
     // must not report success having mailed nothing (same discipline as ADR-0007 §5).
     // The out-of-band path is unaffected — it never needed a mailer.
@@ -603,6 +619,8 @@ export function createIdentityService({
       projectId,
       tokenHash: sha256Hex(rawToken),
       email: cleanEmail, // null on the out-of-band path
+      inviteeName: cleanInviteeName, // null when the inviter didn't name them (LINA-222)
+      scopeNote: cleanScopeNote, // null when no scope note was written (LINA-222)
       role,
       status: 'pending',
       invitedByPartyId: actorPartyId,
@@ -925,6 +943,11 @@ function shapeInvitation(i) {
     // to return: the only reader is the owner who just typed it, on their own
     // project, behind the owner-only capability gate.
     email: i.email ?? null,
+    // The invitee's Name/company and the Scope note the inviter typed (LINA-222).
+    // Same safe-to-return reasoning as email: the only reader is the inviter, on
+    // their own project, behind the owner-only capability gate.
+    inviteeName: i.inviteeName ?? null,
+    scopeNote: i.scopeNote ?? null,
     role: i.role,
     status: i.status,
     createdAt: i.createdAt,

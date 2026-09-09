@@ -189,6 +189,17 @@ export const schemas = {
         type: ['string', 'null'],
         description: 'The address the invitation was mailed to; null on the out-of-band path.',
       },
+      // The pen's Invite screen descriptive fields (LINA-222). Safe to return —
+      // the only reader is the inviter, on their own project, behind the owner-
+      // only capability gate (same posture as `email`).
+      inviteeName: {
+        type: ['string', 'null'],
+        description: 'The invitee’s name or company, as the inviter typed it on the Invite screen (LINA-222). Optional; null when not given.',
+      },
+      scopeNote: {
+        type: ['string', 'null'],
+        description: 'A free-text note the inviter wrote describing the invitee’s scope (LINA-222). Optional; null when not given.',
+      },
       createdAt: { type: 'string' },
     },
   },
@@ -282,6 +293,18 @@ export const schemas = {
           'Optional (LINA-84). Supplied, the invitation link is emailed to this address and ' +
           'the response reports `emailed`. Omitted, nothing is sent and the caller delivers ' +
           'the raw token out of band. Lower-cased server-side, same normalisation as sign-in.',
+      },
+      // The pen's Invite screen descriptive fields (LINA-222). Both optional; the
+      // service trims, caps (200 / 1000), and stores null for blanks.
+      inviteeName: {
+        type: ['string', 'null'],
+        maxLength: 200,
+        description: 'Optional (LINA-222). The invitee’s name or company, from the Invite screen. Trimmed server-side; blank is stored as null.',
+      },
+      scopeNote: {
+        type: ['string', 'null'],
+        maxLength: 1000,
+        description: 'Optional (LINA-222). A free-text note describing the invitee’s scope, from the Invite screen. Trimmed server-side; blank is stored as null.',
       },
     },
   },
