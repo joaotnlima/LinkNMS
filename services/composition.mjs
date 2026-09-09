@@ -33,6 +33,7 @@ import { createChangeOrderHttp } from './change_order/http.mjs';
 import { createScheduleService } from './schedule/schedule.mjs';
 import { createPlanImportService } from './schedule/plan-import.mjs';
 import { createPlanVersionService } from './schedule/plan-version.mjs';
+import { createMaterialsService } from './schedule/materials.mjs';
 import { PARSER } from './schedule/plan-import-parser.mjs';
 import { createScheduleHttp } from './schedule/http.mjs';
 
@@ -182,6 +183,21 @@ export function createServices({
       })
     : null;
 
+  // Slice B3 materials & movement (LINA-217): the D14–D16 live-record, materials
+  // authoring, swap → movement/CO, and budget-movement projections over the SAME
+  // store, ledger binding and identity authorizer. It opens change orders through
+  // the EXISTING changeOrder service (scope_change realises its money there), so
+  // it is composed only when both a schedule store AND the change order service
+  // are present.
+  const materials = scheduleStore
+    ? createMaterialsService({
+        store: scheduleStore,
+        ledger: ledgers.schedule ?? ledger,
+        identity,
+        changeOrder,
+      })
+    : null;
+
   // NOTE (LINA-189): there is no waitlist service here any more. The portal used
   // to compose one over `waitlist.signup` — a SECOND waitlist that captured an
   // address and did nothing else with it, while the marketing site's funnel
@@ -196,7 +212,7 @@ export function createServices({
     changeOrder,
     schedule,
     changeOrderHttp: createChangeOrderHttp({ service: changeOrder, identity }),
-    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion }) : null,
+    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials }) : null,
   };
 }
 

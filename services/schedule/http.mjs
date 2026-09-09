@@ -37,8 +37,9 @@ const actorOf = (session) => session?.partyId ?? null;
  * @param {ReturnType<import('./schedule.mjs').createScheduleService>} deps.service
  * @param {import('./plan-import.mjs').createPlanImportService} [deps.planImport]
  * @param {import('./plan-version.mjs').createPlanVersionService} [deps.planVersion]
+ * @param {import('./materials.mjs').createMaterialsService} [deps.materials]
  */
-export function createScheduleHttp({ service, planImport = null, planVersion = null }) {
+export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null }) {
   if (!service) throw new Error('createScheduleHttp requires { service }');
 
   // GET /projects/:projectId/plan — the plan-baseline D11–D13 view (B2 contract
@@ -153,7 +154,52 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
     } catch (err) { return errorBody(err); }
   }
 
+  // ── Slice B3 materials & budget movement (LINA-217) — D14–D16 ───────────────
+
+  // GET /projects/:projectId/record (D14) — the 4-tab live record projection
+  async function getRecord({ session, params }) {
+    try {
+      const view = materials
+        ? await materials.getRecord(params.projectId, actorOf(session))
+        : await service.getPlan(params.projectId, actorOf(session));
+      return { status: 200, body: view };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // GET /stages/:stageId/materials (D15) — the materials + movements behind a line
+  async function getStageMaterials({ session, params }) {
+    try {
+      const out = await materials.getLineMaterials(params.stageId, actorOf(session));
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /stages/:stageId/materials (D15) — author materials (proposed, proposer only)
+  async function authorMaterials({ session, params, body }) {
+    try {
+      const out = await materials.authorMaterials(params.stageId, actorOf(session), body ?? {});
+      return { status: 201, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /stages/:stageId/materials:swap (D15/D16) — record a post-baseline movement
+  async function swapMaterial({ session, params, body }) {
+    try {
+      const out = await materials.swapMaterial(params.stageId, actorOf(session), body ?? {});
+      return { status: 201, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // GET /projects/:projectId/budget-movement (D16) — MoneyView (scope vs price)
+  async function getBudgetMovement({ session, params }) {
+    try {
+      const out = await materials.getBudgetMovement(params.projectId, actorOf(session));
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
   return { getPlan, addStage, getStage, updateStage, reportProgress,
     inspectPlanImport, columnsPlanImport, previewPlanImport, confirmPlanImport,
-    withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan };
+    withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan,
+    getRecord, getStageMaterials, authorMaterials, swapMaterial, getBudgetMovement };
 }

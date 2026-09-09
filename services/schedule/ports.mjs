@@ -104,7 +104,17 @@ export function createInMemoryLedger({ baselines = new Map() } = {}) {
     return { baselineCents, approvedTotalCents: 0, currentCents: baselineCents };
   }
 
-  return { append, currentBudget, _events: events };
+  // Mirrors the pg ledger's audit read (the record's History tab reuses it).
+  function getAudit(projectId) {
+    return {
+      status: 200,
+      etag: null,
+      events: events.filter((e) => e.projectId === projectId).map((e) => ({ ...e })),
+      verify: { ok: true },
+    };
+  }
+
+  return { append, currentBudget, getAudit, _events: events };
 }
 
 // ---------------------------------------------------------------------------
@@ -123,8 +133,11 @@ export function createInMemoryStore() {
   const versions = [];        // plan_version rows (envelope; status is mutable)
   const acceptances = [];     // append-only plan_acceptance stamps
   const baselines = new Map(); // schedule.project_baseline pointer (upsert, per project)
+  const lineMaterials = [];    // schedule.line_material rows
+  const movements = [];        // schedule.material_movement rows (append-only)
   let stageSeq = 0;
   let progressSeq = 0;
+  let movementSeq = 0;
 
   function transaction(fn) {
     // Single-threaded in tests; the real adapter opens a Postgres tx here so the
@@ -368,6 +381,78 @@ export function createInMemoryStore() {
     return listStagesByPlanVersion(planVersionId).length;
   }
 
+  // ── Slice B3 materials & movement (LINA-217, contract §1) ────────────────
+
+  // Mirrors the DB line_material_freeze_guard trigger: a line_material bound to a
+  // frozen/terminal plan version cannot be inserted or updated.
+  function assertMaterialMutable(planVersionId) {
+    if (planVersionId == null) return;
+    const v = versions.find((x) => x.id === planVersionId);
+    if (v && ['accepted', 'superseded', 'withdrawn', 'rejected'].includes(v.status)) {
+      const err = new Error(
+        'line_material belongs to a frozen/terminal plan version — a baseline material is moved, never edited',
+      );
+      err.code = 'P0001';
+      err.trigger = 'line_material_freeze_guard';
+      throw err;
+    }
+  }
+
+  function insertLineMaterial(_tx, row) {
+    assertMaterialMutable(row.plan_version_id);
+    lineMaterials.push({ ...row });
+    return { ...row };
+  }
+
+  function getLineMaterial(id) {
+    const r = lineMaterials.find((x) => x.id === id);
+    return r ? { ...r } : null;
+  }
+
+  function updateLineMaterial(_tx, id, patch) {
+    const r = lineMaterials.find((x) => x.id === id);
+    if (!r) return null;
+    assertMaterialMutable(r.plan_version_id);
+    Object.assign(r, patch);
+    return { ...r };
+  }
+
+  function listLineMaterialsByStage(stageId) {
+    return lineMaterials
+      .filter((m) => m.stage_id === stageId)
+      .sort((a, b) => (a.position - b.position) || (a.created_at < b.created_at ? -1 : 1))
+      .map((m) => ({ ...m }));
+  }
+
+  function listLineMaterialsByVersion(planVersionId) {
+    return lineMaterials
+      .filter((m) => m.plan_version_id === planVersionId)
+      .map((m) => ({ ...m }));
+  }
+
+  // Append-only INSERT (no update/delete surface — mirrors the missing grants).
+  function insertMaterialMovement(_tx, row) {
+    const stored = { ...row, seq: ++movementSeq };
+    movements.push(stored);
+    return { ...stored };
+  }
+
+  function listMovementsByProject(projectId) {
+    return movements
+      .filter((m) => m.project_id === projectId)
+      .sort((a, b) => (a.occurred_at < b.occurred_at ? -1
+        : a.occurred_at > b.occurred_at ? 1 : a.seq - b.seq))
+      .map((m) => ({ ...m }));
+  }
+
+  function listMovementsByLine(lineMaterialId) {
+    return movements
+      .filter((m) => m.line_material_id === lineMaterialId)
+      .sort((a, b) => (a.occurred_at < b.occurred_at ? -1
+        : a.occurred_at > b.occurred_at ? 1 : a.seq - b.seq))
+      .map((m) => ({ ...m }));
+  }
+
   return {
     transaction,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
@@ -379,8 +464,12 @@ export function createInMemoryStore() {
     insertPlanAcceptance, listPlanAcceptances, getPlanAcceptance,
     upsertProjectBaseline, getProjectBaseline,
     listStagesByPlanVersion, stageCountByPlanVersion,
+    insertLineMaterial, getLineMaterial, updateLineMaterial,
+    listLineMaterialsByStage, listLineMaterialsByVersion,
+    insertMaterialMovement, listMovementsByProject, listMovementsByLine,
     _stages: stages, _progress: progress, _imports: imports, _dependencies: dependencies,
     _versions: versions, _acceptances: acceptances, _baselines: baselines,
+    _lineMaterials: lineMaterials, _movements: movements,
   };
 }
 

@@ -44,6 +44,10 @@ export const ACTION = Object.freeze({
   // `can` enforces the two-sided rule that a party may not review its own proposal.
   PROPOSE_PLAN: 'propose_plan',
   REVIEW_PLAN: 'review_plan',
+  // Slice B3 materials & movement (LINA-217, contract §4): GC/counterparty records
+  // a post-baseline material movement (swap). A scope_change opens a change order
+  // that carries its own two-sided approval.
+  RECORD_MOVEMENT: 'record_movement',
 });
 
 const ALL_ACTIONS = new Set(Object.values(ACTION));
@@ -76,6 +80,7 @@ const COUNTERPARTY = new Set([
   ACTION.UPLOAD_PLAN_DOCUMENT,
   ACTION.PROPOSE_PLAN,
   ACTION.REVIEW_PLAN,
+  ACTION.RECORD_MOVEMENT,
 ]);
 
 // Band B (ADR-0011) direct/hybrid builds invite a `subcontractor` who is on the

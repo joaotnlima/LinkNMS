@@ -109,6 +109,47 @@ function mapBaseline(r) {
   };
 }
 
+// Slice B3 materials & movement (LINA-217, contract §1) shapers.
+function mapLineMaterial(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    stage_id: r.stage_id,
+    project_id: r.project_id,
+    plan_version_id: r.plan_version_id,
+    kind: r.kind,
+    name: r.name,
+    unit: r.unit,
+    quantity: r.quantity == null ? null : Number(r.quantity),
+    unit_price_cents: r.unit_price_cents == null ? null : Number(r.unit_price_cents),
+    position: r.position,
+    created_at: toIso(r.created_at),
+    updated_at: toIso(r.updated_at),
+  };
+}
+
+function mapMovement(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    seq: toNum(r.seq),
+    project_id: r.project_id,
+    line_material_id: r.line_material_id,
+    stage_id: r.stage_id,
+    movement_kind: r.movement_kind,
+    price_cause: r.price_cause,
+    new_quantity: r.new_quantity == null ? null : Number(r.new_quantity),
+    new_unit_price_cents: r.new_unit_price_cents == null ? null : Number(r.new_unit_price_cents),
+    value_delta_cents: Number(r.value_delta_cents),
+    source: r.source,
+    change_order_id: r.change_order_id,
+    moved_by_party_id: r.moved_by_party_id,
+    occurred_at: toIso(r.occurred_at),
+    audit_event_id: r.audit_event_id,
+    created_at: toIso(r.created_at),
+  };
+}
+
 // Whitelisted updatable columns (edit / reorder — FR-P1). `set` keys already come
 // from the service's own whitelist; this second gate means a stray key can never
 // reach the SQL string.
@@ -415,6 +456,99 @@ export function createPgStore({ pool = getPool() } = {}) {
     return Number(rows[0].n ?? 0);
   }
 
+  // ── Slice B3 materials & movement (LINA-217, contract §1) ────────────────
+
+  async function insertLineMaterial(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.line_material
+         (id, stage_id, project_id, plan_version_id, kind, name, unit,
+          quantity, unit_price_cents, position, created_at, updated_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       returning *`,
+      [row.id, row.stage_id, row.project_id, row.plan_version_id, row.kind,
+        row.name, row.unit, row.quantity, row.unit_price_cents, row.position,
+        row.created_at, row.updated_at],
+    );
+    return mapLineMaterial(rows[0]);
+  }
+
+  async function getLineMaterial(id) {
+    const { rows } = await pool.query(
+      'select * from schedule.line_material where id = $1', [id]);
+    return mapLineMaterial(rows[0] ?? null);
+  }
+
+  const MATERIAL_UPDATABLE = new Set([
+    'name', 'unit', 'quantity', 'unit_price_cents', 'position', 'updated_at',
+  ]);
+
+  async function updateLineMaterial(client, id, patch) {
+    const cols = Object.keys(patch).filter((k) => MATERIAL_UPDATABLE.has(k));
+    if (cols.length === 0) return getLineMaterial(id);
+    const assignments = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');
+    const values = cols.map((c) => patch[c]);
+    const { rows } = await client.query(
+      `update schedule.line_material set ${assignments} where id = $1 returning *`,
+      [id, ...values],
+    );
+    return rows.length ? mapLineMaterial(rows[0]) : null;
+  }
+
+  async function listLineMaterialsByStage(stageId) {
+    const { rows } = await pool.query(
+      `select * from schedule.line_material
+        where stage_id = $1
+        order by position, created_at`,
+      [stageId],
+    );
+    return rows.map(mapLineMaterial);
+  }
+
+  async function listLineMaterialsByVersion(planVersionId) {
+    const { rows } = await pool.query(
+      `select * from schedule.line_material where plan_version_id = $1`,
+      [planVersionId],
+    );
+    return rows.map(mapLineMaterial);
+  }
+
+  // Append-only INSERT. `seq` is DB-assigned (GENERATED ALWAYS AS IDENTITY).
+  async function insertMaterialMovement(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.material_movement
+         (id, project_id, line_material_id, stage_id, movement_kind, price_cause,
+          new_quantity, new_unit_price_cents, value_delta_cents, source,
+          change_order_id, moved_by_party_id, occurred_at, audit_event_id)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       returning *`,
+      [row.id, row.project_id, row.line_material_id, row.stage_id, row.movement_kind,
+        row.price_cause ?? null, row.new_quantity ?? null, row.new_unit_price_cents ?? null,
+        row.value_delta_cents, row.source ?? null, row.change_order_id ?? null,
+        row.moved_by_party_id, row.occurred_at, row.audit_event_id],
+    );
+    return mapMovement(rows[0]);
+  }
+
+  async function listMovementsByProject(projectId) {
+    const { rows } = await pool.query(
+      `select * from schedule.material_movement
+        where project_id = $1
+        order by occurred_at, seq`,
+      [projectId],
+    );
+    return rows.map(mapMovement);
+  }
+
+  async function listMovementsByLine(lineMaterialId) {
+    const { rows } = await pool.query(
+      `select * from schedule.material_movement
+        where line_material_id = $1
+        order by occurred_at, seq`,
+      [lineMaterialId],
+    );
+    return rows.map(mapMovement);
+  }
+
   return {
     transaction,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
@@ -426,5 +560,8 @@ export function createPgStore({ pool = getPool() } = {}) {
     insertPlanAcceptance, listPlanAcceptances, getPlanAcceptance,
     upsertProjectBaseline, getProjectBaseline,
     listStagesByPlanVersion, stageCountByPlanVersion,
+    insertLineMaterial, getLineMaterial, updateLineMaterial,
+    listLineMaterialsByStage, listLineMaterialsByVersion,
+    insertMaterialMovement, listMovementsByProject, listMovementsByLine,
   };
 }

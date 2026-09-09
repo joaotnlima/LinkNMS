@@ -28,6 +28,7 @@ const sampleEvents = [
   { type: 'decision_recorded', actorPartyId: 'p1', occurredAt: '2026-08-25T10:05:00.000Z', payload: { decisionId: 'd1', title: 'Use oak floors' } },
   { type: 'change_order_proposed', actorPartyId: 'p2', occurredAt: '2026-08-25T10:10:00.000Z', payload: { changeOrderId: 'c1', costDeltaCents: 120000 } },
   { type: 'change_order_approved', actorPartyId: 'p1', occurredAt: '2026-08-25T10:15:00.000Z', payload: { changeOrderId: 'c1', costDeltaCents: 120000 } },
+  { type: 'material_movement_recorded', actorPartyId: 'p2', occurredAt: '2026-08-25T10:20:00.000Z', payload: { movementId: 'm1', lineMaterialId: 'lm1', stageId: 's1', movementKind: 'price_movement', priceCause: 'index', newQuantity: 10, newUnitPriceCents: 120000, valueDeltaCents: 200000, changeOrderId: null, source: 'ACME index 2026-09' } },
 ];
 
 test('canonical JSON sorts keys recursively and is order-independent', () => {
@@ -49,7 +50,7 @@ test('canonical JSON is stable for equal integers regardless of literal form', (
 
 test('a well-formed chain verifies, seq is monotonic from 1, genesis is anchored', () => {
   const chain = buildChain(sampleEvents);
-  assert.deepEqual(chain.map((e) => e.seq), [1, 2, 3, 4]);
+  assert.deepEqual(chain.map((e) => e.seq), [1, 2, 3, 4, 5]);
   assert.equal(chain[0].prevHash, GENESIS_HASH);
   assert.deepEqual(verifyChain(chain), { verified: true });
 });
