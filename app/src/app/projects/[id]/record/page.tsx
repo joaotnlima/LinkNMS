@@ -23,7 +23,8 @@ import Link from 'next/link';
 
 import { getBuild, getRecord, isSignedIn } from '@/lib/api';
 import { directoryOf } from '@/lib/view';
-import { TopBar, BottomNav } from '@/components/chrome';
+import { PortalShell } from '@/components/PortalShell';
+import { buildShellContext } from '@/server/portal-shell';
 import { MoneyMovement } from '@/components/MoneyMovement';
 import { formatDate, formatDateTime, moneyPrecise, delta } from '@/lib/format';
 import {
@@ -57,6 +58,7 @@ export default async function RecordPage({
   const comparing = compare === '1';
 
   const [build, record] = await Promise.all([getBuild(id), getRecord(id)]);
+  const shell = await buildShellContext(id, build.name);
 
   const directory = directoryOf(build);
   const nameOf = (partyId: string | null | undefined) =>
@@ -65,15 +67,13 @@ export default async function RecordPage({
   const lineNameOf = (stageId: string) => lineNames.get(stageId) ?? null;
 
   return (
-    <>
-      <TopBar back={{ href: `/projects/${id}`, label: build.name }} />
+    <PortalShell
+      user={shell.user}
+      builds={shell.builds}
+      activeBuild={{ id, name: build.name }}
+      section="schedule"
+    >
       <main className="rc">
-        <nav className="rc-crumbs" aria-label="Breadcrumb">
-          <Link href={`/projects/${id}`}>{build.name}</Link>
-          <span aria-hidden="true">›</span>
-          <span aria-current="page">The record</span>
-        </nav>
-
         <RecordHeader record={record} />
 
         <nav className="rc-tabs" aria-label="The record">
@@ -98,8 +98,7 @@ export default async function RecordPage({
         ) : null}
         {tab === 'history' ? <HistoryTab events={record.tabs.history.events} nameOf={nameOf} /> : null}
       </main>
-      <BottomNav projectId={id} active="plan" />
-    </>
+    </PortalShell>
   );
 }
 

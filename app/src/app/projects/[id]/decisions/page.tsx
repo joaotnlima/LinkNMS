@@ -1,8 +1,11 @@
 // Surface 2 — Decision log. Chronological (newest first); a decision that was
 // revised carries an "edited · rev N" badge that opens the full revision history
 // with authors + timestamps — history is never lost. (design §7, FR2/FR7)
-import { getDecisions } from '@/lib/api';
-import { TopBar, BottomNav } from '@/components/chrome';
+import { redirect } from 'next/navigation';
+
+import { getBuild, getDecisions, isSignedIn } from '@/lib/api';
+import { PortalShell } from '@/components/PortalShell';
+import { buildShellContext } from '@/server/portal-shell';
 import { PencilEdit } from '@/components/icons';
 import { formatDateTime, roleLabel } from '@/lib/format';
 import type { Decision } from '@/lib/types';
@@ -55,12 +58,19 @@ function DecisionCard({ d }: { d: Decision }) {
 
 export default async function DecisionsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const decisions = await getDecisions(id);
+  if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/decisions`);
+
+  const [build, decisions] = await Promise.all([getBuild(id), getDecisions(id)]);
+  const shell = await buildShellContext(id, build.name);
   const sorted = [...decisions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return (
-    <>
-      <TopBar back={{ href: `/projects/${id}`, label: 'Home' }} />
+    <PortalShell
+      user={shell.user}
+      builds={shell.builds}
+      activeBuild={{ id, name: build.name }}
+      crumb="Decisions"
+    >
       <main className="screen">
         <div>
           <h1 className="scr">Decision log</h1>
@@ -74,7 +84,6 @@ export default async function DecisionsPage({ params }: { params: Promise<{ id: 
           )}
         </div>
       </main>
-      <BottomNav projectId={id} active="more" />
-    </>
+    </PortalShell>
   );
 }

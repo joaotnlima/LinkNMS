@@ -26,7 +26,8 @@ import Link from 'next/link';
 import { getBuild, getPlan, getStageMaterials, isSignedIn } from '@/lib/api';
 import { currentSession } from '@/server/session';
 import { directoryOf } from '@/lib/view';
-import { TopBar, BottomNav } from '@/components/chrome';
+import { PortalShell } from '@/components/PortalShell';
+import { buildShellContext } from '@/server/portal-shell';
 import { canAuthorMaterials, canRecordMovement } from '@/lib/record';
 import type { PlanStageNode } from '@/lib/plan-baseline';
 import { LineDetail } from './LineDetail';
@@ -45,6 +46,7 @@ export default async function LineDetailPage({
   const [build, plan, materials, session] = await Promise.all([
     getBuild(id), getPlan(id), getStageMaterials(stageId), currentSession(),
   ]);
+  const shell = await buildShellContext(id, build.name);
 
   // The line's own facts (its name, what the plan says it costs) come from the
   // plan projection, not from the materials read: a line with no breakdown yet is
@@ -66,12 +68,17 @@ export default async function LineDetailPage({
   const versionStatus = plan.current?.status ?? null;
 
   return (
-    <>
-      <TopBar back={{ href: `/projects/${id}/record`, label: 'The record' }} />
+    <PortalShell
+      user={shell.user}
+      builds={shell.builds}
+      activeBuild={{ id, name: build.name }}
+      section="schedule"
+    >
       <main className="rc">
+        {/* The shell breadcrumb already carries "build › Schedule"; this in-body
+            trail picks up from the record down to the open line, the one level
+            the rail cannot express. */}
         <nav className="rc-crumbs" aria-label="Breadcrumb">
-          <Link href={`/projects/${id}`}>{build.name}</Link>
-          <span aria-hidden="true">›</span>
           <Link href={`/projects/${id}/record`}>The record</Link>
           <span aria-hidden="true">›</span>
           <span aria-current="page">{node.name}</span>
@@ -93,8 +100,7 @@ export default async function LineDetailPage({
           }))}
         />
       </main>
-      <BottomNav projectId={id} active="plan" />
-    </>
+    </PortalShell>
   );
 }
 
