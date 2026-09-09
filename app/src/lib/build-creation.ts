@@ -52,18 +52,18 @@ export const OPERATING_MODEL_COPY: Readonly<
 > = Object.freeze({
   turnkey: {
     label: 'Turnkey',
-    blurb: 'One general contractor runs the whole build and hires their own trades.',
-    consequence: 'You invite one general contractor. They answer for the work and the cost.',
+    blurb: 'One general contractor is responsible for the whole build.',
+    consequence: 'You invite one contractor. They own the master plan.',
   },
   direct: {
-    label: 'Direct-to-specialty',
-    blurb: 'You contract each trade yourself — electrician, plumber, roofer.',
-    consequence: 'You invite specialty contractors directly. There is no general contractor above them.',
+    label: 'Direct to specialty',
+    blurb: 'You contract each trade yourself — electrician, plumber, carpenter.',
+    consequence: 'You invite each specialty. Each one owns its own plan.',
   },
   hybrid: {
     label: 'Hybrid',
-    blurb: 'A general contractor for the main build, plus trades you hold directly.',
-    consequence: 'You can invite either a general contractor or a specialty contractor.',
+    blurb: 'A contractor for part of it, some trades contracted directly by you.',
+    consequence: 'Both. Scope gaps between them get flagged for you to assign.',
   },
 });
 
@@ -135,6 +135,52 @@ export const BUILD_TYPES = Object.freeze([
 
 export type BuildType = (typeof BUILD_TYPES)[number]['value'];
 
+// ── Basics: expected start (LINA-219) ────────────────────────────────────────
+//
+// The pen draws Expected start as a MONTH picker showing "March 2026", not a
+// free-form date field: the owner is stating the month they expect work to begin,
+// a target and not a commitment, so day-precision would be false precision. The
+// stored value stays "YYYY-MM" — the same shape the column already held when this
+// was a native month input — so the change is the control, not the data.
+//
+// Pure and now-injected (never an argless `new Date()` in a shared module) so the
+// list is testable: given a fixed "now", the options are deterministic.
+
+const MONTH_NAMES = Object.freeze([
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]);
+
+/** Two zero-padded digits for a 1-based month, e.g. 3 → "03". */
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+/**
+ * The next `count` months starting from `now`'s month, as `{ value, label }`
+ * where value is "YYYY-MM" and label is "March 2026". 18 by default — a year and
+ * a half is long enough for a not-yet-started build without turning the picker
+ * into a scroll.
+ */
+export function expectedStartOptions(
+  now: Date,
+  count = 18,
+): ReadonlyArray<{ value: string; label: string }> {
+  const out: { value: string; label: string }[] = [];
+  const year0 = now.getFullYear();
+  const month0 = now.getMonth(); // 0-based
+  for (let i = 0; i < count; i += 1) {
+    const total = month0 + i;
+    const year = year0 + Math.floor(total / 12);
+    const month = total % 12; // 0-based
+    out.push({
+      value: `${year}-${pad2(month + 1)}`,
+      label: `${MONTH_NAMES[month]} ${year}`,
+    });
+  }
+  return Object.freeze(out);
+}
+
 /** The label an owner reads for a stored build-type slug; the slug itself as a
  *  fallback so an old value that predates a list change never renders blank. */
 export function buildTypeLabel(value: string | null | undefined): string | null {
@@ -187,21 +233,28 @@ export function hrefForStep(projectId: string, step: WizardStepKey | 'done'): st
 // the three columns; createProject persists them and stamps them into the
 // `project_created` genesis event, so the fields now render and are honoured.
 //
-// STILL OPEN:
-//   * Pen screen 04's "Scope note" textarea — `identity.invitation` has no note
-//     column, so it is still not rendered. Same rule: no column, no field.
-//   * The pen's "D2 · Your role" screen (owner OR general contractor can create a
-//     build). The shipped wizard hard-codes the creator as the owner; a
-//     GC-created build inverts project ownership and the first invite's role and
-//     touches RBAC, so it is a feature deferred to its own issue, not a fidelity
-//     tweak. Until then the Basics copy addresses the owner directly.
-//   * Pen screen 05's "Resend / cancel invite" controls: ADR-0011 OQ-1 defers a
-//     re-send CTA to a fast follow and settles on copy-link for V1, which is what
-//     the invite-sent state ships.
+// CLOSED by LINA-219 (baseline pen-rebuild): the Basics screen no longer draws a
+// baseline budget, and the pen is right to omit it. Post-Slices-B1–B3 the PLAN is
+// the baseline's source — import seeds the proposal and the accepted plan sets the
+// authoritative figure — so typing a number up front is both redundant and a
+// second, competing source of truth. A draft is now created with a 0 baseline
+// (createBuildAction) and the plan establishes the real one; the genesis event
+// still carries the baseline, it is just 0 until a plan is accepted. This retires
+// the earlier "deliberate departure": the field's whole justification was that
+// nothing else set the baseline, and B1–B3 now do.
 //
-// DELIBERATE DEPARTURE (not a gap): the Basics screen also collects a baseline
-// budget, which the pen does not draw. Budgets are ledger-authoritative and
-// seeded by the `project_created` baseline; nothing re-baselines a live build, so
-// collecting it here is what stops a committed build from carrying a 0 baseline.
-// The pen's "baseline from plan import" is a not-yet-built model (its own note
-// flags the price columns as an addition to a dates-only spec).
+// STILL OPEN (deferred to their own issues — backend features, not fidelity):
+//   * The pen's new-build screen 04 Invite fields — invitee "Name or company",
+//     the Role picker, and the "Scope note" textarea. `identity.invitation`
+//     stores none of these (it is email + derived role only), so rendering them
+//     would discard what the owner types. Same rule as always: no column, no
+//     field. Adding the columns + the Hybrid role choice is its own slice.
+//   * The pen's screen 01 "Who are you on this build?" role screen (owner OR
+//     general contractor can create a build). The shipped wizard hard-codes the
+//     creator as the owner; a GC-created build inverts project ownership and the
+//     first invite's role and touches RBAC, so it is a feature deferred to its own
+//     issue with an ADR, not a fidelity tweak. Until then the flow starts at
+//     Basics and the creator is the owner.
+//   * Pen "Resend / cancel invite" controls: ADR-0011 OQ-1 defers a re-send CTA
+//     to a fast follow and settles on copy-link for V1, which is what the
+//     invite-sent state ships.

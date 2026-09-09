@@ -1,89 +1,181 @@
-/* Band B — "Create the build and invite" (LINA-179). The M1–M6 / D1–D6 screens.
+/* Band B — "Create the build and invite" (LINA-179; pen-rebuilt LINA-219).
+   The M1–M6 / D1–D6 screens.
 
-   ORDER IS THE CONSTRAINT, AND IT IS THE FILE'S STRUCTURE. The issue requires
-   M1–M6 before D1–D6, so every rule below the fold is written for the phone
-   first and the desktop variants live in exactly one place: the single
-   `min-width: 720px` block at the bottom. That is not a stylistic preference —
-   it means the mobile screens are complete and shippable on their own, and the
-   desktop pass cannot silently regress them, because it can only ADD.
+   THE NEW PEN IS A FULL-SCREEN TAKEOVER. The republished pen (linkNMS.pen,
+   c6276a3) draws the create flow as its own surface — a white "New build" bar
+   over a warm page, a centred white card, and the step's controls BELOW the card
+   — not as a page inside the portal shell. So the `.bwx-*` classes below are a
+   fresh chrome; the older `.bw-*` blocks that this file still carries (invite-sent
+   state, the accept landing) are unchanged and keep their names.
 
-   PALETTE. Everything resolves through globals.css / tokens.css (LINA-156 landed
-   the :root pen-palette migration, which is what unblocked this work). There are
-   no colour literals here and no re-declared tokens — the one class of drift
-   LINA-155/156 was spent killing. The onboarding surfaces' `.ob` / `.onb` blocks
-   are deliberately NOT reused: those are the signed-out auth palette, and this
-   flow runs inside the authenticated portal shell.
+   ORDER IS THE CONSTRAINT. Mobile-first: every rule is the phone rule, and the
+   single `min-width: 720px` block at the bottom only ADDS — it cannot silently
+   regress the phone screens.
 
-   ACCESSIBILITY, the two that matter on this flow (FR9):
-     * The step indicator is a real <ol> with the current step marked
-       `aria-current="step"`; the filled/hollow dots are decorative and carry
-       `aria-hidden`. Progress is never colour alone — the label says "Step 2 of 3".
-     * The operating-model control is a radiogroup of real radios with the card as
-       the label, so it is keyboard- and screen-reader-native. Selection shows as
-       a border weight AND a check glyph AND the native focus ring, not a tint.
+   PALETTE. Everything resolves through globals.css / tokens.css (LINA-156). No
+   colour literals, no re-declared tokens. The page sits on `--sunken` (the warm
+   recessed surface) and the card on `--raised`; the navy is `--owner` as a fill
+   and `--owner-fg` as any meaningful mark or type (the `-fg` rung clears 4.5:1 in
+   both schemes where the base tone does not — see the note that shipped with the
+   old stepper).
 
-   THE `-fg` RUNG, NEVER `--owner`, FOR ANY MARK THAT MEANS SOMETHING. globals.css
-   states the rule ("the base tone is a FILL, `-fg` is the TYPE"); the numbers are
-   why. Measured against tokens.css in BOTH schemes, `--owner` as type is 3.11:1
-   on paper and 2.78:1 on a raised surface in the DARK scheme — under 4.5 for
-   text and under 3 even for a non-text mark. `--owner-fg` measures 6.9–9.1:1
-   across every pair this file uses. That covers the step dots and the radio mark
-   as well as type: they are the only thing separating a done step from a pending
-   one, so they are meaningful UI, not decoration. (Some older portal rules still
-   colour type with the base tone. Those are pre-existing, tracked separately, and
-   not a licence to add more.) */
+   ACCESSIBILITY (FR9): the step rail is a real <ol> with the current step marked
+   `aria-current="step"`; the numbered badges are decorative and carry
+   `aria-hidden`, and progress is never colour alone — `.bwx-steps-caption` states
+   "Step 2 of 3" in text. The operating-model control is a radiogroup of real
+   radios with the card as the label; selection shows as border weight AND a mark
+   AND the native focus ring, not a tint. */
 
-/* ---- shell ---------------------------------------------------------------- */
+/* ---- full-bleed escape ---------------------------------------------------- */
 
-.bw {
+/* The portal shell is a 780px reading column (globals.css `.shell`), right for
+   the record and wrong for a takeover. Widened only when the shell's child IS the
+   wizard — the same `:has()` escape AuthShell uses (LINA-191). */
+.shell:has(> .bwx) {
+  max-width: none;
+  box-shadow: none;
+  background: var(--sunken);
+}
+
+@supports not selector(:has(*)) {
+  .bwx {
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
+  }
+}
+
+/* ---- shell + top bar ------------------------------------------------------ */
+
+.bwx {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--sunken);
+  display: flex;
+  flex-direction: column;
+}
+
+.bwx-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: 14px var(--s4);
+  background: var(--raised);
+  border-bottom: 1px solid var(--outline);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.bwx-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--fg);
+}
+
+.bwx-mark {
+  width: 22px;
+  height: 22px;
+}
+
+.bwx-cancel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 4px 6px;
+  border-radius: var(--r-ctrl);
+}
+
+.bwx-cancel:hover {
+  color: var(--fg);
+}
+
+.bwx-main {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--s4);
   display: flex;
   flex-direction: column;
   gap: var(--s4);
-  padding: var(--s4);
 }
 
-.bw-head {
+/* The form ActionForm renders (`.stack`) is the wizard's own layout column when a
+   step passes a footer: card, then error, then the nav row. */
+.bwx-main .stack {
+  gap: var(--s4);
+}
+
+/* ---- step rail ------------------------------------------------------------ */
+
+.bwx-steps-wrap {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  align-items: center;
 }
 
-.bw-title {
-  font-size: 22px;
-  font-weight: 650;
-  letter-spacing: -0.3px;
-}
-
-.bw-lede {
-  font-size: 14px;
-  color: var(--muted);
-  max-width: 56ch;
-}
-
-/* ---- step indicator ------------------------------------------------------- */
-
-.bw-steps {
+.bwx-steps {
   display: flex;
   align-items: center;
-  gap: var(--s2);
+  justify-content: center;
+  gap: 8px;
   list-style: none;
+  width: 100%;
 }
 
-.bw-step {
+.bwx-step {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 650;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--muted);
 }
 
-/* The label of every step but the current one is hidden on a phone — three
-   labels plus dots do not fit at 360px without wrapping into two lines, and a
-   wrapped progress bar reads as content rather than as chrome. The information
-   is not lost: `.bw-steps-caption` states "Step 2 of 3 · How it is run" in text
-   right below, which is also what a screen reader announces. */
-.bw-step-label {
+.bwx-step-badge {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--raised);
+  border: 1.5px solid var(--outline-strong);
+  color: var(--muted);
+}
+
+.bwx-step.is-current .bwx-step-badge,
+.bwx-step.is-done .bwx-step-badge {
+  background: var(--owner);
+  border-color: var(--owner);
+  color: #fff;
+}
+
+.bwx-step-check {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.4;
+}
+
+.bwx-step.is-current {
+  color: var(--fg);
+}
+
+/* The label of every step but the current one is hidden on a phone — three labels
+   plus badges do not fit at 360px without wrapping, and a wrapped progress rail
+   reads as content rather than chrome. `.bwx-steps-caption` carries the same fact
+   in text right below, which is also what a screen reader announces. */
+.bwx-step-label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -92,32 +184,20 @@
   white-space: nowrap;
 }
 
-.bw-step-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--plan-baseline-muted);
-  border: 1px solid var(--plan-track-line);
+.bwx-step.is-current .bwx-step-label {
+  position: static;
+  width: auto;
+  height: auto;
+  clip-path: none;
 }
 
-.bw-step.is-current .bw-step-dot,
-.bw-step.is-done .bw-step-dot {
-  background: var(--owner-fg);
-  border-color: var(--owner-fg);
-}
-
-.bw-step.is-current {
-  color: var(--owner-fg);
-}
-
-.bw-step-rule {
-  flex: 1;
-  height: 1px;
+.bwx-step-rule {
+  width: 20px;
+  height: 1.5px;
   background: var(--outline);
-  min-width: 12px;
 }
 
-.bw-steps-caption {
+.bwx-steps-caption {
   font-size: 12px;
   font-weight: 650;
   color: var(--owner-fg);
@@ -125,87 +205,120 @@
 
 /* ---- card + fields -------------------------------------------------------- */
 
-.bw-card {
+.bwx-card {
   border: 1px solid var(--outline);
   border-radius: var(--r-overlay);
   background: var(--raised);
   padding: var(--s4);
+  box-shadow: var(--shadow);
 }
 
-/* A full-bleed primary on a phone: it is the one thing to do on the screen and
-   it sits under the thumb. `.stack` is the class ActionForm gives its <form>, so
-   this reaches the submit button of every wizard step without each screen
-   having to remember a modifier. Direct child only — a button inside the
-   invite-sent result block is a different, secondary thing. */
-.bw-card > .stack > .btn {
-  width: 100%;
+.bwx-card-title {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin-bottom: 4px;
 }
 
-/* The way back is a text link, never a second button: two equal-weight controls
-   on a wizard step is how people leave a flow they meant to finish. */
-.bw-skip {
-  display: block;
+.bwx-card-sub {
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: var(--s4);
+  max-width: 60ch;
+}
+
+/* Pen field labels are dark and bold, not the muted metric caption they inherit. */
+.bwx-card .field .metric-lbl {
+  color: var(--fg);
+  font-weight: 650;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--owner-fg);
-  text-align: center;
-  padding: 4px;
+}
+
+.bwx-card .field:last-child {
+  margin-bottom: 0;
+}
+
+/* Build type + Expected start share a row on the pen; they stack on a phone. */
+.bwx-row2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s3);
+}
+
+/* ---- footer nav (Back / Continue) ----------------------------------------- */
+
+.bwx-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+/* The primary is the one thing to do; on a phone it is full-bleed and under the
+   thumb. It stays the form's submit. */
+.bwx-nav .btn.primary {
+  flex: 1;
+}
+
+.bwx-back {
+  flex: 0 0 auto;
 }
 
 /* ---- operating model (M3/D3) --------------------------------------------- */
 
-.bw-models {
+.bwx-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.bwx-models {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
   border: 0;
+  padding: 0;
+  margin: 0;
 }
 
-.bw-models legend {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: var(--s2);
-}
-
-.bw-model {
+.bwx-model {
   position: relative;
   display: block;
-  border: 1px solid var(--outline-strong);
+  border: 1.5px solid var(--outline-strong);
   border-radius: var(--r-ctrl);
-  background: var(--paper);
-  padding: 12px 14px 12px 42px;
+  background: var(--raised);
+  padding: 14px 16px 14px 46px;
   cursor: pointer;
 }
 
-/* The radio is visually replaced by `.bw-model-mark` but stays in the layout and
-   in the tab order — it is the control. `opacity: 0` rather than
-   `display: none`, because a hidden input cannot be focused and the focus ring
-   below is drawn from its :focus-visible state. */
-.bw-model input {
+/* The radio is visually replaced by `.bwx-model-mark` but stays in the layout and
+   the tab order — it is the control. `opacity: 0` rather than `display: none`, so
+   it can still be focused and drive the focus ring below. */
+.bwx-model input {
   position: absolute;
   top: 16px;
-  left: 14px;
+  left: 16px;
   width: 18px;
   height: 18px;
   margin: 0;
   opacity: 0;
 }
 
-.bw-model-mark {
+.bwx-model-mark {
   position: absolute;
-  top: 15px;
-  left: 14px;
+  top: 16px;
+  left: 16px;
   width: 18px;
   height: 18px;
   border: 2px solid var(--outline-strong);
   border-radius: 50%;
-  background: var(--paper);
+  background: var(--raised);
 }
 
-.bw-model-mark::after {
+.bwx-model-mark::after {
   content: "";
   position: absolute;
   inset: 3px;
@@ -214,60 +327,61 @@
   transform: scale(0);
 }
 
-.bw-model:has(input:checked) {
-  border-color: var(--owner-fg);
+.bwx-model:has(input:checked) {
+  border-color: var(--owner);
   border-width: 2px;
-  /* Compensate the extra border so the checked card does not shift its
-     neighbours by 1px — a wizard that twitches on selection reads as broken. */
-  padding: 11px 13px 11px 41px;
+  /* Compensate the extra 0.5px border so the checked card does not nudge its
+     neighbours — a wizard that twitches on selection reads as broken. */
+  padding: 13.5px 15.5px 13.5px 45.5px;
   background: var(--owner-muted);
 }
 
-.bw-model:has(input:checked) .bw-model-mark {
+.bwx-model:has(input:checked) .bwx-model-mark {
   border-color: var(--owner-fg);
-  top: 14px;
-  left: 13px;
 }
 
-.bw-model:has(input:checked) .bw-model-mark::after {
+.bwx-model:has(input:checked) .bwx-model-mark::after {
   transform: scale(1);
 }
 
-.bw-model:has(input:focus-visible) {
+.bwx-model:has(input:focus-visible) {
   outline: 2px solid var(--owner-fg);
   outline-offset: 2px;
 }
 
-.bw-model-label {
+.bwx-model-label {
   display: block;
   font-size: 15px;
   font-weight: 650;
 }
 
-.bw-model-blurb {
+.bwx-model-blurb {
   display: block;
   font-size: 13px;
   color: var(--muted);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
-/* The consequence line is what makes "asked once, never again" honest. It is
-   the party ramp on purpose — it names who the owner will be able to invite. */
-.bw-model-consequence {
+/* The consequence line is what makes "asked once, never again" honest — it names
+   what the choice decides. Muted until the option is chosen, then the owner navy,
+   so the selected card states its own consequence plainly. */
+.bwx-model-consequence {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--builder-fg);
-  margin-top: 6px;
+  color: var(--muted);
+  margin-top: 8px;
 }
 
-.bw-once {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: var(--s3);
-  padding-top: var(--s3);
-  border-top: 1px dashed var(--outline);
+.bwx-model:has(input:checked) .bwx-model-consequence {
+  color: var(--owner-fg);
 }
+
+/* ======================================================================== */
+/* Below: unchanged `.bw-*` blocks — the invite-sent state and the accept    */
+/* landing. They are rendered by InvitePanel and the accept route and keep   */
+/* their names; only the wizard chrome above was rebuilt (LINA-219).         */
+/* ======================================================================== */
 
 /* ---- invite sent (M5/D5) -------------------------------------------------- */
 
@@ -275,6 +389,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--s3);
+  margin-top: var(--s3);
 }
 
 /* Pending, not success. The build is committed and the invitation is out, but
@@ -354,9 +469,8 @@
   justify-content: center;
 }
 
-/* D6 — "what you're joining" (LINA-198). A quiet key/value panel between the
-   lede and the CTA: build, inviter, role. Reads the shared tokens; the role
-   pill reuses globals.css `.tag`. */
+/* D6 — "what you're joining" (LINA-198). A quiet key/value panel between the lede
+   and the CTA: build, inviter, role. */
 .bw-invite-name {
   color: var(--owner-fg);
 }
@@ -400,74 +514,59 @@
   text-align: center;
 }
 
-/* ---- D1–D6: the desktop variants ------------------------------------------
-   One block, additive only. 720px because the portal `.shell` caps at 780px:
-   below that the wizard is the full width of a phone, above it there is room for
-   the step labels and a two-up model grid. */
+/* ---- desktop variants (D1–D6) ---------------------------------------------
+   One block, additive only. 720px because the portal shell caps at 780px. */
 
 @media (min-width: 720px) {
-  .bw {
-    padding: var(--s8) var(--s6);
+  .bwx-main {
+    padding: var(--s8) var(--s6) var(--s12);
     gap: var(--s6);
   }
 
-  .bw-title {
-    font-size: 28px;
+  .bwx-bar {
+    padding: 16px var(--s6);
   }
 
-  .bw-lede {
-    font-size: 15px;
-  }
-
-  /* D: the step labels fit, so they are shown and the redundant caption below
+  /* D: every step label fits, so all three show and the redundant caption below
      the rail is dropped. */
-  .bw-step-label {
+  .bwx-step-label {
     position: static;
     width: auto;
     height: auto;
     clip-path: none;
   }
 
-  .bw-steps-caption {
+  .bwx-steps {
+    gap: 12px;
+  }
+
+  .bwx-step-rule {
+    width: 48px;
+  }
+
+  .bwx-steps-caption {
     display: none;
   }
 
-  .bw-card {
+  .bwx-card {
     padding: var(--s6);
   }
 
-  /* D2/D3: the primary stops being full-bleed. A 100%-wide button across a
-     desktop card is a phone control that got stretched. */
-  .bw-card > .stack > .btn {
-    width: auto;
-    align-self: flex-start;
+  .bwx-card-title {
+    font-size: 24px;
   }
 
-  .bw-skip {
-    text-align: left;
-    padding: 0;
+  /* D2: Build type + Expected start side by side. */
+  .bwx-row2 {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--s4);
   }
 
-  /* D3: the three models side by side — the pen draws this as a segmented
-     control, and seeing all three explainers at once is the whole reason the
-     choice can honestly be "asked once". On a phone they stack, because three
-     columns of 13px explainer at 360px is unreadable. */
-  .bw-models {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: var(--s3);
-  }
-
-  .bw-models legend {
-    grid-column: 1 / -1;
-  }
-
-  .bw-model {
-    padding: 14px 16px 16px 42px;
-  }
-
-  .bw-model:has(input:checked) {
-    padding: 13px 15px 15px 41px;
+  /* D2/D3: the primary stops being full-bleed — a 100%-wide button across a
+     desktop card is a phone control that got stretched. It sits bottom-right,
+     Back bottom-left. */
+  .bwx-nav .btn.primary {
+    flex: 0 0 auto;
   }
 
   .bw-linkrow {
