@@ -1,0 +1,103 @@
+/* M14 — the record home (pen "S · M14 · The record, live"; ADR-0015).
+   Colour is never the only signal (FR9): every pillar and timeline state also
+   carries a word. Bars use the --plan-* STATE ramp, not a party tone (ADR-0009).
+   All colour comes from tokens.css via the globals.css aliases; no literals. */
+
+.m14 { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s4); }
+
+/* ---- header: badges + build name ---- */
+.m14-head { display: flex; flex-direction: column; gap: var(--s2); }
+.m14-head-badges { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.m14-week, .m14-track {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 650; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.m14-week { color: var(--muted); background: var(--sunken); border-color: var(--outline); }
+.m14-week-ic { font-size: 13px; line-height: 1; }
+.m14-track.on { color: var(--plan-closed-fg); background: var(--plan-closed-muted); border-color: var(--plan-closed-line); }
+.m14-track.off { color: var(--state-warning-fg); background: var(--state-warning-muted); border-color: var(--state-warning-line); }
+.m14-title { font-size: 24px; font-weight: 700; letter-spacing: -.4px; }
+
+/* ---- FR1 invite prompt (owner, no counterparty yet) ---- */
+.m14-invite {
+  display: flex; flex-direction: column; gap: 3px; padding: 14px var(--s4);
+  border: 1px solid var(--owner-muted); border-radius: var(--r-overlay);
+  background: var(--owner-muted);
+}
+.m14-invite:hover { filter: brightness(.98); }
+.m14-invite-t { font-size: 14px; font-weight: 650; color: var(--owner-fg); }
+.m14-invite-c { font-size: 12px; color: var(--owner-fg); opacity: .85; }
+
+/* ---- four pillars ---- */
+.m14-pillars { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+@media (min-width: 620px) { .m14-pillars { grid-template-columns: repeat(4, 1fr); } }
+.m14-pillar {
+  display: flex; flex-direction: column; gap: 8px; padding: 14px;
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl); background: var(--raised);
+}
+a.m14-pillar:hover { background: var(--sunken); }
+.m14-p-top { display: flex; align-items: center; gap: 8px; }
+.m14-p-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 8px; flex: none;
+}
+.m14-p-ic { width: 17px; height: 17px; stroke-width: 2; fill: none; }
+/* Chip tint = RAG, but the name + value below carry the signal too (FR9). */
+.m14-p-chip.green { background: var(--plan-closed-muted); } .m14-p-chip.green .m14-p-ic { stroke: var(--plan-closed); }
+.m14-p-chip.amber { background: var(--state-warning-muted); } .m14-p-chip.amber .m14-p-ic { stroke: var(--state-warning-fg); }
+.m14-p-chip.red   { background: var(--state-danger-muted); }  .m14-p-chip.red .m14-p-ic   { stroke: var(--state-danger-fg); }
+/* `none` = SAFETY not tracked: muted, deliberately not green (ADR-0015 §2). */
+.m14-p-chip.none  { background: var(--sunken); } .m14-p-chip.none .m14-p-ic { stroke: var(--ink-45); }
+.m14-p-name { font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--outline-strong); }
+.m14-p-v { font-size: 15px; font-weight: 650; color: var(--ink); line-height: 1.3; }
+.m14-pillar.none .m14-p-v { color: var(--muted); font-weight: 600; }
+.m14-p-sub { font-size: 12px; }
+.m14-p-sub.delta.up { color: var(--danger); font-weight: 650; }
+.m14-p-sub.delta.down { color: var(--success); font-weight: 650; }
+.m14-p-sub.delta.flat { color: var(--muted); font-weight: 650; }
+
+/* ---- master timeline ---- */
+.m14-timeline-sec { display: flex; flex-direction: column; gap: var(--s3); }
+.m14-tl-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; }
+.m14-tl-title { font-size: 15px; font-weight: 700; }
+.m14-legend { display: flex; align-items: center; gap: var(--s3); }
+.m14-lg { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+.m14-sw { width: 12px; height: 8px; border-radius: 3px; display: inline-block; }
+.m14-sw.plan { background: var(--plan-baseline); }
+.m14-sw.actual { background: var(--plan-actual); }
+.m14-sw.closed { background: var(--plan-closed); }
+
+.m14-timeline {
+  list-style: none; border: 1px solid var(--outline); border-radius: var(--r-overlay);
+  background: var(--raised); overflow: hidden;
+}
+.m14-row { display: flex; flex-direction: column; gap: 8px; padding: 14px var(--s4); border-bottom: 1px solid var(--outline); }
+.m14-row:last-child { border-bottom: 0; }
+.m14-row-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.m14-row-name { font-size: 14px; font-weight: 600; }
+.m14-state {
+  font-size: 11px; font-weight: 650; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.m14-state.closed { color: var(--plan-closed-fg); background: var(--plan-closed-muted); border-color: var(--plan-closed-line); }
+.m14-state.progress { color: var(--plan-actual-fg); background: var(--plan-actual-muted); border-color: var(--plan-actual-line); }
+.m14-state.blocked { color: var(--state-danger-fg); background: var(--state-danger-muted); border-color: var(--state-danger-line); }
+.m14-state.plan { color: var(--muted); background: var(--sunken); border-color: var(--outline); }
+
+.m14-row-bar { display: flex; align-items: center; gap: var(--s3); }
+.m14-bar {
+  flex: 1; height: 10px; border-radius: 999px; overflow: hidden;
+  background: var(--plan-baseline-muted); border: 1px solid var(--plan-track-line);
+}
+.m14-bar.closed { background: var(--plan-closed); border-color: var(--plan-closed); }
+.m14-bar.plan { background: var(--plan-baseline-muted); opacity: .65; }
+.m14-bar.blocked { background: var(--state-warning-muted); border-color: var(--state-warning-line); }
+.m14-bar.progress { background: var(--plan-baseline-muted); }
+.m14-bar-fill { display: block; height: 100%; background: var(--plan-actual); }
+.m14-compare {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  font-size: 12px; font-weight: 600; color: var(--owner);
+}
+.m14-compare:hover { text-decoration: underline; }
+.m14-row-pct { font-size: 11px; color: var(--muted); }

@@ -74,7 +74,7 @@ export default async function DecisionsPage({ params }: { params: Promise<{ id: 
           )}
         </div>
       </main>
-      <BottomNav projectId={id} active="decisions" />
+      <BottomNav projectId={id} active="more" />
     </>
   );
 }

@@ -75,7 +75,7 @@ export default async function BudgetMovementPage({
           <Link href={`/projects/${id}/record?tab=plan`}>Open the record</Link>.
         </p>
       </main>
-      <BottomNav projectId={id} active="home" />
+      <BottomNav projectId={id} active="plan" />
     </>
   );
 }

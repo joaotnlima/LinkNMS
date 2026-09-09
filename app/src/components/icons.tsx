@@ -35,34 +35,47 @@ export function StatusIcon({ name, className }: { name: IconName; className?: st
           <path d="M12 8v4M12 16h.01" strokeLinecap="round" />
         </svg>
       );
+    case 'shield':
+      // SAFETY's "not tracked yet" glyph — a plain shield, NOT a shield-check:
+      // the check would read as "verified safe", which is the claim ADR-0015 §2
+      // refuses to make with no data behind it.
+      return (
+        <svg className={className} viewBox="0 0 24 24" aria-hidden>
+          <path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" strokeLinejoin="round" />
+        </svg>
+      );
   }
 }
 
+// The M14 pillar identity glyphs (ADR-0015 §1). They mirror the pen's lucide
+// icons: calendar-range, wallet, file-diff, shield.
 export function PillarGlyph({ pillar, className }: { pillar: PillarKey; className?: string }) {
   switch (pillar) {
+    case 'schedule':
+      return (
+        <svg className={className} viewBox="0 0 24 24" aria-hidden>
+          <path d="M4 6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" strokeLinejoin="round" />
+          <path d="M4 9h16M8 3v4M16 3v4" strokeLinecap="round" />
+        </svg>
+      );
+    case 'budget':
+      return (
+        <svg className={className} viewBox="0 0 24 24" aria-hidden>
+          <path d="M4 7a1 1 0 0 1 1-1h13a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" strokeLinejoin="round" />
+          <path d="M16 11h3v3h-3a1.5 1.5 0 0 1 0-3z" strokeLinejoin="round" />
+        </svg>
+      );
     case 'scope':
       return (
         <svg className={className} viewBox="0 0 24 24" aria-hidden>
-          <path d="M4 6h16M4 12h16M4 18h10" strokeLinecap="round" />
+          <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" strokeLinejoin="round" />
+          <path d="M14 3v5h5M9 13h2m-1-1v2M9 17h4" strokeLinecap="round" />
         </svg>
       );
-    case 'time':
+    case 'safety':
       return (
         <svg className={className} viewBox="0 0 24 24" aria-hidden>
-          <circle cx="12" cy="12" r="8" />
-          <path d="M12 8v4l3 2" strokeLinecap="round" />
-        </svg>
-      );
-    case 'cost':
-      return (
-        <svg className={className} viewBox="0 0 24 24" aria-hidden>
-          <path d="M12 3v18M8 7h6a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h7" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      );
-    case 'quality':
-      return (
-        <svg className={className} viewBox="0 0 24 24" aria-hidden>
-          <path d="M12 3l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 15.9 6.8 18l1.2-5.6L3.8 8.6 9.4 8z" strokeLinejoin="round" />
+          <path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" strokeLinejoin="round" />
         </svg>
       );
   }
@@ -86,6 +99,19 @@ export const ChangeIcon = (p: P) => (
 );
 export const AuditIcon = (p: P) => (
   <svg {...p} viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V8" strokeLinecap="round" /></svg>
+);
+// ── M14 bottom-nav icons (ADR-0015 §6): Builds · Plan · Docs · More ──────────
+export const BuildsIcon = (p: P) => (
+  <svg {...p} viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM13 13h7v7h-7zM4 13h7v7H4z" strokeLinejoin="round" /></svg>
+);
+export const PlanIcon = (p: P) => (
+  <svg {...p} viewBox="0 0 24 24"><path d="M4 6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" strokeLinejoin="round" /><path d="M4 9h16M8 3v4M16 3v4" strokeLinecap="round" /></svg>
+);
+export const DocsIcon = (p: P) => (
+  <svg {...p} viewBox="0 0 24 24"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" strokeLinejoin="round" /></svg>
+);
+export const MoreIcon = (p: P) => (
+  <svg {...p} viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" strokeLinecap="round" strokeWidth="2.6" /></svg>
 );
 export const ShieldCheck = (p: P) => (
   <svg {...p} viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" strokeLinejoin="round" /><path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" /></svg>

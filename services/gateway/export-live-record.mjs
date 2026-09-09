@@ -24,7 +24,7 @@
 //   revisions[].authorPartyId revisions[].by
 //
 // The `expected` budget block is taken from the LIVE ledger's authoritative
-// status (`getStatus().cost`), NOT recomputed here. That is the load-bearing
+// status (`getStatus().budget`), NOT recomputed here. That is the load-bearing
 // assertion: the checker independently sums the approved deltas from the
 // exported change orders and must arrive at the same total the ledger serves.
 // If the CO projection and the ledger ever disagree, this gate goes red — which
@@ -196,8 +196,8 @@ async function main() {
       // Authoritative totals from the LIVE ledger, not recomputed here — the
       // checker re-derives the same numbers from change_orders and must match.
       expected: {
-        approved_delta_total_cents: status.cost.deltaCents,
-        current_budget_total_cents: status.cost.currentCents,
+        approved_delta_total_cents: status.budget.deltaCents,
+        current_budget_total_cents: status.budget.currentCents,
         note: 'Sourced from the live ledger status endpoint. The checker independently sums approved deltas from change_orders and must arrive at these numbers.',
       },
     };

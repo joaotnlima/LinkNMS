@@ -318,9 +318,9 @@ describe('mounted HTTP surface over real Postgres', { skip: URL_ ? false : 'set 
     test('the GC proposes a change order', async () => {
       const status = await c.http.ledger.getStatus({ session: as(homeowner.id), params: forProject(projectId) });
       assert.equal(status.status, 200, JSON.stringify(status.body));
-      // The four-pillar panel (design §5): cost carries the authoritative
-      // baseline/current/delta, all derived ledger-side.
-      baselineTotal = status.body.cost.currentCents;
+      // The four-pillar panel (pen M14; ADR-0015 §1): BUDGET carries the
+      // authoritative baseline/current/delta, all derived ledger-side.
+      baselineTotal = status.body.budget.currentCents;
 
       const res = await c.http.changeOrder.proposeChangeOrder({
         session: as(gc.id),
@@ -333,8 +333,8 @@ describe('mounted HTTP surface over real Postgres', { skip: URL_ ? false : 'set 
 
     test('a proposed change order has NOT moved the budget', async () => {
       const status = await c.http.ledger.getStatus({ session: as(homeowner.id), params: forProject(projectId) });
-      assert.equal(status.body.cost.currentCents, baselineTotal, 'only an approval moves money');
-      assert.equal(status.body.cost.deltaCents, 0, 'and nothing has moved yet');
+      assert.equal(status.body.budget.currentCents, baselineTotal, 'only an approval moves money');
+      assert.equal(status.body.budget.deltaCents, 0, 'and nothing has moved yet');
     });
 
     // FR5 — the two-sided approval rule. The proposer cannot also approve.
@@ -361,9 +361,9 @@ describe('mounted HTTP surface over real Postgres', { skip: URL_ ? false : 'set 
       assert.equal(res.body.decision ?? res.body.status, 'approved');
 
       const status = await c.http.ledger.getStatus({ session: as(homeowner.id), params: forProject(projectId) });
-      assert.equal(status.body.cost.currentCents, baselineTotal + 450_000,
+      assert.equal(status.body.budget.currentCents, baselineTotal + 450_000,
         'the authoritative total moved by the delta, server-side');
-      assert.equal(status.body.cost.deltaCents, 450_000);
+      assert.equal(status.body.budget.deltaCents, 450_000);
     });
 
     // FR8 — every cent that moved is answerable. No budget event without an

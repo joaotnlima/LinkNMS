@@ -48,7 +48,7 @@ export default async function ChangeOrdersPage({ params }: { params: Promise<{ i
           )}
         </div>
       </main>
-      <BottomNav projectId={id} active="change-orders" />
+      <BottomNav projectId={id} active="more" />
     </>
   );
 }
