@@ -72,6 +72,18 @@ export default async function DashboardPage({ params }: { params: Promise<{ id: 
         </section>
 
         <section className="card">
+          {/* The way in to D14 (LINA-218), listed FIRST. The record is the thing
+              this product is: the plan, the schedule, the money and the history
+              of all three in one place. Everything below it is a slice of the
+              same record reached directly. */}
+          <Link className="row" href={`/projects/${id}/record`}>
+            <span style={{ fontWeight: 600 }}>📖 The record</span>
+            <span className="cap">plan · schedule · money · history →</span>
+          </Link>
+          <Link className="row" href={`/projects/${id}/budget`}>
+            <span style={{ fontWeight: 600 }}>💷 Budget movement</span>
+            <span className="cap">scope changes and price movements →</span>
+          </Link>
           {/* The way in to D7 (LINA-207). The dashboard is where both parties
               land, and until this row existed the plan surface was reachable
               only by typing the URL. It is listed for BOTH roles — the owner
