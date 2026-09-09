@@ -82,6 +82,11 @@ export function PortalShell({
   builds = [],
   // BUILD mode: which section is showing (highlighted in the rail + tabs).
   section,
+  // BUILD mode: overrides the breadcrumb leaf label for build-scoped surfaces
+  // that are NOT a rail section — the overflow ones reached via "Log a change"
+  // (change orders, decisions). With no `section`, nothing in the rail
+  // highlights, and the top bar reads "build › {crumb}" instead of "› Overview".
+  crumb,
 }: {
   user: PortalUser;
   children: React.ReactNode;
@@ -90,6 +95,7 @@ export function PortalShell({
   activeBuild?: BuildRef;
   builds?: BuildRef[];
   section?: BuildSection;
+  crumb?: string;
 }) {
   const buildScoped = activeBuild != null;
   const bid = activeBuild?.id;
@@ -170,7 +176,7 @@ export function PortalShell({
                 <span className="psh-crumb-build">{activeBuild!.name}</span>
                 <ChevronRight className="psh-crumb-sep" />
                 <span className="psh-crumb-here" aria-current="page">
-                  {section ? SECTION_LABEL[section] : 'Overview'}
+                  {crumb ?? (section ? SECTION_LABEL[section] : 'Overview')}
                 </span>
               </span>
               <span className="psh-top-title psh-top-title--mob">{activeBuild!.name}</span>

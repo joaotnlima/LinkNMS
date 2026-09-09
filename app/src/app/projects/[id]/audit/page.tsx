@@ -3,8 +3,11 @@
 // first broken seq if the chain ever fails. Covers decisions, change orders and
 // (later) plan/progress events. Budget deltas are shown inline so the running
 // budget trail is legible. (design §7, FR2/FR7, Acceptance)
-import { getAudit } from '@/lib/api';
-import { TopBar, BottomNav } from '@/components/chrome';
+import { redirect } from 'next/navigation';
+
+import { getAudit, getBuild, isSignedIn } from '@/lib/api';
+import { PortalShell } from '@/components/PortalShell';
+import { buildShellContext } from '@/server/portal-shell';
 import { ShieldCheck, StatusIcon } from '@/components/icons';
 import { formatDateTime, delta, roleLabel } from '@/lib/format';
 import type { AuditEvent } from '@/lib/types';
@@ -31,13 +34,20 @@ function EventRow({ ev }: { ev: AuditEvent }) {
 
 export default async function AuditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const audit = await getAudit(id);
+  if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/audit`);
+
+  const [build, audit] = await Promise.all([getBuild(id), getAudit(id)]);
+  const shell = await buildShellContext(id, build.name);
   const verified = audit.verified === true;
   const ordered = [...audit.events].sort((a, b) => a.seq - b.seq);
 
   return (
-    <>
-      <TopBar back={{ href: `/projects/${id}`, label: 'Home' }} />
+    <PortalShell
+      user={shell.user}
+      builds={shell.builds}
+      activeBuild={{ id, name: build.name }}
+      section="history"
+    >
       <main className="screen">
         <div>
           <h1 className="scr">Audit trail</h1>
@@ -62,7 +72,6 @@ export default async function AuditPage({ params }: { params: Promise<{ id: stri
           ))}
         </div>
       </main>
-      <BottomNav projectId={id} active="more" />
-    </>
+    </PortalShell>
   );
 }

@@ -1,19 +1,29 @@
 // Surface 3a — Change-order list. Status at a glance, chronological, with a clear
 // entry point to raise one. Each row links to the "one screen" detail. (design §7)
 import Link from 'next/link';
-import { getChangeOrders } from '@/lib/api';
-import { TopBar, BottomNav } from '@/components/chrome';
+import { redirect } from 'next/navigation';
+
+import { getBuild, getChangeOrders, isSignedIn } from '@/lib/api';
+import { PortalShell } from '@/components/PortalShell';
+import { buildShellContext } from '@/server/portal-shell';
 import { CoStatusChip } from '@/components/CoStatusChip';
 import { formatDate, roleLabel, delta } from '@/lib/format';
 
 export default async function ChangeOrdersPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const cos = await getChangeOrders(id);
+  if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/change-orders`);
+
+  const [build, cos] = await Promise.all([getBuild(id), getChangeOrders(id)]);
+  const shell = await buildShellContext(id, build.name);
   const sorted = [...cos].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return (
-    <>
-      <TopBar back={{ href: `/projects/${id}`, label: 'Home' }} />
+    <PortalShell
+      user={shell.user}
+      builds={shell.builds}
+      activeBuild={{ id, name: build.name }}
+      crumb="Change orders"
+    >
       <main className="screen">
         <div className="spread">
           <div>
@@ -48,7 +58,6 @@ export default async function ChangeOrdersPage({ params }: { params: Promise<{ i
           )}
         </div>
       </main>
-      <BottomNav projectId={id} active="more" />
-    </>
+    </PortalShell>
   );
 }

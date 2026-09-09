@@ -16,7 +16,8 @@ import Link from 'next/link';
 
 import { getBudgetMovement, getBuild, getPlan, isSignedIn } from '@/lib/api';
 import { directoryOf } from '@/lib/view';
-import { TopBar, BottomNav } from '@/components/chrome';
+import { PortalShell } from '@/components/PortalShell';
+import { buildShellContext } from '@/server/portal-shell';
 import { MoneyMovement } from '@/components/MoneyMovement';
 import type { PlanStageNode } from '@/lib/plan-baseline';
 import '@/components/record.css';
@@ -35,6 +36,7 @@ export default async function BudgetMovementPage({
   // "8f3a-… moved $1,200" answers nothing. If the plan is unreadable the rows
   // still render, named as lines rather than as ids.
   const [build, money, plan] = await Promise.all([getBuild(id), getBudgetMovement(id), getPlan(id)]);
+  const shell = await buildShellContext(id, build.name);
 
   const directory = directoryOf(build);
   const nameOf = (partyId: string | null | undefined) =>
@@ -44,15 +46,13 @@ export default async function BudgetMovementPage({
   collect(plan.current?.stages ?? [], names);
 
   return (
-    <>
-      <TopBar back={{ href: `/projects/${id}`, label: build.name }} />
+    <PortalShell
+      user={shell.user}
+      builds={shell.builds}
+      activeBuild={{ id, name: build.name }}
+      section="money"
+    >
       <main className="rc">
-        <nav className="rc-crumbs" aria-label="Breadcrumb">
-          <Link href={`/projects/${id}`}>{build.name}</Link>
-          <span aria-hidden="true">›</span>
-          <span aria-current="page">Budget movement</span>
-        </nav>
-
         <div className="rc-head">
           <div className="rc-head-l">
             <h1 className="rc-title">Budget movement</h1>
@@ -75,8 +75,7 @@ export default async function BudgetMovementPage({
           <Link href={`/projects/${id}/record?tab=plan`}>Open the record</Link>.
         </p>
       </main>
-      <BottomNav projectId={id} active="plan" />
-    </>
+    </PortalShell>
   );
 }
 
