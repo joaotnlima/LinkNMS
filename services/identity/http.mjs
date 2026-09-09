@@ -97,6 +97,10 @@ export function createIdentityHttp({ service, rateLimiter = createRateLimiter(),
         name: body?.name,
         baselineBudgetCents: body?.baselineBudgetCents,
         draft: Boolean(body?.draft),
+        // Role screen (LINA-221, ADR-0016): 'owner' (default) or 'counterparty'
+        // for a GC-created build. The service validates and defaults it, so a
+        // missing key keeps the legacy owner-first behaviour.
+        creatorRole: body?.creatorRole,
         // Basics descriptive fields (LINA-219). Body-supplied and optional; the
         // service trims/caps and stores null for blanks, so a missing key is fine.
         siteAddress: body?.siteAddress,

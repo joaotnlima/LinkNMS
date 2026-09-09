@@ -146,7 +146,10 @@ export const schemas = {
     properties: {
       id: { type: 'string' },
       name: { type: 'string' },
-      ownerPartyId: { type: 'string' },
+      // The homeowner principal of the build. NULL on a GC-created build until the
+      // invited owner accepts (ADR-0016 §1) — the key is always present, null until
+      // the owner seat is filled. Non-null on every owner-created build.
+      ownerPartyId: { type: ['string', 'null'] },
       baselineBudgetCents: { type: 'integer' },
       currentBudgetCents: { type: 'integer' },
       operatingModel: operatingModelEnum,
@@ -239,6 +242,16 @@ export const schemas = {
       // created `status='draft'` with `operatingModel=null`. Absent/false keeps
       // the legacy one-shot path: an immediately `active` project, unchanged.
       draft: { type: 'boolean', default: false, description: 'Create the build as a draft (Band B wizard step 1).' },
+      // Role screen (LINA-221, ADR-0016). `owner` (default) — the creator is the
+      // homeowner, unchanged. `counterparty` — a GC-created build: the creator
+      // joins as the counterparty, `owner_party_id` stays null until the invited
+      // homeowner accepts, and the first invite invites the `owner`.
+      creatorRole: {
+        type: 'string',
+        default: 'owner',
+        enum: ['owner', 'counterparty'],
+        description: 'Role screen (LINA-221, ADR-0016): owner (default) or counterparty for a GC-created build.',
+      },
       // Basics descriptive fields (LINA-219). Optional; the service trims, caps at
       // 300 chars, and stores null for blanks. `expectedStart` is a "YYYY-MM"
       // month string from the picker, kept as free text (no DB CHECK).
@@ -253,8 +266,15 @@ export const schemas = {
       // The launch vocabulary (0009): a build invites the role(s) its operating
       // model admits — turnkey → counterparty, direct → subcontractor, hybrid →
       // both. `subcontractor` is only accepted when the model allows it (service-
-      // enforced); the enum here mirrors the DB CHECK.
-      role: roleEnumVisible,
+      // enforced). ADR-0016 adds `owner`: invitable only on a GC-created build
+      // that has no owner member yet — the inverted first invite. The enum here
+      // mirrors the DB CHECK (0015); the service gates which role a given build
+      // may actually invite.
+      role: {
+        type: 'string',
+        enum: ['owner', 'counterparty', 'subcontractor'],
+        description: 'Invited role. `owner` only on a GC-created build with no owner yet (ADR-0016).',
+      },
       email: {
         type: ['string', 'null'],
         format: 'email',

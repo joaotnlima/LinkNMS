@@ -239,6 +239,21 @@ export function createPgStore({ pool = getPool(), ledger }) {
           );
           return mapProject(rows[0] ?? null);
         },
+        // ADR-0016 §4: stamp the homeowner onto a GC-founded build, ONCE. The
+        // column-scoped GRANT UPDATE (owner_party_id) from 0015 is the least-
+        // privilege leg; the `WHERE owner_party_id IS NULL` guard is the one-way
+        // leg — an existing owner is immutable at the SQL layer (never re-pointed),
+        // so a lost race stamps zero rows and surfaces as a conflict, not a silent
+        // overwrite of a real owner.
+        async stampOwnerParty(projectId, partyId) {
+          const { rows } = await client.query(
+            `update identity.project set owner_party_id = $2
+              where id = $1 and owner_party_id is null returning *`,
+            [projectId, partyId],
+          );
+          if (rows.length === 0) throw conflict('project already has an owner');
+          return mapProject(rows[0]);
+        },
         async insertMembership(m) {
           try {
             const { rows } = await client.query(

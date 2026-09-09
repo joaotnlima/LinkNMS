@@ -103,6 +103,126 @@ describe('createProject (FR1)', () => {
   });
 });
 
+// ── GC-as-creator ownership inversion (LINA-221, ADR-0016) ───────────────────
+//
+// The mirror image of the owner-first flow: a GC creates the build as the
+// counterparty, drives its own draft, invites the HOMEOWNER, and owner_party_id
+// is bound only when the owner accepts — never a lie, never re-pointed.
+describe('GC-as-creator inversion (ADR-0016)', () => {
+  let svc, ledger, store;
+  beforeEach(() => ({ svc, ledger, store } = setup()));
+
+  test('creatorRole=counterparty: creator joins as counterparty, owner_party_id is null', async () => {
+    const gc = owner();
+    const p = await svc.createProject({
+      actorPartyId: gc, name: 'GC Build', baselineBudgetCents: 200_000_00,
+      draft: true, creatorRole: 'counterparty',
+    });
+    assert.equal(p.ownerPartyId, null, 'a GC-founded build has no owner yet');
+    assert.equal(p.actingRole, 'counterparty');
+    assert.deepEqual(p.members.map((m) => m.role), ['counterparty']);
+
+    // The immutable genesis records WHO founded it and as what — not an owner.
+    const [genesis] = ledger._chain(p.id);
+    assert.equal(genesis.payload.creatorRole, 'counterparty');
+    assert.equal(genesis.payload.creatorPartyId, gc);
+    assert.ok(!('ownerPartyId' in genesis.payload), 'no owner is asserted at genesis');
+    assert.equal(ledger._verify(p.id).verified, true);
+  });
+
+  test('creatorRole defaults to owner and stays byte-identical to the legacy path', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'Legacy', baselineBudgetCents: 100 });
+    assert.equal(p.ownerPartyId, o);
+    assert.equal(p.actingRole, 'owner');
+    const [genesis] = ledger._chain(p.id);
+    assert.equal(genesis.payload.creatorRole, 'owner');
+    assert.equal(genesis.payload.ownerPartyId, o);
+  });
+
+  test('rejects an unknown creatorRole (400) — never trusted as a membership claim', async () => {
+    const o = owner();
+    await expectError(
+      svc.createProject({ actorPartyId: o, name: 'x', baselineBudgetCents: 0, creatorRole: 'subcontractor' }),
+      400,
+    );
+  });
+
+  test('the GC drives its own draft: sets the model and invites the OWNER, which commits the build', async () => {
+    const gc = owner();
+    const p = await svc.createProject({
+      actorPartyId: gc, name: 'Turnkey by GC', baselineBudgetCents: 500_000_00,
+      draft: true, creatorRole: 'counterparty',
+    });
+    // Draft driver (counterparty) may set the operating model.
+    await svc.setOperatingModel({ actorPartyId: gc, projectId: p.id, operatingModel: 'turnkey' });
+    // …and invite the homeowner (the inverted first invite).
+    const { invitation, token } = await svc.inviteCounterparty({
+      actorPartyId: gc, projectId: p.id, role: 'owner',
+    });
+    assert.equal(invitation.role, 'owner');
+
+    // The build committed draft→active on that first invite.
+    const committed = await svc.getProject({ actorPartyId: gc, projectId: p.id });
+    assert.equal(committed.status, 'active');
+
+    // The homeowner accepts: owner membership + owner_party_id stamped + owner_joined.
+    const homeowner = owner();
+    const { membership } = await svc.acceptInvitation({ actorPartyId: homeowner, token });
+    assert.equal(membership.role, 'owner');
+    const view = await svc.getProject({ actorPartyId: homeowner, projectId: p.id });
+    assert.equal(view.ownerPartyId, homeowner, 'owner_party_id is bound on accept');
+    assert.equal(view.actingRole, 'owner');
+
+    const chain = ledger._chain(p.id);
+    assert.ok(chain.some((e) => e.type === 'owner_joined' && e.payload.partyId === homeowner));
+    assert.equal(ledger._verify(p.id).verified, true);
+  });
+
+  test('a non-member cannot drive a draft (403), and existence is not leaked', async () => {
+    const gc = owner();
+    const p = await svc.createProject({
+      actorPartyId: gc, name: 'GC Build', baselineBudgetCents: 1, draft: true, creatorRole: 'counterparty',
+    });
+    await expectError(svc.setOperatingModel({ actorPartyId: owner(), projectId: p.id, operatingModel: 'turnkey' }), 403);
+    await expectError(svc.inviteCounterparty({ actorPartyId: owner(), projectId: p.id, role: 'owner' }), 403);
+  });
+
+  test('an ACTIVE build stays owner-only: a joined counterparty cannot invite (403)', async () => {
+    // Owner-created, committed build with a joined GC.
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100, draft: true });
+    await svc.setOperatingModel({ actorPartyId: o, projectId: p.id, operatingModel: 'turnkey' });
+    const { token } = await svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'counterparty' });
+    const gc = owner();
+    await svc.acceptInvitation({ actorPartyId: gc, token });
+    // The GC is a member of an ACTIVE build ⇒ the draft-driver right is gone.
+    await expectError(svc.inviteCounterparty({ actorPartyId: gc, projectId: p.id, role: 'owner' }), 403);
+  });
+
+  test('owner cannot be invited once one exists (owner-created build): 400', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100, draft: true });
+    await svc.setOperatingModel({ actorPartyId: o, projectId: p.id, operatingModel: 'turnkey' });
+    // The build already has an owner (the creator), so `owner` drops out of the
+    // invitable set — a second-owner invite is a clean 400.
+    await expectError(svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'owner' }), 400);
+  });
+
+  test('owner_party_id is stamped once and never re-pointed (store guard)', async () => {
+    const gc = owner();
+    const p = await svc.createProject({
+      actorPartyId: gc, name: 'GC Build', baselineBudgetCents: 1, draft: true, creatorRole: 'counterparty',
+    });
+    await store.transaction(async (tx) => { await tx.stampOwnerParty(p.id, owner()); });
+    // A second stamp — a re-point of an existing owner — is refused.
+    await assert.rejects(
+      store.transaction(async (tx) => { await tx.stampOwnerParty(p.id, owner()); }),
+      (err) => { assert.equal(err.status, 409); return true; },
+    );
+  });
+});
+
 describe('getProject authorization (non-members get 403)', () => {
   let svc;
   beforeEach(() => ({ svc } = setup()));

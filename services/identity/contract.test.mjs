@@ -95,6 +95,18 @@ describe('live responses conform to the published schemas', () => {
     conforms('Project', p);
   });
 
+  test('createProject (GC-created, null owner) → Project (ADR-0016 §1)', async () => {
+    // A GC-founded build carries ownerPartyId=null at genesis; the Project schema
+    // admits the null (key present, nullable) so the wire shape stays valid until
+    // the invited homeowner accepts.
+    const s = svc();
+    const p = await s.createProject({
+      actorPartyId: randomUUID(), name: 'Oak', baselineBudgetCents: 500, creatorRole: 'counterparty',
+    });
+    assert.equal(p.ownerPartyId, null);
+    conforms('Project', p);
+  });
+
   test('getProject → Project', async () => {
     const s = svc();
     const o = randomUUID();

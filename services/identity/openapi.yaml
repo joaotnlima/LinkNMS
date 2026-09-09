@@ -552,7 +552,9 @@ components:
         name:
           type: string
         ownerPartyId:
-          type: string
+          type:
+            - string
+            - null
         baselineBudgetCents:
           type: integer
         currentBudgetCents:
@@ -715,6 +717,13 @@ components:
           type: boolean
           default: false
           description: Create the build as a draft (Band B wizard step 1).
+        creatorRole:
+          type: string
+          default: owner
+          enum:
+            - owner
+            - counterparty
+          description: 'Role screen (LINA-221, ADR-0016): owner (default) or counterparty for a GC-created build.'
         siteAddress:
           type: string
           description: Site address (Basics).
@@ -730,8 +739,10 @@ components:
         role:
           type: string
           enum:
+            - owner
             - counterparty
             - subcontractor
+          description: 'Invited role. `owner` only on a GC-created build with no owner yet (ADR-0016).'
         email:
           type:
             - string

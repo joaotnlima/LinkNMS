@@ -110,16 +110,19 @@ const MAX_NAME = 200;
 // string from the picker but stays text, so a short cap covers it too.
 const MAX_BASICS_FIELD = 300;
 
-/** Trim, cap, and normalise an optional Basics text field to a value or null.
+/** Trim, cap, and normalise an optional free-text field to a value or null.
  *  Empty/blank → null (the honest "not given"), never an empty string. */
-function optionalBasicsField(value, label) {
+function optionalText(value, label, max) {
   if (value == null) return null;
   if (typeof value !== 'string') throw badRequest(`${label} must be text`);
   const clean = value.trim();
   if (!clean) return null;
-  if (clean.length > MAX_BASICS_FIELD) throw badRequest(`${label} exceeds ${MAX_BASICS_FIELD} chars`);
+  if (clean.length > max) throw badRequest(`${label} exceeds ${max} chars`);
   return clean;
 }
+
+/** The Basics descriptive fields' cap (LINA-219). */
+const optionalBasicsField = (value, label) => optionalText(value, label, MAX_BASICS_FIELD);
 
 // The three Band B operating models (ADR-0011 decision 1) and the launch role
 // each may invite (design §7; migration 0009 widened the invitation.role CHECK to
@@ -188,6 +191,27 @@ export function createIdentityService({
       // and you may not. Unknown-party is the only 401, handled above.
       throw forbidden(decision.reason);
     }
+    return { role };
+  }
+
+  // The draft driver (ADR-0016 §3). A draft build has EXACTLY ONE member — its
+  // creator — because the only other way to gain membership is accepting an
+  // invitation, and that same act commits the build to `active`. So "a member of
+  // a draft" uniquely identifies its creator, and the creator drives the wizard
+  // (set the operating model, issue the committing first invite) regardless of
+  // whether they founded the build as `owner` or, for a GC-created build, as
+  // `counterparty`. This is why the wizard mid-flight capabilities are NOT widened
+  // in the pure capability table (that would over-grant on ACTIVE builds): the
+  // driver right is a property of "sole member of a draft", not of a role.
+  // Non-member ⇒ 403; unauthenticated ⇒ 401. Keyed on projectId (a membership
+  // lookup, no project row needed) so it runs BEFORE any notFound and a non-member
+  // never learns whether the build exists — same 403-before-404 posture as
+  // `authorize`. The DRAFT check itself lives in each caller, right where the
+  // "member of a draft ⟺ its creator" invariant is asserted.
+  async function authorizeDraftDriver({ actorPartyId, projectId }) {
+    if (!actorPartyId) throw unauthenticated();
+    const role = await roleOf(projectId, actorPartyId);
+    if (!role) throw forbidden('not a member of this project');
     return { role };
   }
 
@@ -268,11 +292,23 @@ export function createIdentityService({
   // so the in-memory reference store and the pg adapter stay byte-consistent.
   async function createProject({
     actorPartyId, name, baselineBudgetCents, draft = false,
+    // The pen's role screen (LINA-221, ADR-0016). 'owner' (default) is the legacy
+    // owner-first build; 'counterparty' inverts it — the CREATOR is the GC, the
+    // homeowner is invited later, and owner_party_id stays NULL until they accept.
+    creatorRole = 'owner',
     // The pen's Basics descriptive fields (LINA-219). All optional: a draft may
     // be named and left, and the legacy one-shot path never sends them.
     siteAddress, buildType, expectedStart,
   }) {
     await authorize({ actorPartyId, action: ACTION.CREATE_PROJECT });
+
+    // creatorRole is a CHOICE the wizard sends, validated here — never trusted as
+    // a membership claim. Only the two build-founding roles are electable; the
+    // homeowner of a GC build is bound via the invite/accept path, not this field.
+    if (creatorRole !== 'owner' && creatorRole !== 'counterparty') {
+      throw badRequest("creatorRole must be 'owner' or 'counterparty'");
+    }
+    const gcCreated = creatorRole === 'counterparty';
 
     const cleanName = typeof name === 'string' ? name.trim() : '';
     if (!cleanName) throw badRequest('name is required');
@@ -292,7 +328,10 @@ export function createIdentityService({
     const project = {
       id: ids.uuid(),
       name: cleanName,
-      ownerPartyId: actorPartyId,
+      // A GC-created build has no homeowner yet (ADR-0016 §1): owner_party_id is
+      // NULL until the invited owner accepts, when it is stamped once. An
+      // owner-created build stamps the creator now, exactly as before.
+      ownerPartyId: gcCreated ? null : actorPartyId,
       baselineBudgetCents: baseline,
       operatingModel: null, // a step-1 build has not chosen one yet (ADR-0011)
       status: draft ? 'draft' : 'active',
@@ -302,17 +341,20 @@ export function createIdentityService({
       expectedStart: start,
       createdAt: now,
     };
-    const ownerMembership = {
+    // The creator's own membership: owner for an owner-created build, counterparty
+    // for a GC-created one (ADR-0016 §2). Either way the creator is the sole member
+    // of the fresh draft and drives the wizard from here (authz table, ADR-0016 §3).
+    const creatorMembership = {
       id: ids.uuid(),
       projectId: project.id,
       partyId: actorPartyId,
-      role: 'owner',
+      role: creatorRole,
       joinedAt: now,
     };
 
     await store.transaction(async (tx) => {
       await tx.insertProject(project);
-      await tx.insertMembership(ownerMembership);
+      await tx.insertMembership(creatorMembership);
       await tx.appendEvent({
         projectId: project.id,
         type: 'project_created',
@@ -325,10 +367,17 @@ export function createIdentityService({
         // so they are stamped into the immutable event, not only the projection.
         // Additive keys, omitted when null so the genesis payload stays minimal
         // for a build that skipped them.
+        // creatorRole + creatorPartyId record WHO founded the build and as what,
+        // on the immutable event — not just the projection (ADR-0016 §2). For an
+        // owner-created build ownerPartyId is the creator (unchanged); a GC build
+        // has no owner yet, so ownerPartyId is omitted from genesis and stamped
+        // onto the record's `owner_joined` event when the homeowner accepts.
         payload: {
           name: cleanName,
           baselineBudgetCents: baseline,
-          ownerPartyId: actorPartyId,
+          creatorRole,
+          creatorPartyId: actorPartyId,
+          ...(gcCreated ? {} : { ownerPartyId: actorPartyId }),
           ...(address ? { siteAddress: address } : {}),
           ...(type ? { buildType: type } : {}),
           ...(start ? { expectedStart: start } : {}),
@@ -343,13 +392,14 @@ export function createIdentityService({
       projectId: project.id,
       actorPartyId,
       baselineBudgetCents: baseline,
+      creatorRole, // GC-vs-owner-created (ADR-0016 §5); distinct_id stays server-side
       createdAt: now,
     });
 
-    return shapeProject(project, [ownerMembership], {
+    return shapeProject(project, [creatorMembership], {
       baselineBudgetCents: baseline,
       currentBudgetCents: baseline,
-    }, 'owner');
+    }, creatorRole);
   }
 
   // GET /projects/:id — members only. Returns the identity-owned view: project +
@@ -415,14 +465,17 @@ export function createIdentityService({
   }
 
   // PATCH /projects/:id/operating-model — the wizard's step 2 (ADR-0011).
-  // Owner-only; sets operating_model ∈ {turnkey, direct, hybrid} on a DRAFT. The
-  // projection write (column-scoped UPDATE grant from 0009) and the
-  // `operating_model_set` ledger event commit in ONE unit — a chosen operating
+  // The DRAFT DRIVER sets operating_model ∈ {turnkey, direct, hybrid} on a DRAFT.
+  // ADR-0016: the driver is the sole member of the draft — the owner of an
+  // owner-created build OR the counterparty of a GC-created one — so authorization
+  // is membership-of-the-draft, not the owner-only capability (which would 403 the
+  // GC creator). The projection write (column-scoped UPDATE grant from 0009) and
+  // the `operating_model_set` ledger event commit in ONE unit — a chosen operating
   // model is part of the record, never a silent projection edit. Once the build
   // is committed (status 'active') the model is fixed; an idempotent re-PATCH of
   // the same value changes nothing and writes no event.
   async function setOperatingModel({ actorPartyId, projectId, operatingModel }) {
-    await authorize({ actorPartyId, action: ACTION.SET_OPERATING_MODEL, projectId });
+    await authorizeDraftDriver({ actorPartyId, projectId });
     if (!OPERATING_MODEL_ROLES[operatingModel]) {
       throw badRequest(`operatingModel must be one of ${Object.keys(OPERATING_MODEL_ROLES).join(', ')}`);
     }
@@ -465,16 +518,42 @@ export function createIdentityService({
   // thread. When it lands, the seat row is inserted INSIDE the `store.transaction`
   // below (same unit of work as the invitation, per the brief) — the seam is
   // marked there.
-  async function inviteCounterparty({ actorPartyId, projectId, role = 'counterparty', email, baseUrl }) {
-    await authorize({ actorPartyId, action: ACTION.INVITE_COUNTERPARTY, projectId });
+  async function inviteCounterparty({
+    actorPartyId, projectId, role = 'counterparty', email, baseUrl,
+  }) {
+    // Authorize by build STATE (ADR-0016 §3). A DRAFT is driven by its sole
+    // creator — the owner of an owner-created build OR the counterparty of a
+    // GC-created one — so the committing FIRST invite is authorised by
+    // membership-of-the-draft. An ACTIVE build's invites stay OWNER-ONLY (the
+    // legacy/turnkey path), decided by the pure `can()` with the role already in
+    // hand. The membership lookup runs BEFORE the project fetch so a non-member is
+    // 403 before any 404 — existence is never leaked (same posture as `authorize`).
+    if (!actorPartyId) throw unauthenticated();
+    const actorRole = await roleOf(projectId, actorPartyId);
+    if (!actorRole) throw forbidden('not a member of this project');
     const project = await store.getProject(projectId);
     if (!project) throw notFound('project');
+    if (project.status !== 'draft') {
+      const decision = can({ action: ACTION.INVITE_COUNTERPARTY, role: actorRole, actorPartyId });
+      if (!decision.allow) throw forbidden(decision.reason);
+    }
+
+    // The membership list is read once here and reused for the pre-mint conflict
+    // check below — it also tells us whether the build already has an owner, which
+    // gates the inverted invite.
+    const memberships = await store.listMemberships(projectId);
+    const hasOwner = memberships.some((m) => m.role === 'owner');
 
     // The role vocabulary widened with migration 0009 (ADR-0011 decision 4); which
     // specialities THIS build may invite follows its operating model. A legacy
     // project (operating_model NULL, created before Band B) keeps R0 behaviour:
-    // the one GC counterparty.
-    const allowedRoles = OPERATING_MODEL_ROLES[project.operatingModel] ?? ['counterparty'];
+    // the one GC counterparty. ADR-0016: a build with NO owner member yet — a
+    // GC-founded draft — may additionally invite the homeowner (`owner`). Once an
+    // owner is on the record, `owner` drops out of the set (a second-owner invite
+    // is a clean 400), so the widening is scoped to exactly the inverted first
+    // invite.
+    const modelRoles = OPERATING_MODEL_ROLES[project.operatingModel] ?? ['counterparty'];
+    const allowedRoles = hasOwner ? modelRoles : [...modelRoles, 'owner'];
     if (!allowedRoles.includes(role)) {
       throw badRequest(
         project.operatingModel
@@ -510,7 +589,7 @@ export function createIdentityService({
     // being invited, or any invite is already pending. (The DB UNIQUEs are the
     // ultimate backstop. The pending check stays one-at-a-time for V1 per OQ-3 —
     // the per-role index in 0009 is the latch Hybrid V2 releases later.)
-    if ((await store.listMemberships(projectId)).some((m) => m.role === role)) {
+    if (memberships.some((m) => m.role === role)) {
       throw conflict(`project already has a ${role}`);
     }
     if ((await store.listPendingInvitations(projectId)).length > 0) {
@@ -626,9 +705,19 @@ export function createIdentityService({
       // second counterparty or a self-join by an existing member is a clean 409.
       await tx.insertMembership(membership);
       await tx.markInvitationAccepted(inv.id, now);
+
+      // ADR-0016 §1/§4: the homeowner accepting a GC-founded build is bound to the
+      // record HERE — owner_party_id is stamped once (NULL → value; the store and
+      // the column-scoped grant refuse a re-point of an existing owner) in the same
+      // unit as the membership, and the join is an `owner_joined` fact rather than a
+      // generic `member_joined`. Every other role keeps the R0 `member_joined` path.
+      const isOwnerJoin = membership.role === 'owner';
+      if (isOwnerJoin) {
+        await tx.stampOwnerParty(inv.projectId, actorPartyId);
+      }
       await tx.appendEvent({
         projectId: inv.projectId,
-        type: 'member_joined',
+        type: isOwnerJoin ? 'owner_joined' : 'member_joined',
         actorPartyId,
         occurredAt: now,
         payload: { partyId: actorPartyId, role: membership.role },
