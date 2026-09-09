@@ -377,6 +377,44 @@ describe('inviteCounterparty (only the owner invites)', () => {
     const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100 });
     await expectError(svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, role: 'owner' }), 400);
   });
+
+  // LINA-222: the pen's Invite screen name + scope note.
+  test('preserves the invitee name and scope note, trimmed', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100 });
+    const { invitation } = await svc.inviteCounterparty({
+      actorPartyId: o,
+      projectId: p.id,
+      inviteeName: '  Ferreira & Filhos  ',
+      scopeNote: '  Full build, foundations through finishes.  ',
+    });
+    assert.equal(invitation.inviteeName, 'Ferreira & Filhos');
+    assert.equal(invitation.scopeNote, 'Full build, foundations through finishes.');
+  });
+
+  test('an omitted or blank name/note is stored as null, never an empty string', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100 });
+    const { invitation } = await svc.inviteCounterparty({
+      actorPartyId: o, projectId: p.id, scopeNote: '   ',
+    });
+    assert.equal(invitation.inviteeName, null);
+    assert.equal(invitation.scopeNote, null);
+  });
+
+  test('an over-long name or scope note is a 400, not a silent truncation', async () => {
+    const o = owner();
+    const p = await svc.createProject({ actorPartyId: o, name: 'House', baselineBudgetCents: 100 });
+    await expectError(
+      svc.inviteCounterparty({ actorPartyId: o, projectId: p.id, inviteeName: 'x'.repeat(201) }),
+      400,
+    );
+    const p2 = await svc.createProject({ actorPartyId: o, name: 'House 2', baselineBudgetCents: 100 });
+    await expectError(
+      svc.inviteCounterparty({ actorPartyId: o, projectId: p2.id, scopeNote: 'x'.repeat(1001) }),
+      400,
+    );
+  });
 });
 
 // ── Invite by email (LINA-84, ADR-0008 §4) ───────────────────────────────────

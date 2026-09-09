@@ -122,6 +122,35 @@ describe('live responses conform to the published schemas', () => {
     conforms('InvitationCreated', res);
   });
 
+  test('inviteCounterparty carries the invitee name + scope note back (LINA-222)', async () => {
+    const s = svc();
+    const o = randomUUID();
+    const p = await s.createProject({ actorPartyId: o, name: 'Maple', baselineBudgetCents: 500 });
+    const res = await s.inviteCounterparty({
+      actorPartyId: o,
+      projectId: p.id,
+      inviteeName: '  Ferreira & Filhos, Lda.  ',
+      scopeNote: '  Full build, foundations through finishes.  ',
+    });
+    conforms('InvitationCreated', res);
+    // Trimmed, preserved, and surfaced on the shaped invitation — not silently
+    // dropped (the render-and-discard failure this issue exists to kill).
+    assert.equal(res.invitation.inviteeName, 'Ferreira & Filhos, Lda.');
+    assert.equal(res.invitation.scopeNote, 'Full build, foundations through finishes.');
+  });
+
+  test('inviteCounterparty stores null for omitted/blank name + note (LINA-222)', async () => {
+    const s = svc();
+    const o = randomUUID();
+    const p = await s.createProject({ actorPartyId: o, name: 'Maple', baselineBudgetCents: 500 });
+    const res = await s.inviteCounterparty({
+      actorPartyId: o, projectId: p.id, inviteeName: '   ', // blank → the honest null
+    });
+    conforms('InvitationCreated', res);
+    assert.equal(res.invitation.inviteeName, null);
+    assert.equal(res.invitation.scopeNote, null);
+  });
+
   test('acceptInvitation → MembershipCreated', async () => {
     const s = svc();
     const o = randomUUID();

@@ -169,6 +169,9 @@ export function createIdentityHttp({ service, rateLimiter = createRateLimiter(),
         projectId: params.id,
         role: body?.role ?? 'counterparty',
         email: body?.email,
+        // The pen's Invite screen descriptive fields (LINA-222); both optional.
+        inviteeName: body?.inviteeName,
+        scopeNote: body?.scopeNote,
         baseUrl: originOf(headers),
       });
       return {

@@ -649,6 +649,16 @@ components:
             - string
             - null
           description: 'The address the invitation was mailed to; null on the out-of-band path.'
+        inviteeName:
+          type:
+            - string
+            - null
+          description: 'The invitee’s name or company, as the inviter typed it on the Invite screen (LINA-222). Optional; null when not given.'
+        scopeNote:
+          type:
+            - string
+            - null
+          description: 'A free-text note the inviter wrote describing the invitee’s scope (LINA-222). Optional; null when not given.'
         createdAt:
           type: string
     InvitationCreated:
@@ -749,6 +759,18 @@ components:
             - null
           format: email
           description: 'Optional (LINA-84). Supplied, the invitation link is emailed to this address and the response reports `emailed`. Omitted, nothing is sent and the caller delivers the raw token out of band. Lower-cased server-side, same normalisation as sign-in.'
+        inviteeName:
+          type:
+            - string
+            - null
+          maxLength: 200
+          description: 'Optional (LINA-222). The invitee’s name or company, from the Invite screen. Trimmed server-side; blank is stored as null.'
+        scopeNote:
+          type:
+            - string
+            - null
+          maxLength: 1000
+          description: 'Optional (LINA-222). A free-text note describing the invitee’s scope, from the Invite screen. Trimmed server-side; blank is stored as null.'
     SetOperatingModelRequest:
       type: object
       required:
