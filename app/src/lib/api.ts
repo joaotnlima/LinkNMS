@@ -604,11 +604,19 @@ export async function inviteCounterparty(
   projectId: string,
   email?: string,
   role: Role = 'counterparty',
+  // The pen's Invite screen descriptive fields (LINA-222). Optional; the service
+  // trims/caps and stores null for blanks, so undefined is fine to omit.
+  extra?: { inviteeName?: string; scopeNote?: string },
 ): Promise<{ token: string; emailed: boolean }> {
   const res = await call<{ token: string; emailed?: boolean; invitation: { id: string } }>(
     'inviteCounterparty',
     { id: projectId },
-    { role, ...(email ? { email } : {}) },
+    {
+      role,
+      ...(email ? { email } : {}),
+      ...(extra?.inviteeName ? { inviteeName: extra.inviteeName } : {}),
+      ...(extra?.scopeNote ? { scopeNote: extra.scopeNote } : {}),
+    },
   );
   return { token: res.token, emailed: res.emailed === true };
 }

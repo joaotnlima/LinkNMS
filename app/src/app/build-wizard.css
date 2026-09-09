@@ -238,11 +238,61 @@
   margin-bottom: 0;
 }
 
-/* Build type + Expected start share a row on the pen; they stack on a phone. */
+/* Build type + Expected start share a row on the pen; they stack on a phone.
+   Reused by the Invite screen's Name + Role row (LINA-222). */
 .bwx-row2 {
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--s3);
+}
+
+/* Read-only Role value (LINA-222). Turnkey/direct derive the single role and the
+   homeowner invite is fixed — the box mirrors a field but reads as non-editable
+   (muted fg, sunken fill), so it never looks like a control that lost its way. */
+.bwx-rolefixed {
+  font-size: 14px;
+  color: var(--muted);
+  background: var(--sunken);
+  border: 1px solid var(--outline);
+  border-radius: var(--r-ctrl);
+  padding: 9px 11px;
+  width: 100%;
+}
+
+/* "What they will be able to do" consent callout (LINA-222, pen screen 04):
+   the invited party's access, stated before it is granted. Owner-blue, matching
+   the pen's info panel — it is guidance, not an error or success. */
+.bwx-callout {
+  display: flex;
+  gap: var(--s3);
+  padding: var(--s3);
+  margin-top: var(--s2);
+  background: var(--owner-muted);
+  border-radius: var(--r-overlay);
+}
+
+.bwx-callout-icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--owner-fg);
+}
+
+.bwx-callout-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.bwx-callout-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--owner-fg);
+}
+
+.bwx-callout-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--owner-fg);
 }
 
 /* ---- footer nav (Back / Continue) ----------------------------------------- */

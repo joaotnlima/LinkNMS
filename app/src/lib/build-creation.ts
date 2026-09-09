@@ -141,21 +141,62 @@ export function inviteRoleFor(model: OperatingModel | null | undefined): InviteR
 }
 
 /** How the invited party is named on screen. Never "counterparty" — that is a
- *  schema word, and nobody on a building site calls their electrician one. */
+ *  schema word, and nobody on a building site calls their electrician one.
+ *  `access` is the pen's "What they will be able to do" consent callout (screen
+ *  04, LINA-222): what the invited party can DO once they accept, stated plainly
+ *  BEFORE access is granted — consent before access, not a permissions table
+ *  buried in settings. It describes V1 behaviour only: per-contract isolation
+ *  (ADR-0010) is still a dormant predicate, so the copy does NOT promise a
+ *  specialty cannot see other contracts — a promise the current authz plane would
+ *  not keep. */
 export const INVITE_ROLE_COPY: Readonly<
-  Record<InviteRole, { noun: string; nounPlural: string; emailPlaceholder: string }>
+  Record<InviteRole, { noun: string; nounPlural: string; emailPlaceholder: string; access: string }>
 > = Object.freeze({
   counterparty: {
     noun: 'general contractor',
     nounPlural: 'general contractors',
     emailPlaceholder: 'gc@example.com',
+    access:
+      'Upload or build the plan, log progress and raise change orders on this build. '
+      + 'Everything they add is attributed to them and time-stamped on the shared record.',
   },
   subcontractor: {
     noun: 'specialty contractor',
     nounPlural: 'specialty contractors',
     emailPlaceholder: 'electrician@example.com',
+    access:
+      'Fill in the plan for their trade, log progress and raise change orders. '
+      + 'Everything they add is attributed to them and time-stamped on the shared record.',
   },
 });
+
+/**
+ * The Role picker's options for a given operating model (pen screen 04, LINA-222).
+ *
+ * The service is the authority on which role a build may invite
+ * (OPERATING_MODEL_ROLES in services/identity/identity.mjs) and 400s on a
+ * mismatch; this mirrors it so the picker offers only what the model admits:
+ *
+ *   • turnkey → one option (general contractor), rendered read-only.
+ *   • direct  → one option (specialty contractor), rendered read-only.
+ *   • hybrid  → a REAL choice (ADR-0011 OQ-3): the first invite is the GC or a
+ *     specialty, so the owner picks. V1 is one invite per wizard pass.
+ *
+ * A `null` model is a legacy pre-Band-B project — R0's single GC counterparty.
+ */
+export function inviteRoleOptions(
+  model: OperatingModel | null | undefined,
+): ReadonlyArray<{ value: InviteRole; label: string }> {
+  const opt = (value: InviteRole) => ({ value, label: INVITE_ROLE_COPY[value].noun });
+  if (model === 'hybrid') return Object.freeze([opt('counterparty'), opt('subcontractor')]);
+  return Object.freeze([opt(inviteRoleFor(model))]);
+}
+
+/** True when the operating model gives a genuine role choice (Hybrid), as opposed
+ *  to a single model-derived role shown read-only (ADR-0011 OQ-3). */
+export function inviteRoleIsChoice(model: OperatingModel | null | undefined): boolean {
+  return model === 'hybrid';
+}
 
 /**
  * The inverted first invite (ADR-0016 §4). A GC-created build's first invite is
@@ -169,6 +210,11 @@ export const OWNER_INVITE_COPY = Object.freeze({
   noun: 'homeowner',
   nounPlural: 'homeowners',
   emailPlaceholder: 'owner@example.com',
+  // The homeowner is the record's principal, not a contract holder — the consent
+  // callout says what THEY get: full visibility, not a scoped work surface.
+  access:
+    'See the whole shared record — the plan, progress, change orders and budget — '
+    + 'and approve what needs the owner. Everything either of you does stays attributed and time-stamped.',
 });
 
 // ── Steps ───────────────────────────────────────────────────────────────────
@@ -326,12 +372,16 @@ export function hrefForStep(projectId: string, step: WizardStepKey | 'done'): st
 // step's target to the homeowner for a GC-created build. Owner stays the default,
 // so the owner path is unchanged.
 //
+// CLOSED by LINA-222 (migration 0016): the pen's screen 04 Invite fields — the
+// invitee "Name or company", the Role picker and the "Scope note" textarea. They
+// were omitted because `identity.invitation` stored only email + a model-derived
+// role, and a field that discards what the owner types is worse than its absence.
+// Migration 0016 adds nullable `invitee_name` + `scope_note`; the Role picker is
+// the existing invitation.role, offered as a real choice for Hybrid and shown
+// read-only otherwise (ADR-0011 OQ-3). The three fields now render and persist
+// (inviteRoleOptions / INVITE_ROLE_COPY.access below back the picker + callout).
+//
 // STILL OPEN (deferred to their own issues — backend features, not fidelity):
-//   * The pen's new-build screen 04 Invite fields — invitee "Name or company",
-//     the Role picker, and the "Scope note" textarea. `identity.invitation`
-//     stores none of these (it is email + derived role only), so rendering them
-//     would discard what the owner types. Same rule as always: no column, no
-//     field. Adding the columns + the Hybrid role choice is its own slice.
 //   * Pen "Resend / cancel invite" controls: ADR-0011 OQ-1 defers a re-send CTA
 //     to a fast follow and settles on copy-link for V1, which is what the
 //     invite-sent state ships.

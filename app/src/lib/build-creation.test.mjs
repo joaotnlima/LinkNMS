@@ -31,6 +31,8 @@ import {
   CREATOR_ROLE_COPY,
   isCreatorRole,
   BASICS_LEDE,
+  inviteRoleOptions,
+  inviteRoleIsChoice,
 } from './build-creation.ts';
 
 // ── stepFor ─────────────────────────────────────────────────────────────────
@@ -114,6 +116,38 @@ test('every model carries screen copy, and every invite role a human noun', () =
     // "counterparty" is a schema word. It must never reach a screen.
     assert.ok(!INVITE_ROLE_COPY[role].noun.includes('counterparty'));
   }
+});
+
+// ── inviteRoleOptions / inviteRoleIsChoice (LINA-222, ADR-0011 OQ-3) ─────────
+
+test('only Hybrid offers a real role choice; every other model is derived', () => {
+  assert.equal(inviteRoleIsChoice('hybrid'), true);
+  assert.equal(inviteRoleIsChoice('turnkey'), false);
+  assert.equal(inviteRoleIsChoice('direct'), false);
+  assert.equal(inviteRoleIsChoice(null), false);
+  assert.equal(inviteRoleIsChoice(undefined), false);
+});
+
+test('the role options mirror the model — one for derived, both for Hybrid', () => {
+  assert.deepEqual(inviteRoleOptions('turnkey').map((o) => o.value), ['counterparty']);
+  assert.deepEqual(inviteRoleOptions('direct').map((o) => o.value), ['subcontractor']);
+  assert.deepEqual(inviteRoleOptions('hybrid').map((o) => o.value), ['counterparty', 'subcontractor']);
+  // Legacy (no model) keeps R0's single GC.
+  assert.deepEqual(inviteRoleOptions(null).map((o) => o.value), ['counterparty']);
+  // A derived model's option is exactly what inviteRoleFor picks.
+  assert.equal(inviteRoleOptions('direct')[0].value, inviteRoleFor('direct'));
+  // Never a schema word on a label.
+  for (const o of inviteRoleOptions('hybrid')) {
+    assert.ok(!o.label.includes('counterparty') && !o.label.includes('subcontractor'), o.label);
+  }
+});
+
+test('every invite role and the homeowner carry consent-callout copy', () => {
+  // The "What they will be able to do" panel needs real text for each role it can
+  // render, or it draws an empty box on the screen where consent is asked.
+  assert.ok(INVITE_ROLE_COPY.counterparty.access?.length > 0);
+  assert.ok(INVITE_ROLE_COPY.subcontractor.access?.length > 0);
+  assert.ok(OWNER_INVITE_COPY.access?.length > 0);
 });
 
 test('the wizard is three steps — the "Your role" screen is a pre-step, not counted', () => {
