@@ -1,0 +1,339 @@
+/* PortalShell — portal app chrome (LINA-216). Mobile-first: the base rules draw
+ * the phone layout (app bar + body + bottom tab bar); the >=860px query swaps in
+ * the desktop rail + top bar. Reads the shared globals.css / tokens.css set (the
+ * LINA-156 migration), same as empty-portal.css and portfolio.css.
+ *
+ * Owner Blue is `--owner`; the app canvas is `--paper`, bars are
+ * `--surface-raised`, sunken fills `--surface-sunken`; hairlines `--outline`;
+ * dimmed (build-scoped, inert) nav is `--line-strong`; kickers `--outline-strong`;
+ * body copy `--muted`; the owner tint behind the active item / avatar is
+ * `--owner-muted`.
+ */
+
+/* Break out of the 780px reading column, only when the shell's child IS this
+ * component — the same escape AuthShell uses (auth-shell.css). */
+.shell:has(> .psh) {
+  max-width: none;
+  box-shadow: none;
+  background: var(--paper);
+}
+
+/* Fallback for engines without `:has()`: span the viewport directly. */
+@supports not selector(:has(*)) {
+  .psh {
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
+  }
+}
+
+.psh {
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--paper);
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.psh svg {
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── Left rail — desktop only ───────────────────────────────────────────── */
+.psh-rail {
+  display: none;
+}
+
+/* ── Main column ────────────────────────────────────────────────────────── */
+.psh-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top bar — mobile app bar by default. */
+.psh-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 56px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--outline);
+  background: var(--paper);
+}
+
+.psh-top-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+.psh-top-title--mob {
+  font-size: 16.5px;
+  line-height: 1.35;
+}
+.psh-top-title--desk {
+  display: none;
+}
+
+/* The create-build button is desktop-only; on mobile the primary CTA lives in
+   the body's empty state. */
+.psh-create {
+  display: none;
+}
+
+.psh-account {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+}
+.psh-account svg {
+  width: 21px;
+  height: 21px;
+}
+
+/* Body — centres its child (the empty state's 560px column). */
+.psh-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* Bottom tab bar — mobile only. */
+.psh-tabs {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+  height: 64px;
+  border-top: 1px solid var(--outline);
+  background: var(--surface-raised);
+}
+.psh-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--line-strong);
+}
+.psh-tab svg {
+  width: 22px;
+  height: 22px;
+}
+.psh-tab.is-active {
+  color: var(--owner);
+  font-weight: 600;
+}
+
+/* ── Desktop ────────────────────────────────────────────────────────────── */
+@media (min-width: 860px) {
+  .psh {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+  }
+
+  .psh-rail {
+    display: flex;
+    flex-direction: column;
+    width: 260px;
+    padding: 18px 0;
+    background: var(--surface-raised);
+    border-right: 1px solid var(--outline);
+  }
+
+  .psh-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 18px 16px;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+    color: var(--ink);
+  }
+  .psh-brand svg {
+    width: 22px;
+    height: 22px;
+    color: var(--owner);
+  }
+
+  .psh-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 9px;
+    margin: 0 18px;
+    padding: 9px 11px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--outline);
+    border-radius: 6px;
+  }
+  .psh-switch-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .psh-switch-kicker {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    line-height: 1.3;
+    color: var(--outline-strong);
+  }
+  .psh-switch-val {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+  .psh-switch svg {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--outline-strong);
+  }
+
+  .psh-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 14px 12px;
+  }
+  .psh-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 10px;
+    border-radius: 6px;
+    font-size: 13.5px;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--line-strong);
+  }
+  .psh-nav-item svg {
+    flex: none;
+    width: 16px;
+    height: 16px;
+  }
+  .psh-nav-item.is-active {
+    background: var(--owner-muted);
+    color: var(--owner);
+    font-weight: 600;
+  }
+  .psh-nav-item.is-sub {
+    padding-left: 36px;
+    font-size: 13px;
+  }
+  .psh-nav-caret {
+    margin-left: auto;
+    width: 14px !important;
+    height: 14px !important;
+  }
+  .psh-nav-group {
+    padding: 14px 10px 6px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    line-height: 1.3;
+    text-transform: uppercase;
+    color: var(--outline-strong);
+  }
+
+  .psh-user {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px 0;
+    border-top: 1px solid var(--outline);
+  }
+  .psh-avatar {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: var(--owner-muted);
+    color: var(--owner);
+    font-size: 10.5px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .psh-user-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .psh-user-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .psh-user-role {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .psh-top {
+    height: 60px;
+    padding: 0 28px;
+    background: var(--surface-raised);
+  }
+  .psh-top-title--mob {
+    display: none;
+  }
+  .psh-top-title--desk {
+    display: block;
+    font-size: 13.5px;
+  }
+  .psh-account {
+    display: none;
+  }
+  .psh-create {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 18px;
+    border-radius: 6px;
+    background: var(--owner);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .psh-create svg {
+    width: 15px;
+    height: 15px;
+    stroke-width: 2;
+  }
+  .psh-create:hover {
+    background: color-mix(in srgb, var(--owner) 88%, #000);
+  }
+  .psh-create:focus-visible {
+    outline: 2px solid var(--owner);
+    outline-offset: 2px;
+  }
+
+  .psh-body {
+    padding: 0 80px;
+  }
+
+  .psh-tabs {
+    display: none;
+  }
+}

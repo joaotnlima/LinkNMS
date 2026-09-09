@@ -15,7 +15,9 @@
 import { redirect } from 'next/navigation';
 import { EmptyPortal } from '@/components/EmptyPortal';
 import { PortfolioList } from '@/components/PortfolioList';
-import { listProjects } from '@/lib/api';
+import { getMe, listProjects } from '@/lib/api';
+import { roleLabel } from '@/lib/format';
+import type { Role } from '@/lib/types';
 import { sessionState } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -42,11 +44,19 @@ export default async function Home() {
   // run) and terminates, because completing it flips the flag that got them here.
   if (!state.session.setupComplete) redirect('/onboarding/setup');
 
-  // Seated and set up: branch on the portfolio. Empty keeps the first-time
-  // screen verbatim (LINA-133); non-empty renders the D1 list. Drafts count as
-  // builds — an abandoned wizard is a build in progress, and the list is where
-  // it is resumed from.
+  // Seated and set up: branch on the portfolio. Empty renders the first-time
+  // screen inside the portal shell (LINA-216); non-empty renders the D1 list.
+  // Drafts count as builds — an abandoned wizard is a build in progress, and the
+  // list is where it is resumed from.
   const projects = await listProjects();
-  if (projects.length === 0) return <EmptyPortal />;
+  if (projects.length === 0) {
+    // The shell's user footer/account glyph is real identity, not decoration:
+    // it is the label beside every decision this party records, so it comes from
+    // the authoritative /me profile (LINA-154), never an email local-part.
+    const me = await getMe();
+    return (
+      <EmptyPortal user={{ displayName: me.displayName, roleLabel: roleLabel(me.role as Role) }} />
+    );
+  }
   return <PortfolioList projects={projects} />;
 }
