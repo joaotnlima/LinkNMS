@@ -258,7 +258,13 @@ export function createMaterialsService({ store, ledger, identity, changeOrder = 
   }
 
   async function performScopeChange(stage, material, actorPartyId, prior, { newQuantity, newUnitPriceCents, source, changeOrder }) {
-    const valueDeltaCents = (newQuantity * newUnitPriceCents) - prior.extended;
+    // Money is integer cents. newQuantity is numeric(14,3) (fractional units are
+    // real — m², hours), so the new extended value is rounded the SAME way
+    // prior.extended is (currentMaterialState) before taking the delta. Skipping
+    // this leaves a fractional valueDeltaCents that the bigint column rejects and
+    // that would flow a non-integer cost delta into the change order / budget.
+    const newExtended = Math.round(newQuantity * newUnitPriceCents);
+    const valueDeltaCents = newExtended - prior.extended;
     const movementId = randomUUID();
     const occurredAt = now();
 
@@ -317,7 +323,10 @@ export function createMaterialsService({ store, ledger, identity, changeOrder = 
   }
 
   async function performPriceMovement(stage, material, actorPartyId, prior, { priceCause, newQuantity, newUnitPriceCents, source }) {
-    const valueDeltaCents = (newQuantity * newUnitPriceCents) - prior.extended;
+    // Integer-cents rounding of the new extended value, consistent with
+    // prior.extended — see performScopeChange.
+    const newExtended = Math.round(newQuantity * newUnitPriceCents);
+    const valueDeltaCents = newExtended - prior.extended;
     const movementId = randomUUID();
     const occurredAt = now();
 

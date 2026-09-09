@@ -239,6 +239,25 @@ test('swap scope_change: opens a change order (costDelta = valueDelta), writes m
   assert.equal(frozen.unit_price_cents, 100_000);
 });
 
+test('swap: a fractional quantity yields an INTEGER-cent valueDelta (rounded, not fractional)', async () => {
+  // numeric(14,3) quantities are real (m², hours). 12.333 × 100,000 = 1,233,300.0
+  // here, but an odd unit price would produce fractional cents — the delta must be
+  // rounded to integer cents so the bigint column and the CO cost delta stay whole.
+  const { materials, stageId, seeded } = build({ withBaseline: true, seed: [
+    { quantity: 10, unit_price_cents: 100_003 },   // baseline extended = 1,000,030
+  ] });
+  const [matId] = seeded;
+  const out = await materials.swapMaterial(stageId, GC, {
+    lineMaterialId: matId,
+    movementKind: 'scope_change',
+    newQuantity: 12.333,                            // 12.333 × 100,003 = 1,233,336.999
+    changeOrder: { title: 'Re-scope' },
+  });
+  // round(1,233,336.999) − 1,000,030 = 1,233,337 − 1,000,030 = 233,307.
+  assert.equal(out.movement.valueDeltaCents, 233_307);
+  assert.ok(Number.isInteger(out.movement.valueDeltaCents), 'valueDelta must be integer cents');
+});
+
 test('swap scope_change: rejects when it omits a change order or carries a price cause', async () => {
   const { materials, stageId, seeded } = build({ withBaseline: true, seed: [{}] });
   const [matId] = seeded;
