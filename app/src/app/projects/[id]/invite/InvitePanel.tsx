@@ -32,21 +32,34 @@ import Link from 'next/link';
 import { ActionForm, type ActionState } from '@/components/ActionForm';
 import { WizardNav, ArrowRight } from '@/components/WizardNav';
 import { inviteAction } from '@/app/actions';
-import { INVITE_ROLE_COPY, inviteRoleFor, type OperatingModel } from '@/lib/build-creation';
+import { type OperatingModel } from '@/lib/build-creation';
+
+/** The subset of the role-copy tables this panel renders (INVITE_ROLE_COPY[x] or
+ *  OWNER_INVITE_COPY — see the invite page, which resolves which). */
+export interface InviteCopy {
+  noun: string;
+  nounPlural: string;
+  emailPlaceholder: string;
+}
 
 export function InvitePanel({
   projectId,
   operatingModel,
   buildName,
   isDraft,
+  inviteOwner,
+  copy,
 }: {
   projectId: string;
   operatingModel: OperatingModel | null;
   buildName: string;
   isDraft: boolean;
+  /** True for a GC-created build whose first invite is the homeowner (ADR-0016
+   *  §4): the target role inverts to `owner` and the copy addresses the owner. */
+  inviteOwner: boolean;
+  copy: InviteCopy;
 }) {
-  const role = inviteRoleFor(operatingModel);
-  const copy = INVITE_ROLE_COPY[role];
+  const title = inviteOwner ? `Invite the ${copy.noun}` : `Invite your ${copy.noun}`;
 
   return (
     <ActionForm
@@ -62,7 +75,9 @@ export function InvitePanel({
         </WizardNav>
       )}
       render={(state) =>
-        state.token ? <InviteSent projectId={projectId} state={state} noun={copy.noun} /> : null
+        state.token
+          ? <InviteSent projectId={projectId} state={state} noun={copy.noun} inviteOwner={inviteOwner} />
+          : null
       }
     >
       <input type="hidden" name="projectId" value={projectId} />
@@ -70,12 +85,18 @@ export function InvitePanel({
           worst name a different model, and the service then rejects a role the
           build does not admit. */}
       <input type="hidden" name="operatingModel" value={operatingModel ?? ''} />
+      {/* The inverted first invite (ADR-0016 §4): a flag, not a role. The service
+          admits `owner` ONLY while the build has no owner member yet, so a
+          tampered flag cannot mint a second owner. */}
+      {inviteOwner ? <input type="hidden" name="inviteOwner" value="1" /> : null}
 
       <section className="bwx-card">
-        <h1 className="bwx-card-title">Invite your {copy.noun}</h1>
+        <h1 className="bwx-card-title">{title}</h1>
         <p className="bwx-card-sub">
           {isDraft
-            ? `They accept, then upload or build the plan. The moment you send it, ${buildName} becomes a shared record — everything either of you writes on it is attributed and time-stamped.`
+            ? inviteOwner
+              ? `They accept and get full visibility of the record. The moment you send it, ${buildName} becomes a shared record — everything either of you writes on it is attributed and time-stamped.`
+              : `They accept, then upload or build the plan. The moment you send it, ${buildName} becomes a shared record — everything either of you writes on it is attributed and time-stamped.`
             : `They join the shared record for ${buildName}. Everything either of you writes on it is attributed and time-stamped.`}
         </p>
 
@@ -105,11 +126,16 @@ function InviteSent({
   projectId,
   state,
   noun,
+  inviteOwner,
 }: {
   projectId: string;
   state: ActionState;
   noun: string;
+  inviteOwner: boolean;
 }) {
+  // "your general contractor" reads right; "your homeowner" does not — the owner
+  // is the counterparty's principal, not their possession.
+  const theNoun = inviteOwner ? `the ${noun}` : `your ${noun}`;
   // Built in the browser rather than returned by the action: the origin is
   // whatever host the owner is actually on (preview, prod, a tunnel), and this
   // keeps the token out of one more server-side string that could be logged.
@@ -123,7 +149,7 @@ function InviteSent({
       <p className="bw-pending" role="status">
         <span aria-hidden="true">⏳</span>
         <span>
-          Waiting for your {noun} to accept. The build is live and everything you record from now on
+          Waiting for {theNoun} to accept. The build is live and everything you record from now on
           is on the shared record — they will see all of it when they join.
         </span>
       </p>
@@ -144,7 +170,7 @@ function InviteSent({
       )}
 
       <p className="metric-lbl">
-        {state.emailed ? 'Or send this link directly' : `Send this link to your ${noun}`}
+        {state.emailed ? 'Or send this link directly' : `Send this link to ${theNoun}`}
       </p>
       <CopyLink url={acceptUrl} />
 

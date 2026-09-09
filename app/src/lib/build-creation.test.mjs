@@ -22,10 +22,15 @@ import {
   OPERATING_MODELS,
   OPERATING_MODEL_COPY,
   INVITE_ROLE_COPY,
+  OWNER_INVITE_COPY,
   TOTAL_STEPS,
   BUILD_TYPES,
   buildTypeLabel,
   expectedStartOptions,
+  CREATOR_ROLES,
+  CREATOR_ROLE_COPY,
+  isCreatorRole,
+  BASICS_LEDE,
 } from './build-creation.ts';
 
 // ── stepFor ─────────────────────────────────────────────────────────────────
@@ -61,7 +66,9 @@ test('an unknown status is treated as done, never as a fresh draft', () => {
 // ── hrefForStep ─────────────────────────────────────────────────────────────
 
 test('every step has a route, and the ids are encoded into the path', () => {
-  assert.equal(hrefForStep('abc', 'basics'), '/projects/new');
+  // Basics moved one level down when `/projects/new` became the pre-Basics
+  // "Your role" screen (LINA-227).
+  assert.equal(hrefForStep('abc', 'basics'), '/projects/new/basics');
   assert.equal(hrefForStep('abc', 'model'), '/projects/abc/operating-model');
   assert.equal(hrefForStep('abc', 'invite'), '/projects/abc/invite');
   assert.equal(hrefForStep('abc', 'done'), '/projects/abc');
@@ -109,8 +116,44 @@ test('every model carries screen copy, and every invite role a human noun', () =
   }
 });
 
-test('the wizard is three steps — the invite-sent state is a result, not a step', () => {
+test('the wizard is three steps — the "Your role" screen is a pre-step, not counted', () => {
+  // The pre-Basics role screen (LINA-227) is a question ahead of the rail, not a
+  // numbered step: keeping TOTAL_STEPS at 3 is what makes the owner path past it
+  // byte-identical to before (ADR-0016 §2).
   assert.equal(TOTAL_STEPS, 3);
+});
+
+// ── Creator role: the "Your role" screen (LINA-227, ADR-0016) ────────────────
+
+test('isCreatorRole accepts exactly owner and counterparty', () => {
+  for (const r of CREATOR_ROLES) assert.ok(isCreatorRole(r));
+  assert.deepEqual([...CREATOR_ROLES], ['owner', 'counterparty']);
+  for (const bad of ['subcontractor', 'OWNER', 'gc', '', null, undefined, 7, {}]) {
+    assert.equal(isCreatorRole(bad), false, `${String(bad)} must not pass`);
+  }
+});
+
+test('each creator role carries card copy and a distinct Continue label', () => {
+  for (const r of CREATOR_ROLES) {
+    const copy = CREATOR_ROLE_COPY[r];
+    assert.ok(copy?.label && copy.desc && copy.tag && copy.continueLabel, `${r} is missing copy`);
+    // "counterparty" is a schema word — the GC card must never surface it.
+    assert.ok(!copy.label.includes('counterparty') && !copy.desc.includes('counterparty'));
+  }
+  // The two Continue labels differ, so the button reflects the selection.
+  assert.notEqual(CREATOR_ROLE_COPY.owner.continueLabel, CREATOR_ROLE_COPY.counterparty.continueLabel);
+});
+
+test('the Basics lede reads for both creator roles and never assumes owner for the GC', () => {
+  for (const r of CREATOR_ROLES) assert.ok(BASICS_LEDE[r]?.length > 0, `${r} lede missing`);
+  // The GC path must not tell a general contractor they own the build.
+  assert.ok(!/you own/i.test(BASICS_LEDE.counterparty));
+});
+
+test('the inverted first invite addresses the homeowner, never "counterparty"', () => {
+  assert.equal(OWNER_INVITE_COPY.noun, 'homeowner');
+  assert.ok(!OWNER_INVITE_COPY.noun.includes('counterparty'));
+  assert.ok(OWNER_INVITE_COPY.emailPlaceholder.includes('@'));
 });
 
 // ── Basics build type (LINA-219) ─────────────────────────────────────────────

@@ -38,7 +38,7 @@ export function OperatingModelPicker({
       submitLabel="Continue"
       pendingLabel="Saving…"
       footer={({ pending }) => (
-        <WizardNav back={{ href: '/projects/new' }}>
+        <WizardNav back={{ href: '/projects/new/basics' }}>
           <button type="submit" className="btn primary" disabled={pending} aria-busy={pending}>
             {pending ? 'Saving…' : 'Continue'}
             <ArrowRight />
