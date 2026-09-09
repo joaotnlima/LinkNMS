@@ -447,6 +447,38 @@ describe('mounted HTTP surface over real Postgres', { skip: URL_ ? false : 'set 
       assert.deepEqual(rows, [], 'the chain is only ever appended through ledger.append_event');
     });
   });
+
+  // ── The returning-user portfolio (ADR-0012 §A1) ────────────────────────────
+  // The landing screen for anyone with ≥1 build. Its counts come from folds the
+  // container wires in `http.identity` from the decision and change-order STORES
+  // — a path only reachable when a party actually has a project, so no in-memory
+  // suite and none of the tests above ever executed it. That gap shipped a
+  // ReferenceError (the counts callbacks closed over identifiers that were only
+  // inline args to createServices, never bound): an EMPTY portfolio returned
+  // before the fold and worked, so the crash surfaced the instant an owner made
+  // their first build — the returning-user landing, dead. This asserts the
+  // populated path the deployed composition runs.
+  describe('listProjects folds the batched counts through the container wiring', () => {
+    test('a party with builds gets a 200 portfolio carrying decision/change-order counts', async () => {
+      const res = await c.http.identity.listProjects({ session: as(homeowner.id) });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+
+      const card = res.body.projects.find((p) => p.id === projectId);
+      assert.ok(card, 'the owner sees their own build on the portfolio');
+      // The fold is the thing that used to throw: assert it produced real numbers
+      // for this project (two decisions and one approved change order were
+      // recorded above), not the empty-Map fallback.
+      assert.equal(card.counts.decisions, 2, 'the decision count fold ran over the real store');
+      assert.equal(card.counts.changeOrders, 1, 'the change-order count fold ran over the real store');
+    });
+
+    test('an empty portfolio is a clean 200, not a crash', async () => {
+      const fresh = await c.parties.findOrCreateByEmail({ email: email('empty'), role: 'owner' });
+      const res = await c.http.identity.listProjects({ session: as(fresh.id) });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.deepEqual(res.body.projects, []);
+    });
+  });
 });
 
 if (!URL_) skip('VERIFY_DATABASE_URL not set — integration suite skipped');
