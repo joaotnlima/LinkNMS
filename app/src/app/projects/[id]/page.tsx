@@ -18,7 +18,8 @@ import Link from 'next/link';
 
 import { getProject, getRecord, isSignedIn } from '@/lib/api';
 import { PillarPanel } from '@/components/PillarPanel';
-import { TopBar, BottomNav } from '@/components/chrome';
+import { PortalShell } from '@/components/PortalShell';
+import { buildShellContext } from '@/server/portal-shell';
 import type { ScheduleLine } from '@/lib/record';
 import { weekLine, timelineTone, timelineStateLabel } from '@/lib/record-home';
 import './record-home.css';
@@ -30,6 +31,7 @@ export default async function RecordHomePage({ params }: { params: Promise<{ id:
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}`);
 
   const [p, record] = await Promise.all([getProject(id), getRecord(id)]);
+  const shell = await buildShellContext(id, p.name);
 
   const lines = [...record.tabs.schedule.lines].sort((a, b) => a.position - b.position);
   // "Week X of Y" is derived from the baseline plan's dates; null (omitted) when
@@ -44,8 +46,12 @@ export default async function RecordHomePage({ params }: { params: Promise<{ id:
   const hasCounterparty = p.members.some((m) => m.role === 'counterparty' || m.role === 'subcontractor');
 
   return (
-    <>
-      <TopBar back={{ href: '/projects', label: 'Builds' }} />
+    <PortalShell
+      user={shell.user}
+      builds={shell.builds}
+      activeBuild={{ id, name: p.name }}
+      section="overview"
+    >
       <main className="m14">
         <header className="m14-head">
           <div className="m14-head-badges">
@@ -82,8 +88,7 @@ export default async function RecordHomePage({ params }: { params: Promise<{ id:
           <Timeline projectId={id} lines={lines} />
         </section>
       </main>
-      <BottomNav projectId={id} active="plan" />
-    </>
+    </PortalShell>
   );
 }
 

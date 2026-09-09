@@ -25,7 +25,8 @@ import Link from 'next/link';
 import { getBuild, getPlan, isSignedIn } from '@/lib/api';
 import { currentSession } from '@/server/session';
 import { directoryOf } from '@/lib/view';
-import { TopBar, BottomNav } from '@/components/chrome';
+import { PortalShell } from '@/components/PortalShell';
+import { buildShellContext } from '@/server/portal-shell';
 import { PlanBaseline, type PartyRef } from './PlanBaseline';
 import '@/components/plan-import.css';
 
@@ -41,6 +42,7 @@ export default async function PlanPage({
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan`);
 
   const [build, plan, session] = await Promise.all([getBuild(id), getPlan(id), currentSession()]);
+  const shell = await buildShellContext(id, build.name);
   const { imported } = await searchParams;
   const isGC = build.actingRole === 'counterparty';
 
@@ -58,15 +60,13 @@ export default async function PlanPage({
   const hasPlan = plan.current !== null || plan.baseline !== null || plan.history.length > 0;
 
   return (
-    <>
-      <TopBar back={{ href: `/projects/${id}`, label: build.name }} />
+    <PortalShell
+      user={shell.user}
+      builds={shell.builds}
+      activeBuild={{ id, name: build.name }}
+      section="plan"
+    >
       <main className="pi">
-        <nav className="pi-crumbs" aria-label="Breadcrumb">
-          <Link href={`/projects/${id}`}>{build.name}</Link>
-          <span aria-hidden="true">›</span>
-          <span aria-current="page">Plan</span>
-        </nav>
-
         {/* The stamp the import returned (B1 contract §7). It is shown once, on
             the redirect that carried it — the durable copy is the ledger event,
             which is why this links there rather than pretending to be it. */}
@@ -92,8 +92,7 @@ export default async function PlanPage({
           <NoPlanYet projectId={id} isGC={isGC} />
         )}
       </main>
-      <BottomNav projectId={id} active="plan" />
-    </>
+    </PortalShell>
   );
 }
 

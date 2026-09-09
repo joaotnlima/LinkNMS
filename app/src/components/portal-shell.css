@@ -248,6 +248,19 @@
     font-weight: 400;
     line-height: 1.4;
     color: var(--line-strong);
+    text-decoration: none;
+  }
+  /* Live nav items (BUILD mode) are links: they take the ink colour and lift on
+     hover; the dimmed/inert spans keep --line-strong from the base rule. */
+  a.psh-nav-item:not(.is-dim) {
+    color: var(--ink);
+  }
+  a.psh-nav-item:not(.is-active):not(.is-dim):hover {
+    background: var(--surface-sunken);
+  }
+  a.psh-nav-item:focus-visible {
+    outline: 2px solid var(--owner);
+    outline-offset: -2px;
   }
   .psh-nav-item svg {
     flex: none;
@@ -372,6 +385,20 @@
   overflow-y: auto;
 }
 
+/* Build-scoped bodies (the record, the plan) run flush — the child owns its own
+ * gutter (LINA-219), reproducing the spacing it had under the old chrome. */
+.psh-body--flush {
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow-y: auto;
+  padding: 0;
+}
+@media (min-width: 860px) {
+  .psh-body--flush {
+    padding: 0;
+  }
+}
+
 /* ── Account menu (LINA-219) ─────────────────────────────────────────────────
  * A native <details> popover that carries the identity and, at last, Sign out.
  * `bar` is the mobile top-bar glyph; `rail` is the desktop left-rail footer.
@@ -484,5 +511,128 @@
     bottom: calc(100% + 8px);
     left: 12px;
     right: 12px;
+  }
+}
+
+/* ── Build-scoped chrome (LINA-219) ──────────────────────────────────────────
+ * The live build switcher (a native <details> dropdown), the top-bar breadcrumb
+ * and the live-nav value colour. Rail-only, so desktop-gated like the rail. */
+@media (min-width: 860px) {
+  /* The switcher's <details> owns the same margin the inert box had; the
+     <summary> keeps the exact .psh-switch look and becomes clickable. */
+  .psh-switch-d {
+    margin: 0 18px;
+  }
+  .psh-switch-d > summary.psh-switch {
+    margin: 0;
+    cursor: pointer;
+    list-style: none;
+  }
+  .psh-switch-d > summary.psh-switch::-webkit-details-marker {
+    display: none;
+  }
+  .psh-switch-d > summary:focus-visible {
+    outline: 2px solid var(--owner);
+    outline-offset: 2px;
+  }
+  .psh-switch-d[open] > summary .psh-switch,
+  .psh-switch-d[open] > summary.psh-switch {
+    border-color: var(--owner);
+  }
+  /* The selected build is real, not a placeholder count — full ink. */
+  .psh-switch-val--live {
+    color: var(--ink);
+  }
+
+  .psh-switch-pop {
+    position: absolute;
+    z-index: 30;
+    left: 18px;
+    right: 18px;
+    margin-top: 6px;
+    padding: 6px;
+    background: var(--surface-raised);
+    border: 1px solid var(--outline);
+    border-radius: var(--r-overlay, 10px);
+    box-shadow: var(--shadow, 0 10px 30px rgba(0, 0, 0, 0.14));
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .psh-switch-cur,
+  .psh-switch-opt,
+  .psh-switch-all {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.4;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .psh-switch-cur {
+    font-weight: 600;
+    color: var(--owner);
+  }
+  .psh-switch-cur svg {
+    flex: none;
+    width: 15px;
+    height: 15px;
+    color: var(--owner);
+  }
+  .psh-switch-opt:hover,
+  .psh-switch-all:hover {
+    background: var(--surface-sunken);
+  }
+  .psh-switch-opt:focus-visible,
+  .psh-switch-all:focus-visible {
+    outline: 2px solid var(--owner);
+    outline-offset: -2px;
+  }
+  .psh-switch-all {
+    margin-top: 4px;
+    padding-top: 11px;
+    border-top: 1px solid var(--outline);
+    border-radius: 0 0 6px 6px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .psh-switch-all svg {
+    flex: none;
+    width: 15px;
+    height: 15px;
+  }
+
+  /* The rail needs to be the positioning context for the switcher popover. */
+  .psh-rail {
+    position: relative;
+  }
+
+  /* Top-bar breadcrumb (BUILD mode replaces the "Portfolio" title). */
+  .psh-top-crumbs {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13.5px;
+    min-width: 0;
+  }
+  .psh-crumb-build {
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 40ch;
+  }
+  .psh-crumb-sep {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--outline-strong);
+  }
+  .psh-crumb-here {
+    color: var(--ink);
+    font-weight: 600;
   }
 }
