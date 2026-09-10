@@ -48,6 +48,12 @@ export interface PlanStageNode {
   plannedStartDate: string | null;
   plannedEndDate: string | null;
   plannedCostCents: number | null;
+  /**
+   * Resolved predecessor STAGE IDS (LINA-233) — `[]` when none. Optional here
+   * only because the read predates it and the older fixtures do not carry it;
+   * the service always sends it (contract §0).
+   */
+  dependsOn?: string[];
   children: PlanStageNode[];
 }
 

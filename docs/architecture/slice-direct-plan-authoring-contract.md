@@ -210,6 +210,14 @@ has `details.key` + `details.stage`, `dependency_cycle` has
   reorder / remove of phases (actions) and tasks (sub-actions) and optional
   start/finish dates, shows a "Draft — only you can see it" status, and a primary
   **Save plan** that POSTs the tree and redirects to `/projects/:id/plan?drafted=…`.
+- **Dependencies UI as built (LINA-240):** a "Depends on" control sits under
+  every stage — a phase header and a task row alike, since a phase is a stage and
+  may follow one (scope = any-stage). It opens a checkbox popover grouped by
+  phase, each option printed `1.2 Framing` (the outline number is computed from
+  POSITION, so a reordered row renumbers honestly, and a hand-typed prefix is
+  stripped rather than doubled). Selected predecessors render as chips on the
+  row. **No Gantt link-lines in v1** — that rides the deferred drag/Gantt §5
+  item; chipping honestly beats drawing half a Gantt.
 - **Dependencies (LINA-233):** the editor attaches each stage's local row id as
   `key` and, per stage, picks predecessors by id → sends `dependsOn` keys. The
   server resolves them to stage ids, so `getPlan` nodes arrive with `dependsOn`
