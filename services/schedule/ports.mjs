@@ -221,6 +221,51 @@ export function createInMemoryStore() {
     return dependencies.filter((d) => d.stage_id === stageId).map((d) => d.depends_on_stage_id);
   }
 
+  // Mirrors the DB stage_dependency_freeze_delete_guard (LINA-233): a dependency
+  // whose OWNING stage sits on a frozen/terminal version can never be deleted; a
+  // draft's may. Same terminal set and error shape as assertStageMutable. The SQL
+  // fires the trigger per row, so if ANY candidate row is guarded the whole
+  // delete raises — mirrored here by checking candidates before removing any.
+  function deleteStageDependenciesByPlanVersion(_tx, planVersionId) {
+    const versionStageIds = new Set(
+      [...stages.values()].filter((s) => s.plan_version_id === planVersionId).map((s) => s.id),
+    );
+    const candidates = dependencies.filter((d) => versionStageIds.has(d.stage_id)
+      || versionStageIds.has(d.depends_on_stage_id));
+    for (const d of candidates) assertDependencyMutable(d.stage_id);
+    for (const d of candidates) {
+      const i = dependencies.indexOf(d);
+      if (i >= 0) dependencies.splice(i, 1);
+    }
+  }
+
+  // The DB trigger guards on the OWNING stage (stage_id), not the predecessor.
+  function assertDependencyMutable(stageId) {
+    const s = stages.get(stageId);
+    if (!s || s.plan_version_id == null) return;
+    const v = versions.find((x) => x.id === s.plan_version_id);
+    if (v && ['accepted', 'superseded', 'withdrawn', 'rejected'].includes(v.status)) {
+      const err = new Error(
+        `stage dependency belongs to a frozen/terminal plan version — a baseline is changed, never deleted`,
+      );
+      err.code = 'P0001';
+      err.trigger = 'stage_dependency_freeze_delete_guard';
+      throw err;
+    }
+  }
+
+  // The resolved predecessor graph of a version: { stage_id, depends_on_stage_id }
+  // rows, matching the pg adapter so `getPlan` reads deps the same way on both.
+  function listStageDependenciesByPlanVersion(planVersionId) {
+    const versionStageIds = new Set(
+      [...stages.values()].filter((s) => s.plan_version_id === planVersionId).map((s) => s.id),
+    );
+    return dependencies
+      .filter((d) => versionStageIds.has(d.stage_id))
+      .sort((a, b) => (a.stage_id < b.stage_id ? -1 : a.stage_id > b.stage_id ? 1 : 0))
+      .map((d) => ({ ...d }));
+  }
+
   function insertPlanImport(_tx, row) {
     // Mirror the DB UNIQUE on idempotency_key (23505) so contract tests see the
     // same idempotent-confirm behaviour as production.
@@ -492,7 +537,8 @@ export function createInMemoryStore() {
   return {
     transaction,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
-    insertStageDependency, listStageDependencies,
+    insertStageDependency, listStageDependencies, deleteStageDependenciesByPlanVersion,
+    listStageDependenciesByPlanVersion,
     insertPlanImport, getPlanImportByIdempotencyKey, importStageCounts,
     insertProgress, listProgressByStage, latestProgressByProject,
     insertPlanVersion, getPlanVersion, getOpenPlanVersion, getDraftPlanVersion,

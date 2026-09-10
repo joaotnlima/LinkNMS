@@ -26,6 +26,7 @@ import { sslFor } from '../ledger/db.mjs';
 import { createPgLedger } from '../ledger/pg-ledger.mjs';
 import { createPgStore } from './pg-store.mjs';
 import { createScheduleService, HEADLINE } from './schedule.mjs';
+import { createPlanVersionService } from './plan-version.mjs';
 import { createPlanImportService } from './plan-import.mjs';
 import { PARSER } from './plan-import-parser.mjs';
 import { DomainError } from './ports.mjs';
@@ -35,6 +36,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const ledgerDir = join(here, '..', 'ledger');
 const DB = process.env.DATABASE_URL;
 const ssl = sslFor(DB);
+
+// Shared connection + adapters for every DB-backed suite in this file. Hoisted
+// to module scope so nested suites (plan-version authoring below) reuse the same
+// pool/ledger/store the outer suite's `before` hook assigns.
+let pool;
+let ledger;
+let store;
 
 // A permissive Identity port: it authorizes the GC for writes and both parties for
 // reads, so these tests focus on the DB-level invariants. The full GC-only /
@@ -58,10 +66,6 @@ function identityFor(members) {
 }
 
 describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? false : 'set DATABASE_URL to run' }, () => {
-  let pool;
-  let ledger;
-  let store;
-
   before(async () => {
     pool = new Pool({ connectionString: DB, ssl, max: 4 });
     // The ledger + schedule schemas are expected migrated on the target branch;
@@ -82,6 +86,20 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
     // missing (a fresh branch), or no-op when the Architect has applied it.
     try { await pool.query(await readFile(join(here, 'migrations', '0002_plan_wbs_and_import.sql'), 'utf8')); }
     catch (err) { if (!['42P07', '42P06', '42701'].includes(err.code)) throw err; }
+    // Slice B2 + LINA-234/233 feature migrations (plan versioning, draft status,
+    // stage description, guarded dependency DELETE). Applied when missing so these
+    // integration tests run on any target (fresh or already-migrated branch);
+    // each file is a single idempotent unit — duplicate-object / already-applied
+    // errors mean it exists and are safely ignored.
+    for (const f of ['0003_plan_versioning.sql', '0005_plan_draft_status.sql',
+      '0006_stage_description.sql', '0007_stage_dependency_draft_delete.sql']) {
+      try { await pool.query(await readFile(join(here, 'migrations', f), 'utf8')); }
+      catch (err) {
+        // 42704 = DROP CONSTRAINT on a constraint 0005 already dropped (re-run);
+        // 42723 = CREATE FUNCTION already exists (re-run) — both are the applied signature.
+        if (!['42P07', '42P06', '42701', '42710', '42704', '42723'].includes(err.code)) throw err;
+      }
+    }
     ledger = createPgLedger({ pool });
     store = createPgStore({ pool });
   });
@@ -347,5 +365,148 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
         (err) => err.code === '23505' && err.constraint === 'plan_import_idempotency_key_key',
       );
     });
+  });
+
+  // ── plan-version authoring + the dependency freeze guard (LINA-233, real DB) ─
+  // The migration-0007 deliverable proven in the DATABASE, not just the
+  // in-memory mirror: a draft's dependency graph is written + REPLACED through
+  // the real FK/trigger path, the new DELETE grant lands, and a frozen version's
+  // dependency rows are refused by stage_dependency_freeze_delete_guard (the same
+  // terminal set as the stage guard from 0005). Nested inside the suite whose
+  // `before` opens the shared pool — the outer `after` ends it LAST.
+  describe('plan-version authoring + dependency freeze guard (LINA-233)', () => {
+  function seedVersionProject() {
+    const projectId = randomUUID();
+    const homeowner = randomUUID();
+    const gc = randomUUID();
+    const identity = identityFor(new Map([[homeowner, 'owner'], [gc, 'counterparty']]));
+    return { projectId, homeowner, gc, identity };
+  }
+
+  test('authorPlan writes real stage_dependency rows; re-save REPLACES them atomically; getPlan resolves ids', async () => {
+    const { projectId, homeowner, gc, identity } = seedVersionProject();
+    const svc = createPlanVersionService({ store, ledger, identity });
+
+    const genesis = await ledger.appendEvent({
+      projectId, type: 'project_created', actorPartyId: homeowner,
+      occurredAt: '2026-09-05T09:00:00.000Z',
+      payload: { name: 'Real DB build', baselineBudgetCents: 5_000_000, ownerPartyId: homeowner },
+    });
+    assert.ok(genesis.seq >= 1);
+
+    const draft = await svc.authorPlan(projectId, gc, {
+      stages: [
+        { name: 'Foundation', key: 'f' },
+        { name: 'Framing', key: 'fr', dependsOn: ['f'] },
+      ],
+    });
+    let deps = await store.listStageDependenciesByPlanVersion(draft.planVersionId);
+    assert.equal(deps.length, 1, 'the single dependsOn edge lands in schedule.stage_dependency');
+
+    const view = await svc.getPlan(projectId, gc);
+    const [foundation, framing] = view.current.stages;
+    assert.deepEqual(framing.dependsOn, [foundation.id], 'getPlan resolves the predecessor to a real stage id');
+
+    // Re-save replaces the whole tree + graph in place — the FK on the old draft
+    // rows would FAIL the stage DELETE if the dependency delete did not run first.
+    await svc.authorPlan(projectId, gc, {
+      stages: [
+        { name: 'Excavate', key: 'ex' },
+        { name: 'Haul', key: 'haul', dependsOn: ['ex'] },
+        { name: 'Backfill', key: 'back', dependsOn: ['ex'] },
+      ],
+    });
+    deps = await store.listStageDependenciesByPlanVersion(draft.planVersionId);
+    assert.equal(deps.length, 2, 'EXACTLY the new edges survive; the old ones are gone');
+    const stagesNow = await store.listStagesByPlanVersion(draft.planVersionId);
+    assert.equal(stagesNow.length, 3, 'the stage tree was fully replaced too');
+  });
+
+  test('the dependency freeze guard: a frozen version\u2019s rows are refused — as schedule_app\u2019s DELETE grant, in the DB', async () => {
+    const { projectId, homeowner, gc, identity } = seedVersionProject();
+    await ledger.appendEvent({
+      projectId, type: 'project_created', actorPartyId: homeowner,
+      occurredAt: '2026-09-05T09:00:00.000Z',
+      payload: { name: 'Frozen build', baselineBudgetCents: 5_000_000, ownerPartyId: homeowner },
+    });
+    const svc = createPlanVersionService({ store, ledger, identity });
+
+    const draft = await svc.authorPlan(projectId, gc, {
+      stages: [
+        { name: 'Foundation', key: 'f' },
+        { name: 'Framing', key: 'fr', dependsOn: ['f'] },
+      ],
+    });
+    assert.equal((await store.listStageDependenciesByPlanVersion(draft.planVersionId)).length, 1);
+
+    // The migration-0007 DELETE grant for the app role — proven in the catalog.
+    const grant = await pool.query(
+      `select has_table_privilege('schedule_app', 'schedule.stage_dependency', 'DELETE') as can_delete`,
+    );
+    assert.equal(grant.rows[0].can_delete, true, 'GRANT DELETE landed for schedule_app');
+
+    // The trigger is installed (named exactly stage_dependency_freeze_delete_guard).
+    const trig = await pool.query(
+      `select 1 from pg_trigger
+        where tgname = 'stage_dependency_freeze_delete_guard'
+          and tgrelid = 'schedule.stage_dependency'::regclass`,
+    );
+    assert.equal(trig.rows.length, 1);
+
+    // Freeze: mimic the propose + second accept stamp directly (the reviewer path
+    // is identity-run-specific; the DB guard keys off status, which is the point).
+    // plan_version_draft_has_no_number demands a number once it leaves draft status.
+    await pool.query(
+      `update schedule.plan_version
+          set status = 'accepted', version_no = coalesce(version_no, 1), frozen_at = now()
+        where id = $1`, [draft.planVersionId]);
+
+    // Direct deletes (both the pg-store helper and a raw SQL DELETE, exactly what
+    // the grant allows schedule_app to issue) are refused by the trigger.
+    await assert.rejects(
+      () => store.deleteStageDependenciesByPlanVersion(pool, draft.planVersionId),
+      (e) => e.code === 'P0001' && /frozen\/terminal plan version/.test(e.message),
+    );
+    await assert.rejects(
+      () => pool.query('delete from schedule.stage_dependency'
+        + ' where stage_id = (select id from schedule.stage'
+        + ' where name = \'Framing\' and plan_version_id = $1)',
+      [draft.planVersionId]),
+      (e) => e.code === 'P0001' && /frozen\/terminal plan version/.test(e.message),
+    );
+
+    // The row survives — a baseline is changed, never deleted.
+    assert.equal((await store.listStageDependenciesByPlanVersion(draft.planVersionId)).length, 1);
+    // And the orphaned stages cannot be deleted either (the stage guard, 0005).
+    await assert.rejects(
+      () => store.deleteStagesByPlanVersion(pool, draft.planVersionId),
+      (e) => e.code === 'P0001',
+    );
+  });
+
+  test('a DRAFT\u2019s dependency rows still delete freely (the relaxed path is exactly 0005-style)', async () => {
+    const { projectId, homeowner, gc, identity } = seedVersionProject();
+    await ledger.appendEvent({
+      projectId, type: 'project_created', actorPartyId: homeowner,
+      occurredAt: '2026-09-05T09:00:00.000Z',
+      payload: { name: 'Open draft build', baselineBudgetCents: 5_000_000, ownerPartyId: homeowner },
+    });
+    const svc = createPlanVersionService({ store, ledger, identity });
+    const draft = await svc.authorPlan(projectId, gc, {
+      stages: [
+        { name: 'A', key: 'a' },
+        { name: 'B', key: 'b', dependsOn: ['a'] },
+      ],
+    });
+    assert.equal((await store.listStageDependenciesByPlanVersion(draft.planVersionId)).length, 1);
+
+    // Status is still 'draft' → the dependency (and, in turn, the stages) go away.
+    const v = await store.getPlanVersion(draft.planVersionId);
+    assert.equal(v.status, 'draft');
+    await store.deleteStageDependenciesByPlanVersion(pool, draft.planVersionId);
+    await store.deleteStagesByPlanVersion(pool, draft.planVersionId);
+    assert.equal((await store.listStageDependenciesByPlanVersion(draft.planVersionId)).length, 0);
+    assert.equal((await store.listStagesByPlanVersion(draft.planVersionId)).length, 0);
+  });
   });
 });

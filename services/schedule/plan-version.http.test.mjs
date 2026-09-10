@@ -189,6 +189,30 @@ test('authorPlan: unauthenticated → 401; empty plan → 400; re-save by the dr
   assert.equal(store.listStagesByPlanVersion(first.body.planVersionId)[0].name, 'B');
 });
 
+test('authorPlan: dependency validation errors reach the client with FE-facing details (LINA-233)', async () => {
+  const { http } = build();
+
+  const cycle = await http.authorPlan({
+    session: gc, params: { projectId: PROJECT },
+    body: { stages: [
+      { name: 'Framing', key: 'f', dependsOn: ['roof'] },
+      { name: 'Roof', key: 'roof', dependsOn: ['f'] },
+    ] },
+  });
+  assert.equal(cycle.status, 409);
+  assert.equal(cycle.body.error.code, 'dependency_cycle');
+  assert.ok(Array.isArray(cycle.body.error.details.stages));
+  assert.deepEqual(cycle.body.error.details.stages.map((s) => s.key).sort(), ['f', 'roof']);
+
+  const unknown = await http.authorPlan({
+    session: gc, params: { projectId: PROJECT },
+    body: { stages: [{ name: 'A', key: 'a', dependsOn: ['nope'] }] },
+  });
+  assert.equal(unknown.status, 400);
+  assert.equal(unknown.body.error.code, 'unknown_dependency');
+  assert.equal(unknown.body.error.details.key, 'nope');
+});
+
 test('proposePlan: 200 flips the draft to proposed; the version id from the path, actor from the session', async () => {
   const { http, store } = build();
   const draft = await http.authorPlan({
