@@ -188,7 +188,9 @@ export function createPlanVersionService({ store, ledger, identity }) {
   }
 
   // The WBS stage tree for a version, rooted at top-level actions (parent_id null),
-  // children nested. Dates preserved as plain date strings.
+  // children nested. Dates preserved as plain date strings. Each node carries its
+  // resolved predecessor stage ids as `dependsOn` (ADR-0017 annex 2, LINA-233) so
+  // the FE can render predecessor chips; ids join to sibling nodes in this tree.
   async function stageTree(versionId) {
     const stages = await store.listStagesByPlanVersion(versionId);
     const roots = stages.filter((s) => s.parent_id == null).sort((a, b) => a.position - b.position);
@@ -201,6 +203,12 @@ export function createPlanVersionService({ store, ledger, identity }) {
     }
     for (const list of childrenOf.values()) list.sort((a, b) => a.position - b.position);
 
+    const depsByStage = new Map();
+    for (const d of await store.listStageDependenciesByPlanVersion(versionId)) {
+      if (!depsByStage.has(d.stage_id)) depsByStage.set(d.stage_id, []);
+      depsByStage.get(d.stage_id).push(d.depends_on_stage_id);
+    }
+
     const node = (s) => ({
       id: s.id,
       name: s.name,
@@ -210,6 +218,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
       plannedStartDate: s.planned_start_date ?? null,
       plannedEndDate: s.planned_end_date ?? null,
       plannedCostCents: s.planned_cost_cents ?? null,
+      dependsOn: depsByStage.get(s.id) ?? [],
       children: (childrenOf.get(s.id) ?? []).map(node),
     });
     return roots.map(node);
@@ -543,7 +552,10 @@ export function createPlanVersionService({ store, ledger, identity }) {
 
   // Re-insert an authored WBS tree's stage rows onto a version, parents before
   // children (pre-order), positions appended after any existing stages so plan
-  // order stays deterministic. Returns { rootCount } for the response summary.
+  // order stays deterministic. Returns { rootCount, ids } — the freshly-assigned
+  // stage ids in pre-order (i === the node's order index), so `:author` can
+  // resolve each node's `dependsOn` predecessors to ids in the SAME transaction,
+  // exactly as import resolves `source_row_ref` (plan-import.mjs §6/§8).
   async function insertAuthoredStages(tx, projectId, versionId, order, occurredAt) {
     const ids = order.map(() => randomUUID());
     const base = await store.maxStagePosition(projectId);
@@ -570,7 +582,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
         updated_at: occurredAt,
       });
     }
-    return { rootCount };
+    return { rootCount, ids };
   }
 
   // ── POST …/plan-versions:author (LINA-228/LINA-230, ADR-0017 annex) ────────
@@ -629,8 +641,12 @@ export function createPlanVersionService({ store, ledger, identity }) {
       });
 
       if (existingDraft) {
-        // Re-save: replace the draft's stages in place (guarded DELETE — only a
-        // draft's stages are deletable; a frozen baseline's never are).
+        // Re-save: replace the draft's stages (and their predecessor graph) in
+        // place. Dependencies go FIRST — the stage DELETE would otherwise fail on
+        // the FK `stage_dependency.stage_id → stage.id`. Both deletes are
+        // trigger-guarded: only a draft's rows are deletable; a frozen
+        // baseline's rows (and stages) never are.
+        await store.deleteStageDependenciesByPlanVersion(tx, versionId);
         await store.deleteStagesByPlanVersion(tx, versionId);
       } else {
         // First save: the draft envelope — unnumbered, no import, no supersede.
@@ -647,7 +663,17 @@ export function createPlanVersionService({ store, ledger, identity }) {
         });
       }
 
-      const { rootCount } = await insertAuthoredStages(tx, projectId, versionId, order, occurredAt);
+      // The stage rows (ids ride the same tx), then the predecessor graph — both
+      // resolved from the author's keys to the freshly-inserted ids HERE, in the
+      // same transaction as the stages and the single plan_drafted event. A
+      // dependency edit is part of "the draft saved at T"; no separate ledger
+      // event (ADR-0017 annex 2 §1).
+      const { rootCount, ids } = await insertAuthoredStages(tx, projectId, versionId, order, occurredAt);
+      for (let i = 0; i < order.length; i += 1) {
+        for (const predIndex of order[i].dependsOn) {
+          await store.insertStageDependency(tx, ids[i], ids[predIndex]);
+        }
+      }
 
       return {
         planVersionId: versionId,
@@ -755,11 +781,28 @@ export function createPlanVersionService({ store, ledger, identity }) {
   // parentIndex back-pointer (parents always precede their children). Two levels
   // only — a sub-action may not carry children (the model's self-ref FK permits
   // deeper nesting; this slice does not, matching the B1 parser).
+  //
+  // Two optional per-node fields ride the payload (ADR-0017 annex 2, LINA-233):
+  //   - `key` — a stable author-local id for the node WITHIN this payload (the
+  //     FE's local row id). Unique across the payload; only meaningful for
+  //     resolution, never persisted.
+  //   - `dependsOn` — an array of keys this node's stage must follow (its
+  //     predecessors). Cross-level deps are permitted (any distinct stage is a
+  //     valid target). Each key is resolved to a predecessor flat-list index
+  //     HERE, purely over the in-memory graph and BEFORE any write:
+  //       400 self_dependency     a node lists itself as a predecessor
+  //       400 unknown_dependency  a dependsOn key matches no node in the payload
+  //       400 duplicate_key       a key appears more than once in the payload
+  //       409 dependency_cycle    the resolved graph has a cycle (DFS back-edge)
+  //     Cycle validation is total — the whole graph is revalidated on every save,
+  //     so a draft can never be saved in a cyclic state.
+  const KEY_MAX = 200;
   function validateAuthoredStages(stages) {
     if (!Array.isArray(stages) || stages.length === 0) {
       throw new DomainError(400, 'empty_plan', 'stages is required (a non-empty array of actions)');
     }
     const order = [];
+    const keyToIndex = new Map();
     const pushNode = (raw, parentIndex, depth) => {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
         throw new DomainError(400, 'invalid_stages', 'each stage must be an object');
@@ -788,9 +831,25 @@ export function createPlanVersionService({ store, ledger, identity }) {
         }
         description = raw.description.trim() || null;
       }
+      let key = null;
+      if (raw.key != null) {
+        if (typeof raw.key !== 'string' || raw.key === '' || raw.key.length > KEY_MAX) {
+          throw new DomainError(400, 'invalid_stages',
+            'key must be a non-empty string ≤ 200 chars or omitted');
+        }
+        key = raw.key;
+        if (keyToIndex.has(key)) {
+          throw new DomainError(400, 'duplicate_key',
+            `duplicate key "${key}" — each key must be unique within the payload`);
+        }
+      }
       const index = order.length;
+      keyToIndex.set(key, index);
       order.push({
         name,
+        key,
+        dependsOn: [],
+        rawDependsOn: raw.dependsOn,
         parentIndex,
         trade,
         description,
@@ -811,7 +870,73 @@ export function createPlanVersionService({ store, ledger, identity }) {
       }
     };
     for (const root of stages) pushNode(root, null, 0);
+
+    // Keys are registered by the walk above — but a `dependsOn` may reference a
+    // key that only appears LATER in the DFS pre-order, so resolution runs as a
+    // second pass once the whole payload's key set is known.
+    for (let i = 0; i < order.length; i += 1) {
+      const node = order[i];
+      const raw = node.rawDependsOn ?? [];
+      if (!Array.isArray(raw)) {
+        throw new DomainError(400, 'invalid_stages', 'dependsOn must be an array of keys (strings)');
+      }
+      for (const depKey of raw) {
+        if (typeof depKey !== 'string') {
+          throw new DomainError(400, 'invalid_stages', 'dependsOn must be an array of keys (strings)');
+        }
+        if (node.key != null && depKey === node.key) {
+          throw new DomainError(400, 'self_dependency',
+            `stage "${node.name}" cannot depend on itself`,
+            { stage: { key: node.key, name: node.name } });
+        }
+        const pred = keyToIndex.get(depKey);
+        if (pred === undefined) {
+          throw new DomainError(400, 'unknown_dependency',
+            `stage "${node.name}" depends on "${depKey}", which is not a stage in this plan`,
+            { key: depKey, stage: { key: node.key, name: node.name } });
+        }
+        node.dependsOn.push(pred);
+      }
+    }
+
+    rejectDependencyCycles(order);
     return order;
+  }
+
+  // DFS (3-colour) back-edge detection over the resolved predecessor graph for
+  // the ORDER built by validateAuthoredStages — purely in memory, total, before
+  // any write. A cycle (e.g. A after B, B after A) is nonsensical and would break
+  // any future auto-schedule, so it is refused outright, naming the stages on the
+  // cycle for the FE to highlight.
+  function rejectDependencyCycles(order) {
+    const WHITE = 0; const GRAY = 1; const BLACK = 2;
+    const colour = order.map(() => WHITE);
+    const stack = [];
+    for (let start = 0; start < order.length; start += 1) {
+      if (colour[start] !== WHITE) continue;
+      const visit = (i) => {
+        colour[i] = GRAY;
+        stack.push(i);
+        for (const pred of order[i].dependsOn) {
+          if (colour[pred] === GRAY) {
+            // pred is on the current path — the segment pred → … → i, closed by
+            // the back-edge i → pred, is the cycle.
+            const from = stack.indexOf(pred);
+            const cycle = stack.slice(from).map((idx) => ({
+              key: order[idx].key,
+              name: order[idx].name,
+            }));
+            throw new DomainError(409, 'dependency_cycle',
+              `the dependency graph contains a cycle: ${cycle.map((s) => s.name).join(' → ')}`,
+              { stages: cycle });
+          }
+          if (colour[pred] === WHITE) visit(pred);
+        }
+        colour[i] = BLACK;
+        stack.pop();
+      };
+      visit(start);
+    }
   }
 
   return { getPlan, withdraw, accept, reject, requestChanges, authorPlan, proposePlan };

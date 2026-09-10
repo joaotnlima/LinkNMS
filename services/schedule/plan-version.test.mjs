@@ -637,6 +637,214 @@ test('authorPlan: drafting while a proposal is already open is a clean 409', asy
     (e) => e.status === 409 && e.code === 'open_plan_exists');
 });
 
+// ── authorPlan dependencies (LINA-233, ADR-0017 annex 2) ────────────────────
+
+test('authorPlan: key + dependsOn persist as stage_dependency rows, resolved in-tx; getPlan returns predecessor ids (LINA-233)', async () => {
+  const { service, store, ledger } = build();
+
+  const out = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Foundation', key: 'foundation' },
+      { name: 'Framing', key: 'framing', dependsOn: ['foundation'] },
+      { name: 'Roof', key: 'roof', dependsOn: ['framing'] },
+    ],
+  });
+  assert.equal(out.status, 'draft');
+
+  // Exactly the one plan_drafted event — a dependency edit is part of "the draft
+  // saved at T", NO new ledger event type (annex 2 §1).
+  const events = ledger._events.filter((e) => e.projectId === PROJECT && e.type === 'plan_drafted');
+  assert.equal(events.length, 1);
+
+  // Two dependency rows for the draft (the keys resolved to the fresh stage ids).
+  const deps = store.listStageDependenciesByPlanVersion(out.planVersionId);
+  assert.equal(deps.length, 2);
+
+  // getPlan resolves each stage's predecessors to stage ids the FE can join back
+  // onto the rendered tree for predecessor chips.
+  const view = await service.getPlan(PROJECT, GC);
+  const [foundation, framing, roof] = view.current.stages;
+  assert.deepEqual(foundation.dependsOn, []);
+  assert.deepEqual(framing.dependsOn, [foundation.id]);
+  assert.deepEqual(roof.dependsOn, [framing.id]);
+});
+
+test('authorPlan: dependencies may be cross-level — any distinct stage is a valid target (annex 2 §2)', async () => {
+  const { service } = build();
+
+  // A sub-action "2.1 Preliminary Works" deps on the ROOT "1 · Pre-Construction";
+  // a later root "2 · Construction" deps on the EARLIER root's child task. No
+  // level/parent constraint — only self, unknown and cycles are rejected.
+  await assert.doesNotReject(service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: '1 · Pre-Construction', key: 'pre', children: [
+        { name: '1.2 Design & Engineering', key: 'design' },
+      ] },
+      { name: '2 · Construction', key: 'construction', dependsOn: ['design'] },
+      { name: '3 · Inspections', key: 'inspections', children: [
+        { name: '3.1 Inspect', key: 'inspect', dependsOn: ['construction'] },
+      ] },
+    ],
+  }));
+
+const view = await service.getPlan(PROJECT, GC);
+const [, construction, inspections] = view.current.stages;
+const inspectTask = inspections.children[0];
+assert.deepEqual(construction.dependsOn, [view.current.stages[0].children[0].id],
+  'a root may depend on any stage, including a sibling phase\u2019s sub-action');
+assert.deepEqual(inspectTask.dependsOn, [construction.id], 'a sub-action may depend on a root');
+});
+
+test('authorPlan: self_dependency is a 400, named before resolution', async () => {
+  const { service, store, ledger } = build();
+  await assert.rejects(service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Foundation', key: 'f', dependsOn: ['f'] },
+    ],
+  }), (e) => e.status === 400 && e.code === 'self_dependency');
+
+  // Total validation — nothing was written (no stage, no draft version).
+  assert.equal(store._versions.length, 0);
+  assert.equal(store._stages.size, 0);
+  assert.equal(ledger._events.length, 0);
+});
+
+test('authorPlan: unknown_dependency is a 400 naming the missing key', async () => {
+  const { service } = build();
+  await assert.rejects(service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Foundation', key: 'f' },
+      { name: 'Framing', key: 'fr', dependsOn: ['geology'] },
+    ],
+  }), (e) => e.status === 400 && e.code === 'unknown_dependency'
+    && e.details.key === 'geology' && e.details.stage.name === 'Framing');
+});
+
+test('authorPlan: duplicate_key is a 400 (keys are author-local ids, unique per payload)', async () => {
+  const { service } = build();
+  await assert.rejects(service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'A', key: 'shared' },
+      { name: 'B', key: 'shared' },
+    ],
+  }), (e) => e.status === 400 && e.code === 'duplicate_key');
+});
+
+test('authorPlan: dependency_cycle is a 409 (DFS back-edge) naming the stages on the cycle, before any write', async () => {
+  const { service, store, ledger } = build();
+  await assert.rejects(service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'A', key: 'a', dependsOn: ['c'] },
+      { name: 'B', key: 'b', dependsOn: ['a'] },
+      { name: 'C', key: 'c', dependsOn: ['b'] },
+    ],
+  }), (e) => {
+    assert.equal(e.status, 409);
+    assert.equal(e.code, 'dependency_cycle');
+    const cycle = e.details.stages.map((s) => s.key);
+    assert.deepEqual([...cycle].sort(), ['a', 'b', 'c'],
+      'the error names every stage on the offending cycle for the FE to highlight');
+    assert.ok(e.details.stages.every((s) => typeof s.name === 'string'));
+    return true;
+  });
+
+  // Total, server-side, BEFORE any write: no stage, no version, no ledger event.
+  assert.equal(store._versions.length, 0);
+  assert.equal(store._stages.size, 0);
+  assert.equal(ledger._events.length, 0);
+});
+
+test('authorPlan: an A→B→A two-node cycle is also caught', async () => {
+  const { service } = build();
+  await assert.rejects(service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Framing', key: 'f', dependsOn: ['roof'] },
+      { name: 'Roof', key: 'roof', dependsOn: ['f'] },
+    ],
+  }), (e) => e.status === 409 && e.code === 'dependency_cycle');
+});
+
+test('authorPlan: re-save REPLACES the dependency graph atomically (no orphan rows, no FK clash)', async () => {
+  const { service, store, ledger } = build();
+
+  const first = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Foundation', key: 'f' },
+      { name: 'Framing', key: 'fr', dependsOn: ['f'] },
+    ],
+  });
+
+  // Re-save with a different stage set AND a different graph — the draft's
+  // dependency rows must be deleted with its stages (the FK would otherwise fail).
+  const out = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Excavate', key: 'ex' },
+      { name: 'Haul', key: 'haul', dependsOn: ['ex'] },
+      { name: 'Backfill', key: 'back', dependsOn: ['ex'] },
+    ],
+  });
+  assert.equal(out.planVersionId, first.planVersionId, 'same draft row re-saved in place');
+
+  // The graph is EXACTLY the latest one — atomic replace, nothing cumulative.
+  const deps = store.listStageDependenciesByPlanVersion(first.planVersionId);
+  assert.equal(deps.length, 2, 'the two latest edges; the old edge is gone');
+
+  const view = await service.getPlan(PROJECT, GC);
+  const [excavate, haul, backfill] = view.current.stages;
+  assert.deepEqual(excavate.dependsOn, []);
+  assert.deepEqual(haul.dependsOn, [excavate.id]);
+  assert.deepEqual(backfill.dependsOn, [excavate.id]);
+
+  // Two plan_drafted events (one per save) — the ledger stays honest, no new type.
+  assert.equal(ledger._events.filter((e) => e.type === 'plan_drafted').length, 2);
+});
+
+test('authorPlan: dependencies survive :propose and render on the frozen-proposal read (still stage ids)', async () => {
+  const { service } = build();
+  const draft = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Foundation', key: 'f' },
+      { name: 'Framing', key: 'fr', dependsOn: ['f'] },
+    ],
+  });
+  await service.proposePlan(draft.planVersionId, GC);
+
+  const theirs = await service.getPlan(PROJECT, OWNER);
+  assert.equal(theirs.current.status, 'proposed');
+  const [foundation, framing] = theirs.current.stages;
+  assert.deepEqual(framing.dependsOn, [foundation.id]);
+});
+
+test('dependency freeze guard (in-memory): a frozen version\u2019s dependency rows can never be deleted (LINA-233)', async () => {
+  const { service, store } = build();
+  const draft = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Foundation', key: 'f' },
+      { name: 'Framing', key: 'fr', dependsOn: ['f'] },
+    ],
+  });
+  await service.proposePlan(draft.planVersionId, GC);
+  await service.accept(draft.planVersionId, OWNER); // freeze → terminal 'accepted'
+
+  // Direct store delete (any code path) is refused by the mirrored trigger.
+  await assert.rejects(
+    async () => { store.deleteStageDependenciesByPlanVersion({}, draft.planVersionId); },
+    (e) => e.code === 'P0001' && e.trigger === 'stage_dependency_freeze_delete_guard',
+    'the DB trigger is mirrored in the store: a frozen baseline dependency never dies',
+  );
+  assert.equal(store.listStageDependenciesByPlanVersion(draft.planVersionId).length, 1,
+    'the dependency rows survive the refused delete');
+});
+
+test('authorPlan: no key/dependsOn is unchanged behaviour — existing callers keep working (backward compatible)', async () => {
+  const { service } = build();
+  const out = await service.authorPlan(PROJECT, GC, { stages: SKELETON });
+  const view = await service.getPlan(PROJECT, GC);
+  assert.equal(view.current.stages.length, 2);
+  for (const s of view.current.stages) assert.deepEqual(s.dependsOn, []);
+  assert.ok(out.auditEventId);
+});
+
 test('authorPlan + proposePlan: the appended events extend a verifiable hash chain', async () => {
   // Re-run through the real hash-chain helpers to prove plan_drafted and
   // plan_proposed are chainable exactly like import's (ADR-0002).

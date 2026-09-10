@@ -304,6 +304,34 @@ export function createPgStore({ pool = getPool() } = {}) {
     return rows[0];
   }
 
+  // Every predecessor link whose either endpoint is a stage of this version
+  // (LINA-233). Runs BEFORE deleteStagesByPlanVersion on a draft re-save — the
+  // stage DELETE would otherwise fail on the FK `stage_dependency.stage_id →
+  // stage.id`. The stage_dependency_freeze_delete_guard trigger refuses this for
+  // a frozen/terminal version, mirroring the stage guard (0005).
+  async function deleteStageDependenciesByPlanVersion(client, planVersionId) {
+    await client.query(
+      `delete from schedule.stage_dependency
+        where stage_id in (select id from schedule.stage where plan_version_id = $1)
+           or depends_on_stage_id in (select id from schedule.stage where plan_version_id = $1)`,
+      [planVersionId],
+    );
+  }
+
+  // The resolved predecessor graph of a version: { stage_id, depends_on_stage_id }
+  // rows so `getPlan` can attach each stage's `dependsOn` (stage ids) in one read.
+  async function listStageDependenciesByPlanVersion(planVersionId) {
+    const { rows } = await pool.query(
+      `select d.stage_id, d.depends_on_stage_id
+         from schedule.stage_dependency d
+         join schedule.stage s on s.id = d.stage_id
+        where s.plan_version_id = $1
+        order by d.stage_id, d.depends_on_stage_id`,
+      [planVersionId],
+    );
+    return rows;
+  }
+
   // The highest plan position in a project — imported stages append after it so
   // hand-added and imported stages never collide on position.
   async function maxStagePosition(projectId) {
@@ -580,6 +608,7 @@ export function createPgStore({ pool = getPool() } = {}) {
     transaction,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
     insertPlanImport, getPlanImportByIdempotencyKey, insertStageDependency,
+    deleteStageDependenciesByPlanVersion, listStageDependenciesByPlanVersion,
     importStageCounts,
     insertProgress, listProgressByStage, latestProgressByProject,
     insertPlanVersion, getPlanVersion, getOpenPlanVersion, getDraftPlanVersion,
