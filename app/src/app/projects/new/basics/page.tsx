@@ -33,11 +33,9 @@
 import { redirect } from 'next/navigation';
 import { WizardChrome } from '@/components/WizardChrome';
 import { WizardSteps } from '@/components/WizardSteps';
-import { WizardNav, ArrowRight } from '@/components/WizardNav';
-import { ActionForm } from '@/components/ActionForm';
-import { createBuildAction } from '@/app/actions';
 import { isSignedIn } from '@/lib/api';
-import { BUILD_TYPES, expectedStartOptions, BASICS_LEDE, isCreatorRole } from '@/lib/build-creation';
+import { expectedStartOptions, isCreatorRole } from '@/lib/build-creation';
+import { BasicsForm } from './BasicsForm';
 import '../../../build-wizard.css';
 
 export const dynamic = 'force-dynamic';
@@ -66,79 +64,7 @@ export default async function NewBuildBasicsPage({
   return (
     <WizardChrome>
       <WizardSteps current="basics" />
-
-      <ActionForm
-        action={createBuildAction}
-        submitLabel="Continue"
-        pendingLabel="Creating…"
-        footer={({ pending }) => (
-          <WizardNav back={{ href: '/projects/new' }}>
-            <button type="submit" className="btn primary" disabled={pending} aria-busy={pending}>
-              {pending ? 'Creating…' : 'Continue'}
-              <ArrowRight />
-            </button>
-          </WizardNav>
-        )}
-      >
-        {/* The creator role chosen on the "Your role" screen. The server action
-            validates it and the service defaults/validates again — this field is
-            a carrier, never trusted as a membership claim. */}
-        <input type="hidden" name="creatorRole" value={creatorRole} />
-
-        <section className="bwx-card">
-          <h1 className="bwx-card-title">What are we building?</h1>
-          <p className="bwx-card-sub">{BASICS_LEDE[creatorRole]}</p>
-
-          <label className="field">
-            <span className="metric-lbl">Build name</span>
-            <input
-              name="name"
-              type="text"
-              required
-              maxLength={200}
-              autoComplete="off"
-              placeholder="Casa da Encosta — Sintra"
-            />
-          </label>
-
-          <label className="field">
-            <span className="metric-lbl">Address</span>
-            <input
-              name="siteAddress"
-              type="text"
-              maxLength={300}
-              autoComplete="off"
-              placeholder="Rua da Encosta 14, 2710 Sintra"
-            />
-          </label>
-
-          <div className="bwx-row2">
-            <label className="field">
-              <span className="metric-lbl">Build type</span>
-              <select name="buildType" defaultValue="">
-                <option value="">Choose a type…</option>
-                {BUILD_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span className="metric-lbl">Expected start</span>
-              <select name="expectedStart" defaultValue="">
-                <option value="">Choose a month…</option>
-                {months.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </section>
-      </ActionForm>
+      <BasicsForm creatorRole={creatorRole} months={months} />
     </WizardChrome>
   );
 }
