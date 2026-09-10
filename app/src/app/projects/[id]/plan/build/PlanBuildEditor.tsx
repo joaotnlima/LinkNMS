@@ -34,9 +34,10 @@ import {
   PlanAuthorError,
   addPhase, addTask, authorPlan, dependencyChoices, dependsOnOf, detectCycle, nodeIndex, removePhase,
   removeTask, renamePhase, renameTask, reorderPhase, reorderTask,
-  seedSkeleton, setTaskDate, setTaskDescription, taskCount, toggleDependency, toWire,
+  seedSkeleton, setTaskDate, setTaskDates, setTaskDescription, taskCount, toggleDependency, toWire,
   type PhaseDraft, type PlanNodeRef,
 } from '@/lib/plan-authoring';
+import { PlanGantt } from './PlanGantt';
 import '@/components/plan-build.css';
 
 // ── "Depends on" (LINA-233, ADR-0017 annex 2) ───────────────────────────────
@@ -177,6 +178,11 @@ export function PlanBuildEditor({
   const [openDeps, setOpenDeps] = useState<string | null>(null);
   const [serverCycle, setServerCycle] = useState<Array<{ key: string | null; name: string }>>([]);
 
+  // Which face of the same draft the author is looking at: the editable LIST or
+  // the drag-to-schedule TIMELINE (LINA-236). Both drive the same `phases` state
+  // through the same ops — the toggle changes the affordance, not the data.
+  const [view, setView] = useState<'list' | 'timeline'>('list');
+
   const count = useMemo(() => taskCount(phases), [phases]);
   const index = useMemo(() => nodeIndex(phases), [phases]);
 
@@ -214,6 +220,13 @@ export function PlanBuildEditor({
       if (d && d.pi === pi && d.ti !== to) apply(reorderTask(phases, pi, d.ti, to));
       return null;
     });
+  }, [apply, phases]);
+
+  // A Gantt drag lands here: write the task's new start/finish in one op. Same
+  // draft, same tested vocabulary the list uses — the timeline just computes the
+  // dates from a pointer instead of a date picker (LINA-236).
+  const setDates = useCallback((pi: number, ti: number, start: string, end: string) => {
+    apply(setTaskDates(phases, pi, ti, start, end));
   }, [apply, phases]);
 
   const submit = useCallback(async () => {
@@ -284,12 +297,35 @@ export function PlanBuildEditor({
           {count} {count === 1 ? 'task' : 'tasks'} across {phases.length}{' '}
           {phases.length === 1 ? 'phase' : 'phases'}
         </p>
-        <button type="button" className="pbx-icon" onClick={reset} disabled={submitting}
-          title="Reset to the standard skeleton" style={{ width: 'auto', padding: '0 10px' }}>
-          Reset to skeleton
-        </button>
+        <div className="pbx-toolbar-r">
+          <div className="pbx-viewtog" role="tablist" aria-label="Plan view">
+            <button
+              type="button" role="tab" aria-selected={view === 'list'}
+              className={`pbx-viewtab${view === 'list' ? ' is-on' : ''}`}
+              onClick={() => setView('list')}
+            >List</button>
+            <button
+              type="button" role="tab" aria-selected={view === 'timeline'}
+              className={`pbx-viewtab${view === 'timeline' ? ' is-on' : ''}`}
+              onClick={() => setView('timeline')}
+            >Timeline</button>
+          </div>
+          <button type="button" className="pbx-icon" onClick={reset} disabled={submitting}
+            title="Reset to the standard skeleton" style={{ width: 'auto', padding: '0 10px' }}>
+            Reset to skeleton
+          </button>
+        </div>
       </div>
 
+      {view === 'timeline' ? (
+        <PlanGantt
+          phases={phases}
+          disabled={submitting}
+          onDates={setDates}
+          onOpenTask={(pi, ti) => setOpenTask({ pi, ti })}
+        />
+      ) : (
+      <>
       <ol className="pbx-phases">
         {phases.map((phase, pi) => (
           <li
@@ -421,6 +457,8 @@ export function PlanBuildEditor({
         onClick={() => apply(addPhase(phases))} style={{ alignSelf: 'flex-start' }}>
         + Add phase
       </button>
+      </>
+      )}
 
       {cycle ? (
         <p role="alert" className="pbx-cycle">
