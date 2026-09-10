@@ -17,9 +17,11 @@
 // ── WHAT CROSSES THE WIRE ─────────────────────────────────────────────────────
 // Only `{ stages }`. The acting party is the session, resolved server-side — a
 // client that could name itself could stamp authorship as someone else (§0).
-// The write lands as a proposed v1 (one plan_proposed ledger event); on success
-// we hand the returned audit id to /plan, which shows the "Plan created" stamp
-// once and links to the durable copy in the audit trail.
+// SAVING IS PRIVATE DRAFTING (LINA-230): the write lands as a DRAFT (one
+// plan_drafted ledger event), NOT a proposal — the other party sees nothing and
+// no approval is requested. Sending for approval is a separate, deliberate act on
+// the plan page ("Send for approval"). On save we hand the returned audit id to
+// /plan, which shows the "draft saved" stamp once and links to the audit trail.
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -33,12 +35,19 @@ import {
 } from '@/lib/plan-authoring';
 import '@/components/plan-build.css';
 
-export function PlanBuildEditor({ projectId }: { projectId: string }) {
+export function PlanBuildEditor({
+  projectId, initialPhases,
+}: {
+  projectId: string;
+  /** An existing saved draft to resume editing; absent → seed the skeleton. */
+  initialPhases?: PhaseDraft[];
+}) {
   const router = useRouter();
+  const resuming = initialPhases != null && initialPhases.length > 0;
 
-  // Seed the standard skeleton once. `seedSkeleton` mints fresh React keys, so
-  // it must run in a lazy initialiser, not on every render.
-  const [phases, setPhases] = useState<PhaseDraft[]>(() => seedSkeleton());
+  // Resume an existing draft, else seed the standard skeleton. Both mint fresh
+  // React keys, so this must run in a lazy initialiser, not on every render.
+  const [phases, setPhases] = useState<PhaseDraft[]>(() => initialPhases ?? seedSkeleton());
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -85,14 +94,15 @@ export function PlanBuildEditor({ projectId }: { projectId: string }) {
     setSubmitting(true);
     try {
       const result = await authorPlan(projectId, stages);
-      // /plan reads `proposed` and shows the stamp once, then links to the audit
-      // trail — the durable copy of what just happened.
-      router.push(`/projects/${projectId}/plan?proposed=${encodeURIComponent(result.auditEventId)}`);
+      // /plan reads the saved draft and shows the "draft saved" stamp once, then
+      // links to the audit trail — the durable copy of what just happened. The
+      // plan is NOT sent for approval here; that is a separate act on /plan.
+      router.push(`/projects/${projectId}/plan?drafted=${encodeURIComponent(result.auditEventId)}`);
     } catch (e) {
-      if (e instanceof PlanAuthorError && e.code === 'open_plan_exists') {
-        // Someone already brought a plan in while this draft was open — the write
-        // is not this screen's to make. Send the author to the live plan rather
-        // than leave them re-clicking a button that will keep 409-ing.
+      if (e instanceof PlanAuthorError && (e.code === 'open_plan_exists' || e.code === 'draft_exists')) {
+        // A plan is already open/being drafted on this build — the write is not
+        // this screen's to make. Send the author to the live plan rather than
+        // leave them re-clicking a button that will keep 409-ing.
         router.push(`/projects/${projectId}/plan`);
         return;
       }
@@ -105,15 +115,15 @@ export function PlanBuildEditor({ projectId }: { projectId: string }) {
     <main className="pbx">
       <header className="pbx-head">
         <div>
-          <p className="pbx-eyebrow">New plan</p>
+          <p className="pbx-eyebrow">{resuming ? 'Your draft' : 'New plan'}</p>
           <h1 className="pbx-title">Build the plan directly in LinkNMS</h1>
           <p className="pbx-lede">
             Start from a standard skeleton, then rename, reorder, add and remove phases and tasks.
-            Date what you know — leave the rest blank. Nothing here is binding: creating the plan
-            proposes it to the other party to agree.
+            Date what you know — leave the rest blank. Saving keeps this as your private draft —
+            only you can see it, and nothing is sent until you choose to send it for approval.
           </p>
         </div>
-        <span className="pbx-draft">Draft — not yet proposed</span>
+        <span className="pbx-draft">Draft — only you can see it</span>
       </header>
 
       <div className="pbx-toolbar">
@@ -230,14 +240,14 @@ export function PlanBuildEditor({ projectId }: { projectId: string }) {
       <div className="pbx-actions">
         <Link className="btn" href={`/projects/${projectId}/plan`}>Cancel</Link>
         <button type="button" className="btn primary" onClick={submit} disabled={submitting}>
-          {submitting ? 'Creating…' : 'Create plan'}
+          {submitting ? 'Saving…' : 'Save plan'}
         </button>
       </div>
 
       <p className="pbx-foot">
-        The plan is the contractor&apos;s: creating it proposes v1 to the other party and records one
-        event on the shared record. You can revise it before anyone agrees; nothing is binding until
-        both parties do.
+        Saving records your work as a private draft — only you can see it, and it records one event
+        on the shared record that the draft was saved. It is not sent to the other party and no
+        approval is requested until you choose <strong>Send for approval</strong> on the plan page.
       </p>
     </main>
   );

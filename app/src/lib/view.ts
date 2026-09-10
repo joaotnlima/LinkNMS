@@ -288,6 +288,14 @@ export function summarize(e: WireAuditEvent): string {
       return `Change rejected${title ? `: “${title}”` : ''}`;
     case 'budget_moved':
       return 'Budget moved';
+    // Plan authoring → proposal (LINA-228/LINA-230). A draft is saved privately
+    // (plan_drafted, possibly more than once) and later sent for approval
+    // (plan_proposed) — the two read as distinct lines so the trail shows exactly
+    // when the work was saved and when it was sent (acceptance §4).
+    case 'plan_drafted':
+      return 'Plan draft saved';
+    case 'plan_proposed':
+      return `Plan sent for approval${num(p.versionNo) ? ` (version ${num(p.versionNo)})` : ''}`;
     default:
       return e.type;
   }

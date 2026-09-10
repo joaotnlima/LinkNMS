@@ -1,25 +1,35 @@
 # Slice — Direct plan authoring ("Build the plan here") — frozen contract
 
-- Issue: LINA-228
-- ADR: 0017-direct-plan-authoring.md
+- Issue: LINA-228, **LINA-230** (draft-not-proposal)
+- ADR: 0017-direct-plan-authoring.md (+ LINA-230 annex)
 - Owner: Full-Stack Architect
-- Status: Frozen (v1)
+- Status: Frozen (v2 — authoring is private drafting; proposal is a second act)
 
 The FE and BE build against this. It mirrors the B1 import `:confirm` write and
 feeds the B2 D11–D13 proposal surface unchanged.
 
+> **v2 change (LINA-230).** Authoring now saves a private **draft**, NOT a
+> proposal. `:author` writes `status='draft'` (event `plan_drafted`), invisible to
+> the other party; a new `:propose` endpoint ("Send for approval") flips it to
+> `proposed`. See the ADR-0017 LINA-230 annex for the rationale and the three
+> model calls (no `drafted` stamp; `version_no` assigned at propose; in-place
+> draft replacement via a guarded DELETE).
+
 ## §0 — Shape
 
-One new write, no reads of its own (the authored plan is read back through the
-existing `GET /projects/:id/plan`, which returns `{ baseline, current, history }`).
+Two writes, no reads of their own (the authored plan is read back through the
+existing `GET /projects/:id/plan`; a draft appears as `current` to its author
+ONLY, never to the other party and never in `history`).
 
 ```
-POST /projects/:projectId/plan-versions:author        (JSON body)
+POST /projects/:projectId/plan-versions:author          (JSON body) → save a draft
+POST /projects/:projectId/plan-versions/{id}:propose     (no body)   → send for approval
 ```
 
 GC-or-owner (either project party) — `PROPOSE_PLAN` (ADR-0004). The acting party
 is derived from the session server-side, never the body (ADR-0004). Both parties
-may author; the *other* party reviews (`REVIEW_PLAN` denies the proposer).
+may author; `:propose` is the drafter's own act (actor must equal the drafter);
+the *other* party reviews (`REVIEW_PLAN` denies the proposer).
 
 ## §1 — Request body
 
@@ -61,60 +71,99 @@ The skeleton the FE seeds (phase = action, task = sub-action, names only, no
 dates) is just a pre-filled instance of this body; the server has no skeleton of
 its own.
 
-## §2 — Behaviour (one transaction)
+## §2 — `:author` behaviour (one transaction) — SAVE A DRAFT
 
-Exactly the import `:confirm` spine, minus the parser and the import header:
+Authoring saves the author's **private draft**, not a proposal:
 
 1. Authorise `PROPOSE_PLAN` on `projectId`.
 2. Validate the tree (§1). Flatten to pre-order, parents before children.
-3. If an open (`proposed`) version already exists for the project →
-   `409 open_plan_exists` (withdraw it first). This is checked in-txn and also
-   enforced by the `plan_version_one_open_per_project` unique index; a racing
-   insert that trips it maps to the same `409`.
+3. If an open (`proposed`) version already exists → `409 open_plan_exists`
+   (can't draft while a proposal is live; withdraw it first). If a draft exists
+   owned by a *different* party → `409 draft_exists`.
 4. In ONE transaction:
-   - `ledger.append` a `plan_proposed` event: payload
-     `{ planVersionId, versionNo, sourceImportId: null, supersedesVersionId: null, stageCount }`.
-   - `insertPlanVersion` (v1, `proposed`, `source_import_id = null`,
-     `supersedes_version_id = null`, `proposed_by_party_id = actor`).
-   - `insertPlanAcceptance` — the author's `'proposed'` stamp, `audit_event_id`
-     = the `plan_proposed` event id.
+   - `ledger.append` a **`plan_drafted`** event: payload
+     `{ planVersionId, sourceImportId: null, stageCount }` (NO `versionNo` — a
+     draft is unnumbered).
+   - **First save (no existing draft):** `insertPlanVersion` with
+     `status='draft'`, `version_no = NULL`, `source_import_id = null`,
+     `supersedes_version_id = null`, `proposed_by_party_id = actor`,
+     `frozen_at = null`. **NO** `plan_acceptance` stamp (see the ADR annex — the
+     authorship `'proposed'` stamp is written at `:propose`, not here).
+   - **Re-save (draft exists, same author):** `deleteStagesByPlanVersion` then
+     re-insert — the draft's stages are replaced in place (guarded DELETE; only a
+     draft's stages are deletable). The version row is untouched.
    - `insertStage` for each node, parents before children, positions appended
      after any existing stages (`maxStagePosition + i + 1`), each bound to the
-     new `plan_version_id`. `import_id = null`, `source_row_ref = null`,
+     draft's `plan_version_id`. `import_id = null`, `source_row_ref = null`,
      `scope_note = null`.
-   - No `stage_dependency` rows (authoring has no dependency UI in v1).
 
-## §3 — Response
+The draft is **invisible** to the other party: `getPlan` returns it as `current`
+only when `actorPartyId == proposed_by_party_id`, and never in `history`.
 
-`201 Created`:
+## §2a — `:propose` behaviour (one transaction) — SEND FOR APPROVAL
+
+The explicit second act. `draft → proposed`:
+
+1. Load the version (404 if missing). Authorise `PROPOSE_PLAN`; actor MUST equal
+   `proposed_by_party_id` → else `403 forbidden`.
+2. If `status != 'draft'` → `409 not_draft`.
+3. In ONE transaction:
+   - `versionNo = nextPlanVersionNo(projectId)` (assigned NOW, not at draft time).
+   - `ledger.append` a `plan_proposed` event: payload
+     `{ planVersionId, versionNo, sourceImportId: null, supersedesVersionId: null, stageCount }`.
+   - `updatePlanVersionStatus` → `status='proposed'`, `version_no = versionNo`.
+   - `insertPlanAcceptance` — the author's `'proposed'` stamp, `audit_event_id`
+     = the `plan_proposed` event id (the first of the two stamps that freeze a
+     baseline; the reviewer's `accept` is the second, unchanged).
+   - A racing open proposal trips `plan_version_one_open_per_project` →
+     `409 open_plan_exists`.
+
+## §3 — Responses
+
+`:author` → `201 Created`:
+
+```jsonc
+{
+  "planVersionId": "uuid",
+  "versionNo": null,       // a draft is unnumbered until proposed
+  "status": "draft",
+  "stageCount": 12,
+  "rootCount": 3,
+  "auditEventId": "uuid"   // the plan_drafted event — links to the audit trail
+}
+```
+
+`:propose` → `200 OK`:
 
 ```jsonc
 {
   "planVersionId": "uuid",
   "versionNo": 1,
   "status": "proposed",
-  "stageCount": 12,
-  "rootCount": 3,
-  "auditEventId": "uuid"   // the plan_proposed event — links to the audit trail
+  "auditEventId": "uuid"   // the plan_proposed event
 }
 ```
 
 Errors use the platform envelope `{ error: { code, message, details? } }`:
 `401 unauthenticated`, `403 forbidden`, `400 empty_plan|invalid_name|too_deep|
 invalid_plannedStartDate|invalid_plannedEndDate|invalid_cost|invalid_stages`,
-`409 open_plan_exists`.
+`409 open_plan_exists|draft_exists|not_draft`, `404 not_found` (`:propose`).
 
 ## §4 — FE
 
 - Route: `/projects/:id/plan/build`. Reachable from the live *Route 2* card on
-  `/projects/:id/plan` (D7). GC and owner both see it (either may author).
-- The editor seeds the standard skeleton (see `app/src/lib/plan-authoring.ts`),
-  supports add / rename / reorder / remove of phases (actions) and tasks
-  (sub-actions) and optional start/finish dates, shows a "Draft · not committed"
-  status, and a primary **Create the plan** that POSTs the tree and redirects to
-  `/projects/:id/plan` (the proposal now renders in `PlanBaseline`).
-- On `409 open_plan_exists` the editor tells the author a proposal is already
-  open and links to the plan.
+  `/projects/:id/plan` (D7), and from **Keep editing** on a saved draft. GC and
+  owner both see it (either may author).
+- The editor seeds the standard skeleton (see `app/src/lib/plan-authoring.ts`) or
+  **resumes an existing draft** (hydrated from `getPlan`), supports add / rename /
+  reorder / remove of phases (actions) and tasks (sub-actions) and optional
+  start/finish dates, shows a "Draft — only you can see it" status, and a primary
+  **Save plan** that POSTs the tree and redirects to `/projects/:id/plan?drafted=…`.
+- On the plan page a saved draft shows (to its author only) a "Saved as a draft"
+  banner and two actions: **Keep editing** (→ `/plan/build`) and **Send for
+  approval** (`:propose`). The authorship stamp appears only after propose.
+- On `409 open_plan_exists`/`draft_exists` the editor sends the author to the live
+  plan rather than re-clicking a button that will keep 409-ing.
 - The actor is never sent; authorisation is the server's. Affordances shape
   buttons only.
 

@@ -36,14 +36,14 @@ export default async function PlanPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ imported?: string; proposed?: string }>;
+  searchParams: Promise<{ imported?: string; drafted?: string }>;
 }) {
   const { id } = await params;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan`);
 
   const [build, plan, session] = await Promise.all([getBuild(id), getPlan(id), currentSession()]);
   const shell = await buildShellContext(id, build.name);
-  const { imported, proposed } = await searchParams;
+  const { imported, drafted } = await searchParams;
   const isGC = build.actingRole === 'counterparty';
 
   const directory = directoryOf(build);
@@ -81,14 +81,16 @@ export default async function PlanPage({
           </div>
         ) : null}
 
-        {/* The stamp the :author write returned (LINA-228). Like the import stamp,
-            shown once on the redirect; the durable copy is the ledger event. */}
-        {proposed ? (
+        {/* The stamp the :author write returned (LINA-228/LINA-230). Saving is
+            PRIVATE drafting — the copy says so plainly: nothing is sent yet. Shown
+            once on the redirect; the durable copy is the plan_drafted ledger event. */}
+        {drafted ? (
           <div className="pi-stamp" role="status">
-            <p className="pi-stamp-t">Plan created</p>
+            <p className="pi-stamp-t">Draft saved</p>
             <p className="cap">
-              Proposed to the other party and recorded as one event on the shared record:{' '}
-              <span className="pi-stamp-id">{proposed}</span>
+              Saved as your private draft — the other party cannot see it and no approval has been
+              requested. Recorded as one event on the shared record:{' '}
+              <span className="pi-stamp-id">{drafted}</span>
             </p>
             <Link className="btn" href={`/projects/${id}/audit`}>See it in the audit trail</Link>
           </div>

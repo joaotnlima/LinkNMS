@@ -154,6 +154,16 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
     } catch (err) { return errorBody(err); }
   }
 
+  // POST …/plan-versions/:versionId:propose — drafter sends their draft for
+  // approval (LINA-230). draft → proposed; the first moment the other party sees
+  // it. No body; the acting party is the session.
+  async function proposePlan({ session, params }) {
+    try {
+      const out = await planVersion.proposePlan(params.versionId, actorOf(session));
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
   // POST /projects/:projectId/plan-versions:author — direct plan authoring, the
   // "build it here" route (LINA-228, ADR-0017). Either party; JSON body { stages }.
   async function authorPlan({ session, params, body }) {
@@ -209,6 +219,6 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
 
   return { getPlan, addStage, getStage, updateStage, reportProgress,
     inspectPlanImport, columnsPlanImport, previewPlanImport, confirmPlanImport,
-    withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan, authorPlan,
+    withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan, authorPlan, proposePlan,
     getRecord, getStageMaterials, authorMaterials, swapMaterial, getBudgetMovement };
 }

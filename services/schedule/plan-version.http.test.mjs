@@ -152,7 +152,7 @@ test('unauthenticated B2 action → 401 envelope', async () => {
 
 // ── authorPlan (LINA-228) — the handler wires session→actor and maps errors ──
 
-test('authorPlan: 201 with the proposal summary; actor from the session, not the body', async () => {
+test('authorPlan: 201 with the DRAFT summary; actor from the session, not the body', async () => {
   const { http, store } = build();
   const res = await http.authorPlan({
     session: gc,
@@ -163,15 +163,16 @@ test('authorPlan: 201 with the proposal summary; actor from the session, not the
     ] },
   });
   assert.equal(res.status, 201);
-  assert.equal(res.body.status, 'proposed');
+  assert.equal(res.body.status, 'draft');   // saving is private drafting (LINA-230)
+  assert.equal(res.body.versionNo, null);
   assert.equal(res.body.stageCount, 2);
   assert.equal(res.body.rootCount, 1);
   const v = store.getPlanVersion(res.body.planVersionId);
   assert.equal(v.proposed_by_party_id, GC); // session actor, never the body
 });
 
-test('authorPlan: unauthenticated → 401; empty plan → 400; second open → 409', async () => {
-  const { http } = build();
+test('authorPlan: unauthenticated → 401; empty plan → 400; re-save by the drafter → 201 (same draft)', async () => {
+  const { http, store } = build();
   const anon = await http.authorPlan({ session: undefined, params: { projectId: PROJECT }, body: { stages: [{ name: 'A' }] } });
   assert.equal(anon.status, 401);
 
@@ -181,7 +182,29 @@ test('authorPlan: unauthenticated → 401; empty plan → 400; second open → 4
 
   const first = await http.authorPlan({ session: gc, params: { projectId: PROJECT }, body: { stages: [{ name: 'A' }] } });
   assert.equal(first.status, 201);
-  const second = await http.authorPlan({ session: gc, params: { projectId: PROJECT }, body: { stages: [{ name: 'B' }] } });
-  assert.equal(second.status, 409);
-  assert.equal(second.body.error.code, 'open_plan_exists');
+  // Re-saving the draft is not a conflict — it replaces the single draft in place.
+  const again = await http.authorPlan({ session: gc, params: { projectId: PROJECT }, body: { stages: [{ name: 'B' }] } });
+  assert.equal(again.status, 201);
+  assert.equal(again.body.planVersionId, first.body.planVersionId);
+  assert.equal(store.listStagesByPlanVersion(first.body.planVersionId)[0].name, 'B');
+});
+
+test('proposePlan: 200 flips the draft to proposed; the version id from the path, actor from the session', async () => {
+  const { http, store } = build();
+  const draft = await http.authorPlan({
+    session: gc, params: { projectId: PROJECT },
+    body: { stages: [{ name: 'A' }] },
+  });
+
+  // The reviewer cannot propose someone else's draft.
+  const denied = await http.proposePlan({ session: owner, params: { versionId: draft.body.planVersionId } });
+  assert.equal(denied.status, 403);
+
+  const res = await http.proposePlan({ session: gc, params: { versionId: draft.body.planVersionId } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, 'proposed');
+  assert.equal(res.body.versionNo, 1);
+  const v = store.getPlanVersion(draft.body.planVersionId);
+  assert.equal(v.status, 'proposed');
+  assert.equal(v.version_no, 1);
 });
