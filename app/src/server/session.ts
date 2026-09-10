@@ -22,6 +22,7 @@ import { cache } from 'react';
 import { auth, currentUser } from '@clerk/nextjs/server';
 
 import { getContainer } from '@services/gateway/container.mjs';
+import { failClosed } from './fail-closed';
 
 export interface Session {
   partyId: string;
@@ -73,7 +74,19 @@ export function clerkConfigured(): boolean {
  * ends in a seat lookup plus a Postgres upsert. Without memoisation one page
  * view would run the whole chain a dozen times.
  */
-export const sessionState = cache(async (): Promise<SessionState> => {
+export const sessionState = cache(
+  (): Promise<SessionState> =>
+    // Fail CLOSED to anonymous if the auth/seat/party chain throws, rather than
+    // letting a transient Clerk or Postgres blip crash the render into the root
+    // "record could not be loaded" boundary — a screen that is actively wrong on
+    // a wizard page that reads no record (LINA-231 reopen). This honours the
+    // fail-closed contract this file already documents for the not-configured
+    // case. Pages that read the shared record still do so after this gate, so a
+    // real record outage still surfaces honestly (LINA-57). See `failClosed`.
+    failClosed(resolveSessionState, { kind: 'anonymous' }, 'session'),
+);
+
+async function resolveSessionState(): Promise<SessionState> {
   if (!clerkConfigured()) return { kind: 'anonymous' };
 
   const { userId } = await auth();
@@ -106,7 +119,7 @@ export const sessionState = cache(async (): Promise<SessionState> => {
     kind: 'party',
     session: { partyId: party.id, setupComplete: party.setupComplete === true },
   };
-});
+}
 
 /**
  * The acting party, or null when the request carries no admitted session —
