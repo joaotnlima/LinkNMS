@@ -26,8 +26,9 @@ import Link from 'next/link';
 
 import {
   PlanAuthorError,
-  addPhase, addTask, authorPlan, movePhase, moveTask, removePhase,
-  removeTask, renamePhase, renameTask, seedSkeleton, setTaskDate, taskCount, toWire,
+  addPhase, addTask, authorPlan, removePhase,
+  removeTask, renamePhase, renameTask, reorderPhase, reorderTask,
+  seedSkeleton, setTaskDate, taskCount, toWire,
   type PhaseDraft,
 } from '@/lib/plan-authoring';
 import '@/components/plan-build.css';
@@ -41,6 +42,13 @@ export function PlanBuildEditor({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Drag-to-reorder state. A phase drag and a task drag are mutually exclusive;
+  // a task only drops within its own phase (`pi` guards the drop). Reordering is
+  // a pure op (reorderPhase / reorderTask) — the same tested vocabulary as before,
+  // just driven by a grab instead of step arrows (pen: "drag a row").
+  const [dragPhase, setDragPhase] = useState<number | null>(null);
+  const [dragTask, setDragTask] = useState<{ pi: number; ti: number } | null>(null);
+
   const count = useMemo(() => taskCount(phases), [phases]);
 
   // Every mutation goes through here so a fresh edit always clears a stale error.
@@ -50,6 +58,20 @@ export function PlanBuildEditor({ projectId }: { projectId: string }) {
   }, []);
 
   const reset = useCallback(() => apply(seedSkeleton()), [apply]);
+
+  const dropPhase = useCallback((to: number) => {
+    setDragPhase((from) => {
+      if (from !== null && from !== to) apply(reorderPhase(phases, from, to));
+      return null;
+    });
+  }, [apply, phases]);
+
+  const dropTask = useCallback((pi: number, to: number) => {
+    setDragTask((d) => {
+      if (d && d.pi === pi && d.ti !== to) apply(reorderTask(phases, pi, d.ti, to));
+      return null;
+    });
+  }, [apply, phases]);
 
   const submit = useCallback(async () => {
     setError(null);
@@ -107,8 +129,23 @@ export function PlanBuildEditor({ projectId }: { projectId: string }) {
 
       <ol className="pbx-phases">
         {phases.map((phase, pi) => (
-          <li key={phase.key} className="pbx-phase">
+          <li
+            key={phase.key}
+            className={`pbx-phase${dragPhase === pi ? ' is-dragging' : ''}`}
+            onDragOver={(e) => { if (dragPhase !== null) e.preventDefault(); }}
+            onDrop={(e) => { if (dragPhase !== null) { e.preventDefault(); dropPhase(pi); } }}
+          >
             <div className="pbx-phase-hd">
+              <span
+                className="pbx-grip"
+                role="button"
+                tabIndex={-1}
+                aria-label={`Drag to reorder phase ${pi + 1}`}
+                title="Drag to reorder"
+                draggable={!submitting}
+                onDragStart={(e) => { setDragPhase(pi); e.dataTransfer.effectAllowed = 'move'; }}
+                onDragEnd={() => setDragPhase(null)}
+              >⠿</span>
               <span className="pbx-phase-n" aria-hidden>{pi + 1}</span>
               <input
                 className="pbx-phase-name"
@@ -119,12 +156,6 @@ export function PlanBuildEditor({ projectId }: { projectId: string }) {
                 onChange={(e) => apply(renamePhase(phases, pi, e.target.value))}
               />
               <span className="pbx-rowctl">
-                <button type="button" className="pbx-icon" title="Move phase up"
-                  disabled={submitting || pi === 0}
-                  onClick={() => apply(movePhase(phases, pi, -1))}>↑</button>
-                <button type="button" className="pbx-icon" title="Move phase down"
-                  disabled={submitting || pi === phases.length - 1}
-                  onClick={() => apply(movePhase(phases, pi, 1))}>↓</button>
                 <button type="button" className="pbx-icon pbx-del" title="Remove phase"
                   disabled={submitting}
                   onClick={() => apply(removePhase(phases, pi))}>✕</button>
@@ -134,11 +165,28 @@ export function PlanBuildEditor({ projectId }: { projectId: string }) {
             <div className="pbx-tasks">
               {phase.tasks.length > 0 ? (
                 <div className="pbx-taskhdr" aria-hidden>
-                  <span>Task</span><span>Start</span><span>End</span><span />
+                  <span /><span>Task</span><span>Start</span><span>End</span><span />
                 </div>
               ) : null}
-              {phase.tasks.map((task, ti) => (
-                <div key={task.key} className="pbx-task">
+              {phase.tasks.map((task, ti) => {
+                const dropTarget = dragTask?.pi === pi;
+                return (
+                <div
+                  key={task.key}
+                  className={`pbx-task${dragTask?.pi === pi && dragTask.ti === ti ? ' is-dragging' : ''}`}
+                  onDragOver={(e) => { if (dropTarget) e.preventDefault(); }}
+                  onDrop={(e) => { if (dropTarget) { e.preventDefault(); dropTask(pi, ti); } }}
+                >
+                  <span
+                    className="pbx-grip"
+                    role="button"
+                    tabIndex={-1}
+                    aria-label="Drag to reorder task"
+                    title="Drag to reorder"
+                    draggable={!submitting}
+                    onDragStart={(e) => { setDragTask({ pi, ti }); e.dataTransfer.effectAllowed = 'move'; }}
+                    onDragEnd={() => setDragTask(null)}
+                  >⠿</span>
                   <input
                     className="pbx-task-name"
                     value={task.name}
@@ -158,18 +206,13 @@ export function PlanBuildEditor({ projectId }: { projectId: string }) {
                     onChange={(e) => apply(setTaskDate(phases, pi, ti, 'end', e.target.value))}
                   />
                   <span className="pbx-rowctl">
-                    <button type="button" className="pbx-icon" title="Move task up"
-                      disabled={submitting || ti === 0}
-                      onClick={() => apply(moveTask(phases, pi, ti, -1))}>↑</button>
-                    <button type="button" className="pbx-icon" title="Move task down"
-                      disabled={submitting || ti === phase.tasks.length - 1}
-                      onClick={() => apply(moveTask(phases, pi, ti, 1))}>↓</button>
                     <button type="button" className="pbx-icon pbx-del" title="Remove task"
                       disabled={submitting}
                       onClick={() => apply(removeTask(phases, pi, ti))}>✕</button>
                   </span>
                 </div>
-              ))}
+                );
+              })}
               <button type="button" className="pbx-addtask" disabled={submitting}
                 onClick={() => apply(addTask(phases, pi))}>+ Add task</button>
             </div>

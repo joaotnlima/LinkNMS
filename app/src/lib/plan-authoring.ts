@@ -111,12 +111,37 @@ function move<T>(arr: T[], i: number, delta: number): T[] {
   return out;
 }
 
+/**
+ * Move item `from` to index `to`, sliding the rest — the drag-and-drop reorder
+ * the pen asks for ("drag a row", not step-by-step arrows). Insert semantics, not
+ * a swap: dropping row 5 onto row 1 leaves 2–4 in order. Out-of-range or a no-op
+ * drop returns the same array unchanged.
+ */
+function reorder<T>(arr: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || from >= arr.length || to < 0 || to >= arr.length) return arr;
+  const out = arr.slice();
+  const [item] = out.splice(from, 1);
+  out.splice(to, 0, item);
+  return out;
+}
+
 export function renamePhase(phases: PhaseDraft[], pi: number, name: string): PhaseDraft[] {
   return replaceAt(phases, pi, { ...phases[pi], name });
 }
 
 export function movePhase(phases: PhaseDraft[], pi: number, delta: number): PhaseDraft[] {
   return move(phases, pi, delta);
+}
+
+/** Drag-drop a phase from one position to another (insert, not swap). */
+export function reorderPhase(phases: PhaseDraft[], from: number, to: number): PhaseDraft[] {
+  return reorder(phases, from, to);
+}
+
+/** Drag-drop a task within its phase from one position to another. */
+export function reorderTask(phases: PhaseDraft[], pi: number, from: number, to: number): PhaseDraft[] {
+  const phase = phases[pi];
+  return replaceAt(phases, pi, { ...phase, tasks: reorder(phase.tasks, from, to) });
 }
 
 export function removePhase(phases: PhaseDraft[], pi: number): PhaseDraft[] {

@@ -13,7 +13,8 @@ import assert from 'node:assert/strict';
 
 import {
   PLAN_SKELETON, seedSkeleton, emptyPhase, addPhase, addTask, renamePhase, renameTask,
-  movePhase, moveTask, removePhase, removeTask, setTaskDate, taskCount, toWire, PlanAuthorError,
+  movePhase, moveTask, reorderPhase, reorderTask,
+  removePhase, removeTask, setTaskDate, taskCount, toWire, PlanAuthorError,
 } from './plan-authoring.ts';
 
 test('skeleton: three phases, names only, no dates or sub-tasks (the issue scope)', () => {
@@ -70,6 +71,25 @@ test('draft ops are pure and do what they say', () => {
 
   phases = removePhase(phases, phases.length - 1);
   assert.ok(taskCount(phases) > 0);
+});
+
+test('reorder: drag-drop moves a row and slides the rest (insert, not swap)', () => {
+  let phases = seedSkeleton();
+  const keys = phases.map((p) => p.key);
+  // Drag the last phase (idx 2) onto the first (idx 0): [2,0,1].
+  phases = reorderPhase(phases, 2, 0);
+  assert.deepEqual(phases.map((p) => p.key), [keys[2], keys[0], keys[1]]);
+  // No-op / out-of-range drops return the same reference.
+  assert.equal(reorderPhase(phases, 1, 1), phases);
+  assert.equal(reorderPhase(phases, 0, 9), phases);
+
+  // Tasks reorder within their phase only, and don't touch siblings.
+  const tks = phases[0].tasks.map((t) => t.key);
+  const siblingBefore = phases[1];
+  phases = reorderTask(phases, 0, 0, tks.length - 1); // first task to the end
+  assert.equal(phases[0].tasks[tks.length - 1].key, tks[0]);
+  assert.equal(phases[0].tasks[0].key, tks[1]);
+  assert.equal(phases[1], siblingBefore, 'other phases keep identity (no mutation)');
 });
 
 test('toWire: two levels, blank dates → null, empty phase dropped', () => {
