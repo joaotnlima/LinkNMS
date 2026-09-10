@@ -20,7 +20,7 @@ import {
   // Dependencies (LINA-233).
   planNodes, dependencyChoices, dependsOnOf, setDependsOn, toggleDependency, detectCycle,
   // The third level (LINA-243).
-  addSubtask, renameSubtask, setSubtaskDate, setSubtaskDescription, removeSubtask,
+  addSubtask, renameSubtask, setSubtaskDate, setSubtaskDates, setSubtaskDescription, removeSubtask,
   moveSubtask, reorderSubtask, subtaskCount,
 } from './plan-authoring.ts';
 
@@ -324,6 +324,37 @@ test('sub-task ops: add / rename / date / describe / reorder / remove, all pure'
 
   // Nothing nests below a sub-task: there is no op for it. That IS the cap.
   assert.deepEqual(phases[0].tasks[0].children[0].children, []);
+});
+
+test('setSubtaskDates writes both ends of a sub-task in one op and touches nothing else (LINA-244)', () => {
+  let phases = [
+    { key: 'p1', name: 'Phase A', dependsOn: [], tasks: [
+      { key: 't1', name: 'Framing', start: '2026-04-01', end: '2026-04-30', description: '', dependsOn: [], children: [
+        { key: 's1', name: 'Order the rebar', start: '2026-04-02', end: '2026-04-04', description: 'n', dependsOn: [], children: [] },
+        { key: 's2', name: 'Book the pump', start: '', end: '', description: '', dependsOn: [], children: [] },
+      ] },
+    ] },
+  ];
+  const before = phases;
+
+  phases = setSubtaskDates(phases, 0, 0, 0, '2026-04-06', '2026-04-08');
+  const sub = phases[0].tasks[0].children[0];
+  assert.equal(sub.start, '2026-04-06');
+  assert.equal(sub.end, '2026-04-08');
+  assert.equal(sub.name, 'Order the rebar', 'the drag moves dates only');
+  assert.equal(sub.description, 'n');
+
+  // The parent task and the sibling sub-task are untouched — a sub-task bar drag
+  // must never reschedule the row above or beside it.
+  assert.equal(phases[0].tasks[0].start, '2026-04-01');
+  assert.equal(phases[0].tasks[0].end, '2026-04-30');
+  assert.equal(phases[0].tasks[0].children[1], before[0].tasks[0].children[1]);
+  assert.equal(before[0].tasks[0].children[0].start, '2026-04-02', 'immutable: the input draft is unchanged');
+
+  // Blanks round-trip as '' (an open bar dragged by one end stays open).
+  phases = setSubtaskDates(phases, 0, 0, 1, '2026-05-01', '');
+  assert.equal(phases[0].tasks[0].children[1].start, '2026-05-01');
+  assert.equal(phases[0].tasks[0].children[1].end, '');
 });
 
 test('a sub-task is a stage: it is numbered 1.2.3, offered as a dependency, and takes its links when removed', () => {
