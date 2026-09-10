@@ -40,6 +40,10 @@ graphify-out/
 node_modules/
 dist/
 build/
+# ...but NOT the Next.js route folder literally named "build" (LINA-228:
+# /projects/:id/plan/build). The bare build/ rule above silently swallowed it,
+# which is why PR #92's page was never committed and the route 404'd in prod.
+!app/src/app/projects/\[id\]/plan/build/
 .next/
 .turbo/
 .cache/
