@@ -385,7 +385,10 @@ function PlanTable({
       {flat.map(({ node, depth }) => {
         const bar = scale ? barGeometry(node, scale) : null;
         return (
-          <div key={node.id} className={`pi-planrow ${depth ? 'is-sub' : ''}`.trim()}>
+          // A plan may now be three levels deep (LINA-243), so the indent has to
+          // say WHICH level — one shared "is-sub" would print a sub-sub-action
+          // as if it sat beside its own parent.
+          <div key={node.id} className={`pi-planrow ${depth ? 'is-sub' : ''} ${depth > 1 ? 'is-sub2' : ''}`.trim()}>
             <span className="pi-cell-name">{node.name}</span>
             <span className="pi-cell-dates num">{dateRange(node)}</span>
             <span className="pb-cell-value num">
@@ -454,7 +457,7 @@ function ChangeEditor({
         const d = drafts[node.id] ?? draftOf(node);
         const edit = byId.get(node.id);
         return (
-          <div key={node.id} className={`pb-editrow ${depth ? 'is-sub' : ''} ${edit ? 'is-changed' : ''}`.trim()}>
+          <div key={node.id} className={`pb-editrow ${depth ? 'is-sub' : ''} ${depth > 1 ? 'is-sub2' : ''} ${edit ? 'is-changed' : ''}`.trim()}>
             <span className="pb-edit-name">{node.name}</span>
             <label className="pb-field">
               <span className="grp">Start</span>

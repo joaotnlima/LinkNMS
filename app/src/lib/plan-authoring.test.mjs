@@ -3,9 +3,10 @@
 // The screen is copy + layout; these seams are the logic:
 //   1. the seeded skeleton matches the pen (names only — no dates, no sub-tasks);
 //   2. the pure draft ops add / rename / reorder / remove without mutating;
-//   3. `toWire` enforces the two-level contract, drops empty phases, refuses a
-//      nameless one, and normalises blank dates to null — exactly what the server
-//      re-validates, so the author sees the refusal beside the field.
+//   3. `toWire` enforces the depth contract (three levels, never four — LINA-243),
+//      drops empty phases, refuses a nameless one, and normalises blank dates to
+//      null — exactly what the server re-validates, so the author sees the refusal
+//      beside the field.
 //
 // Run: node --test src/lib/plan-authoring.test.mjs
 import { test } from 'node:test';
@@ -18,6 +19,9 @@ import {
   hydrateDraft,
   // Dependencies (LINA-233).
   planNodes, dependencyChoices, dependsOnOf, setDependsOn, toggleDependency, detectCycle,
+  // The third level (LINA-243).
+  addSubtask, renameSubtask, setSubtaskDate, setSubtaskDescription, removeSubtask,
+  moveSubtask, reorderSubtask, subtaskCount,
 } from './plan-authoring.ts';
 
 test('skeleton: three phases, names only, no dates or sub-tasks (the issue scope)', () => {
@@ -95,7 +99,7 @@ test('reorder: drag-drop moves a row and slides the rest (insert, not swap)', ()
   assert.equal(phases[1], siblingBefore, 'other phases keep identity (no mutation)');
 });
 
-test('toWire: two levels, blank dates → null, empty phase dropped', () => {
+test('toWire: a plan with no sub-tasks emits no third level, blank dates → null, empty phase dropped', () => {
   const phases = [
     { key: 'p1', name: 'Phase A', dependsOn: [], tasks: [
       { key: 't1', name: 'Task 1', start: '2026-03-01', end: '', dependsOn: [] },
@@ -113,7 +117,8 @@ test('toWire: two levels, blank dates → null, empty phase dropped', () => {
   assert.equal(wire[0].children[0].plannedEndDate, null);
   assert.equal(wire[1].name, 'Empty phase');
   assert.equal(wire[1].children.length, 0);
-  // No node ever carries a third level.
+  // A task with no sub-tasks omits `children` entirely — a two-level plan puts
+  // exactly the bytes on the wire it did before the third level existed.
   for (const s of wire) for (const c of s.children) assert.equal(c.children, undefined);
 });
 
@@ -273,4 +278,176 @@ test('hydrateDraft: server stage ids come back as local keys, dangling edges dro
   // Re-saving the hydrated draft round-trips the graph through the local keys.
   const wire = toWire(phases);
   assert.deepEqual(wire[1].dependsOn, [wire[0].children[0].key]);
+});
+
+// ── The third level: sub-sub-actions (LINA-243, ADR-0019) ───────────────────
+// The server now ACCEPTS three levels (LINA-238); these are the seams that make
+// the client produce one — the ops the editor edits with, the labels the picker
+// prints, the wire shape, and the round-trip back out of a saved draft.
+
+test('sub-task ops: add / rename / date / describe / reorder / remove, all pure', () => {
+  let phases = seedSkeleton();
+  const before = phases;
+
+  phases = addSubtask(phases, 0, 0);
+  assert.equal(phases[0].tasks[0].children.length, 1);
+  assert.equal(before[0].tasks[0].children.length, 0, 'original untouched (no mutation)');
+  assert.equal(phases[0].tasks[1].children.length, 0, 'only the targeted task grew');
+  assert.equal(phases[1], before[1], 'other phases keep identity');
+
+  phases = renameSubtask(phases, 0, 0, 0, 'Order the rebar');
+  assert.equal(phases[0].tasks[0].children[0].name, 'Order the rebar');
+
+  phases = setSubtaskDate(phases, 0, 0, 0, 'start', '2026-04-01');
+  phases = setSubtaskDate(phases, 0, 0, 0, 'end', '2026-04-03');
+  assert.equal(phases[0].tasks[0].children[0].start, '2026-04-01');
+  assert.equal(phases[0].tasks[0].children[0].end, '2026-04-03');
+
+  phases = setSubtaskDescription(phases, 0, 0, 0, 'Grade 500, 12mm.');
+  assert.equal(phases[0].tasks[0].children[0].description, 'Grade 500, 12mm.');
+
+  // Reorder within its own task, insert semantics like every other level.
+  phases = addSubtask(phases, 0, 0);
+  phases = renameSubtask(phases, 0, 0, 1, 'Book the pump');
+  const subKeys = phases[0].tasks[0].children.map((s) => s.key);
+  phases = reorderSubtask(phases, 0, 0, 1, 0);
+  assert.deepEqual(phases[0].tasks[0].children.map((s) => s.key), [subKeys[1], subKeys[0]]);
+  assert.equal(reorderSubtask(phases, 0, 0, 0, 0)[0].tasks[0].children[0].key, subKeys[1], 'no-op drop');
+  phases = moveSubtask(phases, 0, 0, 0, 1);
+  assert.deepEqual(phases[0].tasks[0].children.map((s) => s.key), [subKeys[0], subKeys[1]]);
+  assert.equal(subtaskCount(phases), 2);
+
+  phases = removeSubtask(phases, 0, 0, 0);
+  assert.deepEqual(phases[0].tasks[0].children.map((s) => s.key), [subKeys[1]]);
+  assert.equal(subtaskCount(phases), 1);
+  assert.equal(taskCount(phases), taskCount(before), 'sub-tasks are not counted as tasks');
+
+  // Nothing nests below a sub-task: there is no op for it. That IS the cap.
+  assert.deepEqual(phases[0].tasks[0].children[0].children, []);
+});
+
+test('a sub-task is a stage: it is numbered 1.2.3, offered as a dependency, and takes its links when removed', () => {
+  let phases = [
+    { key: 'p1', name: 'Phase A', dependsOn: [], tasks: [
+      { key: 't1', name: 'Framing', start: '', end: '', description: '', dependsOn: [], children: [
+        { key: 's1', name: 'Order the rebar', start: '', end: '', description: '', dependsOn: [], children: [] },
+      ] },
+      { key: 't2', name: 'Pour', start: '', end: '', description: '', dependsOn: ['s1'], children: [] },
+    ] },
+  ];
+  const nodes = planNodes(phases);
+  assert.deepEqual(nodes.map((n) => n.key), ['p1', 't1', 's1', 't2'], 'reading order: phase, task, its sub-tasks');
+  assert.deepEqual(nodes.map((n) => n.level), [1, 2, 3, 2]);
+  assert.equal(nodes[2].label, '1.1.1 Order the rebar');
+
+  // Any stage may depend on a sub-task and a sub-task on any stage (any-stage
+  // scope, ADR-0017 annex 2) — self and downstream stay off the menu.
+  const keys = (k) => dependencyChoices(phases, k).flatMap((g) => g.options.map((o) => o.key));
+  assert.deepEqual(keys('s1'), ['p1', 't1'], 't2 is downstream of s1, so it would loop');
+  assert.ok(keys('t2').includes('s1'));
+
+  phases = setDependsOn(phases, 's1', ['t1']);
+  assert.deepEqual(dependsOnOf(phases, 's1'), ['t1'], 'read back by key at the third level too');
+  assert.equal(phases[0].tasks[1].dependsOn.length, 1, 'a sibling row is not disturbed');
+  phases = toggleDependency(phases, 's1', 't1');
+  assert.deepEqual(dependsOnOf(phases, 's1'), [], 'toggle removes at the third level');
+
+  // A cycle through a sub-task is caught by the same check the server runs.
+  const looped = setDependsOn(phases, 's1', ['t2']);
+  assert.ok(detectCycle(looped), 't2 → s1 → t2 is a loop');
+
+  // Removing the sub-task takes the edge that named it, or the next save 400s.
+  const pruned = removeSubtask(phases, 0, 0, 0);
+  assert.deepEqual(pruned[0].tasks[1].dependsOn, []);
+  // Removing the TASK takes its sub-tasks — and their inbound edges — with it.
+  assert.deepEqual(removeTask(phases, 0, 0)[0].tasks[0].dependsOn, []);
+});
+
+test('toWire: a task emits its sub-tasks as children, blanks dropped, nameless refused', () => {
+  const wire = toWire([
+    { key: 'p1', name: 'Phase A', dependsOn: [], tasks: [
+      { key: 't1', name: 'Framing', start: '', end: '', description: '', dependsOn: [], children: [
+        { key: 's1', name: ' Order the rebar ', start: '2026-04-01', end: '', description: ' 12mm ', dependsOn: ['t2'], children: [] },
+        // Never filled in — dropped, and the edge naming it goes too.
+        { key: 's9', name: '   ', start: '', end: '', description: '', dependsOn: [], children: [] },
+      ] },
+      { key: 't2', name: 'Pour', start: '', end: '', description: '', dependsOn: [], children: [] },
+    ] },
+  ]);
+  const framing = wire[0].children[0];
+  assert.equal(framing.children.length, 1, 'the blank sub-task is not sent');
+  assert.equal(framing.children[0].name, 'Order the rebar', 'trimmed');
+  assert.equal(framing.children[0].key, 's1');
+  assert.equal(framing.children[0].description, '12mm');
+  assert.equal(framing.children[0].plannedStartDate, '2026-04-01');
+  assert.equal(framing.children[0].plannedEndDate, null);
+  assert.deepEqual(framing.children[0].dependsOn, ['t2'], 'a sub-task may follow any stage');
+  assert.equal(wire[0].children[1].children, undefined, 'a task with no sub-tasks omits the field');
+
+  // A nameless sub-task under a named task is a refusal, not a silent drop.
+  assert.throws(() => toWire([
+    { key: 'p1', name: 'Phase A', dependsOn: [], tasks: [
+      { key: 't1', name: 'Framing', start: '', end: '', description: '', dependsOn: [], children: [
+        { key: 's1', name: '', start: '2026-04-01', end: '', description: '', dependsOn: [], children: [] },
+      ] },
+    ] },
+  ]), (e) => e instanceof PlanAuthorError && e.code === 'invalid_name');
+
+  // A task the author never named but hung a real sub-task on is surfaced, not
+  // thrown away with the sub-task the author DID write.
+  assert.throws(() => toWire([
+    { key: 'p1', name: 'Phase A', dependsOn: [], tasks: [
+      { key: 't1', name: '  ', start: '', end: '', description: '', dependsOn: [], children: [
+        { key: 's1', name: 'Order the rebar', start: '', end: '', description: '', dependsOn: [], children: [] },
+      ] },
+    ] },
+  ]), (e) => e instanceof PlanAuthorError && e.code === 'invalid_name');
+});
+
+test('toWire: a FOURTH level is refused here, with the server’s own too_deep', () => {
+  // No editor op can build this — it is the belt to the braces, so a draft that
+  // somehow nests deeper is refused before the round-trip rather than by the API.
+  assert.throws(() => toWire([
+    { key: 'p1', name: 'Phase A', dependsOn: [], tasks: [
+      { key: 't1', name: 'Framing', start: '', end: '', description: '', dependsOn: [], children: [
+        { key: 's1', name: 'Order the rebar', start: '', end: '', description: '', dependsOn: [], children: [
+          { key: 'x1', name: 'Too deep', start: '', end: '', description: '', dependsOn: [], children: [] },
+        ] },
+      ] },
+    ] },
+  ]), (e) => e instanceof PlanAuthorError && e.code === 'too_deep');
+});
+
+test('hydrateDraft: grandchildren come back as sub-tasks, with their edges re-keyed', () => {
+  const phases = hydrateDraft([
+    { id: 'g1', name: 'Phase A', dependsOn: [], children: [
+      { id: 'g2', name: 'Framing', dependsOn: [], children: [
+        { id: 'g3', name: 'Order the rebar', description: 'Grade 500', plannedStartDate: '2026-04-01', dependsOn: ['g4'] },
+      ] },
+      { id: 'g4', name: 'Pour', dependsOn: [], children: [] },
+    ] },
+  ]);
+  const sub = phases[0].tasks[0].children[0];
+  assert.equal(sub.name, 'Order the rebar');
+  assert.equal(sub.description, 'Grade 500');
+  assert.equal(sub.start, '2026-04-01');
+  assert.equal(sub.end, '', 'a missing wire date hydrates to the editor’s empty string');
+  assert.deepEqual(sub.children, []);
+  // The edge came back as a SERVER stage id and is now a local key.
+  assert.deepEqual(sub.dependsOn, [phases[0].tasks[1].key]);
+
+  // Round-trip: re-saving the hydrated draft ships the same shape back.
+  const wire = toWire(phases);
+  assert.equal(wire[0].children[0].children.length, 1);
+  assert.deepEqual(wire[0].children[0].children[0].dependsOn, [wire[0].children[1].key]);
+
+  // A server tree deeper than three levels cannot be edited here — the extra
+  // level is dropped rather than carried into a save the server would refuse.
+  const tooDeep = hydrateDraft([
+    { id: 'h1', name: 'P', children: [
+      { id: 'h2', name: 'T', children: [{ id: 'h3', name: 'S', children: [{ id: 'h4', name: 'X' }] }] },
+    ] },
+  ]);
+  assert.deepEqual(tooDeep[0].tasks[0].children[0].children, []);
+  assert.doesNotThrow(() => toWire(tooDeep));
 });
