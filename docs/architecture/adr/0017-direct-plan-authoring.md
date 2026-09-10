@@ -204,3 +204,143 @@ still denies the proposer once proposed — the two-sided baseline rule is intac
 Two parties racing to start a draft on the same build is out of scope: a second
 party's `:author` while a draft exists returns `409 draft_exists`. The realistic
 flow is a single author per build; multi-author drafting is deferred.
+
+---
+
+## Annex 2 (LINA-233, 2026-09-10) — dependencies authoring on a draft
+
+**Status: Proposed — awaiting design sign-off.** This annex scopes the first of
+the ADR-0017 §5 deferred items to ship: the **"depends on" authoring UI** for
+`schedule.stage_dependency`. It extends the `:author` draft path (annex 1) and
+§3's authorisation; everything else in ADR-0017 stands. The §5 table called this
+"the lowest schema cost" item — this annex shows why that holds and what the one
+remaining schema cost actually is.
+
+### Why this one, and why now
+
+`stage_dependency` already exists (slice B1, migration 0002): a stage may list
+predecessors, and **import** populates it today. What was deferred is the
+*authoring* side — a GC building a plan by hand has no way to say "framing
+depends on foundation". This is the smallest §5 slice because the table, the FK
+discipline, and the resolution pattern (client/import key → stage id) already
+exist; none of the others (per-stage assignee column, task drawer store,
+milestone types, third WBS level, Gantt drag engine) can say that.
+
+### The core tension — append-only meets a redraftable draft
+
+`stage_dependency` is an **append-only projection**: migration 0002 grants
+`SELECT, INSERT` only — deliberately no `UPDATE`/`DELETE` — so a dependency on
+the *shared record* can never be silently rewritten (mirrors `plan_import` and
+`stage_progress`). That immutability is the point and is kept.
+
+But annex 1's draft model **replaces a draft's stages in place** on every re-save:
+`:author` runs `deleteStagesByPlanVersion` (`DELETE FROM schedule.stage WHERE
+plan_version_id = $1`) then re-inserts the tree with **fresh stage ids**. Two
+consequences:
+
+1. Any `stage_dependency` rows pointing at the draft's stages would make that
+   `DELETE` fail on the FK (`stage_dependency.stage_id → stage.id`). Today drafts
+   carry no dependencies, so the conflict is latent; dependency authoring
+   surfaces it.
+2. Dependencies can't be stored against durable stage ids — the ids churn every
+   save. They must be expressed in **author-supplied keys** and resolved to the
+   freshly-inserted ids inside the same transaction, exactly as import resolves
+   intra-import predecessors via `source_row_ref` (plan-import.mjs §8).
+
+### Decision
+
+#### 1. Dependencies travel *inside* the `:author` payload — no incremental endpoints
+
+Authoring stays **one write**. Each node in the `:author` `{ stages }` tree gains
+two optional fields:
+
+- `key` — a stable, author-assigned string id for the node *within this payload*
+  (the FE's local row id). Unique across the payload. Only meaningful for
+  resolution; never persisted.
+- `dependsOn` — an array of `key`s this node's stage must follow (its
+  predecessors).
+
+The server (`validateAuthoredStages`) builds the flat `order[]` as today, plus a
+`key → index` map, resolves each `dependsOn` key to a predecessor index, and —
+after `insertAuthoredStages` assigns the real ids — writes the
+`stage_dependency` rows in the **same transaction** as the stages and the single
+`plan_drafted` event. No new ledger event type: a dependency edit is just part of
+"the draft saved at T", same as renaming a stage. Re-save replaces the whole
+graph atomically. This is strictly simpler than add/remove endpoints and matches
+the "the draft is rebuilt each save" model annex 1 already chose.
+
+`:propose` and the import path are unchanged: proposing freezes whatever the
+draft holds, dependencies included; import keeps writing its rows at Confirm.
+
+#### 2. Cycle validation is server-side and total (the product promise)
+
+A dependency graph must be a DAG — a cycle ("A after B, B after A") is
+nonsensical and would break any future auto-schedule. Validation runs in
+`validateAuthoredStages`, purely over the in-memory `order` graph, **before any
+write**:
+
+- **Self-dependency** → `400 self_dependency` (also the DB `CHECK` backstop).
+- **Unknown key** in a `dependsOn` → `400 unknown_dependency`.
+- **Cross-level / malformed** (a dependency is between *actions* or between
+  *sub-actions*; we do not model action↔sub-action ordering in v1) → is allowed
+  only among siblings at the same level under the same parent in v1? — **open
+  design question, see below.**
+- **Cycle** (DFS finds a back-edge) → `409 dependency_cycle`, naming the stages
+  on the cycle so the UI can highlight them.
+
+Because the whole graph is revalidated on every `:author`, a draft can never be
+saved in a cyclic state; there is no "repair later" path.
+
+#### 3. The one schema cost — migration 0006: a guarded DELETE grant
+
+To let `:author` rebuild a draft that now carries dependency rows, `:author`
+must delete that draft's `stage_dependency` rows **before** deleting its stages.
+That needs a `DELETE` grant `stage_dependency` does not have. Migration 0006,
+mirroring `stage_freeze_delete_guard` from 0005, adds:
+
+- `GRANT DELETE ON schedule.stage_dependency TO schedule_app;`
+- `stage_dependency_freeze_delete_guard` — a `BEFORE DELETE` trigger that raises
+  if the owning stage belongs to a **frozen/terminal** plan version
+  (`accepted`/`superseded`/`withdrawn`/`rejected`). A dependency on the shared
+  record can still **never** be deleted by any code path; only a draft's (never
+  proposed, never agreed) may. The append-only guarantee for the *record* is
+  intact — we relax it exactly and only for private drafts, identically to how
+  0005 relaxed `stage` DELETE.
+
+`deleteStagesByPlanVersion` gains a sibling call
+`deleteStageDependenciesByPlanVersion` run first in the same transaction. No new
+table, no new column, no new status, no new ledger type. This is the whole
+schema delta — hence "lowest schema cost".
+
+### FE (pen *Build the plan — schedule (Gantt)*, "depends on")
+
+Authoring editor gains a per-row **"Depends on"** control: a multi-select of the
+other stages in the draft (scoped per the open question below), showing each as
+`1.2 Framing`. Selecting a stage that would close a cycle is rejected inline with
+the server's `dependency_cycle` detail highlighting the offending chain; the
+control also filters out choices that would obviously cycle, client-side, as a
+courtesy (server remains the authority). Dependencies are visualised as
+predecessor chips on the row in v1 (no Gantt link-lines — that rides with the
+drag/Gantt §5 item, deferred).
+
+### Open design questions for sign-off
+
+1. **Dependency scope — which stages may a node depend on?** Options: (a) any
+   other stage in the plan (most flexible, matches import which is unconstrained);
+   (b) same-level siblings only (actions↔actions, sub-actions↔sub-actions under
+   one parent). Import does (a). Recommendation: **(a)** — match import, keep one
+   rule, let the UI group choices by phase. Cycle validation makes (a) safe.
+2. **Is this slice wanted now at all?** Parent LINA-229 is blocked/post-MVP,
+   "gate on real product demand." This annex assumes the founder pulling LINA-233
+   active *is* that demand signal. Confirm before build.
+
+### Consequences
+
+- Route-2 plans can express predecessors by hand, stored the same way import
+  stores them; one coherent `stage_dependency` shape across both entry paths.
+- The audit/immutability guarantee for proposed/accepted plans is untouched; the
+  DELETE relaxation is draft-only and trigger-guarded, exactly like 0005.
+- Auto-schedule (§5) now has a real dependency graph to schedule against when/if
+  it ships — this annex is a prerequisite, not a commitment to it.
+- Tech debt: none introduced; the `key`/`dependsOn` payload shape is additive and
+  backward-compatible (existing `:author` callers omit both).
