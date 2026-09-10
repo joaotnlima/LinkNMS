@@ -374,6 +374,17 @@ export function setSubtaskDate(
   return replaceSubtask(phases, pi, ti, si, { ...kids(phases[pi].tasks[ti])[si], [field]: value });
 }
 
+/**
+ * Set both of a sub-task's dates in one immutable update — the third-level
+ * sibling of setTaskDates, for the Gantt "move" drag on a sub-task bar
+ * (LINA-244). One op, so start and finish never land across two renders.
+ */
+export function setSubtaskDates(
+  phases: PhaseDraft[], pi: number, ti: number, si: number, start: string, end: string,
+): PhaseDraft[] {
+  return replaceSubtask(phases, pi, ti, si, { ...kids(phases[pi].tasks[ti])[si], start, end });
+}
+
 export function setSubtaskDescription(
   phases: PhaseDraft[], pi: number, ti: number, si: number, description: string,
 ): PhaseDraft[] {

@@ -36,7 +36,8 @@ import {
   addPhase, addSubtask, addTask, authorPlan, dependencyChoices, dependsOnOf, detectCycle, nodeIndex,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
   reorderPhase, reorderSubtask, reorderTask,
-  seedSkeleton, setSubtaskDate, setSubtaskDescription, setTaskDate, setTaskDates, setTaskDescription,
+  seedSkeleton, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
+  setTaskDate, setTaskDates, setTaskDescription,
   subtaskCount, taskCount, toggleDependency, toWire,
   type PhaseDraft, type PlanNodeRef,
 } from '@/lib/plan-authoring';
@@ -240,8 +241,14 @@ export function PlanBuildEditor({
   // A Gantt drag lands here: write the task's new start/finish in one op. Same
   // draft, same tested vocabulary the list uses — the timeline just computes the
   // dates from a pointer instead of a date picker (LINA-236).
-  const setDates = useCallback((pi: number, ti: number, start: string, end: string) => {
-    apply(setTaskDates(phases, pi, ti, start, end));
+  // A Gantt drag on a SUB-task bar arrives with `si` (LINA-244) and writes the
+  // third-level dates instead — same one-op discipline, one level down.
+  const setDates = useCallback((
+    pi: number, ti: number, start: string, end: string, si?: number,
+  ) => {
+    apply(si == null
+      ? setTaskDates(phases, pi, ti, start, end)
+      : setSubtaskDates(phases, pi, ti, si, start, end));
   }, [apply, phases]);
 
   const submit = useCallback(async () => {
@@ -339,7 +346,7 @@ export function PlanBuildEditor({
           phases={phases}
           disabled={submitting}
           onDates={setDates}
-          onOpenTask={(pi, ti) => setOpenTask({ pi, ti })}
+          onOpenTask={(pi, ti, si) => setOpenTask({ pi, ti, si })}
         />
       ) : (
       <>
