@@ -38,8 +38,9 @@ const actorOf = (session) => session?.partyId ?? null;
  * @param {import('./plan-import.mjs').createPlanImportService} [deps.planImport]
  * @param {import('./plan-version.mjs').createPlanVersionService} [deps.planVersion]
  * @param {import('./materials.mjs').createMaterialsService} [deps.materials]
+ * @param {import('./plan-template.mjs').createPlanTemplateService} [deps.planTemplate]
  */
-export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null }) {
+export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null, planTemplate = null }) {
   if (!service) throw new Error('createScheduleHttp requires { service }');
 
   // GET /projects/:projectId/plan — the plan-baseline D11–D13 view (B2 contract
@@ -217,8 +218,30 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
     } catch (err) { return errorBody(err); }
   }
 
+  // ── Plan templates (LINA-241, ADR-0018) — per-user default, not project-scoped ─
+
+  // GET /me/plan-template — resolve the caller's default plan body (user → system
+  // ladder). Pure read; the acting party is the session, never the query.
+  async function resolvePlanTemplate({ session }) {
+    try {
+      const out = await planTemplate.resolveDefault(actorOf(session));
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // PUT /me/plan-template — "save as my default". Upserts the caller's single user
+  // default from a posted { name?, body }; a forged owner in the body is inert —
+  // owner_id is stamped from the session. Second save replaces, never duplicates.
+  async function savePlanTemplate({ session, body }) {
+    try {
+      const out = await planTemplate.saveDefault(actorOf(session), body ?? {});
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
   return { getPlan, addStage, getStage, updateStage, reportProgress,
     inspectPlanImport, columnsPlanImport, previewPlanImport, confirmPlanImport,
     withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan, authorPlan, proposePlan,
-    getRecord, getStageMaterials, authorMaterials, swapMaterial, getBudgetMovement };
+    getRecord, getStageMaterials, authorMaterials, swapMaterial, getBudgetMovement,
+    resolvePlanTemplate, savePlanTemplate };
 }

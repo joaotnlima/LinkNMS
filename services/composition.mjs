@@ -34,6 +34,7 @@ import { createScheduleService } from './schedule/schedule.mjs';
 import { createPlanImportService } from './schedule/plan-import.mjs';
 import { createPlanVersionService } from './schedule/plan-version.mjs';
 import { createMaterialsService } from './schedule/materials.mjs';
+import { createPlanTemplateService } from './schedule/plan-template.mjs';
 import { PARSER } from './schedule/plan-import-parser.mjs';
 import { createScheduleHttp } from './schedule/http.mjs';
 
@@ -198,6 +199,14 @@ export function createServices({
       })
     : null;
 
+  // Plan templates (LINA-241, ADR-0018): resolve/upsert the caller's default plan
+  // scaffold. Per-USER and project-independent — NO ledger seam, NO project
+  // authorizer (templates carry no audit weight, ADR-0002), so it composes over
+  // the schedule store alone whenever that store is present.
+  const planTemplate = scheduleStore
+    ? createPlanTemplateService({ store: scheduleStore })
+    : null;
+
   // NOTE (LINA-189): there is no waitlist service here any more. The portal used
   // to compose one over `waitlist.signup` — a SECOND waitlist that captured an
   // address and did nothing else with it, while the marketing site's funnel
@@ -212,7 +221,7 @@ export function createServices({
     changeOrder,
     schedule,
     changeOrderHttp: createChangeOrderHttp({ service: changeOrder, identity }),
-    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials }) : null,
+    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials, planTemplate }) : null,
   };
 }
 

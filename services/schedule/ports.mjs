@@ -20,6 +20,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { can, ACTION } from '../identity/authz.mjs';
+import { PLAN_SKELETON_BODY, SYSTEM_TEMPLATE_NAME } from './plan-skeleton.mjs';
 
 export class DomainError extends Error {
   constructor(status, code, message, details) {
@@ -135,6 +136,20 @@ export function createInMemoryStore() {
   const baselines = new Map(); // schedule.project_baseline pointer (upsert, per project)
   const lineMaterials = [];    // schedule.line_material rows
   const movements = [];        // schedule.material_movement rows (append-only)
+  // schedule.plan_template rows (mutable CRUD; NO audit weight — outside the
+  // tamper-evident record, ADR-0018). Seeded with the single system default so
+  // the resolve ladder (user → system) has the same source of truth the DB
+  // migration seeds. Body is the canonical PLAN_SKELETON_BODY.
+  const planTemplates = [{
+    id: randomUUID(),
+    owner_scope: 'system',
+    owner_id: null,
+    name: SYSTEM_TEMPLATE_NAME,
+    is_default: true,
+    body: PLAN_SKELETON_BODY,
+    created_at: now(),
+    updated_at: now(),
+  }];
   let stageSeq = 0;
   let progressSeq = 0;
   let movementSeq = 0;
@@ -534,6 +549,45 @@ export function createInMemoryStore() {
       .map((m) => ({ ...m }));
   }
 
+  // ── Plan templates (LINA-241, ADR-0018) — mutable CRUD, no audit weight ─────
+
+  function getSystemDefaultTemplate() {
+    const r = planTemplates.find((t) => t.owner_scope === 'system' && t.is_default);
+    return r ? { ...r } : null;
+  }
+
+  function getUserDefaultTemplate(ownerId) {
+    const r = planTemplates.find(
+      (t) => t.owner_scope === 'user' && t.owner_id === ownerId && t.is_default);
+    return r ? { ...r } : null;
+  }
+
+  // Upsert the caller's single user default. Mirrors the DB partial unique index
+  // (one default per owner): a second save REPLACES the first in place, never
+  // inserts a 2nd default row.
+  function upsertUserDefaultTemplate({ ownerId, name, body }) {
+    const existing = planTemplates.find(
+      (t) => t.owner_scope === 'user' && t.owner_id === ownerId && t.is_default);
+    if (existing) {
+      existing.name = name;
+      existing.body = body;
+      existing.updated_at = now();
+      return { ...existing };
+    }
+    const row = {
+      id: randomUUID(),
+      owner_scope: 'user',
+      owner_id: ownerId,
+      name,
+      is_default: true,
+      body,
+      created_at: now(),
+      updated_at: now(),
+    };
+    planTemplates.push(row);
+    return { ...row };
+  }
+
   return {
     transaction,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
@@ -550,9 +604,10 @@ export function createInMemoryStore() {
     insertLineMaterial, getLineMaterial, updateLineMaterial,
     listLineMaterialsByStage, listLineMaterialsByVersion,
     insertMaterialMovement, listMovementsByProject, listMovementsByLine,
+    getSystemDefaultTemplate, getUserDefaultTemplate, upsertUserDefaultTemplate,
     _stages: stages, _progress: progress, _imports: imports, _dependencies: dependencies,
     _versions: versions, _acceptances: acceptances, _baselines: baselines,
-    _lineMaterials: lineMaterials, _movements: movements,
+    _lineMaterials: lineMaterials, _movements: movements, _planTemplates: planTemplates,
   };
 }
 
