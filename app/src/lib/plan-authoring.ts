@@ -269,6 +269,22 @@ export function setTaskDate(
   });
 }
 
+/**
+ * Set both of a task's dates in one immutable update — the Gantt "move" drag
+ * (LINA-236) shifts start and finish together, and doing it as one op keeps the
+ * two dates from being written across two renders (which would flash an inverted
+ * bar mid-drag). Blanks are preserved as '' exactly like setTaskDate.
+ */
+export function setTaskDates(
+  phases: PhaseDraft[], pi: number, ti: number, start: string, end: string,
+): PhaseDraft[] {
+  const phase = phases[pi];
+  return replaceAt(phases, pi, {
+    ...phase,
+    tasks: replaceAt(phase.tasks, ti, { ...phase.tasks[ti], start, end }),
+  });
+}
+
 /** Edit a task's free-form description (the task-detail drawer field, LINA-234). */
 export function setTaskDescription(
   phases: PhaseDraft[], pi: number, ti: number, description: string,

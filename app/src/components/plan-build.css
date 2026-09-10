@@ -214,3 +214,88 @@
 @media (max-width: 720px) {
   .pbx-drawer { width: 100%; border-left: none; }
 }
+
+/* ── List / Timeline toggle (LINA-236) ────────────────────────────────────── */
+.pbx-toolbar-r { display: inline-flex; align-items: center; gap: var(--s3); }
+.pbx-viewtog {
+  display: inline-flex; padding: 2px; gap: 2px;
+  border: 1px solid var(--outline); border-radius: 999px; background: var(--sunken);
+}
+.pbx-viewtab {
+  border: none; background: transparent; color: var(--muted);
+  padding: 5px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.pbx-viewtab:hover { color: var(--fg); }
+.pbx-viewtab.is-on { background: var(--paper); color: var(--fg); box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 12%, transparent); }
+
+/* ── Gantt timeline (LINA-236) ────────────────────────────────────────────── */
+.pgt {
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl); overflow: hidden; background: var(--paper);
+}
+.pgt-grid { display: grid; grid-template-columns: minmax(160px, 240px) 1fr; }
+
+/* Left: task labels, aligned row-for-row with the tracks. */
+.pgt-labels { border-right: 1px solid var(--outline); background: var(--sunken); }
+.pgt-axis-spacer { height: 28px; border-bottom: 1px solid var(--outline); }
+.pgt-lbl-phase {
+  height: 30px; display: flex; align-items: center; padding: 0 var(--s3);
+  font-size: 12px; font-weight: 700; color: var(--plan-baseline);
+  text-transform: uppercase; letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--outline); background: var(--sunken);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pgt-lbl-task {
+  width: 100%; height: 36px; display: flex; align-items: center; gap: 6px;
+  padding: 0 var(--s3); border: none; border-bottom: 1px solid var(--outline);
+  background: var(--paper); color: var(--fg); font-size: 13px; text-align: left; cursor: pointer;
+}
+.pgt-lbl-task:hover { background: var(--sunken); }
+.pgt-lbl-txt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pgt-lbl-dot { flex: none; width: 6px; height: 6px; border-radius: 999px; background: var(--plan-baseline); }
+
+/* Right: scrollable day canvas. */
+.pgt-scroll { overflow-x: auto; }
+.pgt-canvas { position: relative; }
+.pgt-axis { position: relative; border-bottom: 1px solid var(--outline); background: var(--sunken); }
+.pgt-axis-cell { position: absolute; top: 0; bottom: 0; }
+.pgt-axis-cell.is-tick { border-left: 1px solid var(--outline); }
+.pgt-axis-lbl {
+  position: absolute; top: 6px; left: 4px; white-space: nowrap;
+  font-size: 10px; font-weight: 600; color: var(--muted);
+}
+.pgt-band { height: 30px; border-bottom: 1px solid var(--outline); background: var(--sunken); }
+.pgt-track { position: relative; height: 36px; border-bottom: 1px solid var(--outline); }
+.pgt-gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--outline); opacity: 0.5; }
+
+.pgt-bar {
+  position: absolute; top: 6px; height: 24px; box-sizing: border-box;
+  display: flex; align-items: center; overflow: hidden;
+  background: color-mix(in srgb, var(--plan-baseline) 20%, var(--paper));
+  border: 1px solid var(--plan-baseline); border-radius: 6px;
+  color: var(--fg); cursor: grab; touch-action: none; user-select: none;
+}
+.pgt-bar:active { cursor: grabbing; }
+.pgt-bar.is-open {
+  background: repeating-linear-gradient(
+    45deg, transparent, transparent 4px,
+    color-mix(in srgb, var(--plan-baseline) 22%, transparent) 4px,
+    color-mix(in srgb, var(--plan-baseline) 22%, transparent) 8px);
+  border-style: dashed;
+}
+.pgt-bar.is-disabled { pointer-events: none; opacity: 0.55; }
+.pgt-bar-lbl {
+  flex: 1 1 auto; min-width: 0; padding: 0 8px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 600; pointer-events: none;
+}
+.pgt-handle { flex: none; width: 8px; align-self: stretch; cursor: ew-resize; touch-action: none; }
+.pgt-handle-l { border-right: 1px solid color-mix(in srgb, var(--plan-baseline) 50%, transparent); }
+.pgt-handle-r { border-left: 1px solid color-mix(in srgb, var(--plan-baseline) 50%, transparent); }
+.pgt-handle:hover { background: color-mix(in srgb, var(--plan-baseline) 35%, transparent); }
+
+.pgt-empty { padding: var(--s5, 32px) var(--s4); text-align: center; }
+.pgt-empty p { margin: 0 0 var(--s2); }
+.pgt-empty-hint { color: var(--muted); font-size: 13px; max-width: 52ch; margin: 0 auto; }
+
+@media (max-width: 720px) {
+  .pgt-grid { grid-template-columns: minmax(120px, 40%) 1fr; }
+}
