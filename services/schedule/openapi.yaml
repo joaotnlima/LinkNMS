@@ -380,6 +380,48 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /me/plan-template:
+    get:
+      tags: [schedule]
+      summary: Resolve the caller's default plan scaffold (LINA-241, ADR-0018)
+      description: >-
+        The applicable default plan body for the authenticated caller, resolved
+        via the ladder user default → system default (org deferred in v1). A
+        template is a names-only scaffold with NO audit weight — `seedSkeleton()`
+        copies `body` into a fresh editor draft; nothing here touches a project,
+        stage, version, or the ledger. Per-user and project-independent, so it
+        lives under `/me`, not `/projects/{id}`. The acting party is the session.
+      responses:
+        '200':
+          description: The resolved default template.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanTemplateResolved' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    put:
+      tags: [schedule]
+      summary: Save the caller's single "my default" plan template
+      description: >-
+        Upsert the caller's one `user` default from a posted names-only body
+        (`[{ name, tasks: [name, …] }]`). A second save REPLACES the first — the
+        partial unique index guarantees one default per user, never a 2nd.
+        `owner_id` is stamped from the session, so a forged owner in the body is
+        inert (ADR-0004). The body is validated at the edge: dates, owners, and a
+        3rd level are rejected, not silently dropped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanTemplateUpsert' }
+      responses:
+        '200':
+          description: The saved default template.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanTemplateResolved' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
 components:
   parameters:
     ProjectId:
@@ -832,3 +874,41 @@ components:
         currentBudgetCents: { type: integer, description: Read from the ledger — baseline + approved CO deltas; never recomputed. }
         scopeChanges: { type: array, items: { $ref: '#/components/schemas/ScopeChangeItem' } }
         priceMovements: { type: array, items: { $ref: '#/components/schemas/PriceMovementItem' } }
+
+    PlanTemplateBody:
+      description: >-
+        The names-only two-level scaffold shape — identical to PLAN_SKELETON. Two
+        levels only; no dates, owners, or ids. A phase carries ONLY name + tasks;
+        a task is a bare name string.
+      type: array
+      items:
+        type: object
+        required: [name, tasks]
+        additionalProperties: false
+        properties:
+          name: { type: string, maxLength: 200 }
+          tasks:
+            type: array
+            items: { type: string, maxLength: 200 }
+    PlanTemplateUpsert:
+      type: object
+      required: [body]
+      properties:
+        name: { type: string, maxLength: 200, description: Optional label; defaults to "My default". }
+        body: { $ref: '#/components/schemas/PlanTemplateBody' }
+    PlanTemplateResolved:
+      type: object
+      properties:
+        source:
+          type: string
+          enum: [user, system]
+          description: Which rung of the resolve ladder answered.
+        body: { $ref: '#/components/schemas/PlanTemplateBody' }
+        template:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            ownerScope: { type: string, enum: [system, org, user] }
+            name: { type: string }
+            isDefault: { type: boolean }
+            updatedAt: { type: string, format: date-time }

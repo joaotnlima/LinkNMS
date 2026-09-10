@@ -153,6 +153,22 @@ function mapMovement(r) {
   };
 }
 
+// A plan_template row (LINA-241). jsonb `body` returns already parsed from pg;
+// snake_case matches the in-memory store, and the domain layer shapes the API.
+function mapTemplate(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    owner_scope: r.owner_scope,
+    owner_id: r.owner_id,
+    name: r.name,
+    is_default: r.is_default,
+    body: r.body,
+    created_at: toIso(r.created_at),
+    updated_at: toIso(r.updated_at),
+  };
+}
+
 // Whitelisted updatable columns (edit / reorder — FR-P1). `set` keys already come
 // from the service's own whitelist; this second gate means a stray key can never
 // reach the SQL string.
@@ -604,6 +620,42 @@ export function createPgStore({ pool = getPool() } = {}) {
     return rows.map(mapMovement);
   }
 
+  // ── Plan templates (LINA-241, ADR-0018) — mutable CRUD, no ledger seam ──────
+  // Each is a single statement (no audit append to co-commit), so none takes a tx.
+
+  async function getSystemDefaultTemplate() {
+    const { rows } = await pool.query(
+      `select * from schedule.plan_template
+        where owner_scope = 'system' and is_default
+        limit 1`);
+    return mapTemplate(rows[0] ?? null);
+  }
+
+  async function getUserDefaultTemplate(ownerId) {
+    const { rows } = await pool.query(
+      `select * from schedule.plan_template
+        where owner_scope = 'user' and owner_id = $1 and is_default
+        limit 1`, [ownerId]);
+    return mapTemplate(rows[0] ?? null);
+  }
+
+  // Upsert the caller's single user default. ON CONFLICT infers the partial
+  // unique index plan_template_one_default_per_owner (its WHERE predicate is
+  // supplied so postgres matches that exact index), so a second save REPLACES the
+  // first — it can never create a 2nd default.
+  async function upsertUserDefaultTemplate({ ownerId, name, body }) {
+    const { rows } = await pool.query(
+      `insert into schedule.plan_template (owner_scope, owner_id, name, is_default, body)
+       values ('user', $1, $2, true, $3::jsonb)
+       on conflict (owner_scope, owner_id) where is_default
+         do update set name = excluded.name,
+                       body = excluded.body,
+                       updated_at = now()
+       returning *`,
+      [ownerId, name, JSON.stringify(body)]);
+    return mapTemplate(rows[0]);
+  }
+
   return {
     transaction,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
@@ -620,5 +672,6 @@ export function createPgStore({ pool = getPool() } = {}) {
     insertLineMaterial, getLineMaterial, updateLineMaterial,
     listLineMaterialsByStage, listLineMaterialsByVersion,
     insertMaterialMovement, listMovementsByProject, listMovementsByLine,
+    getSystemDefaultTemplate, getUserDefaultTemplate, upsertUserDefaultTemplate,
   };
 }
