@@ -36,14 +36,14 @@ export default async function PlanPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ imported?: string }>;
+  searchParams: Promise<{ imported?: string; proposed?: string }>;
 }) {
   const { id } = await params;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan`);
 
   const [build, plan, session] = await Promise.all([getBuild(id), getPlan(id), currentSession()]);
   const shell = await buildShellContext(id, build.name);
-  const { imported } = await searchParams;
+  const { imported, proposed } = await searchParams;
   const isGC = build.actingRole === 'counterparty';
 
   const directory = directoryOf(build);
@@ -76,6 +76,19 @@ export default async function PlanPage({
             <p className="cap">
               Recorded as one event on the shared record:{' '}
               <span className="pi-stamp-id">{imported}</span>
+            </p>
+            <Link className="btn" href={`/projects/${id}/audit`}>See it in the audit trail</Link>
+          </div>
+        ) : null}
+
+        {/* The stamp the :author write returned (LINA-228). Like the import stamp,
+            shown once on the redirect; the durable copy is the ledger event. */}
+        {proposed ? (
+          <div className="pi-stamp" role="status">
+            <p className="pi-stamp-t">Plan created</p>
+            <p className="cap">
+              Proposed to the other party and recorded as one event on the shared record:{' '}
+              <span className="pi-stamp-id">{proposed}</span>
             </p>
             <Link className="btn" href={`/projects/${id}/audit`}>See it in the audit trail</Link>
           </div>
@@ -137,13 +150,17 @@ function NoPlanYet({ projectId, isGC }: { projectId: string; isGC: boolean }) {
           )}
         </section>
 
-        <section className="pi-route is-later">
+        <section className="pi-route">
           <p className="pi-route-n">Route 2</p>
           <h2 className="pi-route-t">Build it here</h2>
           <p className="pi-route-b">
-            No spreadsheet — add actions and sub-actions directly.
+            No spreadsheet — start from a standard skeleton, then add phases and tasks directly and
+            date them where you know them.
           </p>
-          <p className="pi-route-meta">Not built yet</p>
+          <p className="pi-route-meta">seeded skeleton · phases &amp; tasks · optional dates</p>
+          {/* Either party may author (ADR-0017 §3): it is proposed to the other to
+              agree, so there is no role gate here. */}
+          <Link className="btn primary" href={`/projects/${projectId}/plan/build`}>Build the plan</Link>
         </section>
       </div>
 

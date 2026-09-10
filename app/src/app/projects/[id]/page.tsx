@@ -107,9 +107,10 @@ function Timeline({ projectId, lines }: { projectId: string; lines: ScheduleLine
     return (
       <div className="m14-timeline">
         <p className="notice">
-          No plan on this record yet. Import or agree a plan and its stages appear here.
+          No plan on this record yet. Build one directly in LinkNMS or import a spreadsheet — its
+          stages appear here once it is agreed.
         </p>
-        <Link className="btn" href={`/projects/${projectId}/plan`}>Go to the plan</Link>
+        <Link className="btn primary" href={`/projects/${projectId}/plan`}>Build the plan</Link>
       </div>
     );
   }

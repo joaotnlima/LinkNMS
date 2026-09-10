@@ -149,3 +149,39 @@ test('unauthenticated B2 action → 401 envelope', async () => {
   assert.equal(res.status, 401);
   assert.equal(res.body.error.code, 'unauthenticated');
 });
+
+// ── authorPlan (LINA-228) — the handler wires session→actor and maps errors ──
+
+test('authorPlan: 201 with the proposal summary; actor from the session, not the body', async () => {
+  const { http, store } = build();
+  const res = await http.authorPlan({
+    session: gc,
+    params: { projectId: PROJECT },
+    // A forged proposedByPartyId in the body must be inert — the actor is the session.
+    body: { proposedByPartyId: OWNER, stages: [
+      { name: '1 · Pre-Construction', children: [{ name: '1.1 Planning & Feasibility' }] },
+    ] },
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.status, 'proposed');
+  assert.equal(res.body.stageCount, 2);
+  assert.equal(res.body.rootCount, 1);
+  const v = store.getPlanVersion(res.body.planVersionId);
+  assert.equal(v.proposed_by_party_id, GC); // session actor, never the body
+});
+
+test('authorPlan: unauthenticated → 401; empty plan → 400; second open → 409', async () => {
+  const { http } = build();
+  const anon = await http.authorPlan({ session: undefined, params: { projectId: PROJECT }, body: { stages: [{ name: 'A' }] } });
+  assert.equal(anon.status, 401);
+
+  const empty = await http.authorPlan({ session: gc, params: { projectId: PROJECT }, body: { stages: [] } });
+  assert.equal(empty.status, 400);
+  assert.equal(empty.body.error.code, 'empty_plan');
+
+  const first = await http.authorPlan({ session: gc, params: { projectId: PROJECT }, body: { stages: [{ name: 'A' }] } });
+  assert.equal(first.status, 201);
+  const second = await http.authorPlan({ session: gc, params: { projectId: PROJECT }, body: { stages: [{ name: 'B' }] } });
+  assert.equal(second.status, 409);
+  assert.equal(second.body.error.code, 'open_plan_exists');
+});
