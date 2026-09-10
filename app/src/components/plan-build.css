@@ -98,6 +98,76 @@
   .pbx-rowctl { justify-content: flex-start; }
 }
 
+/* ── "Depends on" (LINA-233, ADR-0017 annex 2) ─────────────────────────────
+   A sub-row under the stage it belongs to: the trigger, then the predecessor
+   chips, then the picker popover. Tokens only — the chips ride the same
+   --plan-baseline accent as the rest of the plan surfaces, and a stage the
+   server named on a 409 is lit with --danger, the one colour this app uses for
+   "this is refused", never for decoration. */
+.pbx-deps {
+  position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 2px 0 4px 22px; /* clears the grip column so chips line up under the name */
+}
+.pbx-phase-hd + .pbx-deps { padding: 0 var(--s3) var(--s2) calc(var(--s3) + 46px); }
+
+.pbx-depbtn {
+  border: 1px dashed var(--outline); background: transparent; color: var(--muted);
+  border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600;
+  cursor: pointer; line-height: 1.7;
+}
+.pbx-depbtn:hover:not(:disabled) { border-color: var(--plan-baseline); color: var(--plan-baseline); }
+.pbx-depbtn.has-deps { color: var(--plan-baseline); border-style: solid; border-color: var(--outline); }
+.pbx-depbtn:disabled { opacity: 0.5; cursor: default; }
+
+.pbx-dep-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 4px 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  color: var(--plan-baseline);
+  background: color-mix(in srgb, var(--plan-baseline) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--plan-baseline) 30%, transparent);
+}
+.pbx-dep-x {
+  border: none; background: transparent; color: inherit; cursor: pointer;
+  font-size: 10px; line-height: 1; padding: 3px; border-radius: 999px; opacity: 0.7;
+}
+.pbx-dep-x:hover:not(:disabled) { opacity: 1; color: var(--danger); }
+.pbx-dep-x:disabled { opacity: 0.4; cursor: default; }
+
+.pbx-dep-away { position: fixed; inset: 0; z-index: 40; }
+.pbx-dep-pop {
+  position: absolute; z-index: 41; top: calc(100% + 2px); left: 22px;
+  width: min(360px, calc(100vw - 32px)); max-height: 320px; overflow-y: auto;
+  background: var(--paper); border: 1px solid var(--outline); border-radius: 10px;
+  padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--fg) 16%, transparent);
+}
+.pbx-dep-hint, .pbx-dep-empty { margin: 0; color: var(--muted); font-size: 12px; }
+.pbx-dep-group { display: flex; flex-direction: column; gap: 2px; }
+.pbx-dep-grouphd {
+  margin: var(--s2) 0 2px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted);
+}
+.pbx-dep-opt {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg);
+  padding: 4px 6px; border-radius: 6px; cursor: pointer;
+}
+.pbx-dep-opt:hover { background: var(--sunken); }
+.pbx-dep-whole { font-style: normal; color: var(--muted); font-size: 11px; }
+.pbx-dep-foot { display: flex; justify-content: flex-end; position: sticky; bottom: 0; background: var(--paper); }
+
+/* A stage the cycle check named. The row is outlined, not recoloured: the names
+   and dates on it are still the author's, and only the LINK is refused. */
+.pbx-taskwrap.is-cycle, .pbx-phase.is-cycle { outline: 1px solid var(--danger); border-radius: 8px; }
+.pbx-cycle {
+  color: var(--danger); border: 1px solid var(--danger); border-radius: 8px;
+  padding: var(--s3); background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+
+@media (max-width: 720px) {
+  .pbx-deps { padding-left: 0; }
+  .pbx-dep-pop { left: 0; }
+}
+
 /* ── Task-detail drawer (LINA-234, ADR-0019) ──────────────────────────────── */
 .pbx-details { position: relative; }
 .pbx-details.has-note { color: var(--fg); border-color: var(--outline-strong); }

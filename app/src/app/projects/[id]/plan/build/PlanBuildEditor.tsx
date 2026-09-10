@@ -17,6 +17,10 @@
 // ── WHAT CROSSES THE WIRE ─────────────────────────────────────────────────────
 // Only `{ stages }`. The acting party is the session, resolved server-side — a
 // client that could name itself could stamp authorship as someone else (§0).
+// Since LINA-233 the tree also carries its predecessor graph: each node's local
+// `key` plus the keys it `dependsOn`. THE WHOLE GRAPH GOES ON EVERY SAVE — the
+// server rebuilds a draft's links atomically inside the same transaction as the
+// stages, so there is no second endpoint and no partial edit to reconcile.
 // SAVING IS PRIVATE DRAFTING (LINA-230): the write lands as a DRAFT (one
 // plan_drafted ledger event), NOT a proposal — the other party sees nothing and
 // no approval is requested. Sending for approval is a separate, deliberate act on
@@ -28,12 +32,113 @@ import Link from 'next/link';
 
 import {
   PlanAuthorError,
-  addPhase, addTask, authorPlan, removePhase,
+  addPhase, addTask, authorPlan, dependencyChoices, dependsOnOf, detectCycle, nodeIndex, removePhase,
   removeTask, renamePhase, renameTask, reorderPhase, reorderTask,
-  seedSkeleton, setTaskDate, setTaskDescription, taskCount, toWire,
-  type PhaseDraft,
+  seedSkeleton, setTaskDate, setTaskDescription, taskCount, toggleDependency, toWire,
+  type PhaseDraft, type PlanNodeRef,
 } from '@/lib/plan-authoring';
 import '@/components/plan-build.css';
+
+// ── "Depends on" (LINA-233, ADR-0017 annex 2) ───────────────────────────────
+// One control, used on a phase header and on a task row alike — any stage may
+// depend on any other, so there is no reason for two. It is a button plus, when
+// there is something to show, a sub-row of predecessor chips; the picker itself
+// is a popover of checkboxes grouped by phase, each option printed as the pen
+// prints it ("1.2 Framing"). No link-lines: the Gantt drawing rides the deferred
+// §5 drag item, and a v1 that chips honestly beats one that draws half a Gantt.
+function DependsOn({
+  nodeKey, label, phases, index, open, disabled, onOpen, onToggle,
+}: {
+  nodeKey: string;
+  label: string;
+  phases: PhaseDraft[];
+  index: Map<string, PlanNodeRef>;
+  open: boolean;
+  disabled: boolean;
+  onOpen: (next: boolean) => void;
+  onToggle: (dep: string) => void;
+}) {
+  const deps = dependsOnOf(phases, nodeKey);
+  const groups = useMemo(
+    () => (open ? dependencyChoices(phases, nodeKey) : []),
+    [open, phases, nodeKey],
+  );
+  const selected = new Set(deps);
+
+  return (
+    <div className="pbx-deps">
+      <button
+        type="button"
+        className={`pbx-depbtn${deps.length ? ' has-deps' : ''}`}
+        aria-expanded={open}
+        aria-label={`Depends on — choose what “${label}” must follow`}
+        title="Depends on"
+        disabled={disabled}
+        onClick={() => onOpen(!open)}
+      >
+        ⇠ Depends on{deps.length ? ` · ${deps.length}` : ''}
+      </button>
+
+      {deps.map((k) => {
+        const n = index.get(k);
+        if (!n) return null;
+        return (
+          <span key={k} className="pbx-dep-chip">
+            {n.label}
+            <button
+              type="button"
+              className="pbx-dep-x"
+              aria-label={`Remove dependency on ${n.label}`}
+              disabled={disabled}
+              onClick={() => onToggle(k)}
+            >✕</button>
+          </span>
+        );
+      })}
+
+      {open ? (
+        <>
+          {/* Click-away. A plain overlay rather than a document listener: it
+              cannot leak past unmount, and Escape still closes from the panel. */}
+          <div className="pbx-dep-away" role="presentation" onClick={() => onOpen(false)} />
+          <div
+            className="pbx-dep-pop"
+            role="group"
+            aria-label={`What ${label} depends on`}
+            onKeyDown={(e) => { if (e.key === 'Escape') onOpen(false); }}
+          >
+            <p className="pbx-dep-hint">
+              Pick the stages that must finish first. Anything that would loop back on this
+              one is left out.
+            </p>
+            {groups.length === 0 ? (
+              <p className="pbx-dep-empty">Nothing else in this plan to depend on yet.</p>
+            ) : groups.map((g) => (
+              <div key={g.phase.key} className="pbx-dep-group">
+                <p className="pbx-dep-grouphd">{g.phase.label}</p>
+                {g.options.map((o) => (
+                  <label key={o.key} className="pbx-dep-opt">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(o.key)}
+                      disabled={disabled}
+                      onChange={() => onToggle(o.key)}
+                    />
+                    <span>{o.label}{o.isPhase ? <em className="pbx-dep-whole"> · whole phase</em> : null}</span>
+                  </label>
+                ))}
+              </div>
+            ))}
+            <div className="pbx-dep-foot">
+              <button type="button" className="pbx-icon" style={{ width: 'auto', padding: '0 10px' }}
+                onClick={() => onOpen(false)}>Done</button>
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 export function PlanBuildEditor({
   projectId, initialPhases,
@@ -65,13 +170,35 @@ export function PlanBuildEditor({
   const [dragPhase, setDragPhase] = useState<number | null>(null);
   const [dragTask, setDragTask] = useState<{ pi: number; ti: number } | null>(null);
 
+  // "Depends on" (LINA-233). `openDeps` is the key of the row whose picker is
+  // open — one at a time, so the popovers can't stack. `serverCycle` holds the
+  // stages the SERVER named on a 409: it is the authority on the graph, and its
+  // answer outlives our own check, so the offending rows stay lit until edited.
+  const [openDeps, setOpenDeps] = useState<string | null>(null);
+  const [serverCycle, setServerCycle] = useState<Array<{ key: string | null; name: string }>>([]);
+
   const count = useMemo(() => taskCount(phases), [phases]);
+  const index = useMemo(() => nodeIndex(phases), [phases]);
+
+  // The picker already refuses a choice that would loop, so this should never
+  // fire — it is the belt to that braces: "Save plan" stays disabled while a
+  // cycle exists (contract §4) rather than firing a request certain to 409.
+  const cycle = useMemo(() => detectCycle(phases), [phases]);
+  const litRows = useMemo(() => new Set<string>([
+    ...(cycle ?? []).map((n) => n.key),
+    ...serverCycle.map((s) => s.key).filter((k): k is string => typeof k === 'string'),
+  ]), [cycle, serverCycle]);
 
   // Every mutation goes through here so a fresh edit always clears a stale error.
   const apply = useCallback((next: PhaseDraft[]) => {
     setPhases(next);
     setError(null);
+    setServerCycle([]);
   }, []);
+
+  const toggleDep = useCallback((nodeKey: string, dep: string) => {
+    apply(toggleDependency(phases, nodeKey, dep));
+  }, [apply, phases]);
 
   const reset = useCallback(() => apply(seedSkeleton()), [apply]);
 
@@ -91,6 +218,7 @@ export function PlanBuildEditor({
 
   const submit = useCallback(async () => {
     setError(null);
+    setServerCycle([]);
     let stages;
     try {
       stages = toWire(phases); // client-side validation → pointed message, no round-trip
@@ -106,6 +234,24 @@ export function PlanBuildEditor({
       // plan is NOT sent for approval here; that is a separate act on /plan.
       router.push(`/projects/${projectId}/plan?drafted=${encodeURIComponent(result.auditEventId)}`);
     } catch (e) {
+      // THE SERVER IS THE AUTHORITY ON THE GRAPH (contract §3). It revalidates
+      // the whole thing on every save and names the offending stages, so a
+      // refusal is surfaced as ITS answer — the chain lights up on the rows and
+      // is spelled out in the alert, rather than being restated in our words.
+      if (e instanceof PlanAuthorError && e.code === 'dependency_cycle') {
+        const stagesOnCycle = e.details?.stages ?? [];
+        setServerCycle(stagesOnCycle);
+        setError(stagesOnCycle.length
+          ? `These stages depend on each other in a loop: ${stagesOnCycle.map((s) => s.name).join(' → ')} → ${stagesOnCycle[0].name}. Remove one of the links to save.`
+          : e.message);
+        setSubmitting(false);
+        return;
+      }
+      if (e instanceof PlanAuthorError && e.code === 'unknown_dependency') {
+        setError(`“${e.details?.stage ?? 'A stage'}” depends on something that is no longer in this plan. Remove that link and save again.`);
+        setSubmitting(false);
+        return;
+      }
       if (e instanceof PlanAuthorError && (e.code === 'open_plan_exists' || e.code === 'draft_exists')) {
         // A plan is already open/being drafted on this build — the write is not
         // this screen's to make. Send the author to the live plan rather than
@@ -148,7 +294,7 @@ export function PlanBuildEditor({
         {phases.map((phase, pi) => (
           <li
             key={phase.key}
-            className={`pbx-phase${dragPhase === pi ? ' is-dragging' : ''}`}
+            className={`pbx-phase${dragPhase === pi ? ' is-dragging' : ''}${litRows.has(phase.key) ? ' is-cycle' : ''}`}
             onDragOver={(e) => { if (dragPhase !== null) e.preventDefault(); }}
             onDrop={(e) => { if (dragPhase !== null) { e.preventDefault(); dropPhase(pi); } }}
           >
@@ -179,6 +325,19 @@ export function PlanBuildEditor({
               </span>
             </div>
 
+            {/* A phase is a stage like any other — it may follow another phase,
+                or a single task in one (scope = any-stage, ADR-0017 annex 2). */}
+            <DependsOn
+              nodeKey={phase.key}
+              label={index.get(phase.key)?.label ?? `Phase ${pi + 1}`}
+              phases={phases}
+              index={index}
+              open={openDeps === phase.key}
+              disabled={submitting}
+              onOpen={(next) => setOpenDeps(next ? phase.key : null)}
+              onToggle={(dep) => toggleDep(phase.key, dep)}
+            />
+
             <div className="pbx-tasks">
               {phase.tasks.length > 0 ? (
                 <div className="pbx-taskhdr" aria-hidden>
@@ -188,8 +347,8 @@ export function PlanBuildEditor({
               {phase.tasks.map((task, ti) => {
                 const dropTarget = dragTask?.pi === pi;
                 return (
+                <div key={task.key} className={`pbx-taskwrap${litRows.has(task.key) ? ' is-cycle' : ''}`}>
                 <div
-                  key={task.key}
                   className={`pbx-task${dragTask?.pi === pi && dragTask.ti === ti ? ' is-dragging' : ''}`}
                   onDragOver={(e) => { if (dropTarget) e.preventDefault(); }}
                   onDrop={(e) => { if (dropTarget) { e.preventDefault(); dropTask(pi, ti); } }}
@@ -238,6 +397,17 @@ export function PlanBuildEditor({
                       onClick={() => apply(removeTask(phases, pi, ti))}>✕</button>
                   </span>
                 </div>
+                <DependsOn
+                  nodeKey={task.key}
+                  label={index.get(task.key)?.label ?? 'this task'}
+                  phases={phases}
+                  index={index}
+                  open={openDeps === task.key}
+                  disabled={submitting}
+                  onOpen={(next) => setOpenDeps(next ? task.key : null)}
+                  onToggle={(dep) => toggleDep(task.key, dep)}
+                />
+                </div>
                 );
               })}
               <button type="button" className="pbx-addtask" disabled={submitting}
@@ -252,11 +422,18 @@ export function PlanBuildEditor({
         + Add phase
       </button>
 
+      {cycle ? (
+        <p role="alert" className="pbx-cycle">
+          <strong>These stages wait on each other in a loop:</strong>{' '}
+          {cycle.map((n) => n.label).join(' → ')} → {cycle[0].label}. Remove one of the links to save.
+        </p>
+      ) : null}
+
       {error ? <p role="alert" className="pbx-open">{error}</p> : null}
 
       <div className="pbx-actions">
         <Link className="btn" href={`/projects/${projectId}/plan`}>Cancel</Link>
-        <button type="button" className="btn primary" onClick={submit} disabled={submitting}>
+        <button type="button" className="btn primary" onClick={submit} disabled={submitting || cycle !== null}>
           {submitting ? 'Saving…' : 'Save plan'}
         </button>
       </div>
