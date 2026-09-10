@@ -1,8 +1,8 @@
 # ADR-0018 — Plan templates: editable system default + saveable user/org default
 
-- Status: Proposed (two product decisions pending — see §Open decisions)
+- Status: Accepted (2026-09-10 — both product decisions made, see §Decisions made)
 - Date: 2026-09-10
-- Deciders: Full-Stack Architect (owner), Product/Chief of Staff (decides §Open decisions)
+- Deciders: Full-Stack Architect (owner); Founder/Product decided the two forks
 - Issue: LINA-232 "Plan templates: editable system default + saveable user/org default skeleton"
 - Parent: LINA-231 (clear `schedule.stage`)
 - Anchors: ADR-0017 (direct plan authoring), ADR-0005 (schedule/plan documents),
@@ -81,7 +81,9 @@ FE constant is deleted.
 ### 3. `seedSkeleton()` resolves through a scope ladder
 
 A new read endpoint returns the applicable default body; `seedSkeleton()`
-resolves **user default → org default → system default** (first hit wins). The
+resolves **user default → system default** (first hit wins) in v1 — org is
+deferred per §Decisions made, so it is skipped in the ladder though the schema
+carries it. The
 resolve is a pure read — it copies `body` into a fresh editor draft with new
 client keys, exactly as `seedSkeleton()` does today. No project, no stage, no
 version is touched by resolving.
@@ -103,25 +105,30 @@ who may edit it).
   Templates live in `schedule` because they are plan-shaped, but carry **no**
   ledger seam — they are outside the audit record by design.
 
-## Open decisions (owned by Product / Chief of Staff — gate the build)
+## Decisions made (Founder/Product, 2026-09-10)
 
-These two forks change the schema (the `owner_scope` values in play and the
-"save as default" target), so they are decided **before** the BE slice, not
-during it. My recommendation is noted; the call is Product's.
+Both forks were answered on the LINA-232 decision card (interaction answered
+2026-09-10T14:46). The founder's words: *"fallback to the 1 standard phase we
+currently have. let the user create and set its own default if needed"* +
+library = **single**.
 
-1. **Default scope — per-user or per-org?**
-   Org is more useful for a GC with a house style (one saved structure the whole
-   org scaffolds from); user is simpler for v1. **Recommend: single per-org
-   default.** The schema carries all three scopes regardless; this only decides
-   which scope "Save as my default" writes and which the ladder consults in v1.
+1. **Default scope — per-user.** A new build scaffolds from the caller's own
+   saved default when they have one, and otherwise from the seeded `system`
+   default (today's standard skeleton). "Save as my default" writes a `user`
+   template. The founder chose per-user over per-org ("let the user create and
+   set its own default"); **org scope is deferred** — the column and enum value
+   stay in the schema (no rework to enable later) but v1 neither writes nor
+   consults `org`.
 
-2. **Template library (multiple named templates) — in scope or just one "my
-   default"?**
-   **Recommend: one "my default" per owner for v1**, no named library. The
-   `plan_template` table already supports multiple rows per owner, so a library
-   is a later additive slice (drop the "one default" constraint's practical
-   reliance on a single row; the partial unique index already permits many
-   non-default rows). No migration rework needed to add it later.
+2. **Single "my default" per user — no named library in v1.** The caller has
+   exactly one default. The `plan_template` table still permits multiple rows
+   per owner, so a named library is a later additive slice with no migration
+   rework (the partial unique index already allows many non-default rows).
+
+**Resulting v1 resolution ladder (supersedes §3's three-hop ladder):**
+`user default → system default`. Org is skipped in v1 (deferred), so the ladder
+is two hops, not three. The `system` row remains the single source of truth for
+the standard shape and is not user-writable in v1.
 
 ## Consequences
 
@@ -138,5 +145,10 @@ during it. My recommendation is noted; the call is Product's.
 
 ## Sequencing
 
-Sequencing is Product/CEO's call. Once the two open decisions are made, this ADR
-moves to Accepted and the build splits into the BE and FE children above.
+Sequencing is Product/CEO's call. The two decisions are now made (§Decisions
+made), so this ADR is Accepted and the build splits into two children:
+**BE** (migration: `schedule.plan_template` + seed system default from
+`PLAN_SKELETON`; resolve + upsert endpoints; two-level body validation) and
+**FE** ("Save as my default" control + `seedSkeleton()` resolves via the new
+endpoint, `PLAN_SKELETON` demoted to unreachable-endpoint fallback). v1 writes
+and consults the `user` scope only.
