@@ -463,6 +463,40 @@ test('authorPlan: saves a DRAFT (not a proposal) — one plan_drafted event, NO 
   assert.equal(mine.current.stages[0].children[0].name, '1.1 Planning & Feasibility');
 });
 
+test('authorPlan: a task description is stored, validated (≤4000), and read back through getPlan (LINA-234)', async () => {
+  const { service } = build();
+
+  const out = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Phase A', children: [
+        { name: 'Task 1', description: '  Pour the slab; 28-day cure.  ' }, // trimmed on the way in
+        { name: 'Task 2' },                                                 // no description → null
+      ] },
+    ],
+  });
+  assert.equal(out.status, 'draft');
+
+  const view = await service.getPlan(PROJECT, GC);
+  const tasks = view.current.stages[0].children;
+  assert.equal(tasks[0].description, 'Pour the slab; 28-day cure.');
+  assert.equal(tasks[1].description, null);
+
+  // Re-save (draft replace) with an edited description sticks.
+  await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'Phase A', children: [{ name: 'Task 1', description: 'Edited body' }] }],
+  });
+  const view2 = await service.getPlan(PROJECT, GC);
+  assert.equal(view2.current.stages[0].children[0].description, 'Edited body');
+
+  // A description over the cap is refused, not truncated.
+  await assert.rejects(
+    service.authorPlan(PROJECT, GC, {
+      stages: [{ name: 'Phase A', children: [{ name: 'T', description: 'x'.repeat(4001) }] }],
+    }),
+    (e) => e.status === 400 && e.code === 'invalid_stages',
+  );
+});
+
 test('authorPlan: the draft is INVISIBLE to the other party — no current, no history', async () => {
   const { service } = build();
   await service.authorPlan(PROJECT, GC, { stages: SKELETON });

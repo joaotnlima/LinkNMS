@@ -424,6 +424,9 @@ components:
         name: { type: string }
         position: { type: integer, description: Plan order (not dates). }
         scopeNote: { type: [string, 'null'] }
+        description:
+          type: [string, 'null']
+          description: Free-form task body shown in the task-detail drawer (≤ 4000 chars, LINA-234).
         plannedStartDate: { type: [string, 'null'], format: date }
         plannedEndDate: { type: [string, 'null'], format: date }
         plannedCostCents:
@@ -436,6 +439,7 @@ components:
         name: { type: string }
         position: { type: integer }
         scopeNote: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
         plannedStartDate: { type: [string, 'null'], format: date }
         plannedEndDate: { type: [string, 'null'], format: date }
         plannedCostCents: { type: [integer, 'null'] }
@@ -470,6 +474,7 @@ components:
         name: { type: string }
         position: { type: integer }
         scopeNote: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
         plannedStartDate: { type: [string, 'null'], format: date }
         plannedEndDate: { type: [string, 'null'], format: date }
         plannedCostCents: { type: [integer, 'null'] }

@@ -43,6 +43,7 @@ function mapStage(r) {
     plan_version_id: r.plan_version_id,
     source_row_ref: r.source_row_ref,
     scope_note: r.scope_note,
+    description: r.description ?? null,
     planned_start_date: toDate(r.planned_start_date),
     planned_end_date: toDate(r.planned_end_date),
     planned_cost_cents: toNum(r.planned_cost_cents),
@@ -156,7 +157,7 @@ function mapMovement(r) {
 // from the service's own whitelist; this second gate means a stray key can never
 // reach the SQL string.
 const UPDATABLE = new Set([
-  'name', 'position', 'scope_note',
+  'name', 'position', 'scope_note', 'description',
   'planned_start_date', 'planned_end_date', 'planned_cost_cents', 'updated_at',
 ]);
 
@@ -172,14 +173,15 @@ export function createPgStore({ pool = getPool() } = {}) {
     const { rows } = await client.query(
       `insert into schedule.stage
          (id, project_id, name, position, parent_id, trade, import_id, source_row_ref,
-          scope_note, planned_start_date, planned_end_date, planned_cost_cents,
+          scope_note, description, planned_start_date, planned_end_date, planned_cost_cents,
           plan_version_id, created_at, updated_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        returning *`,
       [
         row.id, row.project_id, row.name, row.position, row.parent_id ?? null,
         row.trade ?? null, row.import_id ?? null, row.source_row_ref ?? null,
-        row.scope_note, row.planned_start_date, row.planned_end_date, row.planned_cost_cents,
+        row.scope_note, row.description ?? null,
+        row.planned_start_date, row.planned_end_date, row.planned_cost_cents,
         row.plan_version_id ?? null, row.created_at, row.updated_at,
       ],
     );

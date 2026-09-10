@@ -63,7 +63,7 @@ export const PLAN_SKELETON: ReadonlyArray<{ name: string; tasks: readonly string
 // null only at the wire edge. A `key` is a stable client id for React lists and
 // reordering — it never reaches the server (which assigns its own stage ids).
 
-export interface TaskDraft { key: string; name: string; start: string; end: string }
+export interface TaskDraft { key: string; name: string; start: string; end: string; description: string }
 export interface PhaseDraft { key: string; name: string; tasks: TaskDraft[] }
 
 let keySeq = 0;
@@ -74,7 +74,7 @@ export function newKey(prefix = 'k'): string {
 }
 
 function emptyTask(name = ''): TaskDraft {
-  return { key: newKey('t'), name, start: '', end: '' };
+  return { key: newKey('t'), name, start: '', end: '', description: '' };
 }
 
 /** A fresh draft of the standard skeleton, with new keys each call. */
@@ -101,6 +101,7 @@ export { emptyTask };
 
 interface DraftStageNode {
   name: string;
+  description?: string | null;
   plannedStartDate?: string | null;
   plannedEndDate?: string | null;
   children?: DraftStageNode[] | null;
@@ -116,6 +117,7 @@ export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
       name: t.name,
       start: t.plannedStartDate ?? '',
       end: t.plannedEndDate ?? '',
+      description: t.description ?? '',
     })),
   }));
 }
@@ -199,6 +201,17 @@ export function setTaskDate(
   });
 }
 
+/** Edit a task's free-form description (the task-detail drawer field, LINA-234). */
+export function setTaskDescription(
+  phases: PhaseDraft[], pi: number, ti: number, description: string,
+): PhaseDraft[] {
+  const phase = phases[pi];
+  return replaceAt(phases, pi, {
+    ...phase,
+    tasks: replaceAt(phase.tasks, ti, { ...phase.tasks[ti], description }),
+  });
+}
+
 export function moveTask(phases: PhaseDraft[], pi: number, ti: number, delta: number): PhaseDraft[] {
   const phase = phases[pi];
   return replaceAt(phases, pi, { ...phase, tasks: move(phase.tasks, ti, delta) });
@@ -219,6 +232,7 @@ export function taskCount(phases: PhaseDraft[]): number {
 /** An action node of the authored WBS, as the server's :author contract wants it. */
 export interface AuthoredNode {
   name: string;
+  description?: string | null;
   plannedStartDate?: string | null;
   plannedEndDate?: string | null;
   children?: AuthoredNode[];
@@ -249,7 +263,9 @@ export function toWire(phases: PhaseDraft[]): AuthoredNode[] {
   const stages: AuthoredNode[] = [];
   for (const phase of phases) {
     const name = phase.name.trim();
-    const tasks = phase.tasks.filter((t) => t.name.trim() !== '' || t.start || t.end);
+    const tasks = phase.tasks.filter(
+      (t) => t.name.trim() !== '' || t.start || t.end || (t.description ?? '').trim() !== '',
+    );
     // A phase the author emptied out entirely is skipped silently.
     if (!name && tasks.length === 0) continue;
     if (!name) {
@@ -258,7 +274,8 @@ export function toWire(phases: PhaseDraft[]): AuthoredNode[] {
     const children: AuthoredNode[] = tasks.map((t) => {
       const tn = t.name.trim();
       if (!tn) throw new PlanAuthorError('invalid_name', `A task under "${name}" needs a name.`);
-      return { name: tn, plannedStartDate: dateOrNull(t.start), plannedEndDate: dateOrNull(t.end) };
+      const description = (t.description ?? '').trim() || null;
+      return { name: tn, description, plannedStartDate: dateOrNull(t.start), plannedEndDate: dateOrNull(t.end) };
     });
     stages.push({ name, children });
   }

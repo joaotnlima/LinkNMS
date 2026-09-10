@@ -117,6 +117,7 @@ export function createScheduleService({ store, ledger, identity }) {
       name: name.trim(),
       position: input.position,
       scope_note: input.scopeNote ?? null,
+      description: input.description ?? null,
       planned_start_date: input.plannedStartDate ?? null,
       planned_end_date: input.plannedEndDate ?? null,
       planned_cost_cents: plannedCostCents,
@@ -167,6 +168,7 @@ export function createScheduleService({ store, ledger, identity }) {
       set.position = patch.position;
     }
     if (patch?.scopeNote !== undefined) set.scope_note = patch.scopeNote ?? null;
+    if (patch?.description !== undefined) set.description = patch.description ?? null;
     if (patch?.plannedStartDate !== undefined) set.planned_start_date = patch.plannedStartDate ?? null;
     if (patch?.plannedEndDate !== undefined) set.planned_end_date = patch.plannedEndDate ?? null;
     if (patch?.plannedCostCents !== undefined) set.planned_cost_cents = normalizeCents(patch.plannedCostCents);
@@ -346,6 +348,7 @@ function shapeStage(s, latest) {
     name: s.name,
     position: s.position,
     scopeNote: s.scope_note ?? null,
+    description: s.description ?? null,
     plannedStartDate: s.planned_start_date ?? null,
     plannedEndDate: s.planned_end_date ?? null,
     plannedCostCents: s.planned_cost_cents ?? null,
