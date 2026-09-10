@@ -621,12 +621,37 @@ test('authorPlan: validation — empty, nameless, too-deep, bad date', async () 
     (e) => e.status === 400 && e.code === 'empty_plan');
   await assert.rejects(service.authorPlan(PROJECT, GC, { stages: [{ name: '   ' }] }),
     (e) => e.status === 400 && e.code === 'invalid_name');
+  // Three levels are allowed (LINA-238); a FOURTH level is the too_deep line.
   await assert.rejects(service.authorPlan(PROJECT, GC, { stages: [
-    { name: 'A', children: [{ name: 'B', children: [{ name: 'C' }] }] },
+    { name: 'A', children: [{ name: 'B', children: [{ name: 'C', children: [{ name: 'D' }] }] }] },
   ] }), (e) => e.status === 400 && e.code === 'too_deep');
   await assert.rejects(service.authorPlan(PROJECT, GC, { stages: [
     { name: 'A', plannedStartDate: '03/01/2026' },
   ] }), (e) => e.status === 400 && e.code === 'invalid_plannedStartDate');
+});
+
+test('authorPlan: a 3rd WBS level (sub-sub-action) is accepted and round-trips through getPlan (LINA-238)', async () => {
+  const { service } = build();
+  const draft = await service.authorPlan(PROJECT, GC, { stages: [
+    { name: '2 · Construction', children: [
+      { name: '2.6 Plumbing', children: [
+        { name: '2.6.1 Rough-in', plannedStartDate: '2026-04-01', plannedEndDate: '2026-04-10' },
+        { name: '2.6.2 Fixtures' },
+      ] },
+    ] },
+  ] });
+  // stageCount counts every node at every level — four here (1 phase, 1 sub, 2 sub-sub).
+  assert.equal(draft.stageCount, 4);
+
+  const view = await service.getPlan(PROJECT, GC);
+  const phase = view.current.stages[0];
+  assert.equal(phase.name, '2 · Construction');
+  const sub = phase.children[0];
+  assert.equal(sub.name, '2.6 Plumbing');
+  assert.equal(sub.children.length, 2, 'the sub-action carries its two sub-sub-actions');
+  assert.equal(sub.children[0].name, '2.6.1 Rough-in');
+  assert.equal(sub.children[0].plannedStartDate, '2026-04-01');
+  assert.equal(sub.children[1].name, '2.6.2 Fixtures');
 });
 
 test('authorPlan: drafting while a proposal is already open is a clean 409', async () => {

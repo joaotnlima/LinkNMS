@@ -1,6 +1,7 @@
 # ADR-0019 — Plan task types and 3rd-level WBS
 
-- Status: Proposed (design + tamper-evidence review; migration greenlight pending)
+- Status: Accepted (2026-09-10) — **partial**: 3rd-level WBS shipped in authoring;
+  `task_type` declined by the founder ("tasks are enough"). See "Founder decision".
 - Date: 2026-09-10
 - Deciders: Full-Stack Architect (owner), Chief of Staff / founder (greenlight)
 - Issue: LINA-238 "Plan authoring — milestone/bug task types + 3rd-level WBS"
@@ -102,10 +103,44 @@ must stay — just move from 2 to 3. Unbounded nesting is an abuse/perf footgun.
    (see LINA-238 confirmation). The migration is forward-only and guarded by the
    prod byte-checksum gate; it is not casually reversible.
 
+## Founder decision (2026-09-10, LINA-238 greenlight confirmation)
+
+The greenlight ask returned a **split** answer (interaction
+`23db806f`, resolved 15:24Z):
+
+> 1. No need to set different task types — tasks are enough.
+> 2. depth-3 is wanted now.
+
+So decision items **1 and 2 (`task_type` + cost semantics) are dropped** — no
+migration `0006`, no enum, no `PlanStageNode.taskType`. The prod-schema gate this
+ADR was waiting on is therefore **moot**: nothing here touches the schema.
+
+**What shipped** — decision item 3 only, and narrowed:
+
+- `validateAuthoredStages` cap relaxed `depth >= 1` → `depth >= 2` (cap held at 3;
+  a 4th level still throws `too_deep`). Pure app-level validation, no DDL.
+- The **import parser stays two-level** (its Excel sheet has only Action/Sub-action
+  columns, so it cannot emit a 3rd level anyway) and **templates stay a two-level
+  names-only scaffold** (ADR-0018). Relaxing those was in the original item 3 for
+  "writer agreement", but there is no demand and no producer for a deeper template
+  or import; leaving them narrows scope and keeps those contracts intact. A future
+  slice can lift them if a producer appears.
+- The read path (`getPlan` tree builder, `ports.listStagesByPlanVersion`) is
+  already depth-agnostic — it recurses `parent_id`, so a depth-3 tree round-trips
+  with no change. Verified by a new round-trip test.
+
+**Not yet exposed to users** — the direct-authoring FE (`plan-authoring.ts`,
+`PlanBuildEditor.tsx`) is a rigid two-level model (`toWire` "cannot emit a third
+level even if asked"). The `:author` API now *accepts* depth-3, but no client
+*produces* it yet. Exposing a 3rd authoring level in the editor is delegated to a
+Frontend child issue under the richer-planner epic (LINA-229); LINA-238 is blocked
+on that child until an author can actually build a 3rd level.
+
 ## Consequences
 
-- Additive and back-compatible: default `'task'`, no backfill, existing plans
-  and the flat `getPlan` projection are unaffected.
+- Additive and back-compatible: no backfill, existing plans and the flat
+  `getPlan` projection are unaffected; the `:author` contract only *widens* what it
+  accepts (a previously-400 depth-3 payload is now valid).
 - `task_type` is a product/UX question as much as a schema one — whether a
   construction WBS wants a "bug" type at all, and how milestone/bug render on the
   Gantt, needs design sign-off. This is captured in the greenlight ask, not
