@@ -1,0 +1,201 @@
+'use client';
+
+// The "Build the plan here" editor (LINA-228, ADR-0017).
+//
+// Pen: "S · (new) · Build the plan — schedule (Gantt)" / "Interaction spec —
+// Create & organise tasks". The screen is copy + layout only — every edit is a
+// pure operation from @/lib/plan-authoring (unit-tested under node --test), and
+// the single write is authorPlan(). Two levels only: a phase holds tasks, a
+// task holds nothing (contract §2).
+//
+// ── WHAT THE AUTHOR STARTS WITH ──────────────────────────────────────────────
+// The standard skeleton (PLAN_SKELETON): three phases, names only — no dates, no
+// owners, no sub-tasks. "That is for the user to fill" (the issue). The author
+// renames, reorders, adds and removes, and dates what they know; blanks stay
+// blank and normalise to null at the wire edge (toWire).
+//
+// ── WHAT CROSSES THE WIRE ─────────────────────────────────────────────────────
+// Only `{ stages }`. The acting party is the session, resolved server-side — a
+// client that could name itself could stamp authorship as someone else (§0).
+// The write lands as a proposed v1 (one plan_proposed ledger event); on success
+// we hand the returned audit id to /plan, which shows the "Plan created" stamp
+// once and links to the durable copy in the audit trail.
+import { useCallback, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+import {
+  PlanAuthorError,
+  addPhase, addTask, authorPlan, movePhase, moveTask, removePhase,
+  removeTask, renamePhase, renameTask, seedSkeleton, setTaskDate, taskCount, toWire,
+  type PhaseDraft,
+} from '@/lib/plan-authoring';
+import '@/components/plan-build.css';
+
+export function PlanBuildEditor({ projectId }: { projectId: string }) {
+  const router = useRouter();
+
+  // Seed the standard skeleton once. `seedSkeleton` mints fresh React keys, so
+  // it must run in a lazy initialiser, not on every render.
+  const [phases, setPhases] = useState<PhaseDraft[]>(() => seedSkeleton());
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const count = useMemo(() => taskCount(phases), [phases]);
+
+  // Every mutation goes through here so a fresh edit always clears a stale error.
+  const apply = useCallback((next: PhaseDraft[]) => {
+    setPhases(next);
+    setError(null);
+  }, []);
+
+  const reset = useCallback(() => apply(seedSkeleton()), [apply]);
+
+  const submit = useCallback(async () => {
+    setError(null);
+    let stages;
+    try {
+      stages = toWire(phases); // client-side validation → pointed message, no round-trip
+    } catch (e) {
+      setError(e instanceof PlanAuthorError ? e.message : 'Something is off with the plan.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await authorPlan(projectId, stages);
+      // /plan reads `proposed` and shows the stamp once, then links to the audit
+      // trail — the durable copy of what just happened.
+      router.push(`/projects/${projectId}/plan?proposed=${encodeURIComponent(result.auditEventId)}`);
+    } catch (e) {
+      if (e instanceof PlanAuthorError && e.code === 'open_plan_exists') {
+        // Someone already brought a plan in while this draft was open — the write
+        // is not this screen's to make. Send the author to the live plan rather
+        // than leave them re-clicking a button that will keep 409-ing.
+        router.push(`/projects/${projectId}/plan`);
+        return;
+      }
+      setError(e instanceof PlanAuthorError ? e.message : 'That did not go through. Try again.');
+      setSubmitting(false);
+    }
+  }, [phases, projectId, router]);
+
+  return (
+    <main className="pbx">
+      <header className="pbx-head">
+        <div>
+          <p className="pbx-eyebrow">New plan</p>
+          <h1 className="pbx-title">Build the plan directly in LinkNMS</h1>
+          <p className="pbx-lede">
+            Start from a standard skeleton, then rename, reorder, add and remove phases and tasks.
+            Date what you know — leave the rest blank. Nothing here is binding: creating the plan
+            proposes it to the other party to agree.
+          </p>
+        </div>
+        <span className="pbx-draft">Draft — not yet proposed</span>
+      </header>
+
+      <div className="pbx-toolbar">
+        <p className="pbx-count">
+          {count} {count === 1 ? 'task' : 'tasks'} across {phases.length}{' '}
+          {phases.length === 1 ? 'phase' : 'phases'}
+        </p>
+        <button type="button" className="pbx-icon" onClick={reset} disabled={submitting}
+          title="Reset to the standard skeleton" style={{ width: 'auto', padding: '0 10px' }}>
+          Reset to skeleton
+        </button>
+      </div>
+
+      <ol className="pbx-phases">
+        {phases.map((phase, pi) => (
+          <li key={phase.key} className="pbx-phase">
+            <div className="pbx-phase-hd">
+              <span className="pbx-phase-n" aria-hidden>{pi + 1}</span>
+              <input
+                className="pbx-phase-name"
+                value={phase.name}
+                placeholder="Phase name"
+                aria-label={`Phase ${pi + 1} name`}
+                disabled={submitting}
+                onChange={(e) => apply(renamePhase(phases, pi, e.target.value))}
+              />
+              <span className="pbx-rowctl">
+                <button type="button" className="pbx-icon" title="Move phase up"
+                  disabled={submitting || pi === 0}
+                  onClick={() => apply(movePhase(phases, pi, -1))}>↑</button>
+                <button type="button" className="pbx-icon" title="Move phase down"
+                  disabled={submitting || pi === phases.length - 1}
+                  onClick={() => apply(movePhase(phases, pi, 1))}>↓</button>
+                <button type="button" className="pbx-icon pbx-del" title="Remove phase"
+                  disabled={submitting}
+                  onClick={() => apply(removePhase(phases, pi))}>✕</button>
+              </span>
+            </div>
+
+            <div className="pbx-tasks">
+              {phase.tasks.length > 0 ? (
+                <div className="pbx-taskhdr" aria-hidden>
+                  <span>Task</span><span>Start</span><span>End</span><span />
+                </div>
+              ) : null}
+              {phase.tasks.map((task, ti) => (
+                <div key={task.key} className="pbx-task">
+                  <input
+                    className="pbx-task-name"
+                    value={task.name}
+                    placeholder="Task name"
+                    aria-label={`Task name`}
+                    disabled={submitting}
+                    onChange={(e) => apply(renameTask(phases, pi, ti, e.target.value))}
+                  />
+                  <input
+                    type="date" className="pbx-date" value={task.start}
+                    aria-label="Start date" disabled={submitting}
+                    onChange={(e) => apply(setTaskDate(phases, pi, ti, 'start', e.target.value))}
+                  />
+                  <input
+                    type="date" className="pbx-date" value={task.end}
+                    aria-label="End date" disabled={submitting}
+                    onChange={(e) => apply(setTaskDate(phases, pi, ti, 'end', e.target.value))}
+                  />
+                  <span className="pbx-rowctl">
+                    <button type="button" className="pbx-icon" title="Move task up"
+                      disabled={submitting || ti === 0}
+                      onClick={() => apply(moveTask(phases, pi, ti, -1))}>↑</button>
+                    <button type="button" className="pbx-icon" title="Move task down"
+                      disabled={submitting || ti === phase.tasks.length - 1}
+                      onClick={() => apply(moveTask(phases, pi, ti, 1))}>↓</button>
+                    <button type="button" className="pbx-icon pbx-del" title="Remove task"
+                      disabled={submitting}
+                      onClick={() => apply(removeTask(phases, pi, ti))}>✕</button>
+                  </span>
+                </div>
+              ))}
+              <button type="button" className="pbx-addtask" disabled={submitting}
+                onClick={() => apply(addTask(phases, pi))}>+ Add task</button>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <button type="button" className="pbx-addtask" disabled={submitting}
+        onClick={() => apply(addPhase(phases))} style={{ alignSelf: 'flex-start' }}>
+        + Add phase
+      </button>
+
+      {error ? <p role="alert" className="pbx-open">{error}</p> : null}
+
+      <div className="pbx-actions">
+        <Link className="btn" href={`/projects/${projectId}/plan`}>Cancel</Link>
+        <button type="button" className="btn primary" onClick={submit} disabled={submitting}>
+          {submitting ? 'Creating…' : 'Create plan'}
+        </button>
+      </div>
+
+      <p className="pbx-foot">
+        The plan is the contractor&apos;s: creating it proposes v1 to the other party and records one
+        event on the shared record. You can revise it before anyone agrees; nothing is binding until
+        both parties do.
+      </p>
+    </main>
+  );
+}
