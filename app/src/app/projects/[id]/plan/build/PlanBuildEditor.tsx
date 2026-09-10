@@ -9,10 +9,19 @@
 // task holds nothing (contract §2).
 //
 // ── WHAT THE AUTHOR STARTS WITH ──────────────────────────────────────────────
-// The standard skeleton (PLAN_SKELETON): three phases, names only — no dates, no
-// owners, no sub-tasks. "That is for the user to fill" (the issue). The author
-// renames, reorders, adds and removes, and dates what they know; blanks stay
-// blank and normalise to null at the wire edge (toWire).
+// Their own default scaffold: the page resolves GET /me/plan-template server-side
+// (their saved default → the system one) and passes its names-only body as
+// `templateBody` (LINA-242, ADR-0018). PLAN_SKELETON is now only the fallback for
+// when that read failed. Either way it is names only — no dates, no owners, no
+// sub-tasks. "That is for the user to fill" (the issue). The author renames,
+// reorders, adds and removes, and dates what they know; blanks stay blank and
+// normalise to null at the wire edge (toWire).
+//
+// "Save as my default" sends the CURRENT structure back as a template — names
+// only, dates and descriptions dropped (toTemplateBody), because those are this
+// project's answers, not the shape. It is a private preference, NOT the plan
+// write: no stage, version or ledger event is touched and nothing is sent for
+// approval. Templates copy, never link (ADR-0018).
 //
 // ── WHAT CROSSES THE WIRE ─────────────────────────────────────────────────────
 // Only `{ stages }`. The acting party is the session, resolved server-side — a
@@ -30,26 +39,46 @@ import {
   PlanAuthorError,
   addPhase, addTask, authorPlan, removePhase,
   removeTask, renamePhase, renameTask, reorderPhase, reorderTask,
-  seedSkeleton, setTaskDate, setTaskDescription, taskCount, toWire,
-  type PhaseDraft,
+  saveMyDefaultTemplate, seedFromTemplate, seedSkeleton,
+  setTaskDate, setTaskDescription, taskCount, toTemplateBody, toWire,
+  type PhaseDraft, type TemplatePhase,
 } from '@/lib/plan-authoring';
 import '@/components/plan-build.css';
 
 export function PlanBuildEditor({
-  projectId, initialPhases,
+  projectId, initialPhases, templateBody,
 }: {
   projectId: string;
-  /** An existing saved draft to resume editing; absent → seed the skeleton. */
+  /** An existing saved draft to resume editing; absent → scaffold from the template. */
   initialPhases?: PhaseDraft[];
+  /**
+   * The caller's resolved default scaffold (names only), read server-side by the
+   * page. Absent only when that read failed — then the built-in skeleton stands
+   * in, so an unreachable template still leaves a usable editor.
+   */
+  templateBody?: TemplatePhase[];
 }) {
   const router = useRouter();
   const resuming = initialPhases != null && initialPhases.length > 0;
 
-  // Resume an existing draft, else seed the standard skeleton. Both mint fresh
-  // React keys, so this must run in a lazy initialiser, not on every render.
-  const [phases, setPhases] = useState<PhaseDraft[]>(() => initialPhases ?? seedSkeleton());
+  // The scaffold this editor starts from, and the one "Reset" returns to — the
+  // two must be the same source or reset would quietly swap the author's default
+  // for a different plan than the one they opened.
+  const seed = useCallback(
+    () => (templateBody?.length ? seedFromTemplate(templateBody) : seedSkeleton()),
+    [templateBody],
+  );
+
+  // Resume an existing draft, else scaffold from the resolved default. Both mint
+  // fresh React keys, so this must run in a lazy initialiser, not every render.
+  const [phases, setPhases] = useState<PhaseDraft[]>(() => initialPhases ?? seed());
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // "Save as my default" — a private preference write, tracked apart from the
+  // plan save so its confirmation can never be mistaken for "the plan was sent".
+  const [savingDefault, setSavingDefault] = useState(false);
+  const [defaultSaved, setDefaultSaved] = useState(false);
 
   // The task-detail drawer (LINA-234). Holds the {phase, task} index of the open
   // task, or null when closed. The drawer edits that task's description; status is
@@ -67,13 +96,43 @@ export function PlanBuildEditor({
 
   const count = useMemo(() => taskCount(phases), [phases]);
 
-  // Every mutation goes through here so a fresh edit always clears a stale error.
+  // Every mutation goes through here so a fresh edit always clears a stale error
+  // — and a stale "saved as your default", which described a structure the author
+  // has since changed and would otherwise read as though the edit was saved too.
   const apply = useCallback((next: PhaseDraft[]) => {
     setPhases(next);
     setError(null);
+    setDefaultSaved(false);
   }, []);
 
-  const reset = useCallback(() => apply(seedSkeleton()), [apply]);
+  // Back to the scaffold this editor opened on — the caller's resolved default,
+  // not the hard-coded skeleton. Purely client-side: it discards unsaved edits in
+  // this tab and writes nothing.
+  const reset = useCallback(() => apply(seed()), [apply, seed]);
+
+  // PUT the current structure as the caller's one default (ADR-0018). Names only:
+  // toTemplateBody drops dates and descriptions, which belong to this build and
+  // not to the shape. A second save replaces the first.
+  const saveAsDefault = useCallback(async () => {
+    setError(null);
+    setDefaultSaved(false);
+    let body;
+    try {
+      body = toTemplateBody(phases);
+    } catch (e) {
+      setError(e instanceof PlanAuthorError ? e.message : 'Something is off with the plan.');
+      return;
+    }
+    setSavingDefault(true);
+    try {
+      await saveMyDefaultTemplate(body);
+      setDefaultSaved(true);
+    } catch (e) {
+      setError(e instanceof PlanAuthorError ? e.message : 'That did not save. Try again.');
+    } finally {
+      setSavingDefault(false);
+    }
+  }, [phases]);
 
   const dropPhase = useCallback((to: number) => {
     setDragPhase((from) => {
@@ -138,10 +197,25 @@ export function PlanBuildEditor({
           {count} {count === 1 ? 'task' : 'tasks'} across {phases.length}{' '}
           {phases.length === 1 ? 'phase' : 'phases'}
         </p>
-        <button type="button" className="pbx-icon" onClick={reset} disabled={submitting}
-          title="Reset to the standard skeleton" style={{ width: 'auto', padding: '0 10px' }}>
-          Reset to skeleton
-        </button>
+        <div className="pbx-tools">
+          {/* The light confirmation. Worded so it cannot be read as "sent": this
+              saved a private starting point for the author's NEXT build, and did
+              nothing at all to this plan. */}
+          {defaultSaved ? (
+            <span role="status" className="pbx-saved">Saved as your default — your next build starts here.</span>
+          ) : null}
+          <button type="button" className="pbx-icon" onClick={reset}
+            disabled={submitting || savingDefault}
+            title="Start over from your default plan" style={{ width: 'auto', padding: '0 10px' }}>
+            Reset to skeleton
+          </button>
+          <button type="button" className="pbx-icon" onClick={saveAsDefault}
+            disabled={submitting || savingDefault}
+            title="Reuse this structure — phase and task names only — on your next build"
+            style={{ width: 'auto', padding: '0 10px' }}>
+            {savingDefault ? 'Saving…' : 'Save as my default'}
+          </button>
+        </div>
       </div>
 
       <ol className="pbx-phases">

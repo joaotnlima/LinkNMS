@@ -15,7 +15,7 @@ import {
   PLAN_SKELETON, seedSkeleton, emptyPhase, addPhase, addTask, renamePhase, renameTask,
   movePhase, moveTask, reorderPhase, reorderTask,
   removePhase, removeTask, setTaskDate, setTaskDescription, taskCount, toWire, PlanAuthorError,
-  hydrateDraft,
+  hydrateDraft, seedFromTemplate, toTemplateBody,
 } from './plan-authoring.ts';
 
 test('skeleton: three phases, names only, no dates or sub-tasks (the issue scope)', () => {
@@ -158,4 +158,112 @@ test('toWire: a named phase with a nameless task refuses', () => {
 test('toWire: nothing to send refuses with empty_plan', () => {
   assert.throws(() => toWire([{ key: 'p', name: '', tasks: [] }]),
     (e) => e instanceof PlanAuthorError && e.code === 'empty_plan');
+});
+
+// ── Plan templates (LINA-242, ADR-0018) ──────────────────────────────────────
+// The FE half of the template slice is two mappings and nothing else: a resolved
+// template body scaffolds a draft, and the draft maps back to a names-only body.
+// The interesting one is the way back — what it DROPS is the contract.
+
+test('seedFromTemplate: scaffolds a draft from a resolved template body', () => {
+  const body = [
+    { name: 'Groundworks', tasks: ['Excavate', 'Footings'] },
+    { name: 'Handover', tasks: [] },
+  ];
+  const phases = seedFromTemplate(body);
+
+  assert.equal(phases.length, 2);
+  assert.equal(phases[0].name, 'Groundworks');
+  assert.deepEqual(phases[0].tasks.map((t) => t.name), ['Excavate', 'Footings']);
+  assert.equal(phases[1].tasks.length, 0, 'a phase with no tasks scaffolds empty, not dropped');
+
+  // Names only: a template carries no dates and no descriptions, so the author
+  // starts with those blank — they are per-project answers, not shape.
+  for (const p of phases) {
+    assert.ok(p.key);
+    for (const t of p.tasks) {
+      assert.equal(t.start, '');
+      assert.equal(t.end, '');
+      assert.equal(t.description, '');
+      assert.ok(t.key);
+    }
+  }
+
+  // Fresh React keys each call — two scaffolds of the same body never collide.
+  assert.notEqual(seedFromTemplate(body)[0].key, phases[0].key);
+});
+
+test('seedFromTemplate: the built-in skeleton is just one template body', () => {
+  // seedSkeleton is now the FALLBACK path through the same mapping, so the two
+  // cannot drift: an unreachable endpoint yields the same editor shape.
+  const viaSkeleton = seedSkeleton();
+  const viaTemplate = seedFromTemplate(PLAN_SKELETON);
+  assert.deepEqual(
+    viaSkeleton.map((p) => [p.name, p.tasks.map((t) => t.name)]),
+    viaTemplate.map((p) => [p.name, p.tasks.map((t) => t.name)]),
+  );
+});
+
+test('toTemplateBody: names only, two levels — dates and descriptions are dropped', () => {
+  const body = toTemplateBody([
+    { key: 'p1', name: '  Groundworks  ', tasks: [
+      { key: 't1', name: '  Excavate  ', start: '2026-03-01', end: '2026-03-10', description: 'to 1.2m' },
+      { key: 't2', name: 'Footings', start: '', end: '2026-03-20', description: '' },
+    ] },
+  ]);
+
+  assert.deepEqual(body, [{ name: 'Groundworks', tasks: ['Excavate', 'Footings'] }]);
+
+  // The shape assertion the edge enforces (`too_deep` / extra-key refusals): a
+  // phase carries ONLY { name, tasks }, and a task is a bare string.
+  for (const phase of body) {
+    assert.deepEqual(Object.keys(phase).sort(), ['name', 'tasks']);
+    for (const task of phase.tasks) assert.equal(typeof task, 'string');
+  }
+});
+
+test('toTemplateBody: an emptied phase is skipped, a nameless one refuses', () => {
+  // A phase the author emptied out entirely — same tolerance as toWire.
+  const body = toTemplateBody([
+    { key: 'p1', name: '', tasks: [] },
+    { key: 'p2', name: 'Real', tasks: [{ key: 't1', name: 'Task', start: '', end: '', description: '' }] },
+  ]);
+  assert.deepEqual(body, [{ name: 'Real', tasks: ['Task'] }]);
+
+  // A nameless phase that still holds tasks is a mistake, not an omission.
+  assert.throws(() => toTemplateBody([
+    { key: 'p1', name: '   ', tasks: [{ key: 't1', name: 'Task', start: '', end: '', description: '' }] },
+  ]), (e) => e instanceof PlanAuthorError && e.code === 'invalid_name');
+});
+
+test('toTemplateBody: an unnamed task is dropped, never sent blank', () => {
+  // Unlike toWire there is no "dated but unnamed" case to rescue — dates do not
+  // survive the mapping — so a nameless row is simply not part of the shape.
+  // The edge refuses an empty task name, so sending one would be a 400.
+  const body = toTemplateBody([
+    { key: 'p1', name: 'Phase A', tasks: [
+      { key: 't1', name: 'Kept', start: '', end: '', description: '' },
+      { key: 't2', name: '   ', start: '2026-03-01', end: '', description: 'note' },
+    ] },
+  ]);
+  assert.deepEqual(body, [{ name: 'Phase A', tasks: ['Kept'] }]);
+});
+
+test('toTemplateBody: nothing to save refuses with empty_plan', () => {
+  assert.throws(() => toTemplateBody([{ key: 'p', name: '', tasks: [] }]),
+    (e) => e instanceof PlanAuthorError && e.code === 'empty_plan');
+  assert.throws(() => toTemplateBody([]),
+    (e) => e instanceof PlanAuthorError && e.code === 'empty_plan');
+});
+
+test('toTemplateBody: the skeleton round-trips through a save and a re-seed', () => {
+  // The loop that matters in the product: scaffold → save as my default → the
+  // next build scaffolds from exactly that. Structure must survive untouched.
+  const first = seedSkeleton();
+  const saved = toTemplateBody(first);
+  const next = seedFromTemplate(saved);
+  assert.deepEqual(
+    next.map((p) => [p.name, p.tasks.map((t) => t.name)]),
+    first.map((p) => [p.name, p.tasks.map((t) => t.name)]),
+  );
 });
