@@ -209,7 +209,11 @@ flow is a single author per build; multi-author drafting is deferred.
 
 ## Annex 2 (LINA-233, 2026-09-10) — dependencies authoring on a draft
 
-**Status: Proposed — awaiting design sign-off.** This annex scopes the first of
+**Status: Accepted — signed off by the founder 2026-09-10** (request_confirmation
+`9b0dbbe5`, accepted: *"any stage" scope + demand confirmed*). The two open
+questions below are resolved inline; **migration number is 0007**, not 0006 —
+LINA-234 took `0006_stage_description.sql` on `main` between drafting and sign-off.
+This annex scopes the first of
 the ADR-0017 §5 deferred items to ship: the **"depends on" authoring UI** for
 `schedule.stage_dependency`. It extends the `:author` draft path (annex 1) and
 §3's authorisation; everything else in ADR-0017 stands. The §5 table called this
@@ -281,21 +285,22 @@ write**:
 
 - **Self-dependency** → `400 self_dependency` (also the DB `CHECK` backstop).
 - **Unknown key** in a `dependsOn` → `400 unknown_dependency`.
-- **Cross-level / malformed** (a dependency is between *actions* or between
-  *sub-actions*; we do not model action↔sub-action ordering in v1) → is allowed
-  only among siblings at the same level under the same parent in v1? — **open
-  design question, see below.**
+- **Cross-level dependencies are permitted** (resolved at sign-off, scope (a)):
+  a stage may depend on any other distinct stage regardless of level or parent.
+  No level/parent constraint is enforced — matching import, which is
+  unconstrained. Only self-deps, unknown keys, and cycles are rejected.
 - **Cycle** (DFS finds a back-edge) → `409 dependency_cycle`, naming the stages
   on the cycle so the UI can highlight them.
 
 Because the whole graph is revalidated on every `:author`, a draft can never be
 saved in a cyclic state; there is no "repair later" path.
 
-#### 3. The one schema cost — migration 0006: a guarded DELETE grant
+#### 3. The one schema cost — migration 0007: a guarded DELETE grant
 
 To let `:author` rebuild a draft that now carries dependency rows, `:author`
 must delete that draft's `stage_dependency` rows **before** deleting its stages.
-That needs a `DELETE` grant `stage_dependency` does not have. Migration 0006,
+That needs a `DELETE` grant `stage_dependency` does not have. Migration 0007
+(`0007_stage_dependency_draft_delete.sql`; 0006 is LINA-234's stage_description),
 mirroring `stage_freeze_delete_guard` from 0005, adds:
 
 - `GRANT DELETE ON schedule.stage_dependency TO schedule_app;`
@@ -323,16 +328,17 @@ courtesy (server remains the authority). Dependencies are visualised as
 predecessor chips on the row in v1 (no Gantt link-lines — that rides with the
 drag/Gantt §5 item, deferred).
 
-### Open design questions for sign-off
+### Design questions — RESOLVED at sign-off (2026-09-10)
 
-1. **Dependency scope — which stages may a node depend on?** Options: (a) any
-   other stage in the plan (most flexible, matches import which is unconstrained);
-   (b) same-level siblings only (actions↔actions, sub-actions↔sub-actions under
-   one parent). Import does (a). Recommendation: **(a)** — match import, keep one
-   rule, let the UI group choices by phase. Cycle validation makes (a) safe.
-2. **Is this slice wanted now at all?** Parent LINA-229 is blocked/post-MVP,
-   "gate on real product demand." This annex assumes the founder pulling LINA-233
-   active *is* that demand signal. Confirm before build.
+1. **Dependency scope — which stages may a node depend on?** → **(a) any other
+   stage in the plan** (founder accepted the recommendation). Matches import
+   (unconstrained), keeps one rule, UI groups choices by phase. Cycle validation
+   makes (a) safe. The "cross-level / malformed" branch in decision §2 is
+   therefore **not** rejected: a dependency between any two distinct stages is
+   permitted; only self-deps, unknown keys, and cycles are rejected.
+2. **Is this slice wanted now at all?** → **Yes.** The founder pulling LINA-233
+   active and accepting this confirmation *is* the §5 "real product demand"
+   signal. Build proceeds; parent LINA-229 stays post-MVP for the rest of §5.
 
 ### Consequences
 
