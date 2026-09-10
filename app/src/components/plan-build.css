@@ -97,3 +97,50 @@
   .pbx-task { grid-template-columns: 1fr; gap: var(--s2); }
   .pbx-rowctl { justify-content: flex-start; }
 }
+
+/* ── Task-detail drawer (LINA-234, ADR-0019) ──────────────────────────────── */
+.pbx-details { position: relative; }
+.pbx-details.has-note { color: var(--fg); border-color: var(--outline-strong); }
+.pbx-details .pbx-dot {
+  position: absolute; top: 3px; right: 3px; width: 6px; height: 6px;
+  border-radius: 999px; background: var(--plan-baseline);
+}
+
+.pbx-drawer-scrim {
+  position: fixed; inset: 0; z-index: 60;
+  background: color-mix(in srgb, var(--fg) 32%, transparent);
+  display: flex; justify-content: flex-end;
+}
+.pbx-drawer {
+  width: min(440px, 100%); height: 100%; overflow-y: auto;
+  background: var(--paper); border-left: 1px solid var(--outline);
+  padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3);
+  box-shadow: -8px 0 32px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+.pbx-drawer-hd { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); }
+.pbx-drawer-eyebrow {
+  margin: 0 0 var(--s2); text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 11px; font-weight: 700; color: var(--plan-baseline);
+}
+.pbx-drawer-title { margin: 0; font-size: 20px; line-height: 1.2; }
+
+.pbx-drawer-status { display: flex; flex-direction: column; gap: var(--s2); }
+.pbx-status-chip {
+  align-self: flex-start; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--outline); background: var(--sunken);
+  color: var(--muted); font-size: 12px; font-weight: 600;
+}
+.pbx-status-hint { color: var(--muted); font-size: 12px; max-width: 46ch; }
+
+.pbx-drawer-label { font-size: 13px; font-weight: 600; color: var(--fg); }
+.pbx-drawer-desc {
+  min-height: 180px; resize: vertical; font: inherit; line-height: 1.5;
+  border: 1px solid var(--outline); background: var(--paper); border-radius: 8px;
+  padding: 10px 12px; color: var(--fg);
+}
+.pbx-drawer-desc:focus { outline: none; border-color: var(--plan-baseline); }
+.pbx-drawer-actions { display: flex; justify-content: flex-end; margin-top: auto; }
+
+@media (max-width: 720px) {
+  .pbx-drawer { width: 100%; border-left: none; }
+}

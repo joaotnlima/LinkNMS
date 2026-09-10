@@ -206,6 +206,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
       name: s.name,
       position: s.position,
       trade: s.trade ?? null,
+      description: s.description ?? null,
       plannedStartDate: s.planned_start_date ?? null,
       plannedEndDate: s.planned_end_date ?? null,
       plannedCostCents: s.planned_cost_cents ?? null,
@@ -480,6 +481,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
           import_id: null,
           source_row_ref: s.source_row_ref,
           scope_note: s.scope_note,
+          description: s.description,
           planned_start_date: s.planned_start_date,
           planned_end_date: s.planned_end_date,
           planned_cost_cents: s.planned_cost_cents,
@@ -559,6 +561,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
         import_id: null,
         source_row_ref: null,
         scope_note: null,
+        description: node.description,
         planned_start_date: node.plannedStartDate,
         planned_end_date: node.plannedEndDate,
         planned_cost_cents: node.plannedCostCents,
@@ -775,11 +778,22 @@ export function createPlanVersionService({ store, ledger, identity }) {
         }
         trade = raw.trade.trim() || null;
       }
+      let description = null;
+      if (raw.description != null) {
+        if (typeof raw.description !== 'string') {
+          throw new DomainError(400, 'invalid_stages', 'description must be a string or null');
+        }
+        if (raw.description.length > 4000) {
+          throw new DomainError(400, 'invalid_stages', 'a stage description must be ≤ 4000 chars');
+        }
+        description = raw.description.trim() || null;
+      }
       const index = order.length;
       order.push({
         name,
         parentIndex,
         trade,
+        description,
         plannedStartDate: normalizeDate(raw.plannedStartDate ?? null, 'plannedStartDate'),
         plannedEndDate: normalizeDate(raw.plannedEndDate ?? null, 'plannedEndDate'),
         plannedCostCents: raw.plannedCostCents == null ? null : normalizeCents(raw.plannedCostCents),

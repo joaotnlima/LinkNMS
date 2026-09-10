@@ -14,7 +14,8 @@ import assert from 'node:assert/strict';
 import {
   PLAN_SKELETON, seedSkeleton, emptyPhase, addPhase, addTask, renamePhase, renameTask,
   movePhase, moveTask, reorderPhase, reorderTask,
-  removePhase, removeTask, setTaskDate, taskCount, toWire, PlanAuthorError,
+  removePhase, removeTask, setTaskDate, setTaskDescription, taskCount, toWire, PlanAuthorError,
+  hydrateDraft,
 } from './plan-authoring.ts';
 
 test('skeleton: three phases, names only, no dates or sub-tasks (the issue scope)', () => {
@@ -112,6 +113,40 @@ test('toWire: two levels, blank dates → null, empty phase dropped', () => {
   assert.equal(wire[1].children.length, 0);
   // No node ever carries a third level.
   for (const s of wire) for (const c of s.children) assert.equal(c.children, undefined);
+});
+
+test('description: drawer field round-trips through toWire and hydrateDraft (LINA-234)', () => {
+  // setTaskDescription is pure and edits only the targeted task.
+  let phases = seedSkeleton();
+  const before = phases;
+  phases = setTaskDescription(phases, 0, 0, '  Pour the slab; 28-day cure.  ');
+  assert.equal(phases[0].tasks[0].description, '  Pour the slab; 28-day cure.  ');
+  assert.equal(before[0].tasks[0].description, '', 'original untouched (no mutation)');
+
+  // toWire trims → the description crosses the wire; a blank one normalises to null.
+  const wire = toWire([
+    { key: 'p1', name: 'Phase A', tasks: [
+      { key: 't1', name: 'Task 1', start: '', end: '', description: '  has body  ' },
+      { key: 't2', name: 'Task 2', start: '', end: '', description: '   ' },
+    ] },
+  ]);
+  assert.equal(wire[0].children[0].description, 'has body');
+  assert.equal(wire[0].children[1].description, null);
+
+  // A description-only task (no name) is not silently dropped — it surfaces the
+  // name-required refusal instead of vanishing.
+  assert.throws(() => toWire([
+    { key: 'p1', name: 'Phase A', tasks: [{ key: 't1', name: '', start: '', end: '', description: 'orphan note' }] },
+  ]), (e) => e instanceof PlanAuthorError && e.code === 'invalid_name');
+
+  // hydrateDraft brings a saved description back into the editor model.
+  const hydrated = hydrateDraft([
+    { name: 'Phase A', children: [{ name: 'Task 1', description: 'saved body', plannedStartDate: null, plannedEndDate: null }] },
+  ]);
+  assert.equal(hydrated[0].tasks[0].description, 'saved body');
+  // A stage with no description hydrates to '' (the editor's empty string).
+  const hydrated2 = hydrateDraft([{ name: 'P', children: [{ name: 'T' }] }]);
+  assert.equal(hydrated2[0].tasks[0].description, '');
 });
 
 test('toWire: a named phase with a nameless task refuses', () => {

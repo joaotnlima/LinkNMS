@@ -30,7 +30,7 @@ import {
   PlanAuthorError,
   addPhase, addTask, authorPlan, removePhase,
   removeTask, renamePhase, renameTask, reorderPhase, reorderTask,
-  seedSkeleton, setTaskDate, taskCount, toWire,
+  seedSkeleton, setTaskDate, setTaskDescription, taskCount, toWire,
   type PhaseDraft,
 } from '@/lib/plan-authoring';
 import '@/components/plan-build.css';
@@ -50,6 +50,13 @@ export function PlanBuildEditor({
   const [phases, setPhases] = useState<PhaseDraft[]>(() => initialPhases ?? seedSkeleton());
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // The task-detail drawer (LINA-234). Holds the {phase, task} index of the open
+  // task, or null when closed. The drawer edits that task's description; status is
+  // read-only here — a draft has no reported progress, so it is always "Not
+  // started" until the plan is live (ADR-0019).
+  const [openTask, setOpenTask] = useState<{ pi: number; ti: number } | null>(null);
+  const active = openTask ? phases[openTask.pi]?.tasks[openTask.ti] ?? null : null;
 
   // Drag-to-reorder state. A phase drag and a task drag are mutually exclusive;
   // a task only drops within its own phase (`pi` guards the drop). Reordering is
@@ -216,6 +223,16 @@ export function PlanBuildEditor({
                     onChange={(e) => apply(setTaskDate(phases, pi, ti, 'end', e.target.value))}
                   />
                   <span className="pbx-rowctl">
+                    <button
+                      type="button"
+                      className={`pbx-icon pbx-details${task.description.trim() ? ' has-note' : ''}`}
+                      title="Task details"
+                      aria-label={`Open details for ${task.name.trim() || 'this task'}`}
+                      disabled={submitting}
+                      onClick={() => setOpenTask({ pi, ti })}
+                    >
+                      ⋯{task.description.trim() ? <span className="pbx-dot" aria-hidden /> : null}
+                    </button>
                     <button type="button" className="pbx-icon pbx-del" title="Remove task"
                       disabled={submitting}
                       onClick={() => apply(removeTask(phases, pi, ti))}>✕</button>
@@ -249,6 +266,61 @@ export function PlanBuildEditor({
         on the shared record that the draft was saved. It is not sent to the other party and no
         approval is requested until you choose <strong>Send for approval</strong> on the plan page.
       </p>
+
+      {openTask && active ? (
+        <div
+          className="pbx-drawer-scrim"
+          role="presentation"
+          onClick={() => setOpenTask(null)}
+        >
+          <aside
+            className="pbx-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Task details"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="pbx-drawer-hd">
+              <div>
+                <p className="pbx-drawer-eyebrow">Task details</p>
+                <h2 className="pbx-drawer-title">{active.name.trim() || 'Untitled task'}</h2>
+              </div>
+              <button
+                type="button"
+                className="pbx-icon"
+                title="Close"
+                aria-label="Close task details"
+                onClick={() => setOpenTask(null)}
+              >✕</button>
+            </header>
+
+            {/* Status is DERIVED from reported progress, never authored (ADR-0019).
+                A draft has no progress, so it reads "Not started" until the plan is
+                live — shown read-only so nothing here can desync from the record. */}
+            <div className="pbx-drawer-status">
+              <span className="pbx-status-chip">Not started</span>
+              <span className="pbx-status-hint">
+                Progress is reported once the plan is live and agreed — you can’t set it while drafting.
+              </span>
+            </div>
+
+            <label className="pbx-drawer-label" htmlFor="pbx-task-desc">Description</label>
+            <textarea
+              id="pbx-task-desc"
+              className="pbx-drawer-desc"
+              value={active.description}
+              placeholder="What is this task? Add scope, context, anything the other party should know."
+              maxLength={4000}
+              disabled={submitting}
+              onChange={(e) => apply(setTaskDescription(phases, openTask.pi, openTask.ti, e.target.value))}
+            />
+
+            <div className="pbx-drawer-actions">
+              <button type="button" className="btn primary" onClick={() => setOpenTask(null)}>Done</button>
+            </div>
+          </aside>
+        </div>
+      ) : null}
     </main>
   );
 }

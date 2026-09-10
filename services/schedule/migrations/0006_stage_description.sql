@@ -1,0 +1,36 @@
+-- Schedule & Progress — per-stage description for the task-detail drawer
+-- (LINA-234; parent LINA-229 §5 / ADR-0017 §5 deferred affordance; ADR-0019).
+--
+-- The task-detail drawer needs a free-form body per stage — the "description"
+-- the author types about a task. This migration adds exactly that column and
+-- NOTHING ELSE. In particular it deliberately adds NO status column, and the
+-- reason is the whole point of this ticket:
+--
+-- THE STATUS INVARIANT IS NOT UP FOR RE-LITIGATION. Migration 0001 established,
+-- and this migration re-affirms, that a stage's CURRENT status is DERIVED from
+-- the latest row of the append-only `schedule.stage_progress` history — never a
+-- mutable column that could silently disagree with the record. The ticket asked
+-- for a "status store"; that store already exists (stage_progress), and the
+-- service already exposes the derived value as `currentStatus` (schedule.mjs
+-- shapeStage). Adding a mutable `stage.status` would re-introduce exactly the
+-- two-sources-of-truth hazard 0001 was written to forbid, so the drawer READS
+-- the derived status and this migration adds no column for it. See ADR-0019.
+--
+-- `description` is mutable authoring content, edited in place exactly like
+-- name / dates / scope_note. It rides the existing plan-authoring write (a draft
+-- re-save deletes and re-inserts its stages), and it is frozen with the version
+-- by the existing stage_freeze_guard (0003) once the plan is accepted — a
+-- baseline's description is changed only through a new version, never edited in
+-- place. No new grant is needed: schedule_app already holds INSERT/UPDATE on
+-- schedule.stage.
+--
+-- `scope_note` (0001) is untouched and stays a separate, distinct field — a short
+-- one-line scope summary surfaced elsewhere; `description` is the longer drawer
+-- body. See ADR-0019 §Model for why the two are not merged.
+--
+-- Forward-only. Applied by the migrator role. Owned + finalised by the
+-- Full-Stack Architect (drafted here; reviewed & applied to Neon by the Architect).
+-- NEVER edit an applied migration — the prod schema-gate byte-checksum guard
+-- halts ALL migrates if an applied file's bytes change (LINA-148 hotfix history).
+
+ALTER TABLE schedule.stage ADD COLUMN description text;
