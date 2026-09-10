@@ -778,9 +778,13 @@ export function createPlanVersionService({ store, ledger, identity }) {
   }
 
   // Validate the authored WBS tree and flatten it to a pre-order list with a
-  // parentIndex back-pointer (parents always precede their children). Two levels
-  // only — a sub-action may not carry children (the model's self-ref FK permits
-  // deeper nesting; this slice does not, matching the B1 parser).
+  // parentIndex back-pointer (parents always precede their children). Three
+  // levels at most — Action → Sub-action → Sub-sub-action; a node at depth 2 may
+  // not carry children (LINA-238, ADR-0019: the founder wanted depth-3 in
+  // authoring; task_type was declined). The model's self-ref FK permits unbounded
+  // nesting, so the cap is enforced here in application code. The B1 import parser
+  // stays two-level by construction (its sheet has only Action/Sub-action columns)
+  // and templates stay a two-level names-only scaffold (ADR-0018) — both deliberate.
   //
   // Two optional per-node fields ride the payload (ADR-0017 annex 2, LINA-233):
   //   - `key` — a stable author-local id for the node WITHIN this payload (the
@@ -862,9 +866,9 @@ export function createPlanVersionService({ store, ledger, identity }) {
         if (!Array.isArray(children)) {
           throw new DomainError(400, 'invalid_stages', 'children must be an array');
         }
-        if (depth >= 1 && children.length > 0) {
+        if (depth >= 2 && children.length > 0) {
           throw new DomainError(400, 'too_deep',
-            'the plan is two levels only — a sub-action cannot have its own children');
+            'the plan is three levels deep at most — a sub-sub-action cannot have its own children');
         }
         for (const child of children) pushNode(child, index, depth + 1);
       }
