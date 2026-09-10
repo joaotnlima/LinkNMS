@@ -2,7 +2,10 @@
    Tokens only (globals/tokens.css); it rides the same palette as plan-import /
    plan-baseline so the three plan surfaces read as one. */
 
-.pbx { display: flex; flex-direction: column; gap: var(--s4); max-width: 1080px; }
+/* Owns its gutter: the shell body runs flush in BUILD mode (psh-body--flush),
+   so this surface pads itself off the rail — the same var(--s4) as the record
+   (.rc) and import (.pi) siblings. */
+.pbx { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s4); max-width: 1080px; }
 
 .pbx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s4); }
 .pbx-eyebrow {
@@ -41,12 +44,24 @@
 
 .pbx-tasks { padding: var(--s3); display: flex; flex-direction: column; gap: 2px; }
 .pbx-taskhdr, .pbx-task {
-  display: grid; grid-template-columns: 1fr 150px 150px 96px; gap: var(--s3); align-items: center;
+  display: grid; grid-template-columns: 22px 1fr 150px 150px 96px; gap: var(--s3); align-items: center;
 }
 .pbx-taskhdr {
   font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
   color: var(--muted); padding: 0 4px var(--s2);
 }
+
+/* Drag affordance. The grip is the only draggable element in a row, so the name
+   and date inputs stay freely editable (a draggable input would swallow text
+   selection). Reordering is drag-only now — the ↑/↓ step arrows are gone. */
+.pbx-grip {
+  flex: none; display: inline-grid; place-items: center; width: 20px; height: 26px;
+  color: var(--muted); cursor: grab; user-select: none; font-size: 14px; line-height: 1;
+  border-radius: 6px;
+}
+.pbx-grip:hover { color: var(--fg); background: var(--sunken); }
+.pbx-grip:active { cursor: grabbing; }
+.pbx-phase.is-dragging, .pbx-task.is-dragging { opacity: 0.45; }
 .pbx-task { padding: 2px 0; }
 .pbx-task-name, .pbx-date {
   border: 1px solid var(--outline); background: var(--paper); border-radius: 6px; padding: 7px 9px; color: var(--fg);
