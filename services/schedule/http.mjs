@@ -154,6 +154,15 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
     } catch (err) { return errorBody(err); }
   }
 
+  // POST /projects/:projectId/plan-versions:author — direct plan authoring, the
+  // "build it here" route (LINA-228, ADR-0017). Either party; JSON body { stages }.
+  async function authorPlan({ session, params, body }) {
+    try {
+      const out = await planVersion.authorPlan(params.projectId, actorOf(session), body ?? {});
+      return { status: 201, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
   // ── Slice B3 materials & budget movement (LINA-217) — D14–D16 ───────────────
 
   // GET /projects/:projectId/record (D14) — the 4-tab live record projection
@@ -200,6 +209,6 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
 
   return { getPlan, addStage, getStage, updateStage, reportProgress,
     inspectPlanImport, columnsPlanImport, previewPlanImport, confirmPlanImport,
-    withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan,
+    withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan, authorPlan,
     getRecord, getStageMaterials, authorMaterials, swapMaterial, getBudgetMovement };
 }

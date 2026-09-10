@@ -523,5 +523,178 @@ export function createPlanVersionService({ store, ledger, identity }) {
     return edits;
   }
 
-  return { getPlan, withdraw, accept, reject, requestChanges };
+  // ── POST …/plan-versions:author (LINA-228, ADR-0017) ──────────────────────
+  // Direct plan authoring — the "build it here" route (pen D7 Route 2). Mirrors
+  // the import :confirm spine (plan-import.mjs) exactly, minus the spreadsheet
+  // parser and the plan_import header: a WBS tree authored in the browser lands
+  // as a proposed v1 (source_import_id = null) the OTHER party reviews, so the
+  // tamper-evidence discipline is identical — one plan_proposed event in the same
+  // transaction as the projection. No new migration, no new status.
+  //
+  // Contract: docs/architecture/slice-direct-plan-authoring-contract.md.
+  async function authorPlan(projectId, actorPartyId, { stages } = {}) {
+    // Either party may author (PROPOSE_PLAN is on both roles, ADR-0004 / ADR-0017
+    // §3); the review flow is self-protecting (REVIEW_PLAN denies the proposer).
+    await identity.authorize({ actorPartyId, action: ACTION.PROPOSE_PLAN, projectId });
+
+    const order = validateAuthoredStages(stages);
+
+    // One open proposal per project (B2 contract §1). Checked here for a clean
+    // 409, and enforced by the plan_version_one_open_per_project unique index —
+    // a racing insert that trips it maps to the same 409 below.
+    if (await store.getOpenPlanVersion(projectId)) {
+      throw new DomainError(409, 'open_plan_exists',
+        'this project already has an open (proposed) plan — withdraw it before authoring a new plan');
+    }
+
+    const occurredAt = now();
+    const versionId = randomUUID();
+    // Deterministic ids up front so the pre-order stays stable across the append.
+    const ids = order.map(() => randomUUID());
+
+    const write = async (tx) => {
+      const versionNo = await store.nextPlanVersionNo(projectId);
+
+      // 1. The one proposal event, appended FIRST: the authorship stamp
+      //    (append-only, INSERT only) needs its audit_event_id.
+      const proposed = await ledger.append(tx, {
+        projectId,
+        type: 'plan_proposed',
+        actorPartyId,
+        occurredAt,
+        payload: {
+          planVersionId: versionId,
+          versionNo,
+          sourceImportId: null,
+          supersedesVersionId: null,
+          stageCount: order.length,
+        },
+      });
+
+      // 2. The version envelope — authored from scratch, no import, no supersede.
+      await store.insertPlanVersion(tx, {
+        id: versionId,
+        project_id: projectId,
+        version_no: versionNo,
+        status: 'proposed',
+        source_import_id: null,
+        supersedes_version_id: null,
+        proposed_by_party_id: actorPartyId,
+        created_at: occurredAt,
+        frozen_at: null,
+      });
+
+      // 3. The author's authorship ('proposed') stamp.
+      await store.insertPlanAcceptance(tx, {
+        id: randomUUID(),
+        plan_version_id: versionId,
+        project_id: projectId,
+        party_id: actorPartyId,
+        kind: 'proposed',
+        stamped_at: occurredAt,
+        audit_event_id: proposed.id,
+      });
+
+      // 4. Stage rows, parents before children (pre-order), positions appended
+      //    after any existing stages so plan order stays deterministic.
+      const base = await store.maxStagePosition(projectId);
+      let rootCount = 0;
+      for (let i = 0; i < order.length; i += 1) {
+        const node = order[i];
+        if (node.parentIndex == null) rootCount += 1;
+        await store.insertStage(tx, {
+          id: ids[i],
+          project_id: projectId,
+          name: node.name,
+          position: base + i + 1,
+          parent_id: node.parentIndex == null ? null : ids[node.parentIndex],
+          trade: node.trade,
+          import_id: null,
+          source_row_ref: null,
+          scope_note: null,
+          planned_start_date: node.plannedStartDate,
+          planned_end_date: node.plannedEndDate,
+          planned_cost_cents: node.plannedCostCents,
+          plan_version_id: versionId,
+          created_at: occurredAt,
+          updated_at: occurredAt,
+        });
+      }
+
+      return {
+        planVersionId: versionId,
+        versionNo,
+        status: 'proposed',
+        stageCount: order.length,
+        rootCount,
+        auditEventId: proposed.id,
+      };
+    };
+
+    try {
+      return await store.transaction(write);
+    } catch (err) {
+      // A concurrent author/import that won the one-open race trips the partial
+      // unique index — surface it as the same clean 409, never a 500.
+      if (err && err.code === '23505' && err.constraint === 'plan_version_one_open_per_project') {
+        throw new DomainError(409, 'open_plan_exists',
+          'this project already has an open (proposed) plan — withdraw it before authoring a new plan');
+      }
+      throw err;
+    }
+  }
+
+  // Validate the authored WBS tree and flatten it to a pre-order list with a
+  // parentIndex back-pointer (parents always precede their children). Two levels
+  // only — a sub-action may not carry children (the model's self-ref FK permits
+  // deeper nesting; this slice does not, matching the B1 parser).
+  function validateAuthoredStages(stages) {
+    if (!Array.isArray(stages) || stages.length === 0) {
+      throw new DomainError(400, 'empty_plan', 'stages is required (a non-empty array of actions)');
+    }
+    const order = [];
+    const pushNode = (raw, parentIndex, depth) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new DomainError(400, 'invalid_stages', 'each stage must be an object');
+      }
+      const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+      if (!name) {
+        throw new DomainError(400, 'invalid_name', 'every stage needs a non-empty name');
+      }
+      if (name.length > 200) {
+        throw new DomainError(400, 'invalid_name', 'a stage name must be ≤ 200 chars');
+      }
+      let trade = null;
+      if (raw.trade != null) {
+        if (typeof raw.trade !== 'string' || raw.trade.length > 120) {
+          throw new DomainError(400, 'invalid_stages', 'trade must be a string ≤ 120 chars or null');
+        }
+        trade = raw.trade.trim() || null;
+      }
+      const index = order.length;
+      order.push({
+        name,
+        parentIndex,
+        trade,
+        plannedStartDate: normalizeDate(raw.plannedStartDate ?? null, 'plannedStartDate'),
+        plannedEndDate: normalizeDate(raw.plannedEndDate ?? null, 'plannedEndDate'),
+        plannedCostCents: raw.plannedCostCents == null ? null : normalizeCents(raw.plannedCostCents),
+      });
+      const children = raw.children;
+      if (children !== undefined && children !== null) {
+        if (!Array.isArray(children)) {
+          throw new DomainError(400, 'invalid_stages', 'children must be an array');
+        }
+        if (depth >= 1 && children.length > 0) {
+          throw new DomainError(400, 'too_deep',
+            'the plan is two levels only — a sub-action cannot have its own children');
+        }
+        for (const child of children) pushNode(child, index, depth + 1);
+      }
+    };
+    for (const root of stages) pushNode(root, null, 0);
+    return order;
+  }
+
+  return { getPlan, withdraw, accept, reject, requestChanges, authorPlan };
 }

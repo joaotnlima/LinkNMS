@@ -1,0 +1,84 @@
+/* Direct plan authoring — "Build the plan" editor (LINA-228, ADR-0017).
+   Tokens only (globals/tokens.css); it rides the same palette as plan-import /
+   plan-baseline so the three plan surfaces read as one. */
+
+.pbx { display: flex; flex-direction: column; gap: var(--s4); max-width: 1080px; }
+
+.pbx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s4); }
+.pbx-eyebrow {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--plan-baseline); margin: 0 0 var(--s2);
+}
+.pbx-title { margin: 0 0 var(--s2); font-size: 28px; line-height: 1.15; }
+.pbx-lede { margin: 0; color: var(--muted); max-width: 68ch; }
+.pbx-draft {
+  flex: none; align-self: flex-start; white-space: nowrap;
+  padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  color: var(--warn-fg); background: var(--warn-bg); border: 1px solid var(--warn-bd);
+}
+
+.pbx-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.pbx-count { color: var(--muted); }
+
+.pbx-phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s4); }
+.pbx-phase {
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl); overflow: hidden; background: var(--paper);
+}
+.pbx-phase-hd {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s3); background: var(--sunken); border-bottom: 1px solid var(--outline);
+}
+.pbx-phase-n {
+  flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px;
+  border-radius: 999px; background: var(--plan-baseline); color: #fff; font-size: 13px; font-weight: 700;
+}
+.pbx-phase-name {
+  flex: 1 1 auto; min-width: 0; font-size: 16px; font-weight: 600;
+  border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 6px 8px; color: var(--fg);
+}
+.pbx-phase-name:hover { border-color: var(--outline); }
+.pbx-phase-name:focus { outline: none; border-color: var(--plan-baseline); background: var(--paper); }
+
+.pbx-tasks { padding: var(--s3); display: flex; flex-direction: column; gap: 2px; }
+.pbx-taskhdr, .pbx-task {
+  display: grid; grid-template-columns: 1fr 150px 150px 96px; gap: var(--s3); align-items: center;
+}
+.pbx-taskhdr {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--muted); padding: 0 4px var(--s2);
+}
+.pbx-task { padding: 2px 0; }
+.pbx-task-name, .pbx-date {
+  border: 1px solid var(--outline); background: var(--paper); border-radius: 6px; padding: 7px 9px; color: var(--fg);
+  font-size: 14px; min-width: 0;
+}
+.pbx-task-name:focus, .pbx-date:focus { outline: none; border-color: var(--plan-baseline); }
+
+.pbx-rowctl { display: inline-flex; gap: 4px; justify-content: flex-end; }
+.pbx-col-ctl { }
+.pbx-icon {
+  width: 28px; height: 28px; display: inline-grid; place-items: center;
+  border: 1px solid var(--outline); background: var(--paper); border-radius: 6px; color: var(--muted);
+  cursor: pointer; font-size: 13px; line-height: 1;
+}
+.pbx-icon:hover:not(:disabled) { border-color: var(--outline-strong); color: var(--fg); }
+.pbx-icon:disabled { opacity: 0.4; cursor: default; }
+.pbx-del:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+
+.pbx-addtask {
+  align-self: flex-start; margin-top: var(--s2);
+  border: 1px dashed var(--outline); background: transparent; color: var(--plan-baseline);
+  border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px; font-weight: 600;
+}
+.pbx-addtask:hover:not(:disabled) { border-color: var(--plan-baseline); }
+.pbx-addtask:disabled { opacity: 0.5; cursor: default; }
+
+.pbx-actions { display: flex; gap: var(--s3); justify-content: flex-end; align-items: center; }
+.pbx-open { color: var(--warn-fg); }
+.pbx-foot { color: var(--muted); max-width: 68ch; }
+
+@media (max-width: 720px) {
+  .pbx-taskhdr { display: none; }
+  .pbx-task { grid-template-columns: 1fr; gap: var(--s2); }
+  .pbx-rowctl { justify-content: flex-start; }
+}
