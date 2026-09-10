@@ -168,6 +168,17 @@ export function createInMemoryStore() {
     return { ...stored };
   }
 
+  // Mirrors the DB stage_freeze_delete_guard (LINA-230): a stage on a
+  // frozen/terminal version can never be deleted; a draft's (or open proposal's)
+  // stages may. Same terminal set as assertStageMutable.
+  function deleteStagesByPlanVersion(_tx, planVersionId) {
+    for (const s of [...stages.values()]) {
+      if (s.plan_version_id !== planVersionId) continue;
+      assertStageMutable(s.plan_version_id);
+      stages.delete(s.id);
+    }
+  }
+
   function getStage(id) {
     const r = stages.get(id);
     return r ? { ...r } : null;
@@ -299,8 +310,24 @@ export function createInMemoryStore() {
     }
   }
 
+  // Mirrors plan_version_one_draft_per_project: at most ONE 'draft' per project
+  // (the single resumable workspace, LINA-230). The caller keeps the invariant by
+  // replacing the draft's stages in place rather than inserting a second draft.
+  function assertOneDraftPerProject(row) {
+    if (row.status !== 'draft') return;
+    if (versions.some((v) => v.project_id === row.project_id && v.status === 'draft')) {
+      const err = new Error(
+        `duplicate key value violates unique constraint "plan_version_one_draft_per_project"`,
+      );
+      err.code = '23505';
+      err.constraint = 'plan_version_one_draft_per_project';
+      throw err;
+    }
+  }
+
   function insertPlanVersion(_tx, row) {
     assertOneOpenPerProject(row);
+    assertOneDraftPerProject(row);
     versions.push({ ...row });
     return { ...row };
   }
@@ -315,21 +342,30 @@ export function createInMemoryStore() {
     return r ? { ...r } : null;
   }
 
+  // The single draft (private workspace) for a project, or null (LINA-230).
+  function getDraftPlanVersion(projectId) {
+    const r = versions.find((x) => x.project_id === projectId && x.status === 'draft');
+    return r ? { ...r } : null;
+  }
+
   // version_no is assigned server-side (mirroring the append-txn advisory lock);
-  // the next number is max(existing)+1, seeded 1 when none exists.
+  // the next number is max(existing)+1, seeded 1 when none exists. Drafts carry a
+  // NULL version_no (assigned at :propose) and are skipped (LINA-230).
   function nextPlanVersionNo(projectId) {
     const nums = versions
-      .filter((x) => x.project_id === projectId)
+      .filter((x) => x.project_id === projectId && x.version_no != null)
       .map((x) => x.version_no);
     return nums.length === 0 ? 1 : Math.max(...nums) + 1;
   }
 
-  // The only mutation to a plan_version envelope: status + (on freeze) frozen_at.
-  function updatePlanVersionStatus(_tx, id, { status, frozenAt }) {
+  // The only mutation to a plan_version envelope: status + (on freeze) frozen_at +
+  // (on propose) version_no. versionNo omitted leaves the number untouched.
+  function updatePlanVersionStatus(_tx, id, { status, frozenAt, versionNo }) {
     const r = versions.find((x) => x.id === id);
     if (!r) return null;
     r.status = status;
     if (frozenAt !== undefined) r.frozen_at = frozenAt;
+    if (versionNo !== undefined && versionNo !== null) r.version_no = versionNo;
     return { ...r };
   }
 
@@ -459,7 +495,8 @@ export function createInMemoryStore() {
     insertStageDependency, listStageDependencies,
     insertPlanImport, getPlanImportByIdempotencyKey, importStageCounts,
     insertProgress, listProgressByStage, latestProgressByProject,
-    insertPlanVersion, getPlanVersion, getOpenPlanVersion, nextPlanVersionNo,
+    insertPlanVersion, getPlanVersion, getOpenPlanVersion, getDraftPlanVersion,
+    deleteStagesByPlanVersion, nextPlanVersionNo,
     updatePlanVersionStatus, listPlanVersions,
     insertPlanAcceptance, listPlanAcceptances, getPlanAcceptance,
     upsertProjectBaseline, getProjectBaseline,

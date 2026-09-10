@@ -93,6 +93,33 @@ export function emptyPhase(name = ''): PhaseDraft {
 
 export { emptyTask };
 
+// ── Hydrating an existing draft back into the editor (LINA-230) ──────────────
+// The server returns a saved draft as a WBS tree (PlanStageNode-shaped) through
+// GET /plan. "Keep editing" re-opens the editor on THAT draft rather than on the
+// skeleton, so the author resumes exactly where they saved. Dates come back as
+// wire dates (null) and become the editor's raw '' strings.
+
+interface DraftStageNode {
+  name: string;
+  plannedStartDate?: string | null;
+  plannedEndDate?: string | null;
+  children?: DraftStageNode[] | null;
+}
+
+/** Turn a saved draft's stage tree into the editor's phase/task model. */
+export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
+  return stages.map((p) => ({
+    key: newKey('p'),
+    name: p.name,
+    tasks: (p.children ?? []).map((t) => ({
+      key: newKey('t'),
+      name: t.name,
+      start: t.plannedStartDate ?? '',
+      end: t.plannedEndDate ?? '',
+    })),
+  }));
+}
+
 // ── Pure draft operations (the editor's "organise tasks" vocabulary) ─────────
 // Every operation returns a NEW array (no mutation), so React state updates and
 // undo stay honest and the functions are trivially testable.
@@ -236,25 +263,29 @@ export function toWire(phases: PhaseDraft[]): AuthoredNode[] {
     stages.push({ name, children });
   }
   if (stages.length === 0) {
-    throw new PlanAuthorError('empty_plan', 'Add at least one phase before creating the plan.');
+    throw new PlanAuthorError('empty_plan', 'Add at least one phase before saving the plan.');
   }
   return stages;
 }
 
 export interface AuthorResult {
   planVersionId: string;
-  versionNo: number;
-  status: 'proposed';
+  /** null while drafting — a draft is unnumbered until it is sent for approval. */
+  versionNo: number | null;
+  status: 'draft';
   stageCount: number;
   rootCount: number;
   auditEventId: string;
 }
 
 /**
- * POST /api/v1/projects/:id/plan-versions:author — commit the authored plan as a
- * proposed v1 (contract §0–§3). Only `{ stages }` crosses the wire; the actor is
- * the session. A refusal comes back as a typed PlanAuthorError so the editor can
- * react to the KIND (open_plan_exists sends the author to the live plan).
+ * POST /api/v1/projects/:id/plan-versions:author — save the authored plan as a
+ * private DRAFT (LINA-230; contract §0–§3). Only `{ stages }` crosses the wire;
+ * the actor is the session. Saving is NOT sending for approval — the draft is
+ * invisible to the other party until `:propose`. Re-saving replaces the single
+ * draft in place. A refusal comes back as a typed PlanAuthorError so the editor
+ * can react to the KIND (open_plan_exists / draft_exists send the author to the
+ * live plan).
  */
 export async function authorPlan(projectId: string, stages: AuthoredNode[]): Promise<AuthorResult> {
   const res = await fetch(

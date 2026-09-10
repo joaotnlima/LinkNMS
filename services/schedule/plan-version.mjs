@@ -115,14 +115,30 @@ export function createPlanVersionService({ store, ledger, identity }) {
     const versions = await store.listPlanVersions(projectId);
     const baseline = await store.getProjectBaseline(projectId);
 
-    const open = versions.find((v) => v.status === 'proposed');
-    // Zero open proposal → the agreed baseline is the plan. Return the accepted
-    // version as `current` so the plan surface never disappears once both parties
-    // agree (D13; LINA-215). The FE keys every affordance off `status`: anything
-    // non-'proposed' renders read-only, so no contract change is needed.
-    const fallbackAccepted = open ? null : versions.find((v) => v.status === 'accepted');
-    const currentSource = open ?? fallbackAccepted ?? null;
-    const others = versions.filter((v) => v !== currentSource);
+    // A DRAFT is the author's private workspace (LINA-230): it is surfaced as
+    // `current` to its author ONLY, and only when no open proposal stands in
+    // front of it. The other party never sees a draft — not as current, not in
+    // history. Everything numbered (proposed and onward) is the shared record.
+    const numbered = versions.filter((v) => v.status !== 'draft');
+    const liveDraft = versions.find((v) => v.status === 'draft') ?? null;
+
+    const open = numbered.find((v) => v.status === 'proposed');
+    // Zero open proposal → either the author's own draft (editable, private) or,
+    // failing that, the agreed baseline is the plan. Return the accepted version
+    // as `current` so the plan surface never disappears once both parties agree
+    // (D13; LINA-215). The FE keys every affordance off `status`: anything
+    // non-'proposed' renders read-only (a draft gets its own author-only editing
+    // controls), so no further contract change is needed.
+    let currentSource = null;
+    if (open) {
+      currentSource = open;
+    } else if (liveDraft && actorPartyId && actorPartyId === liveDraft.proposed_by_party_id) {
+      currentSource = liveDraft;
+    } else {
+      currentSource = numbered.find((v) => v.status === 'accepted') ?? null;
+    }
+    // History is the shared record only — a draft is never tidied into it.
+    const others = numbered.filter((v) => v !== currentSource);
 
     const view = async (v) => ({
       ...(await versionView(projectId, v)),
@@ -523,13 +539,51 @@ export function createPlanVersionService({ store, ledger, identity }) {
     return edits;
   }
 
-  // ── POST …/plan-versions:author (LINA-228, ADR-0017) ──────────────────────
-  // Direct plan authoring — the "build it here" route (pen D7 Route 2). Mirrors
-  // the import :confirm spine (plan-import.mjs) exactly, minus the spreadsheet
-  // parser and the plan_import header: a WBS tree authored in the browser lands
-  // as a proposed v1 (source_import_id = null) the OTHER party reviews, so the
-  // tamper-evidence discipline is identical — one plan_proposed event in the same
-  // transaction as the projection. No new migration, no new status.
+  // Re-insert an authored WBS tree's stage rows onto a version, parents before
+  // children (pre-order), positions appended after any existing stages so plan
+  // order stays deterministic. Returns { rootCount } for the response summary.
+  async function insertAuthoredStages(tx, projectId, versionId, order, occurredAt) {
+    const ids = order.map(() => randomUUID());
+    const base = await store.maxStagePosition(projectId);
+    let rootCount = 0;
+    for (let i = 0; i < order.length; i += 1) {
+      const node = order[i];
+      if (node.parentIndex == null) rootCount += 1;
+      await store.insertStage(tx, {
+        id: ids[i],
+        project_id: projectId,
+        name: node.name,
+        position: base + i + 1,
+        parent_id: node.parentIndex == null ? null : ids[node.parentIndex],
+        trade: node.trade,
+        import_id: null,
+        source_row_ref: null,
+        scope_note: null,
+        planned_start_date: node.plannedStartDate,
+        planned_end_date: node.plannedEndDate,
+        planned_cost_cents: node.plannedCostCents,
+        plan_version_id: versionId,
+        created_at: occurredAt,
+        updated_at: occurredAt,
+      });
+    }
+    return { rootCount };
+  }
+
+  // ── POST …/plan-versions:author (LINA-228/LINA-230, ADR-0017 annex) ────────
+  // Direct plan authoring — the "build it here" route (pen D7 Route 2). Authoring
+  // is PRIVATE drafting: the WBS tree authored in the browser lands as a DRAFT
+  // (version_no null, source_import_id null), NOT a proposal. The other party sees
+  // nothing; no approval is requested. Saving again REPLACES the single draft in
+  // place (one draft per project). The tamper-evidence discipline is unchanged —
+  // every save is one `plan_drafted` event in the same transaction as the
+  // projection write. Sending for approval is a separate act (`:propose`).
+  //
+  // No plan_acceptance stamp is written while drafting: plan_acceptance is
+  // append-only and its UNIQUE(plan_version_id, party_id) + the freeze pairing
+  // mean the drafter's authorship stamp must be the 'proposed' stamp written at
+  // :propose. Draft authorship is recorded by the plan_drafted event + the
+  // version's proposed_by_party_id (the "author").
   //
   // Contract: docs/architecture/slice-direct-plan-authoring-contract.md.
   async function authorPlan(projectId, actorPartyId, { stages } = {}) {
@@ -539,94 +593,144 @@ export function createPlanVersionService({ store, ledger, identity }) {
 
     const order = validateAuthoredStages(stages);
 
-    // One open proposal per project (B2 contract §1). Checked here for a clean
-    // 409, and enforced by the plan_version_one_open_per_project unique index —
-    // a racing insert that trips it maps to the same 409 below.
+    // Can't draft while a proposal is live: a single authoring thread per project
+    // (B2 contract §1). Withdraw the open proposal first.
     if (await store.getOpenPlanVersion(projectId)) {
       throw new DomainError(409, 'open_plan_exists',
         'this project already has an open (proposed) plan — withdraw it before authoring a new plan');
     }
 
+    const existingDraft = await store.getDraftPlanVersion(projectId);
+    // A draft is its author's private workspace — only the drafter may replace it.
+    if (existingDraft && existingDraft.proposed_by_party_id !== actorPartyId) {
+      throw new DomainError(409, 'draft_exists',
+        'this project already has a plan being drafted');
+    }
+
     const occurredAt = now();
-    const versionId = randomUUID();
-    // Deterministic ids up front so the pre-order stays stable across the append.
-    const ids = order.map(() => randomUUID());
+    const versionId = existingDraft ? existingDraft.id : randomUUID();
 
     const write = async (tx) => {
-      const versionNo = await store.nextPlanVersionNo(projectId);
-
-      // 1. The one proposal event, appended FIRST: the authorship stamp
-      //    (append-only, INSERT only) needs its audit_event_id.
-      const proposed = await ledger.append(tx, {
+      // The draft event, one per save (an honest "saved at T" on the ledger). It
+      // carries no version_no — a draft is unnumbered until it is proposed.
+      const drafted = await ledger.append(tx, {
         projectId,
-        type: 'plan_proposed',
+        type: 'plan_drafted',
         actorPartyId,
         occurredAt,
         payload: {
           planVersionId: versionId,
-          versionNo,
           sourceImportId: null,
-          supersedesVersionId: null,
           stageCount: order.length,
         },
       });
 
-      // 2. The version envelope — authored from scratch, no import, no supersede.
-      await store.insertPlanVersion(tx, {
-        id: versionId,
-        project_id: projectId,
-        version_no: versionNo,
-        status: 'proposed',
-        source_import_id: null,
-        supersedes_version_id: null,
-        proposed_by_party_id: actorPartyId,
-        created_at: occurredAt,
-        frozen_at: null,
+      if (existingDraft) {
+        // Re-save: replace the draft's stages in place (guarded DELETE — only a
+        // draft's stages are deletable; a frozen baseline's never are).
+        await store.deleteStagesByPlanVersion(tx, versionId);
+      } else {
+        // First save: the draft envelope — unnumbered, no import, no supersede.
+        await store.insertPlanVersion(tx, {
+          id: versionId,
+          project_id: projectId,
+          version_no: null,
+          status: 'draft',
+          source_import_id: null,
+          supersedes_version_id: null,
+          proposed_by_party_id: actorPartyId,
+          created_at: occurredAt,
+          frozen_at: null,
+        });
+      }
+
+      const { rootCount } = await insertAuthoredStages(tx, projectId, versionId, order, occurredAt);
+
+      return {
+        planVersionId: versionId,
+        versionNo: null,
+        status: 'draft',
+        stageCount: order.length,
+        rootCount,
+        auditEventId: drafted.id,
+      };
+    };
+
+    try {
+      return await store.transaction(write);
+    } catch (err) {
+      // A concurrent author that won the one-draft race trips the partial unique
+      // index — surface it as a clean 409, never a 500.
+      if (err && err.code === '23505' && err.constraint === 'plan_version_one_draft_per_project') {
+        throw new DomainError(409, 'draft_exists',
+          'this project already has a plan being drafted');
+      }
+      throw err;
+    }
+  }
+
+  // ── POST …/plan-versions/:id:propose (LINA-230) — "Send for approval" ──────
+  // The explicit second act the founder asked for: a draft → proposed, in one
+  // transaction. This is where a plan FIRST becomes visible to the other party
+  // and where it FIRST requests approval. version_no is assigned here (the draft
+  // was unnumbered), one plan_proposed event is appended, the status flips, and
+  // the drafter's single authorship ('proposed') stamp is written — the same
+  // stamp that later pairs with the reviewer's accept to freeze the baseline.
+  async function proposePlan(versionId, actorPartyId) {
+    const version = await getVersionOr404(versionId);
+    // PROPOSE_PLAN is the proposer's own action; only the drafter may send their
+    // own draft for approval (same row-is-authority rule as withdraw).
+    await identity.authorize({ actorPartyId, action: ACTION.PROPOSE_PLAN, projectId: version.project_id });
+    if (actorPartyId !== version.proposed_by_party_id) {
+      throw new DomainError(403, 'forbidden', 'only the drafting party may send this plan for approval');
+    }
+    if (version.status !== 'draft') {
+      throw new DomainError(409, 'not_draft',
+        'only a draft may be sent for approval');
+    }
+
+    const occurredAt = now();
+
+    const write = async (tx) => {
+      const versionNo = await store.nextPlanVersionNo(version.project_id);
+      const stageCount = await store.stageCountByPlanVersion(version.id);
+
+      // 1. The proposal event, appended FIRST: the authorship stamp (append-only,
+      //    INSERT only) needs its audit_event_id. stageCount rides the payload so
+      //    the hash reproduces on verify.
+      const proposed = await ledger.append(tx, {
+        projectId: version.project_id,
+        type: 'plan_proposed',
+        actorPartyId,
+        occurredAt,
+        payload: {
+          planVersionId: version.id,
+          versionNo,
+          sourceImportId: null,
+          supersedesVersionId: null,
+          stageCount,
+        },
       });
 
-      // 3. The author's authorship ('proposed') stamp.
+      // 2. Flip draft → proposed and stamp the version number in one mutation.
+      await store.updatePlanVersionStatus(tx, version.id, { status: 'proposed', versionNo });
+
+      // 3. The author's authorship ('proposed') stamp — the first of the two that
+      //    freeze the baseline.
       await store.insertPlanAcceptance(tx, {
         id: randomUUID(),
-        plan_version_id: versionId,
-        project_id: projectId,
+        plan_version_id: version.id,
+        project_id: version.project_id,
         party_id: actorPartyId,
         kind: 'proposed',
         stamped_at: occurredAt,
         audit_event_id: proposed.id,
       });
 
-      // 4. Stage rows, parents before children (pre-order), positions appended
-      //    after any existing stages so plan order stays deterministic.
-      const base = await store.maxStagePosition(projectId);
-      let rootCount = 0;
-      for (let i = 0; i < order.length; i += 1) {
-        const node = order[i];
-        if (node.parentIndex == null) rootCount += 1;
-        await store.insertStage(tx, {
-          id: ids[i],
-          project_id: projectId,
-          name: node.name,
-          position: base + i + 1,
-          parent_id: node.parentIndex == null ? null : ids[node.parentIndex],
-          trade: node.trade,
-          import_id: null,
-          source_row_ref: null,
-          scope_note: null,
-          planned_start_date: node.plannedStartDate,
-          planned_end_date: node.plannedEndDate,
-          planned_cost_cents: node.plannedCostCents,
-          plan_version_id: versionId,
-          created_at: occurredAt,
-          updated_at: occurredAt,
-        });
-      }
-
       return {
-        planVersionId: versionId,
+        planVersionId: version.id,
         versionNo,
         status: 'proposed',
-        stageCount: order.length,
-        rootCount,
         auditEventId: proposed.id,
       };
     };
@@ -634,11 +738,11 @@ export function createPlanVersionService({ store, ledger, identity }) {
     try {
       return await store.transaction(write);
     } catch (err) {
-      // A concurrent author/import that won the one-open race trips the partial
-      // unique index — surface it as the same clean 409, never a 500.
+      // A racing import/author that opened a proposal first trips the one-open
+      // index when this draft flips to proposed — a clean 409, never a 500.
       if (err && err.code === '23505' && err.constraint === 'plan_version_one_open_per_project') {
         throw new DomainError(409, 'open_plan_exists',
-          'this project already has an open (proposed) plan — withdraw it before authoring a new plan');
+          'this project already has an open (proposed) plan — withdraw it before sending this one for approval');
       }
       throw err;
     }
@@ -696,5 +800,5 @@ export function createPlanVersionService({ store, ledger, identity }) {
     return order;
   }
 
-  return { getPlan, withdraw, accept, reject, requestChanges, authorPlan };
+  return { getPlan, withdraw, accept, reject, requestChanges, authorPlan, proposePlan };
 }

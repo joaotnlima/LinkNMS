@@ -32,12 +32,14 @@
 // they are left out, and the reasoning has a real home already: a decision on the
 // record. Noted for B3, not silently dropped.
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { barGeometry, dateRange, ganttScale, preorder, type GanttScale } from '@/lib/plan-import';
 import {
   PlanActionError, StageEditError,
-  acceptVersion, awaitedPartyId, canReview, canWithdraw, describeEdit, diffEdits, draftOf, rejectVersion,
+  acceptVersion, awaitedPartyId, canReview, canWithdraw, describeEdit, diffEdits, draftOf,
+  proposeVersion, rejectVersion,
   requestChanges, stageCounts, stamps, toRows, totalAfter, totalCents, withdrawVersion,
   type PlanBaselineView, type PlanVersionSummary, type PlanVersionView, type StageDraft,
   type StageEdit, type StageRow,
@@ -55,7 +57,7 @@ interface Props {
   parties: PartyRef[];
 }
 
-type Busy = null | 'withdraw' | 'accept' | 'reject' | 'request-changes';
+type Busy = null | 'withdraw' | 'accept' | 'reject' | 'request-changes' | 'propose';
 
 export function PlanBaseline({ projectId, view, actorPartyId, parties }: Props) {
   const router = useRouter();
@@ -108,6 +110,10 @@ export function PlanBaseline({ projectId, view, actorPartyId, parties }: Props) 
 
   const mayWithdraw = current ? canWithdraw(current, actorPartyId) : false;
   const mayReview = current ? canReview(current, actorPartyId) : false;
+  // A draft is surfaced by the server to its author ONLY (LINA-230); the gate is
+  // courtesy, not the check — :propose refuses anyone but the drafter server-side.
+  const isDraft = current?.status === 'draft';
+  const mayPropose = isDraft && !!actorPartyId && actorPartyId === current!.proposedByPartyId;
 
   return (
     <div className="pb">
@@ -121,10 +127,12 @@ export function PlanBaseline({ projectId, view, actorPartyId, parties }: Props) 
 
       {current ? (
         <>
-          <ProposalBanner current={current} mayReview={mayReview} nameOf={nameOf} awaited={awaitedName(current, parties, nameOf)} />
+          {isDraft
+            ? <DraftBanner />
+            : <ProposalBanner current={current} mayReview={mayReview} nameOf={nameOf} awaited={awaitedName(current, parties, nameOf)} />}
 
           <div className="pb-head">
-            <h1 className="pb-title">Plan · version {current.versionNo}</h1>
+            <h1 className="pb-title">{isDraft ? 'Plan · draft' : `Plan · version ${current.versionNo}`}</h1>
             <StatusBadge status={current.status} mine={mayReview} />
           </div>
 
@@ -155,11 +163,23 @@ export function PlanBaseline({ projectId, view, actorPartyId, parties }: Props) 
             />
           ) : null}
 
-          <AcceptancePanel current={current} parties={parties} nameOf={nameOf} />
+          {isDraft
+            ? <DraftPanel />
+            : <AcceptancePanel current={current} parties={parties} nameOf={nameOf} />}
 
           {error ? <p className="form-error" role="alert">{error}</p> : null}
 
-          {!editing ? (
+          {isDraft && mayPropose ? (
+            <div className="pb-actions">
+              <button type="button" className="btn primary" disabled={busy !== null}
+                onClick={() => run('propose', () => proposeVersion(projectId, current.id))}>
+                {busy === 'propose' ? 'Sending…' : 'Send for approval'}
+              </button>
+              <Link className="btn" href={`/projects/${projectId}/plan/build`}>Keep editing</Link>
+            </div>
+          ) : null}
+
+          {!isDraft && !editing ? (
             <div className="pb-actions">
               {mayReview ? (
                 <>
@@ -291,11 +311,46 @@ function ProposalBanner({
 }
 
 function StatusBadge({ status, mine }: { status: PlanVersionSummary['status']; mine: boolean }) {
-  const label = status === 'proposed'
-    ? (mine ? 'Awaiting your decision' : 'Proposed')
-    : status[0].toUpperCase() + status.slice(1);
+  const label = status === 'draft'
+    ? 'Draft — not sent'
+    : status === 'proposed'
+      ? (mine ? 'Awaiting your decision' : 'Proposed')
+      : status[0].toUpperCase() + status.slice(1);
   const tone = status === 'accepted' ? 'ok' : status === 'proposed' ? 'warn' : 'neutral';
   return <span className={`badge ${tone}`}>{label}</span>;
+}
+
+// ── Draft · saved, private, not yet sent (LINA-230) ──────────────────────────
+// The author's own view of a saved-but-unproposed plan. The whole point of the
+// founder's feedback: this is visible ONLY to the author, counts as nothing
+// agreed, and requests nothing — until they deliberately Send for approval.
+
+function DraftBanner() {
+  return (
+    <section className="pb-banner" role="status">
+      <p className="pb-banner-t">Saved as a draft — only you can see it</p>
+      <p className="pb-banner-b">
+        This is your private working copy. The other party cannot see it and no approval has been
+        requested. Keep editing as much as you like; when it is ready, send it for approval.
+      </p>
+    </section>
+  );
+}
+
+function DraftPanel() {
+  return (
+    <section className="pb-acc card" aria-labelledby="pb-draft-t">
+      <h2 className="pb-acc-t" id="pb-draft-t">What happens when you send it</h2>
+      <div className="pb-onaccept">
+        <p className="grp">Send for approval</p>
+        <ul>
+          <li>The plan becomes version 1 and the other party can see and review it.</li>
+          <li>Your authorship is stamped by name and time on the shared record.</li>
+          <li>Until then nothing here is sent, and nothing counts as agreed.</li>
+        </ul>
+      </div>
+    </section>
+  );
 }
 
 // ── The plan table — the B1 preview components, reused ───────────────────────
@@ -548,8 +603,10 @@ function HistoryStrip({
 }) {
   if (history.length === 0) return null;
   // Newest first: the strip answers "how did we get here", and the last thing
-  // that happened is the part of that answer being looked for.
-  const ordered = [...history].sort((a, b) => b.versionNo - a.versionNo);
+  // that happened is the part of that answer being looked for. History is the
+  // shared record only — every entry is numbered (a draft is never here), so the
+  // ?? 0 is just to satisfy the number | null type (LINA-230).
+  const ordered = [...history].sort((a, b) => (b.versionNo ?? 0) - (a.versionNo ?? 0));
   return (
     <section className="pb-history" aria-labelledby="pb-history-t">
       <h2 className="pb-history-t grp" id="pb-history-t">The record so far</h2>

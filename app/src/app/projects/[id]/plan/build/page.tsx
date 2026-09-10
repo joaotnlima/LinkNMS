@@ -14,9 +14,10 @@
 // exactly as import does.
 import { redirect } from 'next/navigation';
 
-import { getBuild, isSignedIn } from '@/lib/api';
+import { getBuild, getPlan, isSignedIn } from '@/lib/api';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContext } from '@/server/portal-shell';
+import { hydrateDraft, type PhaseDraft } from '@/lib/plan-authoring';
 import { PlanBuildEditor } from './PlanBuildEditor';
 
 export const dynamic = 'force-dynamic';
@@ -25,8 +26,14 @@ export default async function PlanBuildPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan/build`);
 
-  const build = await getBuild(id);
+  const [build, plan] = await Promise.all([getBuild(id), getPlan(id)]);
   const shell = await buildShellContext(id, build.name);
+
+  // "Keep editing" resumes the saved draft. getPlan surfaces a draft to its
+  // author ONLY (LINA-230), so if `current` is a draft it is this signed-in
+  // party's to resume; otherwise the editor seeds the standard skeleton.
+  const draft: PhaseDraft[] | undefined =
+    plan.current?.status === 'draft' ? hydrateDraft(plan.current.stages) : undefined;
 
   return (
     <PortalShell
@@ -35,7 +42,7 @@ export default async function PlanBuildPage({ params }: { params: Promise<{ id: 
       activeBuild={{ id, name: build.name }}
       section="plan"
     >
-      <PlanBuildEditor projectId={id} />
+      <PlanBuildEditor projectId={id} initialPhases={draft} />
     </PortalShell>
   );
 }

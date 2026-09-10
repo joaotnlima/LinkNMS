@@ -428,59 +428,142 @@ const SKELETON = [
   ] },
 ];
 
-test('authorPlan: creates a proposed v1 from a WBS tree — one plan_proposed event, authorship stamp, bound stages', async () => {
+test('authorPlan: saves a DRAFT (not a proposal) — one plan_drafted event, NO stamp, unnumbered, bound stages', async () => {
   const { service, store, ledger } = build();
 
   const out = await service.authorPlan(PROJECT, GC, { stages: SKELETON });
-  assert.equal(out.status, 'proposed');
-  assert.equal(out.versionNo, 1);
+  assert.equal(out.status, 'draft');
+  assert.equal(out.versionNo, null);       // unnumbered until proposed (LINA-230)
   assert.equal(out.stageCount, 5);
   assert.equal(out.rootCount, 2);
   assert.ok(out.planVersionId && out.auditEventId);
 
-  // Exactly one ledger event for the whole authoring, typed plan_proposed.
+  // Exactly one ledger event, typed plan_drafted — NOT plan_proposed.
   const events = ledger._events.filter((e) => e.projectId === PROJECT);
   assert.equal(events.length, 1);
-  assert.equal(events[0].type, 'plan_proposed');
+  assert.equal(events[0].type, 'plan_drafted');
   assert.equal(events[0].payload.sourceImportId, null);
-  assert.equal(events[0].payload.supersedesVersionId, null);
   assert.equal(events[0].payload.stageCount, 5);
+  assert.equal(events[0].payload.versionNo, undefined); // a draft has no number
 
-  // The author's 'proposed' authorship stamp, keyed to the event.
-  const stamps = store.listPlanAcceptances(out.planVersionId);
+  // No authorship stamp is written while drafting (the 'proposed' stamp comes at
+  // :propose, pairing with the reviewer's accept to freeze).
+  assert.equal(store.listPlanAcceptances(out.planVersionId).length, 0);
+
+  // The author sees their own editable draft; the stored version is 'draft'.
+  const v = store.getPlanVersion(out.planVersionId);
+  assert.equal(v.status, 'draft');
+  assert.equal(v.version_no, null);
+  assert.equal(v.proposed_by_party_id, GC);
+
+  const mine = await service.getPlan(PROJECT, GC);
+  assert.equal(mine.current.id, out.planVersionId);
+  assert.equal(mine.current.status, 'draft');
+  assert.equal(mine.current.stages.length, 2);
+  assert.equal(mine.current.stages[0].children[0].name, '1.1 Planning & Feasibility');
+});
+
+test('authorPlan: the draft is INVISIBLE to the other party — no current, no history', async () => {
+  const { service } = build();
+  await service.authorPlan(PROJECT, GC, { stages: SKELETON });
+  const theirs = await service.getPlan(PROJECT, OWNER);
+  assert.equal(theirs.current, null);
+  assert.equal(theirs.baseline, null);
+  assert.equal(theirs.history.length, 0);
+});
+
+test('authorPlan: re-saving REPLACES the draft in place — same version, new stages, a second plan_drafted event', async () => {
+  const { service, store, ledger } = build();
+  const first = await service.authorPlan(PROJECT, GC, { stages: SKELETON });
+
+  const out = await service.authorPlan(PROJECT, GC, { stages: [
+    { name: 'Only phase', children: [{ name: 'Only task' }] },
+  ] });
+  assert.equal(out.planVersionId, first.planVersionId); // same draft row
+  assert.equal(out.status, 'draft');
+  assert.equal(out.stageCount, 2);
+
+  // The old 5 stages are gone; only the 2 re-saved remain bound to the draft.
+  assert.equal(store.listStagesByPlanVersion(first.planVersionId).length, 2);
+
+  // Two plan_drafted events (one per save) — an honest "saved at T" trail.
+  const drafted = ledger._events.filter((e) => e.type === 'plan_drafted');
+  assert.equal(drafted.length, 2);
+  // Still no stamp, still exactly one draft version for the project.
+  assert.equal(store.listPlanAcceptances(first.planVersionId).length, 0);
+  assert.equal(store._versions.filter((x) => x.status === 'draft').length, 1);
+});
+
+test('authorPlan: only the drafting party may replace the draft (other party → 409, invisible)', async () => {
+  const { service } = build();
+  await service.authorPlan(PROJECT, GC, { stages: SKELETON });
+  await assert.rejects(service.authorPlan(PROJECT, OWNER, { stages: SKELETON }),
+    (e) => e.status === 409 && e.code === 'draft_exists');
+});
+
+test('proposePlan: draft → proposed — assigns v1, one plan_proposed event, the authorship stamp, now visible', async () => {
+  const { service, store, ledger } = build();
+  const draft = await service.authorPlan(PROJECT, GC, { stages: SKELETON });
+
+  const out = await service.proposePlan(draft.planVersionId, GC);
+  assert.equal(out.status, 'proposed');
+  assert.equal(out.versionNo, 1);
+  assert.equal(out.planVersionId, draft.planVersionId);
+
+  // The draft event THEN the proposal event — distinct, in order (acceptance §4).
+  const types = ledger._events.filter((e) => e.projectId === PROJECT).map((e) => e.type);
+  assert.deepEqual(types, ['plan_drafted', 'plan_proposed']);
+
+  // The authorship 'proposed' stamp is written now, keyed to the proposal event.
+  const stamps = store.listPlanAcceptances(draft.planVersionId);
   assert.equal(stamps.length, 1);
   assert.equal(stamps[0].kind, 'proposed');
   assert.equal(stamps[0].party_id, GC);
   assert.equal(stamps[0].audit_event_id, out.auditEventId);
 
-  // Every stage is bound to the new version; the tree reads back parents→children.
-  const view = await service.getPlan(PROJECT, OWNER);
-  assert.equal(view.current.id, out.planVersionId);
-  assert.equal(view.current.status, 'proposed');
-  assert.equal(view.current.stages.length, 2);
-  assert.equal(view.current.stages[0].name, '1 · Pre-Construction');
-  assert.equal(view.current.stages[0].children.length, 2);
-  assert.equal(view.current.stages[0].children[0].name, '1.1 Planning & Feasibility');
-  // Seeded skeleton carries no dates/cost until the author fills them.
-  assert.equal(view.current.stages[0].children[0].plannedStartDate, null);
-  assert.equal(view.current.stages[0].children[0].plannedCostCents, null);
+  // Now the other party sees it and can review; v1 is numbered.
+  const theirs = await service.getPlan(PROJECT, OWNER);
+  assert.equal(theirs.current.id, draft.planVersionId);
+  assert.equal(theirs.current.status, 'proposed');
+  assert.equal(theirs.current.versionNo, 1);
+
+  // The reviewer accepts → 2nd stamp freezes the baseline.
+  const accepted = await service.accept(draft.planVersionId, OWNER);
+  assert.equal(accepted.status, 'accepted');
 });
 
-test('authorPlan: either party may author (owner too) — the reviewer is the OTHER party', async () => {
+test('proposePlan: only the drafter may propose; non-draft → 409; unknown → 404', async () => {
+  const { service } = build();
+  const draft = await service.authorPlan(PROJECT, GC, { stages: SKELETON });
+
+  await assert.rejects(service.proposePlan(draft.planVersionId, OWNER),
+    (e) => e.status === 403 && e.code === 'forbidden');
+  await assert.rejects(service.proposePlan(randomUUID(), GC), (e) => e.status === 404);
+
+  await service.proposePlan(draft.planVersionId, GC);
+  // Already proposed — proposing again is a 409, not a second proposal.
+  await assert.rejects(service.proposePlan(draft.planVersionId, GC),
+    (e) => e.status === 409 && e.code === 'not_draft');
+});
+
+test('authorPlan: either party may author (owner too) — then proposes and the OTHER party reviews', async () => {
   const { service, store } = build();
-  const out = await service.authorPlan(PROJECT, OWNER, { stages: SKELETON });
-  assert.equal(out.status, 'proposed');
-  const v = store.getPlanVersion(out.planVersionId);
+  const draft = await service.authorPlan(PROJECT, OWNER, { stages: SKELETON });
+  assert.equal(draft.status, 'draft');
+  const v = store.getPlanVersion(draft.planVersionId);
   assert.equal(v.proposed_by_party_id, OWNER);
-  // The GC (the other party) can then review it; the owner-proposer cannot.
+
+  const out = await service.proposePlan(draft.planVersionId, OWNER);
+  assert.equal(out.status, 'proposed');
+  // The GC (the other party) can then review; the owner-proposer cannot.
   await assert.rejects(service.accept(out.planVersionId, OWNER), (e) => e.status === 403);
   const afterFirst = await service.accept(out.planVersionId, GC);
-  assert.equal(afterFirst.status, 'accepted'); // 2nd stamp (author proposed + GC accepted) freezes
+  assert.equal(afterFirst.status, 'accepted');
 });
 
-test('authorPlan: optional dates/cost/trade are carried through', async () => {
+test('authorPlan: optional dates/cost/trade are carried through to the draft', async () => {
   const { service } = build();
-  const out = await service.authorPlan(PROJECT, GC, { stages: [
+  await service.authorPlan(PROJECT, GC, { stages: [
     { name: 'Roof', trade: 'Roofing', plannedStartDate: '2026-03-01', plannedEndDate: '2026-03-20', plannedCostCents: 250000,
       children: [{ name: 'Trusses', plannedStartDate: '2026-03-01', plannedEndDate: '2026-03-05' }] },
   ] });
@@ -512,18 +595,20 @@ test('authorPlan: validation — empty, nameless, too-deep, bad date', async () 
   ] }), (e) => e.status === 400 && e.code === 'invalid_plannedStartDate');
 });
 
-test('authorPlan: a second author while one proposal is open is a clean 409', async () => {
+test('authorPlan: drafting while a proposal is already open is a clean 409', async () => {
   const { service } = build();
-  await service.authorPlan(PROJECT, GC, { stages: SKELETON });
+  const draft = await service.authorPlan(PROJECT, GC, { stages: SKELETON });
+  await service.proposePlan(draft.planVersionId, GC);
   await assert.rejects(service.authorPlan(PROJECT, GC, { stages: SKELETON }),
     (e) => e.status === 409 && e.code === 'open_plan_exists');
 });
 
-test('authorPlan: the appended event extends a verifiable hash chain', async () => {
-  // Re-run the authoring through the real hash-chain helpers to prove the
-  // plan_proposed event is chainable exactly like import's (ADR-0002).
+test('authorPlan + proposePlan: the appended events extend a verifiable hash chain', async () => {
+  // Re-run through the real hash-chain helpers to prove plan_drafted and
+  // plan_proposed are chainable exactly like import's (ADR-0002).
   const { service, ledger } = build();
-  await service.authorPlan(PROJECT, GC, { stages: SKELETON });
+  const draft = await service.authorPlan(PROJECT, GC, { stages: SKELETON });
+  await service.proposePlan(draft.planVersionId, GC);
   const chain = [];
   let prev = null;
   for (const e of ledger._events) {

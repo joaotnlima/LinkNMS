@@ -51,7 +51,7 @@ export interface PlanStageNode {
   children: PlanStageNode[];
 }
 
-export type PlanVersionStatus = 'proposed' | 'withdrawn' | 'rejected' | 'superseded' | 'accepted';
+export type PlanVersionStatus = 'draft' | 'proposed' | 'withdrawn' | 'rejected' | 'superseded' | 'accepted';
 
 /** A party's stamp on a version. `kind: 'proposed'` is authorship (§2). */
 export interface PlanAcceptance {
@@ -63,7 +63,8 @@ export interface PlanAcceptance {
 
 export interface PlanVersionSummary {
   id: string;
-  versionNo: number;
+  /** null while `draft` — a draft is unnumbered until it is proposed (LINA-230). */
+  versionNo: number | null;
   status: PlanVersionStatus;
   sourceImportId: string | null;
   supersedesVersionId: string | null;
@@ -435,6 +436,18 @@ export function requestChanges(
   projectId: string, versionId: string, stages: StageEdit[],
 ): Promise<{ newVersionId: string; versionNo: number; status: 'proposed' }> {
   return post(actionUrl(projectId, versionId, 'request-changes'), { stages });
+}
+
+/**
+ * "Send for approval" (LINA-230): a draft → proposed. The first moment the other
+ * party sees the plan and the first moment approval is requested — a deliberate
+ * second act, separate from saving. No body; the actor is the session, and the
+ * server refuses anyone but the drafter (403).
+ */
+export function proposeVersion(
+  projectId: string, versionId: string,
+): Promise<{ planVersionId: string; versionNo: number; status: 'proposed' }> {
+  return post(actionUrl(projectId, versionId, 'propose'));
 }
 
 // Re-exported so a screen imports its whole plan vocabulary from one module.

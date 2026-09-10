@@ -133,3 +133,74 @@ move controls, not drag-and-drop, in this slice.
 - No migration, no new status, no new grant. The slice is additive and reversible.
 - Follow-ups (server-persisted drafts, Gantt drag, dependencies UI, assignment)
   are tracked separately and gated on real product demand.
+
+---
+
+## Annex (LINA-230, 2026-09-10) — authoring is private drafting; proposal is a second act
+
+**This annex supersedes §1's "a v1 proposal and not a stored draft" decision and
+§2's "no new migration", and amends §3.** Everything else in ADR-0017 stands.
+
+### Why
+
+Founder feedback on LINA-228:
+
+> "Once I set the plan — I am NOT already sending him to approval… I'm only saving
+> the work done."
+
+The original decision (§1) committed authoring straight to a **proposed v1**, so
+clicking "Create plan" immediately exposed the plan to the other party for review.
+That conflated two distinct acts. The founder wants authoring to be **private
+drafting** — save my work, keep editing — with **proposing** ("Send for approval")
+a separate, deliberate act. A server-persisted draft (explicitly deferred in §1)
+is now required, not optional.
+
+### The model — a `draft` status before `proposed` (migration 0005)
+
+A plan-version now has a `draft` status that precedes `proposed`:
+
+- **`:author` writes a `draft`**, emitting `plan_drafted` (NOT `plan_proposed`).
+  The draft is invisible to the other party — `getPlan` surfaces it to its author
+  only, never in history. `frozen_at` stays null; no `REVIEW_PLAN` exposure.
+- **`POST …/plan-versions/:id:propose`** — the "Send for approval" button — flips
+  `draft → proposed` in one transaction: `plan_proposed` event, status flip, and
+  the author's authorship stamp. Authorised by `PROPOSE_PLAN`; actor must be the
+  drafter (same row-is-authority rule as `:withdraw`).
+- The two-event trail is therefore `plan_drafted` (per save) **then**, later,
+  `plan_proposed` — distinct, ordered, both attributable.
+
+### Three calls the issue left to the Architect
+
+1. **No `drafted` plan_acceptance stamp** (the issue suggested one). `plan_acceptance`
+   is append-only (INSERT+SELECT, no UPDATE grant) with `UNIQUE(plan_version_id,
+   party_id)`, and the freeze pairing needs the drafter's **`proposed`** stamp. A
+   `drafted` stamp would occupy that unique slot and could only become `proposed`
+   by mutating an append-only row — a trust regression. So draft authorship is
+   recorded by the `plan_drafted` ledger event (actor) + the version's
+   `proposed_by_party_id`; the single `proposed` stamp is written at `:propose`,
+   pairing with the reviewer's accept to freeze. **Freeze logic is unchanged.**
+
+2. **`version_no` is assigned at `:propose`, NULL while `draft`** — invariant
+   `(status='draft') = (version_no IS NULL)`. Proposed plans stay numbered v1,
+   v2… with no gaps burned by drafting or re-saving, and a draft is unambiguous.
+
+3. **`:author` upserts the single draft in place** (one draft per project, partial
+   unique index `WHERE status='draft'`). Re-saving replaces the draft's stages via
+   a **scoped, trigger-guarded DELETE** on `schedule.stage`: migration 0005 grants
+   DELETE and adds `stage_freeze_delete_guard`, which mirrors `stage_freeze_guard`
+   — a frozen/terminal version's stages can **never** be deleted; a draft's (never
+   proposed, never on the shared record) may. This keeps one clean draft row (no
+   phantom superseded/orphan versions) while the audit guarantee — immutability of
+   proposed/accepted versions and the ledger — is untouched.
+
+### Authorisation (amends §3)
+
+`:propose` is the drafter's own act: `PROPOSE_PLAN` + `actor == proposed_by_party_id`.
+The reviewer still cannot propose someone else's draft (403), and `REVIEW_PLAN`
+still denies the proposer once proposed — the two-sided baseline rule is intact.
+
+### Scope note
+
+Two parties racing to start a draft on the same build is out of scope: a second
+party's `:author` while a draft exists returns `409 draft_exists`. The realistic
+flow is a single author per build; multi-author drafting is deferred.

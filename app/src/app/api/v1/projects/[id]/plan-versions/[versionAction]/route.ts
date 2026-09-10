@@ -33,6 +33,7 @@ const ACTIONS = {
   accept: 'acceptPlan',
   reject: 'rejectPlan',
   'request-changes': 'requestChangesPlan',
+  propose: 'proposePlan',
 } as const;
 
 type Action = keyof typeof ACTIONS;

@@ -75,7 +75,9 @@ function mapPlanVersion(r) {
   return {
     id: r.id,
     project_id: r.project_id,
-    version_no: Number(r.version_no),
+    // NULL while drafting (version_no is assigned at :propose); Number() only
+    // once there is a number, never Number(null) → 0 (LINA-230).
+    version_no: r.version_no == null ? null : Number(r.version_no),
     status: r.status,
     source_import_id: r.source_import_id,
     supersedes_version_id: r.supersedes_version_id,
@@ -355,6 +357,25 @@ export function createPgStore({ pool = getPool() } = {}) {
     return mapPlanVersion(rows[0] ?? null);
   }
 
+  // The single draft (the author's private workspace) for a project, or null.
+  // At most one exists (plan_version_one_draft_per_project; LINA-230).
+  async function getDraftPlanVersion(projectId) {
+    const { rows } = await pool.query(
+      `select * from schedule.plan_version
+        where project_id = $1 and status = 'draft'
+        limit 1`, [projectId]);
+    return mapPlanVersion(rows[0] ?? null);
+  }
+
+  // Replace a draft's stages in place (LINA-230): delete every stage bound to the
+  // version so `:author` can re-write the tree on each save. The DB
+  // stage_freeze_delete_guard trigger refuses this for a frozen/terminal version,
+  // so the service's "only a draft" check is mirrored in the database.
+  async function deleteStagesByPlanVersion(client, planVersionId) {
+    await client.query(
+      'delete from schedule.stage where plan_version_id = $1', [planVersionId]);
+  }
+
   // Assign the next version_no server-side, inside the append transaction. Reads
   // the max existing number; the per-project advisory lock the ledger takes on
   // append serialises concurrent forks/creations, so no gap-free race here.
@@ -365,18 +386,22 @@ export function createPgStore({ pool = getPool() } = {}) {
     return Number(rows[0].n ?? 0) + 1;
   }
 
-  // The only envelope mutation: status + (on freeze) frozen_at. Mirrored by a
-  // ledger event in the same transaction. Returns the updated row or null. The
-  // DB CHECK plan_version_frozen_iff_accepted keeps `accepted` ⟺ `frozen_at`
-  // consistent; the service always supplies frozenAt when freezing.
-  async function updatePlanVersionStatus(client, id, { status, frozenAt }) {
+  // The only envelope mutation: status + (on freeze) frozen_at + (on propose)
+  // version_no. Mirrored by a ledger event in the same transaction. Returns the
+  // updated row or null. The DB CHECK plan_version_frozen_iff_accepted keeps
+  // `accepted` ⟺ `frozen_at` consistent and plan_version_draft_has_no_number
+  // keeps `draft` ⟺ NULL version_no; the service supplies frozenAt when freezing
+  // and versionNo when proposing a draft (LINA-230). `versionNo` omitted leaves
+  // the number untouched (COALESCE), so every existing caller is unchanged.
+  async function updatePlanVersionStatus(client, id, { status, frozenAt, versionNo }) {
     const { rows } = await client.query(
       `update schedule.plan_version
           set status = $2,
-              frozen_at = $3
+              frozen_at = $3,
+              version_no = coalesce($4, version_no)
         where id = $1
         returning *`,
-      [id, status, frozenAt ?? null],
+      [id, status, frozenAt ?? null, versionNo ?? null],
     );
     return rows.length ? mapPlanVersion(rows[0]) : null;
   }
@@ -555,7 +580,8 @@ export function createPgStore({ pool = getPool() } = {}) {
     insertPlanImport, getPlanImportByIdempotencyKey, insertStageDependency,
     importStageCounts,
     insertProgress, listProgressByStage, latestProgressByProject,
-    insertPlanVersion, getPlanVersion, getOpenPlanVersion, nextPlanVersionNo,
+    insertPlanVersion, getPlanVersion, getOpenPlanVersion, getDraftPlanVersion,
+    deleteStagesByPlanVersion, nextPlanVersionNo,
     updatePlanVersionStatus, listPlanVersions,
     insertPlanAcceptance, listPlanAcceptances, getPlanAcceptance,
     upsertProjectBaseline, getProjectBaseline,
