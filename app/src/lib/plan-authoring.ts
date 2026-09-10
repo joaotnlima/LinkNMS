@@ -12,8 +12,11 @@
 //   1. THE ACTOR IS NEVER IN THE BODY. `authorPlan` sends only `{ stages }`; the
 //      acting party is the session, resolved server-side. A client that could
 //      name itself could stamp authorship as someone else.
-//   2. TWO LEVELS ONLY. A phase (action) holds tasks (sub-actions); a task holds
-//      nothing. `toWire` cannot emit a third level even if asked.
+//   2. THREE LEVELS, NEVER FOUR (LINA-238/243, ADR-0019). A phase (action) holds
+//      tasks (sub-actions); a task holds sub-tasks (sub-sub-actions); a sub-task
+//      holds nothing. There is no operation that nests below a sub-task, and
+//      `toWire` refuses a draft that somehow carries one — the same `too_deep`
+//      the server answers with, raised before the round-trip.
 //   3. THE SKELETON IS A STARTING POINT, NOT A CLAIM. It carries names only — no
 //      dates, no owner, no sub-tasks (the issue: "that is for the user to fill").
 
@@ -72,10 +75,17 @@ export const PLAN_SKELETON: ReadonlyArray<{ name: string; tasks: readonly string
 // are author-local: the server resolves them to its own stage ids inside the
 // draft-save transaction and never persists them.
 
+// A task and a sub-task are the SAME shape — a sub-task is simply a task that
+// sits under one. Reusing the type keeps every field (dates, description,
+// dependencies) available at the third level without a parallel model; the depth
+// cap is not in the type but in the vocabulary: nothing below adds a child to a
+// sub-task, so `children` on a sub-task is always [] (LINA-243, ADR-0019).
 export interface TaskDraft {
   key: string; name: string; start: string; end: string; description: string;
   /** Local keys of this task's predecessors (LINA-233). */
   dependsOn: string[];
+  /** Sub-sub-actions under this task. Always [] on a sub-task (the 3-level cap). */
+  children: TaskDraft[];
 }
 export interface PhaseDraft {
   key: string; name: string; tasks: TaskDraft[];
@@ -91,8 +101,16 @@ export function newKey(prefix = 'k'): string {
 }
 
 function emptyTask(name = ''): TaskDraft {
-  return { key: newKey('t'), name, start: '', end: '', description: '', dependsOn: [] };
+  return { key: newKey('t'), name, start: '', end: '', description: '', dependsOn: [], children: [] };
 }
+
+/** A fresh sub-sub-action row. Keyed 's-' so a draft reads at a glance. */
+function emptySubtask(name = ''): TaskDraft {
+  return { key: newKey('s'), name, start: '', end: '', description: '', dependsOn: [], children: [] };
+}
+
+/** A task's sub-tasks, tolerating a draft built before the level existed. */
+const kids = (t: TaskDraft): TaskDraft[] => t.children ?? [];
 
 /** A fresh draft of the standard skeleton, with new keys each call. */
 export function seedSkeleton(): PhaseDraft[] {
@@ -109,7 +127,7 @@ export function emptyPhase(name = ''): PhaseDraft {
   return { key: newKey('p'), name, tasks: [], dependsOn: [] };
 }
 
-export { emptyTask };
+export { emptyTask, emptySubtask };
 
 // ── Hydrating an existing draft back into the editor (LINA-230) ──────────────
 // The server returns a saved draft as a WBS tree (PlanStageNode-shaped) through
@@ -141,6 +159,24 @@ interface DraftStageNode {
  */
 export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
   const keyByStageId = new Map<string, string>();
+  // A task and a sub-task hydrate identically — same fields, same key mapping —
+  // so one reader serves both levels. Anything the server returned BELOW a
+  // sub-task is dropped: the editor has no row to show it on, and carrying it
+  // would make the next save the `too_deep` the server has already refused.
+  const readTask = (t: DraftStageNode, prefix: string, deep: boolean): TaskDraft => {
+    const key = newKey(prefix);
+    if (t.id) keyByStageId.set(t.id, key);
+    return {
+      key,
+      name: t.name,
+      start: t.plannedStartDate ?? '',
+      end: t.plannedEndDate ?? '',
+      description: t.description ?? '',
+      dependsOn: [],
+      children: deep ? (t.children ?? []).map((s) => readTask(s, 's', false)) : [],
+    };
+  };
+
   const phases: PhaseDraft[] = stages.map((p) => {
     const key = newKey('p');
     if (p.id) keyByStageId.set(p.id, key);
@@ -148,18 +184,7 @@ export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
       key,
       name: p.name,
       dependsOn: [],
-      tasks: (p.children ?? []).map((t) => {
-        const tk = newKey('t');
-        if (t.id) keyByStageId.set(t.id, tk);
-        return {
-          key: tk,
-          name: t.name,
-          start: t.plannedStartDate ?? '',
-          end: t.plannedEndDate ?? '',
-          description: t.description ?? '',
-          dependsOn: [],
-        };
-      }),
+      tasks: (p.children ?? []).map((t) => readTask(t, 't', true)),
     };
   });
 
@@ -168,7 +193,13 @@ export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
 
   stages.forEach((p, pi) => {
     phases[pi].dependsOn = translate(p.dependsOn);
-    (p.children ?? []).forEach((t, ti) => { phases[pi].tasks[ti].dependsOn = translate(t.dependsOn); });
+    (p.children ?? []).forEach((t, ti) => {
+      phases[pi].tasks[ti].dependsOn = translate(t.dependsOn);
+      (t.children ?? []).forEach((s, si) => {
+        const sub = phases[pi].tasks[ti].children[si];
+        if (sub) sub.dependsOn = translate(s.dependsOn);
+      });
+    });
   });
   return phases;
 }
@@ -224,6 +255,20 @@ export function reorderTask(phases: PhaseDraft[], pi: number, from: number, to: 
   return replaceAt(phases, pi, { ...phase, tasks: reorder(phase.tasks, from, to) });
 }
 
+/** Replace one task in place — the seam every task/sub-task edit goes through. */
+function replaceTask(phases: PhaseDraft[], pi: number, ti: number, next: TaskDraft): PhaseDraft[] {
+  const phase = phases[pi];
+  return replaceAt(phases, pi, { ...phase, tasks: replaceAt(phase.tasks, ti, next) });
+}
+
+/** Replace one sub-task in place. */
+function replaceSubtask(
+  phases: PhaseDraft[], pi: number, ti: number, si: number, next: TaskDraft,
+): PhaseDraft[] {
+  const task = phases[pi].tasks[ti];
+  return replaceTask(phases, pi, ti, { ...task, children: replaceAt(kids(task), si, next) });
+}
+
 /**
  * Drop every predecessor edge pointing at a stage that is no longer in the
  * draft. Removing a stage others depended on must take its edges with it —
@@ -232,12 +277,19 @@ export function reorderTask(phases: PhaseDraft[], pi: number, from: number, to: 
  */
 function pruneEdges(phases: PhaseDraft[]): PhaseDraft[] {
   const live = new Set<string>();
-  for (const p of phases) { live.add(p.key); for (const t of p.tasks) live.add(t.key); }
+  for (const p of phases) {
+    live.add(p.key);
+    for (const t of p.tasks) { live.add(t.key); for (const s of kids(t)) live.add(s.key); }
+  }
   const keep = (deps: string[]) => deps.filter((k) => live.has(k));
   return phases.map((p) => ({
     ...p,
     dependsOn: keep(p.dependsOn),
-    tasks: p.tasks.map((t) => ({ ...t, dependsOn: keep(t.dependsOn) })),
+    tasks: p.tasks.map((t) => ({
+      ...t,
+      dependsOn: keep(t.dependsOn),
+      children: kids(t).map((s) => ({ ...s, dependsOn: keep(s.dependsOn) })),
+    })),
   }));
 }
 
@@ -255,29 +307,20 @@ export function addTask(phases: PhaseDraft[], pi: number): PhaseDraft[] {
 }
 
 export function renameTask(phases: PhaseDraft[], pi: number, ti: number, name: string): PhaseDraft[] {
-  const phase = phases[pi];
-  return replaceAt(phases, pi, { ...phase, tasks: replaceAt(phase.tasks, ti, { ...phase.tasks[ti], name }) });
+  return replaceTask(phases, pi, ti, { ...phases[pi].tasks[ti], name });
 }
 
 export function setTaskDate(
   phases: PhaseDraft[], pi: number, ti: number, field: 'start' | 'end', value: string,
 ): PhaseDraft[] {
-  const phase = phases[pi];
-  return replaceAt(phases, pi, {
-    ...phase,
-    tasks: replaceAt(phase.tasks, ti, { ...phase.tasks[ti], [field]: value }),
-  });
+  return replaceTask(phases, pi, ti, { ...phases[pi].tasks[ti], [field]: value });
 }
 
 /** Edit a task's free-form description (the task-detail drawer field, LINA-234). */
 export function setTaskDescription(
   phases: PhaseDraft[], pi: number, ti: number, description: string,
 ): PhaseDraft[] {
-  const phase = phases[pi];
-  return replaceAt(phases, pi, {
-    ...phase,
-    tasks: replaceAt(phase.tasks, ti, { ...phase.tasks[ti], description }),
-  });
+  return replaceTask(phases, pi, ti, { ...phases[pi].tasks[ti], description });
 }
 
 export function moveTask(phases: PhaseDraft[], pi: number, ti: number, delta: number): PhaseDraft[] {
@@ -287,7 +330,61 @@ export function moveTask(phases: PhaseDraft[], pi: number, ti: number, delta: nu
 
 export function removeTask(phases: PhaseDraft[], pi: number, ti: number): PhaseDraft[] {
   const phase = phases[pi];
+  // A task takes its sub-tasks down with it — pruneEdges then drops every edge
+  // that named any of them.
   return pruneEdges(replaceAt(phases, pi, { ...phase, tasks: phase.tasks.filter((_, i) => i !== ti) }));
+}
+
+// ── The third level: sub-sub-actions (LINA-243, ADR-0019) ───────────────────
+// The same five verbs as a task — add, rename, date, describe, remove, reorder —
+// one level down. There is deliberately NO addSubSubtask: three levels is the
+// contract, and the way a client refuses a fourth is by never offering it. (A
+// draft that carries one anyway is caught at the wire edge, see `toWire`.)
+
+export function addSubtask(phases: PhaseDraft[], pi: number, ti: number): PhaseDraft[] {
+  const task = phases[pi].tasks[ti];
+  return replaceTask(phases, pi, ti, { ...task, children: [...kids(task), emptySubtask()] });
+}
+
+export function renameSubtask(
+  phases: PhaseDraft[], pi: number, ti: number, si: number, name: string,
+): PhaseDraft[] {
+  return replaceSubtask(phases, pi, ti, si, { ...kids(phases[pi].tasks[ti])[si], name });
+}
+
+export function setSubtaskDate(
+  phases: PhaseDraft[], pi: number, ti: number, si: number, field: 'start' | 'end', value: string,
+): PhaseDraft[] {
+  return replaceSubtask(phases, pi, ti, si, { ...kids(phases[pi].tasks[ti])[si], [field]: value });
+}
+
+export function setSubtaskDescription(
+  phases: PhaseDraft[], pi: number, ti: number, si: number, description: string,
+): PhaseDraft[] {
+  return replaceSubtask(phases, pi, ti, si, { ...kids(phases[pi].tasks[ti])[si], description });
+}
+
+export function removeSubtask(phases: PhaseDraft[], pi: number, ti: number, si: number): PhaseDraft[] {
+  const task = phases[pi].tasks[ti];
+  return pruneEdges(replaceTask(phases, pi, ti, {
+    ...task, children: kids(task).filter((_, i) => i !== si),
+  }));
+}
+
+/** Step a sub-task up/down within its task (the keyboard-reachable move). */
+export function moveSubtask(
+  phases: PhaseDraft[], pi: number, ti: number, si: number, delta: number,
+): PhaseDraft[] {
+  const task = phases[pi].tasks[ti];
+  return replaceTask(phases, pi, ti, { ...task, children: move(kids(task), si, delta) });
+}
+
+/** Drag-drop a sub-task within its OWN task — it never crosses into another. */
+export function reorderSubtask(
+  phases: PhaseDraft[], pi: number, ti: number, from: number, to: number,
+): PhaseDraft[] {
+  const task = phases[pi].tasks[ti];
+  return replaceTask(phases, pi, ti, { ...task, children: reorder(kids(task), from, to) });
 }
 
 // ── Dependencies: "depends on" (LINA-233, ADR-0017 annex 2) ─────────────────
@@ -308,6 +405,8 @@ export interface PlanNodeRef {
   /** '1.2 Framing' — what a chip or an option prints (pen: "depends on"). */
   label: string;
   isPhase: boolean;
+  /** 1 phase · 2 task · 3 sub-task — the picker indents by it (LINA-243). */
+  level: 1 | 2 | 3;
   /** The owning phase's key ('' for a phase itself) — the picker groups by it. */
   phaseKey: string;
 }
@@ -330,11 +429,25 @@ export function planNodes(phases: PhaseDraft[]): PlanNodeRef[] {
   phases.forEach((phase, pi) => {
     const outline = String(pi + 1);
     const name = stripOutline(phase.name) || 'Untitled phase';
-    out.push({ key: phase.key, outline, name, label: `${outline} ${name}`, isPhase: true, phaseKey: '' });
+    out.push({
+      key: phase.key, outline, name, label: `${outline} ${name}`,
+      isPhase: true, level: 1, phaseKey: '',
+    });
     phase.tasks.forEach((task, ti) => {
       const to = `${pi + 1}.${ti + 1}`;
       const tn = stripOutline(task.name) || 'Untitled task';
-      out.push({ key: task.key, outline: to, name: tn, label: `${to} ${tn}`, isPhase: false, phaseKey: phase.key });
+      out.push({
+        key: task.key, outline: to, name: tn, label: `${to} ${tn}`,
+        isPhase: false, level: 2, phaseKey: phase.key,
+      });
+      kids(task).forEach((sub, si) => {
+        const so = `${to}.${si + 1}`;
+        const sn = stripOutline(sub.name) || 'Untitled sub-task';
+        out.push({
+          key: sub.key, outline: so, name: sn, label: `${so} ${sn}`,
+          isPhase: false, level: 3, phaseKey: phase.key,
+        });
+      });
     });
   });
   return out;
@@ -350,7 +463,10 @@ function edges(phases: PhaseDraft[]): Map<string, string[]> {
   const m = new Map<string, string[]>();
   for (const p of phases) {
     m.set(p.key, p.dependsOn);
-    for (const t of p.tasks) m.set(t.key, t.dependsOn);
+    for (const t of p.tasks) {
+      m.set(t.key, t.dependsOn);
+      for (const s of kids(t)) m.set(s.key, s.dependsOn);
+    }
   }
   return m;
 }
@@ -407,7 +523,14 @@ export function setDependsOn(phases: PhaseDraft[], key: string, dependsOn: strin
   return phases.map((p) => ({
     ...p,
     dependsOn: p.key === key ? next : p.dependsOn,
-    tasks: p.tasks.map((t) => (t.key === key ? { ...t, dependsOn: next } : t)),
+    // Rows that are not the target keep their identity — only the one stage
+    // whose list is being replaced (at either level) is rebuilt.
+    tasks: p.tasks.map((t) => {
+      const hit = kids(t).some((s) => s.key === key);
+      const children = hit ? kids(t).map((s) => (s.key === key ? { ...s, dependsOn: next } : s)) : t.children;
+      if (t.key === key) return { ...t, dependsOn: next, children };
+      return hit ? { ...t, children } : t;
+    }),
   }));
 }
 
@@ -463,6 +586,14 @@ export function taskCount(phases: PhaseDraft[]): number {
   return phases.reduce((acc, p) => acc + p.tasks.length, 0);
 }
 
+/** Sub-tasks across the whole draft — the summary's "· N sub-tasks" tail. */
+export function subtaskCount(phases: PhaseDraft[]): number {
+  return phases.reduce(
+    (acc, p) => acc + p.tasks.reduce((n, t) => n + kids(t).length, 0),
+    0,
+  );
+}
+
 // ── The wire edge ─────────────────────────────────────────────────────────────
 
 /** An action node of the authored WBS, as the server's :author contract wants it. */
@@ -507,9 +638,15 @@ const dateOrNull = (v: string): string | null => (v && v.trim() ? v.trim() : nul
 /**
  * Build the `{ stages }` body, validating client-side first so the author gets a
  * pointed message beside the field rather than a round-trip 400. Mirrors exactly
- * what the server re-validates (§1): every phase and task needs a name; empty
- * phases are dropped (a phase with no tasks is a heading the author started and
- * left — not an error, just not sent); dates pass through, blanks become null.
+ * what the server re-validates (§1): every phase, task and sub-task needs a name;
+ * empty phases are dropped (a phase with no tasks is a heading the author started
+ * and left — not an error, just not sent); dates pass through, blanks become null.
+ *
+ * Three levels, never four (LINA-243, ADR-0019). A task emits `children` when it
+ * has sub-tasks worth sending and omits the field otherwise, so a two-level plan
+ * puts exactly the bytes on the wire it always did. A sub-task carrying children
+ * of its own is a bug in the draft, not an author mistake — it is refused here
+ * with the server's own `too_deep` rather than sent to be refused there.
  *
  * Dependencies (LINA-233): each node carries its local `key`, and `dependsOn`
  * naming its predecessors by key. THE WHOLE GRAPH GOES EVERY TIME — the server
@@ -521,13 +658,18 @@ export function toWire(phases: PhaseDraft[]): AuthoredNode[] {
   // Which rows will actually be sent — computed first, because an edge may point
   // at a row that comes later in the tree.
   const sent = new Set<string>();
-  const keeps = (t: TaskDraft) =>
+  const touched = (t: TaskDraft) =>
     t.name.trim() !== '' || !!t.start || !!t.end || (t.description ?? '').trim() !== '';
+  // A sub-task the author added and never filled in is dropped like a blank task.
+  const subs = (t: TaskDraft) => kids(t).filter(touched);
+  // A row the author never touched is dropped — UNLESS it now holds a real
+  // sub-task, which would otherwise be silently thrown away with its parent.
+  const keeps = (t: TaskDraft) => touched(t) || subs(t).length > 0;
   for (const phase of phases) {
     const tasks = phase.tasks.filter(keeps);
     if (!phase.name.trim() && tasks.length === 0) continue;
     sent.add(phase.key);
-    for (const t of tasks) sent.add(t.key);
+    for (const t of tasks) { sent.add(t.key); for (const s of subs(t)) sent.add(s.key); }
   }
   const wireDeps = (deps: string[]) => deps.filter((k) => sent.has(k));
 
@@ -543,10 +685,28 @@ export function toWire(phases: PhaseDraft[]): AuthoredNode[] {
     const children: AuthoredNode[] = tasks.map((t) => {
       const tn = t.name.trim();
       if (!tn) throw new PlanAuthorError('invalid_name', `A task under "${name}" needs a name.`);
-      const description = (t.description ?? '').trim() || null;
+      const grandchildren: AuthoredNode[] = subs(t).map((s) => {
+        const sn = s.name.trim();
+        if (!sn) throw new PlanAuthorError('invalid_name', `A sub-task under "${tn}" needs a name.`);
+        if (kids(s).length > 0) {
+          throw new PlanAuthorError(
+            'too_deep',
+            'A plan is three levels deep at most — a sub-task cannot have its own sub-tasks.',
+          );
+        }
+        return {
+          name: sn, key: s.key, dependsOn: wireDeps(s.dependsOn),
+          description: (s.description ?? '').trim() || null,
+          plannedStartDate: dateOrNull(s.start), plannedEndDate: dateOrNull(s.end),
+        };
+      });
       return {
-        name: tn, key: t.key, dependsOn: wireDeps(t.dependsOn), description,
+        name: tn, key: t.key, dependsOn: wireDeps(t.dependsOn),
+        description: (t.description ?? '').trim() || null,
         plannedStartDate: dateOrNull(t.start), plannedEndDate: dateOrNull(t.end),
+        // Omitted, not `[]`, when there is no third level: a two-level plan puts
+        // exactly the bytes on the wire it did before this level existed.
+        ...(grandchildren.length > 0 ? { children: grandchildren } : {}),
       };
     });
     stages.push({ name, key: phase.key, dependsOn: wireDeps(phase.dependsOn), children });

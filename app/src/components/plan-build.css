@@ -88,6 +88,36 @@
 .pbx-addtask:hover:not(:disabled) { border-color: var(--plan-baseline); }
 .pbx-addtask:disabled { opacity: 0.5; cursor: default; }
 
+/* ── The third level: sub-tasks (LINA-243, ADR-0019) ───────────────────────
+   Indented under their task and hung off a hairline rule, so depth is read at a
+   glance without a second row style: a sub-task row IS a task row (.pbx-task),
+   one step in and a shade quieter. The "+ Add sub-task" affordance stays
+   permanently rendered (never display:none) so it is keyboard-reachable, but sits
+   back at rest and comes forward on hover or focus — 14 always-loud buttons would
+   drown out the plan itself. */
+.pbx-subs {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 0 0 var(--s2) 22px; padding-left: var(--s3);
+  border-left: 1px solid var(--outline);
+}
+.pbx-sub .pbx-task-name, .pbx-sub .pbx-date { font-size: 13px; }
+.pbx-sub.is-dragging { opacity: 0.45; }
+.pbx-subwrap.is-cycle { outline: 1px solid var(--danger); border-radius: 8px; }
+
+.pbx-addsub {
+  margin-top: 0; padding: 3px 8px; font-size: 12px; border-style: dashed;
+  color: var(--muted); opacity: 0.75;
+}
+.pbx-taskwrap:hover .pbx-addsub, .pbx-addsub:hover:not(:disabled), .pbx-addsub:focus-visible {
+  opacity: 1; color: var(--plan-baseline);
+}
+
+/* The picker lists every stage in reading order; the indent is what tells a
+   sub-task apart from the task above it. */
+.pbx-dep-opt.lvl-3 { padding-left: 22px; }
+
+.pbx-drawer-under { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+
 .pbx-actions { display: flex; gap: var(--s3); justify-content: flex-end; align-items: center; }
 .pbx-open { color: var(--warn-fg); }
 .pbx-foot { color: var(--muted); max-width: 68ch; }
@@ -96,6 +126,9 @@
   .pbx-taskhdr { display: none; }
   .pbx-task { grid-template-columns: 1fr; gap: var(--s2); }
   .pbx-rowctl { justify-content: flex-start; }
+  /* On a phone the rows stack full-width, so the indent buys nothing and costs
+     the name field — keep only the rule that marks the nesting. */
+  .pbx-subs { margin-left: 0; }
 }
 
 /* ── "Depends on" (LINA-233, ADR-0017 annex 2) ─────────────────────────────

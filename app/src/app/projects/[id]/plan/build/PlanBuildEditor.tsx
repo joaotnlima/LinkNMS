@@ -5,8 +5,9 @@
 // Pen: "S · (new) · Build the plan — schedule (Gantt)" / "Interaction spec —
 // Create & organise tasks". The screen is copy + layout only — every edit is a
 // pure operation from @/lib/plan-authoring (unit-tested under node --test), and
-// the single write is authorPlan(). Two levels only: a phase holds tasks, a
-// task holds nothing (contract §2).
+// the single write is authorPlan(). Three levels, never four (LINA-243,
+// ADR-0019): a phase holds tasks, a task holds sub-tasks, a sub-task holds
+// nothing. The screen refuses the fourth level by never drawing an "add" for it.
 //
 // ── WHAT THE AUTHOR STARTS WITH ──────────────────────────────────────────────
 // The standard skeleton (PLAN_SKELETON): three phases, names only — no dates, no
@@ -32,9 +33,11 @@ import Link from 'next/link';
 
 import {
   PlanAuthorError,
-  addPhase, addTask, authorPlan, dependencyChoices, dependsOnOf, detectCycle, nodeIndex, removePhase,
-  removeTask, renamePhase, renameTask, reorderPhase, reorderTask,
-  seedSkeleton, setTaskDate, setTaskDescription, taskCount, toggleDependency, toWire,
+  addPhase, addSubtask, addTask, authorPlan, dependencyChoices, dependsOnOf, detectCycle, nodeIndex,
+  removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
+  reorderPhase, reorderSubtask, reorderTask,
+  seedSkeleton, setSubtaskDate, setSubtaskDescription, setTaskDate, setTaskDescription,
+  subtaskCount, taskCount, toggleDependency, toWire,
   type PhaseDraft, type PlanNodeRef,
 } from '@/lib/plan-authoring';
 import '@/components/plan-build.css';
@@ -117,7 +120,7 @@ function DependsOn({
               <div key={g.phase.key} className="pbx-dep-group">
                 <p className="pbx-dep-grouphd">{g.phase.label}</p>
                 {g.options.map((o) => (
-                  <label key={o.key} className="pbx-dep-opt">
+                  <label key={o.key} className={`pbx-dep-opt lvl-${o.level}`}>
                     <input
                       type="checkbox"
                       checked={selected.has(o.key)}
@@ -157,18 +160,22 @@ export function PlanBuildEditor({
   const [submitting, setSubmitting] = useState(false);
 
   // The task-detail drawer (LINA-234). Holds the {phase, task} index of the open
-  // task, or null when closed. The drawer edits that task's description; status is
-  // read-only here — a draft has no reported progress, so it is always "Not
-  // started" until the plan is live (ADR-0019).
-  const [openTask, setOpenTask] = useState<{ pi: number; ti: number } | null>(null);
-  const active = openTask ? phases[openTask.pi]?.tasks[openTask.ti] ?? null : null;
+  // row — plus `si` when the open row is a SUB-task, which gets the same drawer
+  // rather than one of its own (LINA-243). The drawer edits that row's
+  // description; status is read-only here — a draft has no reported progress, so
+  // it is always "Not started" until the plan is live (ADR-0019).
+  const [openTask, setOpenTask] = useState<{ pi: number; ti: number; si?: number } | null>(null);
+  const activeTask = openTask ? phases[openTask.pi]?.tasks[openTask.ti] ?? null : null;
+  const active = openTask?.si != null ? activeTask?.children[openTask.si] ?? null : activeTask;
 
-  // Drag-to-reorder state. A phase drag and a task drag are mutually exclusive;
-  // a task only drops within its own phase (`pi` guards the drop). Reordering is
-  // a pure op (reorderPhase / reorderTask) — the same tested vocabulary as before,
-  // just driven by a grab instead of step arrows (pen: "drag a row").
+  // Drag-to-reorder state. A phase, task and sub-task drag are mutually
+  // exclusive; a task only drops within its own phase and a sub-task only within
+  // its own task (`pi`/`ti` guard the drop). Reordering is a pure op
+  // (reorderPhase / reorderTask / reorderSubtask) — the same tested vocabulary,
+  // driven by a grab instead of step arrows (pen: "drag a row").
   const [dragPhase, setDragPhase] = useState<number | null>(null);
   const [dragTask, setDragTask] = useState<{ pi: number; ti: number } | null>(null);
+  const [dragSub, setDragSub] = useState<{ pi: number; ti: number; si: number } | null>(null);
 
   // "Depends on" (LINA-233). `openDeps` is the key of the row whose picker is
   // open — one at a time, so the popovers can't stack. `serverCycle` holds the
@@ -178,6 +185,7 @@ export function PlanBuildEditor({
   const [serverCycle, setServerCycle] = useState<Array<{ key: string | null; name: string }>>([]);
 
   const count = useMemo(() => taskCount(phases), [phases]);
+  const subs = useMemo(() => subtaskCount(phases), [phases]);
   const index = useMemo(() => nodeIndex(phases), [phases]);
 
   // The picker already refuses a choice that would loop, so this should never
@@ -212,6 +220,13 @@ export function PlanBuildEditor({
   const dropTask = useCallback((pi: number, to: number) => {
     setDragTask((d) => {
       if (d && d.pi === pi && d.ti !== to) apply(reorderTask(phases, pi, d.ti, to));
+      return null;
+    });
+  }, [apply, phases]);
+
+  const dropSub = useCallback((pi: number, ti: number, to: number) => {
+    setDragSub((d) => {
+      if (d && d.pi === pi && d.ti === ti && d.si !== to) apply(reorderSubtask(phases, pi, ti, d.si, to));
       return null;
     });
   }, [apply, phases]);
@@ -271,7 +286,8 @@ export function PlanBuildEditor({
           <p className="pbx-eyebrow">{resuming ? 'Your draft' : 'New plan'}</p>
           <h1 className="pbx-title">Build the plan directly in LinkNMS</h1>
           <p className="pbx-lede">
-            Start from a standard skeleton, then rename, reorder, add and remove phases and tasks.
+            Start from a standard skeleton, then rename, reorder, add and remove phases, tasks and
+            sub-tasks.
             Date what you know — leave the rest blank. Saving keeps this as your private draft —
             only you can see it, and nothing is sent until you choose to send it for approval.
           </p>
@@ -283,6 +299,7 @@ export function PlanBuildEditor({
         <p className="pbx-count">
           {count} {count === 1 ? 'task' : 'tasks'} across {phases.length}{' '}
           {phases.length === 1 ? 'phase' : 'phases'}
+          {subs > 0 ? ` · ${subs} ${subs === 1 ? 'sub-task' : 'sub-tasks'}` : ''}
         </p>
         <button type="button" className="pbx-icon" onClick={reset} disabled={submitting}
           title="Reset to the standard skeleton" style={{ width: 'auto', padding: '0 10px' }}>
@@ -407,6 +424,87 @@ export function PlanBuildEditor({
                   onOpen={(next) => setOpenDeps(next ? task.key : null)}
                   onToggle={(dep) => toggleDep(task.key, dep)}
                 />
+
+                {/* The third level (LINA-243). A sub-task is a stage like any
+                    other — same fields, same "depends on", its own drag order —
+                    just indented under the task it belongs to. There is no
+                    "+ Add" below it: three levels is the contract, and the way a
+                    client refuses a fourth is by never offering one. */}
+                <div className="pbx-subs">
+                  {task.children.map((sub, si) => {
+                    const subDropTarget = dragSub?.pi === pi && dragSub.ti === ti;
+                    return (
+                      <div
+                        key={sub.key}
+                        className={`pbx-subwrap${litRows.has(sub.key) ? ' is-cycle' : ''}`}
+                      >
+                        <div
+                          className={`pbx-task pbx-sub${subDropTarget && dragSub.si === si ? ' is-dragging' : ''}`}
+                          onDragOver={(e) => { if (subDropTarget) e.preventDefault(); }}
+                          onDrop={(e) => { if (subDropTarget) { e.preventDefault(); dropSub(pi, ti, si); } }}
+                        >
+                          <span
+                            className="pbx-grip"
+                            role="button"
+                            tabIndex={-1}
+                            aria-label="Drag to reorder sub-task"
+                            title="Drag to reorder"
+                            draggable={!submitting}
+                            onDragStart={(e) => { setDragSub({ pi, ti, si }); e.dataTransfer.effectAllowed = 'move'; }}
+                            onDragEnd={() => setDragSub(null)}
+                          >⠿</span>
+                          <input
+                            className="pbx-task-name"
+                            value={sub.name}
+                            placeholder="Sub-task name"
+                            aria-label="Sub-task name"
+                            disabled={submitting}
+                            onChange={(e) => apply(renameSubtask(phases, pi, ti, si, e.target.value))}
+                          />
+                          <input
+                            type="date" className="pbx-date" value={sub.start}
+                            aria-label="Sub-task start date" disabled={submitting}
+                            onChange={(e) => apply(setSubtaskDate(phases, pi, ti, si, 'start', e.target.value))}
+                          />
+                          <input
+                            type="date" className="pbx-date" value={sub.end}
+                            aria-label="Sub-task end date" disabled={submitting}
+                            onChange={(e) => apply(setSubtaskDate(phases, pi, ti, si, 'end', e.target.value))}
+                          />
+                          <span className="pbx-rowctl">
+                            <button
+                              type="button"
+                              className={`pbx-icon pbx-details${sub.description.trim() ? ' has-note' : ''}`}
+                              title="Sub-task details"
+                              aria-label={`Open details for ${sub.name.trim() || 'this sub-task'}`}
+                              disabled={submitting}
+                              onClick={() => setOpenTask({ pi, ti, si })}
+                            >
+                              ⋯{sub.description.trim() ? <span className="pbx-dot" aria-hidden /> : null}
+                            </button>
+                            <button type="button" className="pbx-icon pbx-del" title="Remove sub-task"
+                              disabled={submitting}
+                              onClick={() => apply(removeSubtask(phases, pi, ti, si))}>✕</button>
+                          </span>
+                        </div>
+                        <DependsOn
+                          nodeKey={sub.key}
+                          label={index.get(sub.key)?.label ?? 'this sub-task'}
+                          phases={phases}
+                          index={index}
+                          open={openDeps === sub.key}
+                          disabled={submitting}
+                          onOpen={(next) => setOpenDeps(next ? sub.key : null)}
+                          onToggle={(dep) => toggleDep(sub.key, dep)}
+                        />
+                      </div>
+                    );
+                  })}
+                  <button type="button" className="pbx-addtask pbx-addsub" disabled={submitting}
+                    onClick={() => apply(addSubtask(phases, pi, ti))}>
+                    + Add sub-task
+                  </button>
+                </div>
                 </div>
                 );
               })}
@@ -454,13 +552,22 @@ export function PlanBuildEditor({
             className="pbx-drawer"
             role="dialog"
             aria-modal="true"
-            aria-label="Task details"
+            aria-label={openTask.si != null ? 'Sub-task details' : 'Task details'}
             onClick={(e) => e.stopPropagation()}
           >
             <header className="pbx-drawer-hd">
               <div>
-                <p className="pbx-drawer-eyebrow">Task details</p>
-                <h2 className="pbx-drawer-title">{active.name.trim() || 'Untitled task'}</h2>
+                <p className="pbx-drawer-eyebrow">
+                  {openTask.si != null ? 'Sub-task details' : 'Task details'}
+                </p>
+                <h2 className="pbx-drawer-title">
+                  {active.name.trim() || (openTask.si != null ? 'Untitled sub-task' : 'Untitled task')}
+                </h2>
+                {openTask.si != null && activeTask ? (
+                  <p className="pbx-drawer-under">
+                    Under {activeTask.name.trim() || 'an untitled task'}
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"
@@ -489,7 +596,9 @@ export function PlanBuildEditor({
               placeholder="What is this task? Add scope, context, anything the other party should know."
               maxLength={4000}
               disabled={submitting}
-              onChange={(e) => apply(setTaskDescription(phases, openTask.pi, openTask.ti, e.target.value))}
+              onChange={(e) => apply(openTask.si != null
+                ? setSubtaskDescription(phases, openTask.pi, openTask.ti, openTask.si, e.target.value)
+                : setTaskDescription(phases, openTask.pi, openTask.ti, e.target.value))}
             />
 
             <div className="pbx-drawer-actions">
