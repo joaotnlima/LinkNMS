@@ -226,8 +226,8 @@ export function createInMemoryStore() {
     return max;
   }
 
-  function insertStageDependency(_tx, stageId, dependsOnStageId) {
-    const row = { stage_id: stageId, depends_on_stage_id: dependsOnStageId };
+  function insertStageDependency(_tx, stageId, dependsOnStageId, depType = 'starts_after') {
+    const row = { stage_id: stageId, depends_on_stage_id: dependsOnStageId, dep_type: depType };
     dependencies.push(row);
     return { ...row };
   }
@@ -269,8 +269,9 @@ export function createInMemoryStore() {
     }
   }
 
-  // The resolved predecessor graph of a version: { stage_id, depends_on_stage_id }
-  // rows, matching the pg adapter so `getPlan` reads deps the same way on both.
+  // The resolved predecessor graph of a version: { stage_id, depends_on_stage_id,
+  // dep_type } rows, matching the pg adapter so `getPlan` reads deps the same way
+  // on both.
   function listStageDependenciesByPlanVersion(planVersionId) {
     const versionStageIds = new Set(
       [...stages.values()].filter((s) => s.plan_version_id === planVersionId).map((s) => s.id),

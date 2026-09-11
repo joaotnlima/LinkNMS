@@ -290,3 +290,101 @@ test('computed is a real Map, not a plain object', () => {
   ]);
   assert.ok(computed instanceof Map);
 });
+
+// ── typed dependencies (ADR-0020, LINA-252) ────────────────────────────────
+
+test('starts_with (SS): the dependent starts when the predecessor starts, not after it ends', () => {
+  const { computed } = autoSchedule([
+    { id: 'a', plannedStartDate: '2026-01-05', plannedEndDate: '2026-01-10', dependsOn: [] },
+    { id: 'b', dependencies: [{ on: 'a', type: 'starts_with' }] },
+  ]);
+
+  const b = computed.get('b');
+  assert.ok(b, 'b is computed');
+  assert.equal(b.plannedStartDate, '2026-01-05', 'b starts with a (SS), not the day after a ends');
+  assert.equal(b.plannedEndDate, '2026-01-05', '1-day default when no ends_with constraint');
+});
+
+test('ends_with (FF): the dependent ends when the predecessor ends; a missing start snaps to end (1-day)', () => {
+  const { computed } = autoSchedule([
+    { id: 'a', plannedStartDate: '2026-02-01', plannedEndDate: '2026-02-20', dependsOn: [] },
+    { id: 'b', dependencies: [{ on: 'a', type: 'ends_with' }] },
+  ]);
+
+  const b = computed.get('b');
+  assert.ok(b, 'b is computed');
+  assert.equal(b.plannedEndDate, '2026-02-20', 'b ends with a (FF)');
+  assert.equal(b.plannedStartDate, '2026-02-20', 'start = end when start is missing (1-day rule stands)');
+});
+
+test('ends_with + starts_after: start follows the FS edge, end follows the FF edge (multi-day dependent)', () => {
+  const { computed } = autoSchedule([
+    { id: 'a', plannedStartDate: '2026-03-01', plannedEndDate: '2026-03-03', dependsOn: [] },
+    { id: 'b', plannedStartDate: '2026-03-10', plannedEndDate: '2026-03-15', dependsOn: [] },
+    { id: 'c', dependencies: [
+      { on: 'a', type: 'starts_after' },
+      { on: 'b', type: 'ends_with' },
+    ] },
+  ]);
+
+  const c = computed.get('c');
+  assert.ok(c, 'c is computed');
+  assert.equal(c.plannedStartDate, '2026-03-04', 'start = day after a ends (FS)');
+  assert.equal(c.plannedEndDate, '2026-03-15', 'end = b end (FF)');
+});
+
+test('multiple constraints on the same field — the LATEST date wins', () => {
+  const { computed } = autoSchedule([
+    { id: 'a', plannedStartDate: '2026-04-01', plannedEndDate: '2026-04-05', dependsOn: [] },
+    { id: 'b', plannedStartDate: '2026-04-08', plannedEndDate: '2026-04-20', dependsOn: [] },
+    // Both are starts_after edges constraining c.start → later predecessor wins.
+    { id: 'c', dependencies: [
+      { on: 'a', type: 'starts_after' },
+      { on: 'b', type: 'starts_after' },
+    ] },
+  ]);
+
+  const c = computed.get('c');
+  assert.ok(c);
+  assert.equal(c.plannedStartDate, '2026-04-21', 'day after b (the later predecessor)');
+  assert.equal(c.plannedEndDate, '2026-04-21');
+});
+
+test('starts_with vs starts_after on the same dependent — the later start wins', () => {
+  const { computed } = autoSchedule([
+    { id: 'a', plannedStartDate: '2026-05-01', plannedEndDate: '2026-05-10', dependsOn: [] },
+    { id: 'b', plannedStartDate: '2026-05-06', plannedEndDate: '2026-05-06', dependsOn: [] },
+    // SS with a gives start ≥ 05-01; FS with b gives start ≥ 05-07. 05-07 wins.
+    { id: 'c', dependencies: [
+      { on: 'a', type: 'starts_with' },
+      { on: 'b', type: 'starts_after' },
+    ] },
+  ]);
+
+  const c = computed.get('c');
+  assert.ok(c);
+  assert.equal(c.plannedStartDate, '2026-05-07', 'the later of the two start constraints wins');
+});
+
+test('typed edges pass through a computed chain (starts_with then starts_after)', () => {
+  const { computed } = autoSchedule([
+    { id: 'a', plannedStartDate: '2026-06-01', plannedEndDate: '2026-06-01', dependsOn: [] },
+    { id: 'b', dependencies: [{ on: 'a', type: 'starts_with' }] },              // b = 06-01
+    { id: 'c', dependencies: [{ on: 'b', type: 'starts_after' }] },             // c = 06-02
+  ]);
+
+  const b = computed.get('b');
+  const c = computed.get('c');
+  assert.equal(b.plannedStartDate, '2026-06-01');
+  assert.equal(c.plannedStartDate, '2026-06-02', 'c uses the computed b dates');
+});
+
+test('compat: bare id in dependencies defaults to starts_after', () => {
+  const { computed } = autoSchedule([
+    { id: 'a', plannedStartDate: '2026-07-01', plannedEndDate: '2026-07-04', dependsOn: [] },
+    { id: 'b', dependencies: ['a'] },
+  ]);
+
+  const b = computed.get('b');
+  assert.equal(b.plannedStartDate, '2026-07-05', 'bare id behaves as starts_after');
+});
