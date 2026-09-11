@@ -23,6 +23,19 @@
 .pbx-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
 .pbx-count { color: var(--muted); }
 
+/* The toolbar's secondary actions (LINA-242): "Reset to skeleton" and "Save as
+   my default". Both are .pbx-icon in text mode — deliberately quieter than the
+   .btn.primary "Save plan", because neither writes to the build record. Wraps
+   rather than squeezing the count on a narrow jobsite screen. */
+.pbx-tools { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; justify-content: flex-end; }
+/* The "saved as your default" confirmation: an inline note, not a toast or a
+   banner — the author stays exactly where they were. */
+.pbx-saved {
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+  padding: 4px 10px; border-radius: 999px;
+  color: var(--ok-fg); background: var(--ok-bg); border: 1px solid var(--ok-bd);
+}
+
 .pbx-phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s4); }
 .pbx-phase {
   border: 1px solid var(--outline); border-radius: var(--r-ctrl); overflow: hidden; background: var(--paper);

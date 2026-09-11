@@ -14,10 +14,10 @@
 // exactly as import does.
 import { redirect } from 'next/navigation';
 
-import { getBuild, getPlan, isSignedIn } from '@/lib/api';
+import { getBuild, getPlan, getPlanTemplate, isSignedIn } from '@/lib/api';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContext } from '@/server/portal-shell';
-import { hydrateDraft, type PhaseDraft } from '@/lib/plan-authoring';
+import { hydrateDraft, type PhaseDraft, type TemplatePhase } from '@/lib/plan-authoring';
 import { directoryOf } from '@/lib/view';
 import { UNKNOWN_PARTY, type PartyRef } from '@/lib/party-display';
 import { PlanBuildEditor } from './PlanBuildEditor';
@@ -28,12 +28,16 @@ export default async function PlanBuildPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan/build`);
 
-  const [build, plan] = await Promise.all([getBuild(id), getPlan(id)]);
+  const [build, plan, template] = await Promise.all([getBuild(id), getPlan(id), resolveTemplate()]);
   const shell = await buildShellContext(id, build.name);
 
   // "Keep editing" resumes the saved draft. getPlan surfaces a draft to its
   // author ONLY (LINA-230), so if `current` is a draft it is this signed-in
-  // party's to resume; otherwise the editor seeds the standard skeleton.
+  // party's to resume; otherwise the editor scaffolds from `template`.
+  //
+  // ORDER MATTERS: a saved draft always wins. The template is a starting point
+  // for a plan that does not exist yet — scaffolding over work the author already
+  // saved would silently discard it.
   const draft: PhaseDraft[] | undefined =
     plan.current?.status === 'draft' ? hydrateDraft(plan.current.stages) : undefined;
 
@@ -57,7 +61,26 @@ export default async function PlanBuildPage({ params }: { params: Promise<{ id: 
       activeBuild={{ id, name: build.name }}
       section="plan"
     >
-      <PlanBuildEditor projectId={id} initialPhases={draft} parties={parties} />
+      <PlanBuildEditor projectId={id} initialPhases={draft} templateBody={template} parties={parties} />
     </PortalShell>
   );
+}
+
+/**
+ * The resolved default scaffold (LINA-242), or undefined if it could not be read.
+ *
+ * A template is a convenience, not a permission or a record: if the endpoint is
+ * unreachable the author must still get a working editor, so a failure here
+ * degrades to `undefined` and the editor falls back to its built-in PLAN_SKELETON
+ * rather than turning a scaffold outage into an error page on the build itself.
+ * Deliberately swallowed and logged, never rethrown.
+ */
+async function resolveTemplate(): Promise<TemplatePhase[] | undefined> {
+  try {
+    const resolved = await getPlanTemplate();
+    return resolved.body?.length ? resolved.body : undefined;
+  } catch (err) {
+    console.warn('[plan/build] could not resolve the default plan template', err);
+    return undefined;
+  }
 }

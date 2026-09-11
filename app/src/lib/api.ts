@@ -46,6 +46,7 @@ import type {
 import type { CreatorRole } from './build-creation';
 import type { PlanBaselineView } from './plan-baseline';
 import type { MoneyView, RecordView, StageMaterialsView } from './record';
+import type { ResolvedPlanTemplate } from './plan-authoring';
 import {
   directoryOf, countsOf, toProject, toDecision, toChangeOrderSummary, toChangeOrderDetail,
   toAuditResult, projectedIfApproved,
@@ -171,6 +172,12 @@ const ROUTES = {
   getStageMaterials: {
     method: 'GET', path: (p) => `/stages/${enc(p.stageId)}/materials`,
     handler: (c) => c.http.schedule.getStageMaterials,
+  },
+  // Per-USER and project-independent, so it sits under /me next to getMe — there
+  // is no project param to alias (LINA-241/242, ADR-0018).
+  getPlanTemplate: {
+    method: 'GET', path: () => '/me/plan-template',
+    handler: (c) => c.http.schedule.resolvePlanTemplate,
   },
   createProject: {
     method: 'POST', path: () => '/projects',
@@ -540,6 +547,20 @@ export async function getBudgetMovement(projectId: string): Promise<MoneyView> {
 
 export async function getStageMaterials(stageId: string): Promise<StageMaterialsView> {
   return call<StageMaterialsView>('getStageMaterials', { stageId });
+}
+
+/**
+ * GET /me/plan-template — the caller's applicable default plan scaffold, resolved
+ * server-side (their own saved default → the system one). LINA-242 seeds a fresh
+ * plan builder from THIS rather than from the hard-coded PLAN_SKELETON.
+ *
+ * Read on the server for the build page so the editor mounts already scaffolded:
+ * a client fetch would either flash the wrong skeleton first or race the author's
+ * first keystroke against a state replacement. Nothing here touches a project —
+ * a template is copied into a draft, never linked to it (ADR-0018).
+ */
+export async function getPlanTemplate(): Promise<ResolvedPlanTemplate> {
+  return call<ResolvedPlanTemplate>('getPlanTemplate');
 }
 
 /**

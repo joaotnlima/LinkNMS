@@ -23,8 +23,15 @@
 // ── The seeded skeleton (pen "Build the plan — schedule (Gantt)") ────────────
 // A standard residential build broken into the three phases and the tasks the
 // pen enumerates. Names only: unassigned, undated, no sub-tasks — the author
-// fills those in. This is the one place the default plan shape is defined; the
-// server has no skeleton of its own (it validates and writes whatever is sent).
+// fills those in.
+//
+// SINCE LINA-242 THIS IS THE FALLBACK, NOT THE SOURCE. The default plan shape now
+// lives server-side in `schedule.plan_template` and is resolved per caller by
+// GET /me/plan-template (user default → system default, ADR-0018); the build page
+// seeds the editor from that. This constant is what the editor starts from only
+// when the endpoint could not be reached — a scaffold is a convenience, so an
+// unreachable template must degrade to a usable editor, never to an empty screen
+// or an error page. Do not delete it, and do not make it the primary seed again.
 export const PLAN_SKELETON: ReadonlyArray<{ name: string; tasks: readonly string[] }> = Object.freeze([
   {
     name: '1 · Pre-Construction',
@@ -60,6 +67,28 @@ export const PLAN_SKELETON: ReadonlyArray<{ name: string; tasks: readonly string
     ],
   },
 ]);
+
+// ── The template shape (LINA-241/242, ADR-0018) ──────────────────────────────
+// What GET/PUT /me/plan-template carries: names only, exactly two levels. A
+// phase is `{ name, tasks: [name, …] }` and a task is a BARE STRING — the edge
+// rejects a task-as-object (`too_deep`) and any extra phase key, so this type is
+// the whole contract, not a subset of it. PLAN_SKELETON is already this shape.
+
+export interface TemplatePhase { name: string; tasks: readonly string[] }
+
+/** GET/PUT /me/plan-template — the resolved default plus its provenance. */
+export interface ResolvedPlanTemplate {
+  /** Which rung of the ladder answered: the caller's own default, or the system one. */
+  source: 'user' | 'system';
+  body: TemplatePhase[];
+  template: {
+    id: string;
+    ownerScope: 'user' | 'org' | 'system';
+    name: string;
+    isDefault: boolean;
+    updatedAt: string;
+  };
+}
 
 // ── The client-side draft model ──────────────────────────────────────────────
 // Dates are the raw `<input type="date">` strings ('' = unset), normalised to
@@ -182,16 +211,31 @@ function emptySubtask(name = ''): TaskDraft {
 /** A task's sub-tasks, tolerating a draft built before the level existed. */
 const kids = (t: TaskDraft): TaskDraft[] => t.children ?? [];
 
-/** A fresh draft of the standard skeleton, with new keys each call. */
-export function seedSkeleton(): PhaseDraft[] {
-  return PLAN_SKELETON.map((p) => ({
+/**
+ * A fresh editor draft scaffolded from a names-only template body, with new keys
+ * each call. The COPY boundary (ADR-0018): the template's names are copied into
+ * a draft that from here on has nothing to do with it — editing the draft never
+ * writes back, and the draft carries no template id. Dates, descriptions,
+ * dependencies, owners and trades all start blank because a template holds none
+ * of them; they are per-project, not shape.
+ */
+export function seedFromTemplate(body: ReadonlyArray<TemplatePhase>): PhaseDraft[] {
+  return body.map((p) => ({
     key: newKey('p'),
     name: p.name,
     dependsOn: [],
     assigneePartyId: null,
     trade: '',
-    tasks: p.tasks.map((t) => emptyTask(t)),
+    tasks: (p.tasks ?? []).map((t) => emptyTask(t)),
   }));
+}
+
+/**
+ * A fresh draft of the hard-coded skeleton. The FALLBACK seed only — the build
+ * page normally passes the resolved template through `seedFromTemplate`.
+ */
+export function seedSkeleton(): PhaseDraft[] {
+  return seedFromTemplate(PLAN_SKELETON);
 }
 
 /** An empty phase, for "Add phase". */
@@ -1106,6 +1150,71 @@ export function toWire(phases: PhaseDraft[]): AuthoredNode[] {
     throw new PlanAuthorError('empty_plan', 'Add at least one phase before saving the plan.');
   }
   return stages;
+}
+
+/**
+ * Map the working draft to the names-only template body (LINA-242, ADR-0018).
+ *
+ * THE POINT OF THIS FUNCTION IS WHAT IT DROPS. A template is the SHAPE of a
+ * build — phases and the tasks under them — and nothing about one particular
+ * build. So dates and descriptions are dropped rather than carried: they are the
+ * author's answers for this project, and the edge would refuse them anyway (a
+ * phase may hold only `{ name, tasks }`). A task collapses to its bare name,
+ * which is what makes the second level the last one — there is no key left to
+ * hang a third on.
+ *
+ * Otherwise it mirrors `toWire`'s tolerance so the two never disagree about what
+ * "empty" means: a phase the author emptied out entirely is skipped, a task with
+ * no name is skipped (unlike toWire it cannot be "dated but unnamed" — dates do
+ * not survive the mapping), a nameless phase that still holds tasks is a typed
+ * refusal, and an empty result refuses rather than saving a blank default.
+ */
+export function toTemplateBody(phases: PhaseDraft[]): TemplatePhase[] {
+  const out: TemplatePhase[] = [];
+  for (const phase of phases) {
+    const name = phase.name.trim();
+    const tasks = phase.tasks.map((t) => t.name.trim()).filter((n) => n !== '');
+    if (!name && tasks.length === 0) continue;
+    if (!name) {
+      throw new PlanAuthorError('invalid_name', 'Give every phase a name before saving it as your default.');
+    }
+    out.push({ name, tasks });
+  }
+  if (out.length === 0) {
+    throw new PlanAuthorError('empty_plan', 'Add at least one phase before saving it as your default.');
+  }
+  return out;
+}
+
+/**
+ * PUT /api/v1/me/plan-template — "save as my default" (LINA-242, ADR-0018).
+ *
+ * Only `{ name?, body }` crosses the wire: `owner_id` is stamped from the
+ * session, so there is no owner to send and a forged one would be inert (§0,
+ * ADR-0004). A second save REPLACES the first — one default per user, guaranteed
+ * by a partial unique index, so this is an upsert and never accumulates.
+ *
+ * This write is entirely OUTSIDE the project record: it touches no stage, no
+ * version and no ledger event (templates COPY, never link). It is not a proposal
+ * and nothing is sent to the other party.
+ */
+export async function saveMyDefaultTemplate(body: TemplatePhase[]): Promise<ResolvedPlanTemplate> {
+  const res = await fetch('/api/v1/me/plan-template', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ body }),
+  });
+  let payload: unknown = null;
+  try { payload = await res.json(); } catch { /* proxy error page */ }
+  if (!res.ok) {
+    const err = (payload as { error?: { code?: string; message?: string } } | null)?.error;
+    throw new PlanAuthorError(
+      err?.code ?? 'internal',
+      err?.message ?? 'That did not save. Try again.',
+      res.status,
+    );
+  }
+  return payload as ResolvedPlanTemplate;
 }
 
 export interface AuthorResult {
