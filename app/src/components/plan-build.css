@@ -137,11 +137,51 @@
    --plan-baseline accent as the rest of the plan surfaces, and a stage the
    server named on a 409 is lit with --danger, the one colour this app uses for
    "this is refused", never for decoration. */
+/* ── The stage meta row: owner · trade · depends on (LINA-246) ─────────────
+   One row per stage at all three levels, carrying the three things a stage says
+   about itself that are not its name or its dates. It owns the indent that
+   `.pbx-deps` used to own (clearing the grip column so everything lines up under
+   the name); "Depends on" keeps its own layout and loses only its padding. */
+.pbx-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--s3);
+  padding: 2px 0 4px 22px;
+}
+.pbx-phase-hd + .pbx-meta { padding: 0 var(--s3) var(--s2) calc(var(--s3) + 46px); }
+.pbx-meta .pbx-deps { padding: 0; }
+
+/* Owner: the avatar states who, the select changes it. Both read the same value,
+   so the circle is never a stale copy of what the control holds. */
+.pbx-owner { display: flex; align-items: center; gap: 6px; }
+.pbx-ownersel {
+  border: 1px solid transparent; background: transparent; color: var(--fg);
+  border-radius: 6px; padding: 2px 4px; font: inherit; font-size: 12px; font-weight: 600;
+  max-width: 210px; cursor: pointer;
+}
+.pbx-ownersel:hover:not(:disabled) { border-color: var(--outline); }
+.pbx-ownersel:focus-visible { outline: 2px solid var(--owner); outline-offset: 0; }
+.pbx-ownersel:disabled { opacity: 0.5; cursor: default; }
+
+/* Trade: free text, not a controlled list. It is whatever the author (or the
+   spreadsheet they imported) calls the specialty, and normalising it would be
+   the record editing what it was told. */
+.pbx-tradefield { display: inline-flex; align-items: center; gap: 6px; }
+.pbx-tradelbl {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted);
+}
+.pbx-tradeinput {
+  border: 1px solid transparent; border-bottom-color: var(--outline);
+  background: transparent; color: var(--fg);
+  padding: 2px 4px; font: inherit; font-size: 12px; width: 130px;
+}
+.pbx-tradeinput:hover:not(:disabled) { border-bottom-color: var(--outline-strong); }
+.pbx-tradeinput:focus-visible { outline: 2px solid var(--owner); outline-offset: 0; }
+.pbx-tradeinput:disabled { opacity: 0.5; }
+
 .pbx-deps {
   position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   padding: 2px 0 4px 22px; /* clears the grip column so chips line up under the name */
 }
-.pbx-phase-hd + .pbx-deps { padding: 0 var(--s3) var(--s2) calc(var(--s3) + 46px); }
 
 .pbx-depbtn {
   border: 1px dashed var(--outline); background: transparent; color: var(--muted);
@@ -198,7 +238,15 @@
 
 @media (max-width: 720px) {
   .pbx-deps { padding-left: 0; }
+  .pbx-meta { padding-left: 0; }
+  .pbx-phase-hd + .pbx-meta { padding-left: var(--s3); }
   .pbx-dep-pop { left: 0; }
+  /* A phone gets the three controls stacked rather than wrapped mid-row: the
+     jobsite read is "who owns this", and that has to be the first thing under
+     the name, not whatever survived the wrap. */
+  .pbx-meta { flex-direction: column; align-items: flex-start; gap: var(--s2); }
+  .pbx-tradeinput { width: 100%; }
+  .pbx-tradefield { width: 100%; }
 }
 
 /* ── Task-detail drawer (LINA-234, ADR-0019) ──────────────────────────────── */

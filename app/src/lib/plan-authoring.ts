@@ -84,6 +84,10 @@ export interface TaskDraft {
   key: string; name: string; start: string; end: string; description: string;
   /** Local keys of this task's predecessors (LINA-233). */
   dependsOn: string[];
+  /** The member this stage is owned by, by PARTY ID — null = unassigned (LINA-235). */
+  assigneePartyId: string | null;
+  /** Free-form specialty label ("Electrical"), '' = none. The chip's text. */
+  trade: string;
   /** Sub-sub-actions under this task. Always [] on a sub-task (the 3-level cap). */
   children: TaskDraft[];
 }
@@ -91,6 +95,9 @@ export interface PhaseDraft {
   key: string; name: string; tasks: TaskDraft[];
   /** Local keys of this phase's predecessors (LINA-233). */
   dependsOn: string[];
+  /** A phase is a stage like any other — it may be owned and tagged too. */
+  assigneePartyId: string | null;
+  trade: string;
 }
 
 let keySeq = 0;
@@ -101,12 +108,18 @@ export function newKey(prefix = 'k'): string {
 }
 
 function emptyTask(name = ''): TaskDraft {
-  return { key: newKey('t'), name, start: '', end: '', description: '', dependsOn: [], children: [] };
+  return {
+    key: newKey('t'), name, start: '', end: '', description: '',
+    dependsOn: [], assigneePartyId: null, trade: '', children: [],
+  };
 }
 
 /** A fresh sub-sub-action row. Keyed 's-' so a draft reads at a glance. */
 function emptySubtask(name = ''): TaskDraft {
-  return { key: newKey('s'), name, start: '', end: '', description: '', dependsOn: [], children: [] };
+  return {
+    key: newKey('s'), name, start: '', end: '', description: '',
+    dependsOn: [], assigneePartyId: null, trade: '', children: [],
+  };
 }
 
 /** A task's sub-tasks, tolerating a draft built before the level existed. */
@@ -118,13 +131,15 @@ export function seedSkeleton(): PhaseDraft[] {
     key: newKey('p'),
     name: p.name,
     dependsOn: [],
+    assigneePartyId: null,
+    trade: '',
     tasks: p.tasks.map((t) => emptyTask(t)),
   }));
 }
 
 /** An empty phase, for "Add phase". */
 export function emptyPhase(name = ''): PhaseDraft {
-  return { key: newKey('p'), name, tasks: [], dependsOn: [] };
+  return { key: newKey('p'), name, tasks: [], dependsOn: [], assigneePartyId: null, trade: '' };
 }
 
 export { emptyTask, emptySubtask };
@@ -144,6 +159,10 @@ interface DraftStageNode {
   plannedEndDate?: string | null;
   /** Resolved predecessor STAGE IDS (LINA-233); re-keyed to local keys below. */
   dependsOn?: string[] | null;
+  /** The owning member's party id, or null (LINA-235). */
+  assigneePartyId?: string | null;
+  /** Free-form specialty label, or null. */
+  trade?: string | null;
   children?: DraftStageNode[] | null;
 }
 
@@ -173,6 +192,10 @@ export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
       end: t.plannedEndDate ?? '',
       description: t.description ?? '',
       dependsOn: [],
+      // An assignee the author set survives the round trip; a stage the server
+      // has no owner for comes back null, which is "Unassigned" and not a guess.
+      assigneePartyId: t.assigneePartyId ?? null,
+      trade: t.trade ?? '',
       children: deep ? (t.children ?? []).map((s) => readTask(s, 's', false)) : [],
     };
   };
@@ -184,6 +207,8 @@ export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
       key,
       name: p.name,
       dependsOn: [],
+      assigneePartyId: p.assigneePartyId ?? null,
+      trade: p.trade ?? '',
       tasks: (p.children ?? []).map((t) => readTask(t, 't', true)),
     };
   });
@@ -608,6 +633,74 @@ export function detectCycle(phases: PhaseDraft[]): PlanNodeRef[] | null {
   return null;
 }
 
+// ── Owner + specialty (LINA-235/246, ADR-0017 annex 3) ──────────────────────
+// Both live on EVERY stage — a phase can be a trade's from end to end, a task can
+// be one person's, a sub-task can be a different sub's. So both ops address a
+// stage by KEY at any level, the same way `setDependsOn` does, rather than
+// growing a per-level pair.
+//
+// ASSIGNMENT IS ATTRIBUTION, NOT PERMISSION. Naming a party on a stage says who
+// is expected to do it. It grants nothing: the assignee reads and writes exactly
+// what their membership role already allowed, and the server never consults
+// `assignee_party_id` to authorise anything. That is why the picker offers only
+// parties who are ALREADY members — an id the project does not know comes back
+// `400 unknown_assignee` rather than quietly seating someone.
+
+/** Rebuild exactly the one stage `key` names, at whichever level it sits. */
+function patchStage(
+  phases: PhaseDraft[],
+  key: string,
+  patch: { assigneePartyId?: string | null; trade?: string },
+): PhaseDraft[] {
+  return phases.map((p) => {
+    if (p.key === key) return { ...p, ...patch };
+    let touchedTasks = false;
+    const tasks = p.tasks.map((t) => {
+      if (t.key === key) { touchedTasks = true; return { ...t, ...patch }; }
+      if (!kids(t).some((s) => s.key === key)) return t;
+      touchedTasks = true;
+      return { ...t, children: kids(t).map((s) => (s.key === key ? { ...s, ...patch } : s)) };
+    });
+    return touchedTasks ? { ...p, tasks } : p;
+  });
+}
+
+/**
+ * Name the member who owns a stage, or clear it.
+ *
+ * The party id is passed straight through — this file never maps it to a name.
+ * Display names and avatars are a pure FE projection of the project members the
+ * screen already holds (ADR-0006): the schedule service stores an id and nothing
+ * else, so a party who is renamed is renamed everywhere at once rather than
+ * leaving a stale copy frozen into the plan.
+ */
+export function setAssignee(
+  phases: PhaseDraft[], key: string, assigneePartyId: string | null,
+): PhaseDraft[] {
+  return patchStage(phases, key, { assigneePartyId });
+}
+
+/** Set a stage's free-form specialty label ('' clears it). */
+export function setTrade(phases: PhaseDraft[], key: string, trade: string): PhaseDraft[] {
+  return patchStage(phases, key, { trade });
+}
+
+/** One stage's owner + specialty, by key — for the row controls. */
+export function stageMeta(
+  phases: PhaseDraft[], key: string,
+): { assigneePartyId: string | null; trade: string } {
+  for (const p of phases) {
+    if (p.key === key) return { assigneePartyId: p.assigneePartyId ?? null, trade: p.trade ?? '' };
+    for (const t of p.tasks) {
+      if (t.key === key) return { assigneePartyId: t.assigneePartyId ?? null, trade: t.trade ?? '' };
+      for (const s of kids(t)) {
+        if (s.key === key) return { assigneePartyId: s.assigneePartyId ?? null, trade: s.trade ?? '' };
+      }
+    }
+  }
+  return { assigneePartyId: null, trade: '' };
+}
+
 /** Total task count across all phases — for the "N tasks across M phases" summary. */
 export function taskCount(phases: PhaseDraft[]): number {
   return phases.reduce((acc, p) => acc + p.tasks.length, 0);
@@ -631,6 +724,10 @@ export interface AuthoredNode {
   /** Predecessor keys. Always sent, `[]` when none, so a cleared row clears. */
   dependsOn: string[];
   description?: string | null;
+  /** The owning member's party id, or null. Always sent, so clearing clears. */
+  assigneePartyId?: string | null;
+  /** Free-form specialty label, or null. Always sent, so clearing clears. */
+  trade?: string | null;
   plannedStartDate?: string | null;
   plannedEndDate?: string | null;
   children?: AuthoredNode[];
@@ -662,6 +759,10 @@ export class PlanAuthorError extends Error {
 
 const dateOrNull = (v: string): string | null => (v && v.trim() ? v.trim() : null);
 
+/** '' → null at the wire edge; the server stores a trade or nothing, never ''. */
+const textOrNull = (v: string | null | undefined): string | null =>
+  (v && v.trim() ? v.trim() : null);
+
 /**
  * Build the `{ stages }` body, validating client-side first so the author gets a
  * pointed message beside the field rather than a round-trip 400. Mirrors exactly
@@ -685,8 +786,13 @@ export function toWire(phases: PhaseDraft[]): AuthoredNode[] {
   // Which rows will actually be sent — computed first, because an edge may point
   // at a row that comes later in the tree.
   const sent = new Set<string>();
+  // An owner or a trade counts as touching the row: a task the author named
+  // nobody on but handed to "Electrical" is a row they filled in, and dropping
+  // it would throw that away silently. (A NAMED row is still the only one that
+  // saves — a nameless one raises `invalid_name` below, as it always did.)
   const touched = (t: TaskDraft) =>
-    t.name.trim() !== '' || !!t.start || !!t.end || (t.description ?? '').trim() !== '';
+    t.name.trim() !== '' || !!t.start || !!t.end || (t.description ?? '').trim() !== ''
+    || t.assigneePartyId != null || (t.trade ?? '').trim() !== '';
   // A sub-task the author added and never filled in is dropped like a blank task.
   const subs = (t: TaskDraft) => kids(t).filter(touched);
   // A row the author never touched is dropped — UNLESS it now holds a real
@@ -724,19 +830,25 @@ export function toWire(phases: PhaseDraft[]): AuthoredNode[] {
         return {
           name: sn, key: s.key, dependsOn: wireDeps(s.dependsOn),
           description: (s.description ?? '').trim() || null,
+          assigneePartyId: s.assigneePartyId ?? null, trade: textOrNull(s.trade),
           plannedStartDate: dateOrNull(s.start), plannedEndDate: dateOrNull(s.end),
         };
       });
       return {
         name: tn, key: t.key, dependsOn: wireDeps(t.dependsOn),
         description: (t.description ?? '').trim() || null,
+        assigneePartyId: t.assigneePartyId ?? null, trade: textOrNull(t.trade),
         plannedStartDate: dateOrNull(t.start), plannedEndDate: dateOrNull(t.end),
         // Omitted, not `[]`, when there is no third level: a two-level plan puts
         // exactly the bytes on the wire it did before this level existed.
         ...(grandchildren.length > 0 ? { children: grandchildren } : {}),
       };
     });
-    stages.push({ name, key: phase.key, dependsOn: wireDeps(phase.dependsOn), children });
+    stages.push({
+      name, key: phase.key, dependsOn: wireDeps(phase.dependsOn),
+      assigneePartyId: phase.assigneePartyId ?? null, trade: textOrNull(phase.trade),
+      children,
+    });
   }
   if (stages.length === 0) {
     throw new PlanAuthorError('empty_plan', 'Add at least one phase before saving the plan.');
