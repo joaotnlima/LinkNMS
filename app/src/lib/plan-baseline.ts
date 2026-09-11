@@ -57,11 +57,18 @@ export interface PlanStageNode {
   plannedEndDate: string | null;
   plannedCostCents: number | null;
   /**
-   * Resolved predecessor STAGE IDS (LINA-233) — `[]` when none. Optional here
-   * only because the read predates it and the older fixtures do not carry it;
-   * the service always sends it (contract §0).
+   * Resolved predecessor STAGE IDS (LINA-233) — `[]` when none. LEGACY and
+   * untyped: superseded by `dependencies` (ADR-0020), dual-emitted by the
+   * service so a reader that never learned about types is not broken mid-deploy.
+   * Nothing in the app reads it; prefer `dependencies`.
    */
   dependsOn?: string[];
+  /**
+   * Resolved TYPED predecessor links (ADR-0020 §3) — `[]` when none. `on` is a
+   * stage id in this same tree. Optional here only because the read predates it
+   * and the older fixtures do not carry it; the service always sends it.
+   */
+  dependencies?: Array<{ on: string; type: 'starts_after' | 'starts_with' | 'ends_with' }>;
   children: PlanStageNode[];
 }
 

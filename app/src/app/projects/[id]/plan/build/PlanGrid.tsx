@@ -26,6 +26,14 @@
 //   7. PROMOTE / DEMOTE a row in the WBS (a row menu), respecting the depth-3
 //      cap — the pure ops in plan-authoring.ts do the reparenting.
 //
+// LINA-253 adds the DEPENDENCY ARROWS (ADR-0020 §6): the typed links the drawer
+// authors are drawn as elbow connectors in an SVG overlay above the bars,
+// anchored on the ends each type actually constrains. The geometry is pure
+// (@/lib/plan-gantt connectorPath) and recomputed from the same bar boxes the
+// bars render at, so the arrows track live through a drag with no state of
+// their own. Still no wire or draft-shape change here — this component owns
+// none of the plan.
+//
 // WHAT A ROW DOES (the founder's four asks, LINA-248):
 //   1. OWNER is a column: an avatar — the unassigned ring when nobody owns the
 //      stage — with the member <select> laid over it, so clicking the circle
@@ -55,10 +63,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  addDays, applyDrag, baseWindow, clickDates, clipBarGeom, diffDays, formatDay, parseDay,
-  type DragMode, type GanttWindow, type TimeBase,
+  addDays, applyDrag, barRect, baseWindow, clickDates, clipBarGeom, connectorPath, diffDays,
+  formatDay, parseDay,
+  type ConnectorEnd, type DragMode, type GanttWindow, type TimeBase,
 } from '@/lib/plan-gantt';
-import { childStatusCounts, type PhaseDraft, type StatusCounts, type TaskDraft } from '@/lib/plan-authoring';
+import {
+  DEP_LABELS, childStatusCounts, nodeIndex, planLinks,
+  type PhaseDraft, type StatusCounts, type TaskDraft,
+} from '@/lib/plan-authoring';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 
@@ -76,6 +88,14 @@ const BASE_LABELS: Array<[TimeBase, string]> = [
 /** Row heights, shared by the table cell and its track so the panes align. */
 const H = { phase: 36, task: 42, sub: 36, add: 34 } as const;
 const AXIS_H = 28;
+/**
+ * Each bar's vertical middle WITHIN its track, in px — where a dependency
+ * connector attaches (LINA-253). These mirror plan-build.css exactly: a task bar
+ * is `top: 6px; height: 24px`, a sub-task bar `top: 5px; height: 18px`, a phase
+ * envelope `top: 12px; height: 12px`. Kept here rather than measured because the
+ * whole point of the pure geometry is that it needs no layout pass to be right.
+ */
+const BAR_MID = { phase: 18, task: 18, sub: 14 } as const;
 /** Resizable columns' minimum widths — below these the cell content breaks. */
 const COL_MIN = { name: 120, trade: 56, dates: 150 } as const;
 /** Largest a column may grow to (drag or auto-fit). */
@@ -505,6 +525,58 @@ export function PlanGrid(props: PlanGridProps) {
 
   const rowH = (r: Row) => (r.kind === 'phase' ? H.phase : r.kind === 'add' ? H.add : r.si != null ? H.sub : H.task);
 
+  // ── Dependency connectors (ADR-0020 §6, LINA-253) ──────────────────────────
+  // Every typed link the author declared, drawn as an elbow arrow between the
+  // two bars it constrains. Two passes, both cheap and both pure:
+  //   1. ANCHORS — walk the rows once, accumulating each track's top, and record
+  //      the bar box of every DATED stage. The box comes from barRect, the same
+  //      helper the bar itself renders with, so an arrow can never land beside
+  //      the bar it names. A phase anchors on its derived envelope bar.
+  //   2. LINKS — turn each link whose BOTH ends have a box into a path. A link
+  //      touching an undated stage is simply not drawn (ADR-0020 §6): there is
+  //      no bar to point at, and inventing one would assert a date nobody set.
+  //
+  // Both memos depend on `phases` through `rows`, so a drag — which writes the
+  // dragged row's dates on every pointermove — recomputes the connectors from
+  // the very same geometry the bars move with. The arrows track live for free.
+  const anchors = useMemo(() => {
+    const m = new Map<string, ConnectorEnd>();
+    if (!win) return m;
+    let top = AXIS_H;
+    for (const r of rows) {
+      const h = rowH(r);
+      if (r.kind === 'phase') {
+        const env = phaseEnvelope(r.phase);
+        const bar = env ? clipBarGeom(win, env.start, env.end) : null;
+        if (bar) m.set(r.key, { ...barRect(bar.offsetDays, bar.spanDays, col), y: top + BAR_MID.phase });
+      } else if (r.kind === 'task') {
+        const bar = clipBarGeom(win, r.node.start, r.node.end);
+        const mid = r.si != null ? BAR_MID.sub : BAR_MID.task;
+        if (bar) m.set(r.key, { ...barRect(bar.offsetDays, bar.spanDays, col), y: top + mid });
+      }
+      top += h;
+    }
+    return m;
+  }, [rows, win, col]);
+
+  // The labels the arrows answer to: a connector is thin and muted by design, so
+  // its meaning lives in the title a hover/AT reveals, not in its shape.
+  const labels = useMemo(() => nodeIndex(phases), [phases]);
+
+  const connectors = useMemo(() => planLinks(phases).flatMap((l) => {
+    const from = anchors.get(l.from);
+    const to = anchors.get(l.to);
+    if (!from || !to) return [];
+    const geom = connectorPath(to, from, l.type); // predecessor → dependent
+    return [{
+      id: `${l.to}->${l.from}`,
+      d: geom.d,
+      title: `${labels.get(l.from)?.label ?? 'This stage'} ${DEP_LABELS[l.type].toLowerCase()} ${labels.get(l.to)?.label ?? 'another stage'}`,
+    }];
+  }), [phases, anchors, labels]);
+
+  const canvasHeight = AXIS_H + rows.reduce((h, r) => h + rowH(r), 0) + H.add;
+
   const name = useCallback((r: Row, id: string) => {
     const isPhase = r.kind === 'phase';
     const value = isPhase ? (r as Extract<Row, { kind: 'phase' }>).phase.name : (r as Extract<Row, { kind: 'task' }>).node.name;
@@ -908,16 +980,18 @@ export function PlanGrid(props: PlanGridProps) {
                 if (r.kind === 'phase') {
                   const env = phaseEnvelope(r.phase);
                   const bar = env ? clipBarGeom(win, env.start, env.end) : null;
+                  const box = bar ? barRect(bar.offsetDays, bar.spanDays, col) : null;
                   return (
                     <div key={`tp-${r.pi}`} className="pgt-band" style={{ height: H.phase }}>
-                      {bar ? (
+                      {box ? (
                         <div className="pgd-envbar" aria-hidden
-                          style={{ left: bar.offsetDays * col + 1, width: Math.max(2, bar.spanDays * col - 2) }} />
+                          style={{ left: box.x, width: box.width }} />
                       ) : null}
                     </div>
                   );
                 }
                 const bar = clipBarGeom(win, r.node.start, r.node.end);
+                const box = bar ? barRect(bar.offsetDays, bar.spanDays, col) : null;
                 const undated = !r.node.start && !r.node.end;
                 return (
                   <div
@@ -932,10 +1006,10 @@ export function PlanGrid(props: PlanGridProps) {
                     {todayOffset !== null && todayOffset >= 0 && todayOffset < win.days ? (
                       <div className="pgd-today" style={{ left: todayOffset * col }} aria-hidden />
                     ) : null}
-                    {bar ? (
+                    {bar && box ? (
                       <div
                         className={`pgt-bar${r.si != null ? ' is-sub' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}`}
-                        style={{ left: bar.offsetDays * col + 1, width: Math.max(2, bar.spanDays * col - 2) }}
+                        style={{ left: box.x, width: box.width }}
                         role="button" tabIndex={-1}
                         aria-label={
                           `${r.node.name.trim() || (r.si != null ? 'Sub-task' : 'Task')}: `
@@ -965,16 +1039,50 @@ export function PlanGrid(props: PlanGridProps) {
                     ) : null}
                     {/* The hover tooltip, a sibling right after the bar so a pure
                         CSS `:hover +` reveal keeps it out of the drag path (ask 1). */}
-                    {bar ? (
+                    {box ? (
                       <span
                         className="pgt-tip" aria-hidden
-                        style={{ left: bar.offsetDays * col + Math.max(2, bar.spanDays * col - 2) + 6 }}
+                        style={{ left: box.x + box.width + 6 }}
                       >{barTip(r.node.start, r.node.end)}</span>
                     ) : null}
                   </div>
                 );
               })}
               <div className="pgd-track-add" style={{ height: H.add }} />
+
+              {/* The dependency arrows (ADR-0020 §6). ONE overlay above every
+                  bar, and inert: `pointer-events: none` so a connector crossing
+                  a bar never steals the drag that bar exists for.
+                  aria-hidden because the arrows are a PICTURE of links the
+                  drawer already lists in words — the accessible surface is that
+                  list, not a screen reader walking a bag of paths. The per-path
+                  <title> still answers a mouse hover. */}
+              {connectors.length > 0 ? (
+                <svg
+                  className="pgt-links"
+                  width={canvasWidth}
+                  height={canvasHeight}
+                  viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+                  aria-hidden
+                  focusable="false"
+                >
+                  <defs>
+                    {/* `orient="auto"` turns the head with the final segment, so
+                        an ends_with arrow points back left without a second def. */}
+                    <marker
+                      id="pgt-arrow" markerWidth="5" markerHeight="5"
+                      refX="4.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse"
+                    >
+                      <path d="M0 0 L5 2.5 L0 5 z" className="pgt-arrowhead" />
+                    </marker>
+                  </defs>
+                  {connectors.map((c) => (
+                    <path key={c.id} className="pgt-link" d={c.d} markerEnd="url(#pgt-arrow)">
+                      <title>{c.title}</title>
+                    </path>
+                  ))}
+                </svg>
+              ) : null}
             </div>
           ) : null}
         </div>
