@@ -355,7 +355,7 @@ drag/Gantt §5 item, deferred).
 
 ## Annex 3 (LINA-235, 2026-09-11) — per-stage assignee + specialty tags
 
-**Status: drafted by Back-End Developer, pending Architect ratification on merge.**
+**Status: Accepted** (ratified by Full-Stack Architect on merge of PR #109, 2026-09-11).
 Scope: the ADR-0017 §5 "per-task owner / assignee avatars" and "specialty/trade
 tags" items, which this annex ships as the **backend** slice (migration + `:author`
 payload + wire contract). The FE-side surface (assignee picker, avatar/initials
