@@ -1,9 +1,9 @@
 # Slice — Direct plan authoring ("Build the plan here") — frozen contract
 
-- Issue: LINA-228, **LINA-230** (draft-not-proposal), **LINA-233** (dependencies), **LINA-235** (assignee)
-- ADR: 0017-direct-plan-authoring.md (+ LINA-230 annex, LINA-233 annex 2, LINA-235 annex 3)
+- Issue: LINA-228, **LINA-230** (draft-not-proposal), **LINA-233** (dependencies), **LINA-235** (assignee), **LINA-251** (typed dependencies)
+- ADR: 0017-direct-plan-authoring.md (+ LINA-230 annex, LINA-233 annex 2, LINA-235 annex 3), **0020-typed-plan-dependencies.md**
 - Owner: Full-Stack Architect
-- Status: Frozen (v4 — assignee/trade tags per stage)
+- Status: Frozen (v5 — typed dependencies)
 
 The FE and BE build against this. It mirrors the B1 import `:confirm` write and
 feeds the B2 D11–D13 proposal surface unchanged.
@@ -26,6 +26,20 @@ feeds the B2 D11–D13 proposal surface unchanged.
 > (server stage ids) for the FE to render predecessor chips. Persistence is
 > guarded: a frozen/terminal version's dependency rows can never be deleted
 > (migration 0007, mirroring the stage guard from 0005).
+
+> **v5 change (LINA-251, ADR-0020).** Dependencies are now **typed**:
+> `starts_after` (finish-to-start, the previous implicit semantics),
+> `starts_with` (start-to-start), `ends_with` (finish-to-finish). Each
+> `dependsOn` entry may be a bare key (compat alias for
+> `{ key, type: "starts_after" }`) or `{ "key": "...", "type": "..." }`.
+> Unknown type → `400 invalid_dependency_type`; duplicate target within one
+> stage → `400 duplicate_dependency`; one typed link per ordered pair (PK
+> unchanged). `getPlan` additionally emits
+> `dependencies: [{ on: <stageId>, type }]` per node; legacy `dependsOn`
+> (ids only) stays dual-emitted until the FE consumes `dependencies` in prod.
+> Cycle rule is type-blind (single DAG). Storage: migration 0010 adds
+> `dep_type` with default `starts_after`. See ADR-0020 for Gantt connector
+> anchoring and auto-schedule semantics.
 
 > **v4 change (LINA-235).** Each stage gains an optional **assignee** — a
 > reference to a party/membership on the project (bare uuid, not a free-form
