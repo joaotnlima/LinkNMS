@@ -68,12 +68,12 @@ export const PLAN_SKELETON: ReadonlyArray<{ name: string; tasks: readonly string
 // so predecessors can be named ("depends on"). It is still not a stage id: the
 // server resolves the keys to its own ids in-transaction and never stores them.
 
-// A node's `dependsOn` holds the LOCAL KEYS of its predecessors ("this can't
-// start until those are done"). Any other stage is a valid target — a task may
-// follow a phase, a phase may follow a task in another phase (contract §1,
-// ADR-0017 annex 2: scope is any-stage, no parent/level constraint). The keys
-// are author-local: the server resolves them to its own stage ids inside the
-// draft-save transaction and never persists them.
+// A node's `dependsOn` holds TYPED EDGES to its predecessors (ADR-0020): the
+// predecessor's LOCAL KEY plus HOW it constrains this stage. Any other stage is
+// a valid target — a task may follow a phase, a phase may follow a task in
+// another phase (contract §1, ADR-0017 annex 2: scope is any-stage, no
+// parent/level constraint). The keys are author-local: the server resolves them
+// to its own stage ids inside the draft-save transaction and never persists them.
 
 // A task and a sub-task are the SAME shape — a sub-task is simply a task that
 // sits under one. Reusing the type keeps every field (dates, description,
@@ -90,10 +90,51 @@ export const PLAN_SKELETON: ReadonlyArray<{ name: string; tasks: readonly string
  */
 export type StageStatus = 'not_started' | 'in_progress' | 'blocked' | 'done';
 
+/**
+ * HOW a predecessor constrains the stage that names it (ADR-0020 §1). Three
+ * types, no more: the classic finish-to-start, start-to-start and
+ * finish-to-finish. Lag days and start-to-finish are deliberately out of v1.
+ */
+export type DepType = 'starts_after' | 'starts_with' | 'ends_with';
+
+/** The type vocabulary in the order the picker offers it — default first. */
+export const DEP_TYPES: readonly DepType[] = Object.freeze(
+  ['starts_after', 'starts_with', 'ends_with'] as const,
+);
+
+/** The EXACT labels the founder asked for. One place, so picker and chip agree. */
+export const DEP_LABELS: Readonly<Record<DepType, string>> = Object.freeze({
+  starts_after: 'Starts after',
+  starts_with: 'Starts with',
+  ends_with: 'Ends with',
+});
+
+/** What a type means, in the drawer's voice — the picker's per-option hint. */
+export const DEP_HINTS: Readonly<Record<DepType, string>> = Object.freeze({
+  starts_after: 'starts once that one finishes',
+  starts_with: 'starts on the same day that one starts',
+  ends_with: 'finishes on the same day that one finishes',
+});
+
+/** The type a fresh link is created with (ADR-0020: the column default too). */
+export const DEFAULT_DEP_TYPE: DepType = 'starts_after';
+
+/** A link to ONE predecessor, by local key, and how it constrains this stage. */
+export interface DepEdge {
+  /** The predecessor's author-local key. */
+  on: string;
+  type: DepType;
+}
+
+/** Is this one of the three types? Guards anything read off the wire. */
+export function isDepType(v: unknown): v is DepType {
+  return typeof v === 'string' && (DEP_TYPES as readonly string[]).includes(v);
+}
+
 export interface TaskDraft {
   key: string; name: string; start: string; end: string; description: string;
-  /** Local keys of this task's predecessors (LINA-233). */
-  dependsOn: string[];
+  /** Typed links to this task's predecessors (LINA-233, typed by ADR-0020). */
+  dependsOn: DepEdge[];
   /** The member this stage is owned by, by PARTY ID — null = unassigned (LINA-235). */
   assigneePartyId: string | null;
   /** Free-form specialty label ("Electrical"), '' = none. The chip's text. */
@@ -109,8 +150,8 @@ export interface TaskDraft {
 }
 export interface PhaseDraft {
   key: string; name: string; tasks: TaskDraft[];
-  /** Local keys of this phase's predecessors (LINA-233). */
-  dependsOn: string[];
+  /** Typed links to this phase's predecessors (LINA-233, typed by ADR-0020). */
+  dependsOn: DepEdge[];
   /** A phase is a stage like any other — it may be owned and tagged too. */
   assigneePartyId: string | null;
   trade: string;
@@ -173,8 +214,14 @@ interface DraftStageNode {
   description?: string | null;
   plannedStartDate?: string | null;
   plannedEndDate?: string | null;
-  /** Resolved predecessor STAGE IDS (LINA-233); re-keyed to local keys below. */
-  dependsOn?: string[] | null;
+  /**
+   * Resolved TYPED predecessor edges (ADR-0020): `on` is the server's stage id,
+   * re-keyed to a local key below. This is the field the editor reads — the
+   * service still dual-emits a legacy untyped `dependsOn: string[]` beside it
+   * for `plan-baseline.ts`, which this file deliberately ignores: an untyped
+   * edge read here would have to invent a type.
+   */
+  dependencies?: Array<{ on: string; type?: string | null }> | null;
   /** The owning member's party id, or null (LINA-235). */
   assigneePartyId?: string | null;
   /** Free-form specialty label, or null. */
@@ -187,8 +234,8 @@ interface DraftStageNode {
 /**
  * Turn a saved draft's stage tree into the editor's phase/task model.
  *
- * Dependencies come back as the SERVER's stage ids (contract §0: "getPlan
- * returns each stage's resolved dependsOn"), so re-keying is a two-pass job —
+ * Dependencies come back as typed edges over the SERVER's stage ids (contract
+ * §0 / ADR-0020 §3: `dependencies: [{ on, type }]`), so re-keying is a two-pass —
  * every node has to have been given its local key before any edge can be
  * translated, since a predecessor may sit later in the tree (a phase may follow
  * a task in a phase below it). An edge naming a stage that is not in this tree
@@ -234,16 +281,28 @@ export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
     };
   });
 
-  const translate = (ids: string[] | null | undefined): string[] =>
-    (ids ?? []).map((id) => keyByStageId.get(id)).filter((k): k is string => typeof k === 'string');
+  // An edge whose type the server does not name falls back to the default —
+  // the same thing migration 0010's column default does for a pre-ADR-0020 row,
+  // so an old plan reads as the finish-to-start graph it has always been.
+  const translate = (deps: DraftStageNode['dependencies']): DepEdge[] => {
+    const out: DepEdge[] = [];
+    const seen = new Set<string>();
+    for (const d of deps ?? []) {
+      const key = d && typeof d.on === 'string' ? keyByStageId.get(d.on) : undefined;
+      if (key === undefined || seen.has(key)) continue; // dangling, or a dup the save would 400 on
+      seen.add(key);
+      out.push({ on: key, type: isDepType(d.type) ? d.type : DEFAULT_DEP_TYPE });
+    }
+    return out;
+  };
 
   stages.forEach((p, pi) => {
-    phases[pi].dependsOn = translate(p.dependsOn);
+    phases[pi].dependsOn = translate(p.dependencies);
     (p.children ?? []).forEach((t, ti) => {
-      phases[pi].tasks[ti].dependsOn = translate(t.dependsOn);
+      phases[pi].tasks[ti].dependsOn = translate(t.dependencies);
       (t.children ?? []).forEach((s, si) => {
         const sub = phases[pi].tasks[ti].children[si];
-        if (sub) sub.dependsOn = translate(s.dependsOn);
+        if (sub) sub.dependsOn = translate(s.dependencies);
       });
     });
   });
@@ -327,7 +386,7 @@ function pruneEdges(phases: PhaseDraft[]): PhaseDraft[] {
     live.add(p.key);
     for (const t of p.tasks) { live.add(t.key); for (const s of kids(t)) live.add(s.key); }
   }
-  const keep = (deps: string[]) => deps.filter((k) => live.has(k));
+  const keep = (deps: DepEdge[]) => deps.filter((d) => live.has(d.on));
   return phases.map((p) => ({
     ...p,
     dependsOn: keep(p.dependsOn),
@@ -520,10 +579,13 @@ export function demoteNode(
   return replaceAt(phases, pi, { ...phase, tasks });
 }
 
-// ── Dependencies: "depends on" (LINA-233, ADR-0017 annex 2) ─────────────────
-// An edge reads "this stage cannot start until that one is done", stored on the
-// DEPENDENT as `dependsOn: [predecessorKey]` — the same direction as the wire,
-// so nothing is flipped at the edge. The server is the authority on what is a
+// ── Dependencies: typed scheduling links (LINA-233, ADR-0020) ───────────────
+// An edge reads "this stage is scheduled against that one, THIS way", stored on
+// the DEPENDENT as `dependsOn: [{ on: predecessorKey, type }]` — the same
+// direction as the wire, so nothing is flipped at the edge. There is at most ONE
+// link per ordered pair (ADR-0020 §2: the type qualifies the link, it does not
+// multiply it); the server refuses a second with `400 duplicate_dependency`, so
+// every op below keys by `on`. The server is the authority on what is a
 // legal graph (it revalidates the whole thing on every save and refuses a cycle
 // with 409); everything here is the courtesy layer that stops the author walking
 // into that refusal, plus the labels the picker and the chips print.
@@ -591,9 +653,9 @@ export function nodeIndex(phases: PhaseDraft[]): Map<string, PlanNodeRef> {
   return new Map(planNodes(phases).map((n) => [n.key, n]));
 }
 
-/** key → its declared predecessors. The graph every helper below walks. */
-function edges(phases: PhaseDraft[]): Map<string, string[]> {
-  const m = new Map<string, string[]>();
+/** key → its declared typed edges. The graph every helper below walks. */
+function edges(phases: PhaseDraft[]): Map<string, DepEdge[]> {
+  const m = new Map<string, DepEdge[]>();
   for (const p of phases) {
     m.set(p.key, p.dependsOn);
     for (const t of p.tasks) {
@@ -604,7 +666,13 @@ function edges(phases: PhaseDraft[]): Map<string, string[]> {
   return m;
 }
 
-/** Every stage that transitively depends on `key` (its downstream). */
+/**
+ * Every stage that transitively depends on `key` (its downstream).
+ *
+ * TYPE-BLIND, like the cycle check: all three link types are ordering edges on
+ * one directed graph (ADR-0020 §4), so a `starts_with` closes a loop exactly as
+ * a `starts_after` does and is held back from the picker just the same.
+ */
 function dependents(phases: PhaseDraft[], key: string): Set<string> {
   const deps = edges(phases);
   const out = new Set<string>();
@@ -615,7 +683,7 @@ function dependents(phases: PhaseDraft[], key: string): Set<string> {
     grew = false;
     for (const [node, preds] of deps) {
       if (out.has(node)) continue;
-      if (preds.some((p) => p === key || out.has(p))) { out.add(node); grew = true; }
+      if (preds.some((p) => p.on === key || out.has(p.on))) { out.add(node); grew = true; }
     }
   }
   return out;
@@ -633,7 +701,7 @@ function dependents(phases: PhaseDraft[], key: string): Set<string> {
 export function dependencyChoices(
   phases: PhaseDraft[], forKey: string,
 ): Array<{ phase: PlanNodeRef; options: PlanNodeRef[] }> {
-  const selected = new Set(edges(phases).get(forKey) ?? []);
+  const selected = new Set((edges(phases).get(forKey) ?? []).map((d) => d.on));
   const blocked = dependents(phases, forKey);
   const nodes = planNodes(phases);
   const groups: Array<{ phase: PlanNodeRef; options: PlanNodeRef[] }> = [];
@@ -645,14 +713,26 @@ export function dependencyChoices(
   return groups.filter((g) => g.options.length > 0);
 }
 
-/** One stage's declared predecessors, by key — phases and tasks alike. */
-export function dependsOnOf(phases: PhaseDraft[], key: string): string[] {
+/** One stage's declared typed links, in author order — any level. */
+export function dependsOnOf(phases: PhaseDraft[], key: string): DepEdge[] {
   return edges(phases).get(key) ?? [];
 }
 
-/** Replace a stage's predecessor list (by key — phases and tasks alike). */
-export function setDependsOn(phases: PhaseDraft[], key: string, dependsOn: string[]): PhaseDraft[] {
-  const next = dependsOn.filter((d) => d !== key);
+/**
+ * Replace a stage's link list (by key — phases and tasks alike).
+ *
+ * Self-links are dropped (the server's `400 self_dependency`) and a repeated
+ * target keeps its FIRST entry (`400 duplicate_dependency`): one link per
+ * ordered pair is the storage shape, so the draft never holds a list the save
+ * is certain to refuse.
+ */
+export function setDependsOn(phases: PhaseDraft[], key: string, dependsOn: DepEdge[]): PhaseDraft[] {
+  const seen = new Set<string>();
+  const next = dependsOn.filter((d) => {
+    if (d.on === key || seen.has(d.on)) return false;
+    seen.add(d.on);
+    return true;
+  });
   return phases.map((p) => ({
     ...p,
     dependsOn: p.key === key ? next : p.dependsOn,
@@ -667,13 +747,57 @@ export function setDependsOn(phases: PhaseDraft[], key: string, dependsOn: strin
   }));
 }
 
-/** Add or remove one predecessor — what a picker checkbox and a chip's ✕ do. */
+/**
+ * Add or remove one link — what a picker checkbox and a chip's ✕ do.
+ *
+ * A link is BORN `starts_after` (ADR-0020: the default type, and the column
+ * default the server writes). The author then says how it really blocks on the
+ * chip's type selector; re-ticking a predecessor that is already linked removes
+ * it, taking its type with it rather than silently keeping a stale one.
+ */
 export function toggleDependency(phases: PhaseDraft[], key: string, dep: string): PhaseDraft[] {
   const current = edges(phases).get(key) ?? [];
   return setDependsOn(
     phases, key,
-    current.includes(dep) ? current.filter((d) => d !== dep) : [...current, dep],
+    current.some((d) => d.on === dep)
+      ? current.filter((d) => d.on !== dep)
+      : [...current, { on: dep, type: DEFAULT_DEP_TYPE }],
   );
+}
+
+/**
+ * Re-type ONE existing link — the chip's type selector. A pair that is not
+ * linked is left alone: the picker creates links, this only qualifies them, so
+ * a stale selector on a row whose link was just removed cannot resurrect it.
+ */
+export function setDependencyType(
+  phases: PhaseDraft[], key: string, dep: string, type: DepType,
+): PhaseDraft[] {
+  const current = edges(phases).get(key) ?? [];
+  if (!current.some((d) => d.on === dep)) return phases;
+  return setDependsOn(phases, key, current.map((d) => (d.on === dep ? { ...d, type } : d)));
+}
+
+/** One typed link, flattened — what the Gantt draws a connector for. */
+export interface PlanLink {
+  /** The stage that carries the link (the arrow's HEAD). */
+  from: string;
+  /** The predecessor it is scheduled against (the arrow's TAIL). */
+  to: string;
+  type: DepType;
+}
+
+/**
+ * Every link in the draft, in reading order — the Gantt's connector list
+ * (ADR-0020 §6). Flat, keyed by LOCAL keys, so the timeline can look each end
+ * up in the bar geometry it already computed without re-walking the tree.
+ */
+export function planLinks(phases: PhaseDraft[]): PlanLink[] {
+  const out: PlanLink[] = [];
+  for (const [from, deps] of edges(phases)) {
+    for (const d of deps) out.push({ from, to: d.on, type: d.type });
+  }
+  return out;
 }
 
 /**
@@ -694,7 +818,9 @@ export function detectCycle(phases: PhaseDraft[]): PlanNodeRef[] | null {
   const visit = (k: string): boolean => {
     colour.set(k, 1);
     stack.push(k);
-    for (const pred of deps.get(k) ?? []) {
+    // TYPE-BLIND (ADR-0020 §4): one DAG regardless of link type, so a mutual
+    // `starts_with` pair is a cycle here exactly as the server treats it.
+    for (const { on: pred } of deps.get(k) ?? []) {
       if (colour.get(pred) === 1) {
         cycle = stack.slice(stack.indexOf(pred))
           .map((x) => index.get(x))
@@ -840,8 +966,13 @@ export interface AuthoredNode {
   name: string;
   /** The author-local key (contract §1) — resolves `dependsOn`, never stored. */
   key: string;
-  /** Predecessor keys. Always sent, `[]` when none, so a cleared row clears. */
-  dependsOn: string[];
+  /**
+   * Typed predecessor links (contract v5 / ADR-0020 §3). Always sent, `[]` when
+   * none, so a cleared row clears. The object form is used for EVERY link, even
+   * a `starts_after` one the server would have accepted as a bare string: the
+   * payload then says what it means rather than leaning on a column default.
+   */
+  dependsOn: Array<{ key: string; type: DepType }>;
   description?: string | null;
   /** The owning member's party id, or null. Always sent, so clearing clears. */
   assigneePartyId?: string | null;
@@ -895,8 +1026,9 @@ const textOrNull = (v: string | null | undefined): string | null =>
  * of its own is a bug in the draft, not an author mistake — it is refused here
  * with the server's own `too_deep` rather than sent to be refused there.
  *
- * Dependencies (LINA-233): each node carries its local `key`, and `dependsOn`
- * naming its predecessors by key. THE WHOLE GRAPH GOES EVERY TIME — the server
+ * Dependencies (LINA-233, typed by ADR-0020): each node carries its local `key`,
+ * and `dependsOn` naming its predecessors as `{ key, type }` objects — contract
+ * v5. THE WHOLE GRAPH GOES EVERY TIME — the server
  * replaces a draft's edges atomically, so a re-save that omitted an edge would
  * delete it. Edges pointing at a stage this pass dropped (a blank row) are
  * filtered out here rather than sent to be refused as `unknown_dependency`.
@@ -923,7 +1055,8 @@ export function toWire(phases: PhaseDraft[]): AuthoredNode[] {
     sent.add(phase.key);
     for (const t of tasks) { sent.add(t.key); for (const s of subs(t)) sent.add(s.key); }
   }
-  const wireDeps = (deps: string[]) => deps.filter((k) => sent.has(k));
+  const wireDeps = (deps: DepEdge[]) =>
+    deps.filter((d) => sent.has(d.on)).map((d) => ({ key: d.on, type: d.type }));
 
   const stages: AuthoredNode[] = [];
   for (const phase of phases) {

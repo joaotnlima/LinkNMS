@@ -270,6 +270,122 @@ export function clipBarGeom(
   };
 }
 
+/**
+ * A bar's pixel box in the canvas, from its day geometry. ONE definition, used
+ * both to position the bar and to anchor the connectors that point at it — if
+ * these drifted apart, an arrow would land beside the bar it names.
+ *
+ * The ±1/−2 is the bar's own hairline inset: a bar sits a pixel inside its day
+ * columns so two touching bars read as two, not one.
+ */
+export function barRect(offsetDays: number, spanDays: number, col: number): { x: number; width: number } {
+  return { x: offsetDays * col + 1, width: Math.max(2, spanDays * col - 2) };
+}
+
+// ── Dependency connectors (ADR-0020 §6, LINA-253) ────────────────────────────
+// The timeline is absolutely-positioned divs; the links between bars are drawn
+// in one SVG overlay above them. This is the geometry half: bar boxes in, elbow
+// path out. Pure, so every anchor rule and every backward-route case is a unit
+// test rather than something only visible by eye on a real plan.
+//
+// WHY ELBOWS AND NOT STRAIGHT LINES
+// A straight line between two bars reads as a slope — a made-up duration. An
+// orthogonal elbow says only "this one, then that one", which is exactly what
+// the link asserts: an ordering, not a rate.
+
+/** One end of a connector: a bar's box plus the vertical middle of its row. */
+export interface ConnectorEnd {
+  /** Left edge, px from the canvas's left. */
+  x: number;
+  /** Bar width in px (≥ 0). */
+  width: number;
+  /** Vertical centre of the bar, px from the canvas's top. */
+  y: number;
+}
+
+export interface Point { x: number; y: number }
+
+export interface ConnectorGeom {
+  /** The elbow's corners, start → end. Always ≥ 2 points, all orthogonal. */
+  points: Point[];
+  /** The same as an SVG `d`, so the component renders without its own loop. */
+  d: string;
+  /** Which way the arrowhead faces, from the final segment. */
+  head: 'left' | 'right';
+}
+
+/** How far a connector stands off a bar before turning. */
+const STUB = 12;
+
+/** Collapse points that repeat (a zero-length segment draws nothing). */
+function dedupe(points: Point[]): Point[] {
+  const out: Point[] = [];
+  for (const p of points) {
+    const last = out[out.length - 1];
+    if (!last || last.x !== p.x || last.y !== p.y) out.push(p);
+  }
+  return out.length >= 2 ? out : points.slice(0, 2);
+}
+
+/**
+ * The elbow path for ONE typed link, predecessor → dependent (ADR-0020 §6).
+ *
+ * Anchors are the ends the type actually constrains, so the arrow shows the
+ * rule rather than just the pairing:
+ *   • `starts_after` — pred's RIGHT edge → dep's LEFT edge (finish, then start)
+ *   • `starts_with`  — pred's LEFT edge  → dep's LEFT edge (both starts)
+ *   • `ends_with`    — pred's RIGHT edge → dep's RIGHT edge (both finishes)
+ *
+ * `starts_after` routes forward when there is room; when the dependent starts
+ * at or before the predecessor ends (a schedule the plan is free to hold — the
+ * link is an assertion, not an enforcement) it routes AROUND, out right, across
+ * the gap between the two rows, and back into the left edge. The same-edge types
+ * route outside both bars, so the elbow never crosses the bars it connects.
+ */
+export function connectorPath(
+  pred: ConnectorEnd, dep: ConnectorEnd, type: 'starts_after' | 'starts_with' | 'ends_with',
+): ConnectorGeom {
+  const predL = pred.x;
+  const predR = pred.x + pred.width;
+  const depL = dep.x;
+  const depR = dep.x + dep.width;
+  // Never route off the left of the canvas — a path at x<0 is simply invisible.
+  const clamp = (x: number) => Math.max(1, x);
+
+  let points: Point[];
+  if (type === 'starts_with') {
+    const mx = clamp(Math.min(predL, depL) - STUB);
+    points = [{ x: predL, y: pred.y }, { x: mx, y: pred.y }, { x: mx, y: dep.y }, { x: depL, y: dep.y }];
+  } else if (type === 'ends_with') {
+    const mx = Math.max(predR, depR) + STUB;
+    points = [{ x: predR, y: pred.y }, { x: mx, y: pred.y }, { x: mx, y: dep.y }, { x: depR, y: dep.y }];
+  } else if (depL >= predR + 2 * STUB) {
+    // Forward: turn down one stub short of the dependent, then in.
+    const mx = depL - STUB;
+    points = [{ x: predR, y: pred.y }, { x: mx, y: pred.y }, { x: mx, y: dep.y }, { x: depL, y: dep.y }];
+  } else {
+    // Backward: the dependent sits at or before the predecessor's finish, so
+    // going straight there would draw back THROUGH the predecessor's bar. Drop
+    // into the lane between the rows and come back along it.
+    const lane = (pred.y + dep.y) / 2;
+    points = [
+      { x: predR, y: pred.y }, { x: predR + STUB, y: pred.y }, { x: predR + STUB, y: lane },
+      { x: clamp(depL - STUB), y: lane }, { x: clamp(depL - STUB), y: dep.y }, { x: depL, y: dep.y },
+    ];
+  }
+
+  const pts = dedupe(points);
+  const last = pts[pts.length - 1];
+  const prev = pts[pts.length - 2];
+  return {
+    points: pts,
+    d: pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x} ${p.y}`).join(' '),
+    // A vertical final segment (both ends at the same x) still has to point
+    // somewhere; it arrives from the outside, so it keeps that side's direction.
+    head: last.x > prev.x || (last.x === prev.x && type !== 'ends_with') ? 'right' : 'left',
+  };
+}
+
 // ── Turning a drag into new dates ────────────────────────────────────────────
 
 /** How many whole day columns a pixel delta represents, snapped to the day. */
