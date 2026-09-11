@@ -422,6 +422,85 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
     assert.equal(stagesNow.length, 3, 'the stage tree was fully replaced too');
   });
 
+  test('authorPlan persists dep_type — typed edges keep their type, bare strings default to starts_after (LINA-252)', async () => {
+    const { projectId, homeowner, gc, identity } = seedVersionProject();
+    await ledger.appendEvent({
+      projectId, type: 'project_created', actorPartyId: homeowner,
+      occurredAt: '2026-09-05T09:00:00.000Z',
+      payload: { name: 'Typed deps build', baselineBudgetCents: 5_000_000, ownerPartyId: homeowner },
+    });
+    const svc = createPlanVersionService({ store, ledger, identity });
+
+    const draft = await svc.authorPlan(projectId, gc, {
+      stages: [
+        { name: 'Foundation', key: 'f' },
+        { name: 'Framing', key: 'fr', dependsOn: ['f'] },
+        { name: 'MEP', key: 'mep', dependsOn: [
+          { key: 'f', type: 'starts_with' },
+          { key: 'fr', type: 'ends_with' },
+        ] },
+      ],
+    });
+
+    const deps = await store.listStageDependenciesByPlanVersion(draft.planVersionId);
+    assert.equal(deps.length, 3);
+    const countByType = (t) => deps.filter((d) => d.dep_type === t).length;
+    assert.equal(countByType('starts_after'), 1, 'the bare-string edge lands as starts_after (column default)');
+    assert.equal(countByType('starts_with'), 1, 'the starts_with edge persists its type');
+    assert.equal(countByType('ends_with'), 1, 'the ends_with edge persists its type');
+
+    // The read side round-trips the types to the FE (dual-emit with legacy ids).
+    const view = await svc.getPlan(projectId, gc);
+    const [, framing, mep] = view.current.stages;
+    assert.deepEqual(framing.dependencies, [{ on: framing.dependsOn[0], type: 'starts_after' }]);
+    assert.equal(mep.dependencies.length, 2);
+    assert.deepEqual(
+      mep.dependencies.map((d) => d.type).sort(),
+      ['ends_with', 'starts_with'],
+    );
+    assert.ok(mep.dependencies.every((d) => typeof d.on === 'string' && d.on),
+      'dependencies carry resolved stage ids');
+    assert.ok(mep.dependencies.every((d) => ['starts_after', 'starts_with', 'ends_with'].includes(d.type)),
+      'every typed dependency lands in the ADR-0020 vocabulary');
+  });
+
+  test('the dep_type CHECK column: unknown types are refused at the DB, migration 0010 (LINA-252)', async () => {
+    // A raw UPDATE flipping an existing row's dep_type outside the CHECK set must
+    // be rejected by the DB itself — the belt-and-braces under the
+    // application-level 400 invalid_dependency_type.
+    const { projectId, homeowner, gc, identity } = seedVersionProject();
+    await ledger.appendEvent({
+      projectId, type: 'project_created', actorPartyId: homeowner,
+      occurredAt: '2026-09-05T09:00:00.000Z',
+      payload: { name: 'Typed CHECK build', baselineBudgetCents: 5_000_000, ownerPartyId: homeowner },
+    });
+    const svc = createPlanVersionService({ store, ledger, identity });
+    const draft = await svc.authorPlan(projectId, gc, {
+      stages: [
+        { name: 'A', key: 'a' },
+        { name: 'B', key: 'b', dependsOn: ['a'] },
+      ],
+    });
+    await assert.rejects(
+      () => pool.query(
+        `update schedule.stage_dependency
+            set dep_type = 'finish_to_start'
+          where stage_id in (select id from schedule.stage where plan_version_id = $1)`,
+        [draft.planVersionId],
+      ),
+      (e) => e.code === '23514',
+      'the DB rejects an unknown dep_type (check_violation)',
+    );
+    // And the vocabulary CHECK is present in the catalog.
+    const check = await pool.query(
+      `select 1 from pg_constraint
+        where conrelid = 'schedule.stage_dependency'::regclass
+          and contype = 'c'
+          and pg_get_constraintdef(oid) ilike '%starts_after%ends_with%'`,
+    );
+    assert.equal(check.rows.length, 1, 'dep_type CHECK constraint is installed');
+  });
+
   test('the dependency freeze guard: a frozen version\u2019s rows are refused — as schedule_app\u2019s DELETE grant, in the DB', async () => {
     const { projectId, homeowner, gc, identity } = seedVersionProject();
     await ledger.appendEvent({

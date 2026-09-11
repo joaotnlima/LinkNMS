@@ -621,12 +621,37 @@ test('authorPlan: validation — empty, nameless, too-deep, bad date', async () 
     (e) => e.status === 400 && e.code === 'empty_plan');
   await assert.rejects(service.authorPlan(PROJECT, GC, { stages: [{ name: '   ' }] }),
     (e) => e.status === 400 && e.code === 'invalid_name');
+  // Three levels are allowed (LINA-238); a FOURTH level is the too_deep line.
   await assert.rejects(service.authorPlan(PROJECT, GC, { stages: [
-    { name: 'A', children: [{ name: 'B', children: [{ name: 'C' }] }] },
+    { name: 'A', children: [{ name: 'B', children: [{ name: 'C', children: [{ name: 'D' }] }] }] },
   ] }), (e) => e.status === 400 && e.code === 'too_deep');
   await assert.rejects(service.authorPlan(PROJECT, GC, { stages: [
     { name: 'A', plannedStartDate: '03/01/2026' },
   ] }), (e) => e.status === 400 && e.code === 'invalid_plannedStartDate');
+});
+
+test('authorPlan: a 3rd WBS level (sub-sub-action) is accepted and round-trips through getPlan (LINA-238)', async () => {
+  const { service } = build();
+  const draft = await service.authorPlan(PROJECT, GC, { stages: [
+    { name: '2 · Construction', children: [
+      { name: '2.6 Plumbing', children: [
+        { name: '2.6.1 Rough-in', plannedStartDate: '2026-04-01', plannedEndDate: '2026-04-10' },
+        { name: '2.6.2 Fixtures' },
+      ] },
+    ] },
+  ] });
+  // stageCount counts every node at every level — four here (1 phase, 1 sub, 2 sub-sub).
+  assert.equal(draft.stageCount, 4);
+
+  const view = await service.getPlan(PROJECT, GC);
+  const phase = view.current.stages[0];
+  assert.equal(phase.name, '2 · Construction');
+  const sub = phase.children[0];
+  assert.equal(sub.name, '2.6 Plumbing');
+  assert.equal(sub.children.length, 2, 'the sub-action carries its two sub-sub-actions');
+  assert.equal(sub.children[0].name, '2.6.1 Rough-in');
+  assert.equal(sub.children[0].plannedStartDate, '2026-04-01');
+  assert.equal(sub.children[1].name, '2.6.2 Fixtures');
 });
 
 test('authorPlan: drafting while a proposal is already open is a clean 409', async () => {
@@ -815,6 +840,117 @@ test('authorPlan: dependencies survive :propose and render on the frozen-proposa
   assert.deepEqual(framing.dependsOn, [foundation.id]);
 });
 
+// ── authorPlan typed dependencies (LINA-252, ADR-0020) ─────────────────────
+
+test('authorPlan: { key, type } deps persist dep_type and DUAL-EMIT on the read as `dependencies` + legacy `dependsOn`', async () => {
+  const { service, store } = build();
+
+  const out = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Foundation', key: 'foundation' },
+      { name: 'Framing', key: 'framing', dependsOn: ['foundation'] },
+      { name: 'MEP', key: 'mep', dependsOn: [
+        { key: 'foundation', type: 'starts_with' },
+        { key: 'framing', type: 'ends_with' },
+      ] },
+    ],
+  });
+
+  // The in-memory store mirrors the DB rows exactly (parity with pg-store):
+  // bare string → starts_after via the column default; typed → its own type.
+  const deps = store.listStageDependenciesByPlanVersion(out.planVersionId);
+  const byKey = deps.map((d) => ({ on: d.depends_on_stage_id, type: d.dep_type }));
+  assert.equal(deps.length, 3);
+  const view = await service.getPlan(PROJECT, GC);
+  const [foundation, framing, mep] = view.current.stages;
+
+  // Legacy shape stays byte-identical — the FE keeps reading predecessor ids.
+  assert.deepEqual(framing.dependsOn, [foundation.id]);
+  assert.deepEqual(mep.dependsOn, [foundation.id, framing.id]);
+
+  // New typed shape rides alongside (dual-emit until the FE consumes it).
+  assert.deepEqual(framing.dependencies, [{ on: foundation.id, type: 'starts_after' }],
+    'bare string persists as starts_after');
+  assert.deepEqual(mep.dependencies, [
+    { on: foundation.id, type: 'starts_with' },
+    { on: framing.id, type: 'ends_with' },
+  ]);
+  assert.deepEqual(foundation.dependencies, []);
+});
+
+test('authorPlan: typed deps survive the draft re-save and :propose, type intact', async () => {
+  const { service, store } = build();
+  const draft = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Foundation', key: 'f' },
+      { name: 'Framing', key: 'fr', dependsOn: [{ key: 'f', type: 'starts_with' }] },
+    ],
+  });
+  await service.proposePlan(draft.planVersionId, GC);
+
+  const deps = store.listStageDependenciesByPlanVersion(draft.planVersionId);
+  assert.equal(deps.length, 1);
+  assert.equal(deps[0].dep_type, 'starts_with');
+
+  const theirs = await service.getPlan(PROJECT, OWNER);
+  const [foundation, framing] = theirs.current.stages;
+  assert.deepEqual(framing.dependencies, [{ on: foundation.id, type: 'starts_with' }]);
+});
+
+test('authorPlan: unknown dependency type is a 400 invalid_dependency_type, before any write', async () => {
+  const { service, store, ledger } = build();
+  await assert.rejects(service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Foundation', key: 'f' },
+      { name: 'Framing', key: 'fr', dependsOn: [{ key: 'f', type: 'finish_to_start' }] },
+    ],
+  }), (e) => e.status === 400 && e.code === 'invalid_dependency_type'
+    && e.details.key === 'f' && e.details.stage.name === 'Framing');
+
+  // Total validation — nothing was written.
+  assert.equal(store._versions.length, 0);
+  assert.equal(store._stages.size, 0);
+  assert.equal(ledger._events.length, 0);
+});
+
+test('authorPlan: the same target key twice in one stage\u2019s list is a 400 duplicate_dependency', async () => {
+  const { service, store, ledger } = build();
+  await assert.rejects(service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Foundation', key: 'f' },
+      { name: 'Framing', key: 'fr', dependsOn: ['f', { key: 'f', type: 'starts_with' }] },
+    ],
+  }), (e) => e.status === 400 && e.code === 'duplicate_dependency'
+    && e.details.key === 'f' && e.details.stage.name === 'Framing');
+
+  assert.equal(store._versions.length, 0);
+  assert.equal(store._stages.size, 0);
+  assert.equal(ledger._events.length, 0);
+});
+
+test('authorPlan: a typed { key } entry with no type defaults to starts_after (compat alias)', async () => {
+  const { service, store } = build();
+  const out = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Foundation', key: 'f' },
+      { name: 'Framing', key: 'fr', dependsOn: [{ key: 'f' }] },
+    ],
+  });
+  const deps = store.listStageDependenciesByPlanVersion(out.planVersionId);
+  assert.equal(deps[0].dep_type, 'starts_after');
+});
+
+test('authorPlan: cycle rule is type-blind — a typed edges cycle is still a 409 dependency_cycle', async () => {
+  const { service } = build();
+  await assert.rejects(service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'A', key: 'a', dependsOn: [{ key: 'c', type: 'starts_with' }] },
+      { name: 'B', key: 'b', dependsOn: [{ key: 'a', type: 'ends_with' }] },
+      { name: 'C', key: 'c', dependsOn: [{ key: 'b', type: 'starts_after' }] },
+    ],
+  }), (e) => e.status === 409 && e.code === 'dependency_cycle');
+});
+
 test('dependency freeze guard (in-memory): a frozen version\u2019s dependency rows can never be deleted (LINA-233)', async () => {
   const { service, store } = build();
   const draft = await service.authorPlan(PROJECT, GC, {
@@ -860,4 +996,106 @@ test('authorPlan + proposePlan: the appended events extend a verifiable hash cha
   }
   assert.equal(chain[0].prevHash, GENESIS_HASH);
   assert.deepEqual(verifyChain(chain), { verified: true });
+});
+
+// ── assignee (LINA-235, ADR-0017 annex 3) ──────────────────────────────────
+
+test('authorPlan: assigneePartyId is stored, read back through getPlan (LINA-235)', async () => {
+  const { service, store } = build();
+
+  const out = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Phase A', assigneePartyId: GC, children: [
+        { name: 'Task 1', assigneePartyId: OWNER },
+        { name: 'Task 2' }, // unassigned
+      ] },
+    ],
+  });
+  assert.equal(out.status, 'draft');
+
+  const view = await service.getPlan(PROJECT, GC);
+  const phase = view.current.stages[0];
+  assert.equal(phase.assigneePartyId, GC);
+  assert.equal(phase.children[0].assigneePartyId, OWNER);
+  assert.equal(phase.children[1].assigneePartyId, null);
+});
+
+test('authorPlan: re-saving preserves the latest assigneePartyId (LINA-235)', async () => {
+  const { service, store } = build();
+
+  // First save with GC as assignee.
+  const first = await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'A', assigneePartyId: GC }],
+  });
+  const v1 = await service.getPlan(PROJECT, GC);
+  assert.equal(v1.current.stages[0].assigneePartyId, GC);
+
+  // Re-save with OWNER as assignee — replaces the draft in place.
+  await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'A', assigneePartyId: OWNER }],
+  });
+  const v2 = await service.getPlan(PROJECT, GC);
+  assert.equal(v2.current.stages[0].assigneePartyId, OWNER);
+  // Same draft row, same version id.
+  assert.equal(v2.current.id, first.planVersionId);
+});
+
+test('authorPlan: a stage without assigneePartyId has null assigneePartyId (LINA-235)', async () => {
+  const { service } = build();
+  await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'A', trade: 'Plumbing' }],
+  });
+  const view = await service.getPlan(PROJECT, GC);
+  assert.equal(view.current.stages[0].assigneePartyId, null);
+  assert.equal(view.current.stages[0].trade, 'Plumbing');
+});
+
+test('authorPlan: unknown assigneePartyId (not a project member) → 400 unknown_assignee (LINA-235)', async () => {
+  const { service } = build();
+  await assert.rejects(
+    service.authorPlan(PROJECT, GC, {
+      stages: [{ name: 'A', assigneePartyId: 'not-a-party' }],
+    }),
+    (e) => e.status === 400 && e.code === 'unknown_assignee',
+  );
+});
+
+test('authorPlan: invalid assigneePartyId shape → 400 invalid_assignee (LINA-235)', async () => {
+  const { service } = build();
+  // Empty string is rejected even if membership check would pass.
+  await assert.rejects(
+    service.authorPlan(PROJECT, GC, {
+      stages: [{ name: 'A', assigneePartyId: '  ' }],
+    }),
+    (e) => e.status === 400 && e.code === 'invalid_assignee',
+  );
+  // Non-string rejected.
+  await assert.rejects(
+    service.authorPlan(PROJECT, GC, {
+      stages: [{ name: 'A', assigneePartyId: 123 }],
+    }),
+    (e) => e.status === 400 && e.code === 'invalid_assignee',
+  );
+});
+
+test('requestChanges: the forked version carries the assigneePartyId unchanged (LINA-235)', async () => {
+  const { service, store } = build();
+
+  // Author a draft with an assignee, then propose it so the reviewer can fork it.
+  const draft = await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'Phase A', assigneePartyId: OWNER, children: [{ name: 'Task 1' }] }],
+  });
+  await service.proposePlan(draft.planVersionId, GC);
+  // The drafter (GC) authors; the OTHER party (owner) reviews via requestChanges.
+  const forking = store.listStagesByPlanVersion(draft.planVersionId);
+
+  const res = await service.requestChanges(draft.planVersionId, OWNER, {
+    stages: [{ stageId: forking.find((s) => s.parent_id == null).id, plannedCostCents: 500_000 }],
+  });
+  assert.equal(res.status, 'proposed');
+
+  const forkedStages = store.listStagesByPlanVersion(res.newVersionId);
+  const phase = forkedStages.find((s) => s.parent_id == null);
+  assert.equal(phase.assignee_party_id, OWNER); // structural field survives the fork
+  assert.equal(phase.trade, null);
 });

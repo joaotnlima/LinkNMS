@@ -101,6 +101,36 @@
 .pbx-addtask:hover:not(:disabled) { border-color: var(--plan-baseline); }
 .pbx-addtask:disabled { opacity: 0.5; cursor: default; }
 
+/* ── The third level: sub-tasks (LINA-243, ADR-0019) ───────────────────────
+   Indented under their task and hung off a hairline rule, so depth is read at a
+   glance without a second row style: a sub-task row IS a task row (.pbx-task),
+   one step in and a shade quieter. The "+ Add sub-task" affordance stays
+   permanently rendered (never display:none) so it is keyboard-reachable, but sits
+   back at rest and comes forward on hover or focus — 14 always-loud buttons would
+   drown out the plan itself. */
+.pbx-subs {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 0 0 var(--s2) 22px; padding-left: var(--s3);
+  border-left: 1px solid var(--outline);
+}
+.pbx-sub .pbx-task-name, .pbx-sub .pbx-date { font-size: 13px; }
+.pbx-sub.is-dragging { opacity: 0.45; }
+.pbx-subwrap.is-cycle { outline: 1px solid var(--danger); border-radius: 8px; }
+
+.pbx-addsub {
+  margin-top: 0; padding: 3px 8px; font-size: 12px; border-style: dashed;
+  color: var(--muted); opacity: 0.75;
+}
+.pbx-taskwrap:hover .pbx-addsub, .pbx-addsub:hover:not(:disabled), .pbx-addsub:focus-visible {
+  opacity: 1; color: var(--plan-baseline);
+}
+
+/* The picker lists every stage in reading order; the indent is what tells a
+   sub-task apart from the task above it. */
+.pbx-dep-opt.lvl-3 { padding-left: 22px; }
+
+.pbx-drawer-under { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+
 .pbx-actions { display: flex; gap: var(--s3); justify-content: flex-end; align-items: center; }
 .pbx-open { color: var(--warn-fg); }
 .pbx-foot { color: var(--muted); max-width: 68ch; }
@@ -109,6 +139,127 @@
   .pbx-taskhdr { display: none; }
   .pbx-task { grid-template-columns: 1fr; gap: var(--s2); }
   .pbx-rowctl { justify-content: flex-start; }
+  /* On a phone the rows stack full-width, so the indent buys nothing and costs
+     the name field — keep only the rule that marks the nesting. */
+  .pbx-subs { margin-left: 0; }
+}
+
+/* ── "Depends on" (LINA-233, ADR-0017 annex 2) ─────────────────────────────
+   A sub-row under the stage it belongs to: the trigger, then the predecessor
+   chips, then the picker popover. Tokens only — the chips ride the same
+   --plan-baseline accent as the rest of the plan surfaces, and a stage the
+   server named on a 409 is lit with --danger, the one colour this app uses for
+   "this is refused", never for decoration. */
+/* ── The stage meta row: owner · trade · depends on (LINA-246) ─────────────
+   One row per stage at all three levels, carrying the three things a stage says
+   about itself that are not its name or its dates. It owns the indent that
+   `.pbx-deps` used to own (clearing the grip column so everything lines up under
+   the name); "Depends on" keeps its own layout and loses only its padding. */
+.pbx-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--s3);
+  padding: 2px 0 4px 22px;
+}
+.pbx-phase-hd + .pbx-meta { padding: 0 var(--s3) var(--s2) calc(var(--s3) + 46px); }
+.pbx-meta .pbx-deps { padding: 0; }
+
+/* Owner: the avatar states who, the select changes it. Both read the same value,
+   so the circle is never a stale copy of what the control holds. */
+.pbx-owner { display: flex; align-items: center; gap: 6px; }
+.pbx-ownersel {
+  border: 1px solid transparent; background: transparent; color: var(--fg);
+  border-radius: 6px; padding: 2px 4px; font: inherit; font-size: 12px; font-weight: 600;
+  max-width: 210px; cursor: pointer;
+}
+.pbx-ownersel:hover:not(:disabled) { border-color: var(--outline); }
+.pbx-ownersel:focus-visible { outline: 2px solid var(--owner); outline-offset: 0; }
+.pbx-ownersel:disabled { opacity: 0.5; cursor: default; }
+
+/* Trade: free text, not a controlled list. It is whatever the author (or the
+   spreadsheet they imported) calls the specialty, and normalising it would be
+   the record editing what it was told. */
+.pbx-tradefield { display: inline-flex; align-items: center; gap: 6px; }
+.pbx-tradelbl {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted);
+}
+.pbx-tradeinput {
+  border: 1px solid transparent; border-bottom-color: var(--outline);
+  background: transparent; color: var(--fg);
+  padding: 2px 4px; font: inherit; font-size: 12px; width: 130px;
+}
+.pbx-tradeinput:hover:not(:disabled) { border-bottom-color: var(--outline-strong); }
+.pbx-tradeinput:focus-visible { outline: 2px solid var(--owner); outline-offset: 0; }
+.pbx-tradeinput:disabled { opacity: 0.5; }
+
+.pbx-deps {
+  position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 2px 0 4px 22px; /* clears the grip column so chips line up under the name */
+}
+
+.pbx-depbtn {
+  border: 1px dashed var(--outline); background: transparent; color: var(--muted);
+  border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600;
+  cursor: pointer; line-height: 1.7;
+}
+.pbx-depbtn:hover:not(:disabled) { border-color: var(--plan-baseline); color: var(--plan-baseline); }
+.pbx-depbtn.has-deps { color: var(--plan-baseline); border-style: solid; border-color: var(--outline); }
+.pbx-depbtn:disabled { opacity: 0.5; cursor: default; }
+
+.pbx-dep-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 4px 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  color: var(--plan-baseline);
+  background: color-mix(in srgb, var(--plan-baseline) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--plan-baseline) 30%, transparent);
+}
+.pbx-dep-x {
+  border: none; background: transparent; color: inherit; cursor: pointer;
+  font-size: 10px; line-height: 1; padding: 3px; border-radius: 999px; opacity: 0.7;
+}
+.pbx-dep-x:hover:not(:disabled) { opacity: 1; color: var(--danger); }
+.pbx-dep-x:disabled { opacity: 0.4; cursor: default; }
+
+.pbx-dep-away { position: fixed; inset: 0; z-index: 40; }
+.pbx-dep-pop {
+  position: absolute; z-index: 41; top: calc(100% + 2px); left: 22px;
+  width: min(360px, calc(100vw - 32px)); max-height: 320px; overflow-y: auto;
+  background: var(--paper); border: 1px solid var(--outline); border-radius: 10px;
+  padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--fg) 16%, transparent);
+}
+.pbx-dep-hint, .pbx-dep-empty { margin: 0; color: var(--muted); font-size: 12px; }
+.pbx-dep-group { display: flex; flex-direction: column; gap: 2px; }
+.pbx-dep-grouphd {
+  margin: var(--s2) 0 2px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted);
+}
+.pbx-dep-opt {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg);
+  padding: 4px 6px; border-radius: 6px; cursor: pointer;
+}
+.pbx-dep-opt:hover { background: var(--sunken); }
+.pbx-dep-whole { font-style: normal; color: var(--muted); font-size: 11px; }
+.pbx-dep-foot { display: flex; justify-content: flex-end; position: sticky; bottom: 0; background: var(--paper); }
+
+/* A stage the cycle check named. The row is outlined, not recoloured: the names
+   and dates on it are still the author's, and only the LINK is refused. */
+.pbx-taskwrap.is-cycle, .pbx-phase.is-cycle { outline: 1px solid var(--danger); border-radius: 8px; }
+.pbx-cycle {
+  color: var(--danger); border: 1px solid var(--danger); border-radius: 8px;
+  padding: var(--s3); background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+
+@media (max-width: 720px) {
+  .pbx-deps { padding-left: 0; }
+  .pbx-meta { padding-left: 0; }
+  .pbx-phase-hd + .pbx-meta { padding-left: var(--s3); }
+  .pbx-dep-pop { left: 0; }
+  /* A phone gets the three controls stacked rather than wrapped mid-row: the
+     jobsite read is "who owns this", and that has to be the first thing under
+     the name, not whatever survived the wrap. */
+  .pbx-meta { flex-direction: column; align-items: flex-start; gap: var(--s2); }
+  .pbx-tradeinput { width: 100%; }
+  .pbx-tradefield { width: 100%; }
 }
 
 /* ── Task-detail drawer (LINA-234, ADR-0019) ──────────────────────────────── */
@@ -156,4 +307,332 @@
 
 @media (max-width: 720px) {
   .pbx-drawer { width: 100%; border-left: none; }
+}
+
+/* ── The unified plan grid (LINA-248) ─────────────────────────────────────────
+   One face, not two: the editable table on the left and the Gantt canvas on the
+   right, row-aligned by fixed heights the component sets inline. The pgt-*
+   canvas classes (axis, tracks, bars, handles) carry over from LINA-236/244
+   unchanged — only the left pane grew from labels into the table. */
+.pbx--grid { max-width: none; }
+
+.pgd {
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl); overflow: hidden; background: var(--paper);
+}
+.pgd-grid { display: grid; grid-template-columns: minmax(560px, 46%) 1fr; position: relative; }
+.pgd-table { border-right: 1px solid var(--outline); min-width: 0; }
+
+/* The draggable table / Gantt seam (LINA-259 ask 2). It rides the boundary the
+   component positions it on (left: split px); a wider hit-strip than the 1px
+   border makes it grabbable without a visible slab. */
+.pgd-divider {
+  position: absolute; top: 0; bottom: 0; width: 9px; transform: translateX(-4px);
+  z-index: 6; cursor: col-resize; touch-action: none;
+}
+.pgd-divider::after {
+  content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: transparent;
+}
+.pgd-divider:hover::after, .pgd-divider:active::after { background: var(--plan-baseline); width: 2px; left: 3px; }
+
+/* One template for the header and every row: grip · id · name · specialty ·
+   owner · dates · actions. The name cell flexes; the name / specialty / dates
+   widths are CSS vars the component sets when a header edge is dragged
+   (founder follow-up: resizable columns, start–finish merged into one). */
+/* The column template is a var the component sets (LINA-259 ask 6): the name
+   column is pinned first and the three middle columns ride in the chosen order.
+   The fallback is the original fixed order for a first, pre-hydration paint. */
+.pgd-hdr, .pgd-row {
+  display: grid; align-items: center; gap: var(--s2);
+  grid-template-columns: var(--pgd-cols,
+    20px 34px minmax(120px, var(--pgdw-name, 1fr)) var(--pgdw-trade, 96px)
+    30px var(--pgdw-dates, 176px) 92px);
+  padding: 0 var(--s2);
+}
+
+/* A draggable column header handle (the label itself). The resizer beside it
+   keeps its own gesture, so this only grabs when the text is dragged. */
+.pgd-hdrag { cursor: grab; user-select: none; }
+.pgd-hdrag:active { cursor: grabbing; }
+.pgd-hcell .pgd-hdrag, .pgd-hdr-owner .pgd-hdrag { display: inline-block; }
+.pgd-hdrag.is-dragging { opacity: 0.5; }
+.pgd-hdr {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--muted); border-bottom: 1px solid var(--outline); background: var(--sunken);
+}
+.pgd-hdr-owner { justify-self: center; }
+
+/* A resizable header cell: the grab strip rides its right edge. */
+.pgd-hcell { position: relative; display: flex; align-items: center; min-width: 0; align-self: stretch; }
+.pgd-hrs {
+  position: absolute; right: calc(-1 * var(--s2) / 2 - 3px); top: 0; bottom: 0; width: 7px;
+  cursor: col-resize; touch-action: none;
+}
+.pgd-hrs::after {
+  content: ''; position: absolute; left: 3px; top: 20%; bottom: 20%; width: 1px;
+  background: var(--outline);
+}
+.pgd-hrs:hover::after, .pgd-hrs:active::after { background: var(--outline-strong); width: 2px; }
+
+/* The time-base toolbar (founder follow-up): reading scale + custom window. */
+.pgd-toolbar {
+  display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
+  padding: var(--s2) var(--s2); border-bottom: 1px solid var(--outline); background: var(--sunken);
+}
+.pgd-tb-lbl {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--muted);
+}
+.pgd-tb-sel, .pgd-tb-date {
+  font: inherit; font-size: 12px; color: var(--fg); background: var(--paper);
+  border: 1px solid var(--outline); border-radius: 6px; padding: 3px 6px;
+}
+.pgd-tb-sel:focus-visible, .pgd-tb-date:focus-visible { outline: 2px solid var(--owner); outline-offset: 0; }
+.pgd-tb-range { display: inline-flex; align-items: center; gap: var(--s2); color: var(--muted); font-size: 12px; }
+
+.pgd-row { border-bottom: 1px solid var(--outline); cursor: pointer; }
+.pgd-row:hover { background: var(--sunken); }
+.pgd-row.is-dragging { opacity: 0.45; }
+.pgd-row.is-cycle { outline: 1px solid var(--danger); outline-offset: -1px; }
+
+.pgd-row-phase {
+  background: var(--sunken); font-weight: 700;
+}
+.pgd-row-phase .pgd-nametxt { color: var(--fg); text-transform: none; }
+.pgd-row-phase .pgd-id { color: var(--plan-baseline); }
+
+/* The third level indents its name, same demotion as everywhere else. */
+.pgd-row-sub .pgd-name { padding-left: 16px; font-size: 12px; color: var(--muted); }
+.pgd-row-sub .pgd-id { font-size: 10px; }
+
+.pgd-id {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  white-space: nowrap; overflow: hidden;
+}
+.pgd-name { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
+.pgd-nametxt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pgd-untitled { font-style: normal; color: var(--muted); }
+.pgd-nameinput {
+  width: 100%; min-width: 0; font: inherit; font-size: 13px;
+  border: 1px solid var(--plan-baseline); background: var(--paper); border-radius: 6px;
+  padding: 4px 6px; color: var(--fg);
+}
+.pgd-nameinput:focus { outline: none; }
+
+/* Rename sits beside the name (founder follow-up): the ✎ next to the text,
+   the ✓ next to the open input. Both stay out of the ellipsis' way. */
+.pgd-namedit, .pgd-nameok { flex: 0 0 auto; width: 22px; height: 22px; font-size: 11px; }
+.pgd-namedit { color: var(--muted); }
+.pgd-row:hover .pgd-namedit, .pgd-namedit:focus-visible { color: var(--fg); }
+.pgd-nameok { color: var(--plan-baseline); border-color: var(--plan-baseline); }
+
+/* The child-status meter (LINA-259 ask 5): a small segmented bar on a parent
+   row, each segment sized to its share of the children. Status is DERIVED,
+   never authored (ADR-0019), so a fresh draft is all grey "not started" by
+   design — the tones are the palette's success / owner / outline, never
+   fabricated progress. Leaf rows draw no meter. */
+.pgd-meter {
+  flex: 0 0 auto; display: inline-flex; align-items: stretch; gap: 1px;
+  width: 42px; height: 6px; border-radius: 999px; overflow: hidden;
+  background: var(--sunken); border: 1px solid var(--outline);
+}
+.pgd-meter-seg { min-width: 2px; }
+.pgd-meter-seg.is-done { background: var(--success); }
+.pgd-meter-seg.is-doing { background: var(--owner); }
+.pgd-meter-seg.is-todo { background: color-mix(in srgb, var(--muted) 45%, transparent); }
+
+.pgd-trade { min-width: 0; }
+.pgd-tradeinput {
+  width: 100%; min-width: 0; font: inherit; font-size: 12px;
+  border: 1px solid transparent; border-bottom-color: var(--outline);
+  background: transparent; color: var(--fg); padding: 2px 4px;
+}
+.pgd-tradeinput:hover:not(:disabled) { border-bottom-color: var(--outline-strong); }
+.pgd-tradeinput:focus-visible { outline: 2px solid var(--owner); outline-offset: 0; }
+.pgd-tradeinput:disabled { opacity: 0.5; }
+
+/* Owner: the avatar states who — the unassigned ring when nobody — and the
+   member <select> sits invisibly on top of it, so clicking the circle opens
+   the dropdown of everyone invited to this build (founder ask 1). */
+.pgd-owner { position: relative; display: inline-grid; place-items: center; justify-self: center; }
+.pgd-ownersel {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer;
+}
+.pgd-ownersel:disabled { cursor: default; }
+.pgd-owner:has(.pgd-ownersel:focus-visible) { outline: 2px solid var(--owner); border-radius: 999px; }
+
+.pgd-datecell { min-width: 0; }
+/* Start – finish as ONE cell: two date inputs around a dash. */
+.pgd-dates { display: flex; align-items: center; gap: 2px; }
+.pgd-datesep { color: var(--muted); flex: 0 0 auto; }
+.pgd-dates .pgd-date { flex: 1 1 0; padding: 4px 2px; font-size: 11px; }
+.pgd-date {
+  width: 100%; min-width: 0; font: inherit; font-size: 12px;
+  border: 1px solid transparent; background: transparent; border-radius: 6px;
+  padding: 4px 4px; color: var(--fg);
+}
+.pgd-date:hover:not(:disabled) { border-color: var(--outline); }
+.pgd-date:focus { outline: none; border-color: var(--plan-baseline); background: var(--paper); }
+
+.pgd-ctl { display: inline-flex; gap: 3px; justify-content: flex-end; }
+.pgd-ctl .pbx-icon { width: 26px; height: 26px; font-size: 12px; }
+
+.pgd-addrow { display: flex; align-items: center; padding: 0 var(--s2); border-bottom: 1px solid var(--outline); }
+.pgd-add {
+  border: none; background: transparent; color: var(--plan-baseline);
+  padding: 4px 8px; cursor: pointer; font-size: 12px; font-weight: 600;
+}
+.pgd-add:hover:not(:disabled) { text-decoration: underline; }
+.pgd-add:disabled { opacity: 0.5; cursor: default; }
+
+/* Canvas extras. The phase track carries a muted derived envelope bar; a
+   clickable (undated) track invites the first click; today is a hairline. */
+.pgd-track-add { border-bottom: 1px solid var(--outline); }
+.pgt-track.is-clickable { cursor: copy; }
+.pgt-track.is-clickable:hover { background: color-mix(in srgb, var(--plan-baseline) 5%, transparent); }
+.pgd-envbar {
+  position: absolute; top: 12px; height: 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--plan-baseline) 45%, var(--paper));
+  pointer-events: none;
+}
+.pgd-today {
+  position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none;
+  background: color-mix(in srgb, var(--warn-fg, #b45309) 55%, transparent);
+}
+
+.pgd-hint { color: var(--muted); font-size: 13px; margin: 0; }
+
+/* The drawer's meta block (LINA-248): label / control pairs. */
+.pbx-drawer-meta {
+  display: grid; grid-template-columns: 92px 1fr; gap: var(--s2) var(--s3); align-items: center;
+}
+.pbx-drawer-meta .pbx-tradeinput { width: 100%; }
+.pbx-drawer-meta .pbx-deps { padding: 0; }
+
+@media (max-width: 960px) {
+  /* Narrow screens stack the panes: table first, timeline under it. The rows
+     no longer align 1:1, so the canvas keeps its own axis for orientation. */
+  .pgd-grid { grid-template-columns: 1fr; }
+  .pgd-table { border-right: none; border-bottom: 1px solid var(--outline); }
+}
+
+/* ── Gantt timeline (LINA-236) ────────────────────────────────────────────── */
+.pgt {
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl); overflow: hidden; background: var(--paper);
+}
+.pgt-grid { display: grid; grid-template-columns: minmax(160px, 240px) 1fr; }
+
+/* Left: task labels, aligned row-for-row with the tracks. */
+.pgt-labels { border-right: 1px solid var(--outline); background: var(--sunken); }
+.pgt-axis-spacer { height: 28px; border-bottom: 1px solid var(--outline); }
+.pgt-lbl-phase {
+  height: 30px; display: flex; align-items: center; padding: 0 var(--s3);
+  font-size: 12px; font-weight: 700; color: var(--plan-baseline);
+  text-transform: uppercase; letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--outline); background: var(--sunken);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pgt-lbl-task {
+  width: 100%; height: 36px; display: flex; align-items: center; gap: 6px;
+  padding: 0 var(--s3); border: none; border-bottom: 1px solid var(--outline);
+  background: var(--paper); color: var(--fg); font-size: 13px; text-align: left; cursor: pointer;
+}
+.pgt-lbl-task:hover { background: var(--sunken); }
+/* Third level (LINA-244): the label indents and lightens, the track is shorter —
+   the same visual demotion the list gives a sub-task row. */
+.pgt-lbl-task.is-sub {
+  height: 28px; padding-left: calc(var(--s3) + 18px); font-size: 12px; color: var(--muted);
+}
+.pgt-lbl-task.is-sub::before {
+  content: ''; flex: none; width: 8px; height: 1px; margin-left: -12px;
+  background: var(--outline);
+}
+.pgt-lbl-txt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pgt-lbl-dot { flex: none; width: 6px; height: 6px; border-radius: 999px; background: var(--plan-baseline); }
+
+/* Right: scrollable day canvas. */
+.pgt-scroll { overflow-x: auto; }
+.pgt-canvas { position: relative; }
+.pgt-axis { position: relative; border-bottom: 1px solid var(--outline); background: var(--sunken); }
+.pgt-axis-cell { position: absolute; top: 0; bottom: 0; }
+.pgt-axis-cell.is-tick { border-left: 1px solid var(--outline); }
+.pgt-axis-lbl {
+  position: absolute; top: 6px; left: 4px; white-space: nowrap;
+  font-size: 10px; font-weight: 600; color: var(--muted);
+}
+.pgt-band { height: 30px; border-bottom: 1px solid var(--outline); background: var(--sunken); }
+.pgt-track { position: relative; height: 36px; border-bottom: 1px solid var(--outline); }
+.pgt-track.is-sub { height: 28px; }
+.pgt-gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--outline); opacity: 0.5; }
+
+.pgt-bar {
+  position: absolute; top: 6px; height: 24px; box-sizing: border-box;
+  display: flex; align-items: center; overflow: hidden;
+  background: color-mix(in srgb, var(--plan-baseline) 20%, var(--paper));
+  border: 1px solid var(--plan-baseline); border-radius: 6px;
+  color: var(--fg); cursor: grab; touch-action: none; user-select: none;
+}
+.pgt-bar:active { cursor: grabbing; }
+.pgt-bar.is-open {
+  background: repeating-linear-gradient(
+    45deg, transparent, transparent 4px,
+    color-mix(in srgb, var(--plan-baseline) 22%, transparent) 4px,
+    color-mix(in srgb, var(--plan-baseline) 22%, transparent) 8px);
+  border-style: dashed;
+}
+.pgt-bar.is-disabled { pointer-events: none; opacity: 0.55; }
+/* A sub-task bar is the third weight: thinner, paler fill, softer corners, so a
+   glance down the column reads phase → task → sub-task (LINA-244). */
+.pgt-bar.is-sub {
+  top: 5px; height: 18px; border-radius: 4px;
+  background: color-mix(in srgb, var(--plan-baseline) 10%, var(--paper));
+  border-color: color-mix(in srgb, var(--plan-baseline) 55%, transparent);
+}
+.pgt-bar.is-sub .pgt-bar-lbl { font-size: 11px; font-weight: 500; padding: 0 6px; }
+.pgt-bar-lbl {
+  flex: 1 1 auto; min-width: 0; padding: 0 8px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 600; pointer-events: none;
+}
+.pgt-handle { flex: none; width: 8px; align-self: stretch; cursor: ew-resize; touch-action: none; }
+.pgt-handle-l { border-right: 1px solid color-mix(in srgb, var(--plan-baseline) 50%, transparent); }
+.pgt-handle-r { border-left: 1px solid color-mix(in srgb, var(--plan-baseline) 50%, transparent); }
+.pgt-handle:hover { background: color-mix(in srgb, var(--plan-baseline) 35%, transparent); }
+
+/* Hover tooltip to the RIGHT of a bar (LINA-259 ask 1): a positioned label the
+   component sizes onto the track, revealed purely on bar hover so it never sits
+   in the drag path (pointer-events: none). Lives as a sibling right after the
+   bar, so `:hover +` reaches it. */
+.pgt-tip {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  display: none; z-index: 7; pointer-events: none; white-space: nowrap;
+  padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 600;
+  color: var(--fg); background: var(--paper);
+  border: 1px solid var(--outline);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--fg) 16%, transparent);
+}
+.pgt-bar:hover + .pgt-tip { display: block; }
+
+/* The row move-menu (LINA-259 ask 7): a small fixed popover of Promote / Demote
+   anchored to the row's ⋯ button, with a full-viewport click-away behind it. */
+.pgd-menu-away { position: fixed; inset: 0; z-index: 70; }
+.pgd-menu {
+  position: fixed; z-index: 71; min-width: 176px;
+  background: var(--paper); border: 1px solid var(--outline); border-radius: 10px;
+  padding: 4px; display: flex; flex-direction: column; gap: 2px;
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--fg) 16%, transparent);
+}
+.pgd-menu-item {
+  text-align: left; border: none; background: transparent; color: var(--fg);
+  font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 6px; cursor: pointer;
+}
+.pgd-menu-item:hover:not(:disabled) { background: var(--sunken); }
+.pgd-menu-item:disabled { opacity: 0.4; cursor: default; }
+
+.pgt-empty { padding: var(--s5, 32px) var(--s4); text-align: center; }
+.pgt-empty p { margin: 0 0 var(--s2); }
+.pgt-empty-hint { color: var(--muted); font-size: 13px; max-width: 52ch; margin: 0 auto; }
+
+@media (max-width: 720px) {
+  .pgt-grid { grid-template-columns: minmax(120px, 40%) 1fr; }
 }

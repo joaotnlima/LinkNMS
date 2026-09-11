@@ -5,8 +5,16 @@
 // Pen: "S · (new) · Build the plan — schedule (Gantt)" / "Interaction spec —
 // Create & organise tasks". The screen is copy + layout only — every edit is a
 // pure operation from @/lib/plan-authoring (unit-tested under node --test), and
-// the single write is authorPlan(). Two levels only: a phase holds tasks, a
-// task holds nothing (contract §2).
+// the single write is authorPlan(). Three levels, never four (LINA-243,
+// ADR-0019): a phase holds tasks, a task holds sub-tasks, a sub-task holds
+// nothing. The screen refuses the fourth level by never drawing an "add" for it.
+//
+// SINCE LINA-248 THERE IS ONE VIEW, NOT TWO. The old List/Timeline toggle is
+// gone: the plan is a single grid (PlanGrid) — an editable table on the left
+// (id · name · specialty · owner · start · finish) with the Gantt canvas always
+// visible beside it, row-aligned. Clicking a row opens the detail drawer here;
+// renaming is the row's ✎ button; an undated row is scheduled by clicking its
+// empty track (a one-week bar lands on the clicked day, then drags).
 //
 // ── WHAT THE AUTHOR STARTS WITH ──────────────────────────────────────────────
 // Their own default scaffold: the page resolves GET /me/plan-template server-side
@@ -26,6 +34,10 @@
 // ── WHAT CROSSES THE WIRE ─────────────────────────────────────────────────────
 // Only `{ stages }`. The acting party is the session, resolved server-side — a
 // client that could name itself could stamp authorship as someone else (§0).
+// Since LINA-233 the tree also carries its predecessor graph: each node's local
+// `key` plus the keys it `dependsOn`. THE WHOLE GRAPH GOES ON EVERY SAVE — the
+// server rebuilds a draft's links atomically inside the same transaction as the
+// stages, so there is no second endpoint and no partial edit to reconcile.
 // SAVING IS PRIVATE DRAFTING (LINA-230): the write lands as a DRAFT (one
 // plan_drafted ledger event), NOT a proposal — the other party sees nothing and
 // no approval is requested. Sending for approval is a separate, deliberate act on
@@ -37,16 +49,123 @@ import Link from 'next/link';
 
 import {
   PlanAuthorError,
-  addPhase, addTask, authorPlan, removePhase,
-  removeTask, renamePhase, renameTask, reorderPhase, reorderTask,
+  addPhase, addSubtask, addTask, authorPlan, demoteNode, dependencyChoices, dependsOnOf, detectCycle, nodeIndex,
+  promoteNode,
+  removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
+  reorderPhase, reorderSubtask, reorderTask,
   saveMyDefaultTemplate, seedFromTemplate, seedSkeleton,
-  setTaskDate, setTaskDescription, taskCount, toTemplateBody, toWire,
-  type PhaseDraft, type TemplatePhase,
+  setAssignee, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
+  setTaskDate, setTaskDates, setTaskDescription, setTrade,
+  subtaskCount, taskCount, toggleDependency, toTemplateBody, toWire,
+  type PhaseDraft, type PlanNodeRef, type TemplatePhase,
 } from '@/lib/plan-authoring';
+import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
+import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
+import { PlanGrid } from './PlanGrid';
 import '@/components/plan-build.css';
 
+// ── "Depends on" (LINA-233, ADR-0017 annex 2) ───────────────────────────────
+// One control for phases, tasks and sub-tasks alike — any stage may depend on
+// any other. Since LINA-248 it lives in the detail drawer (the founder's rows
+// carry who/what/when; the graph is drawer detail). It is a button plus, when
+// there is something to show, predecessor chips; the picker itself is a popover
+// of checkboxes grouped by phase, each option printed as the pen prints it.
+function DependsOn({
+  nodeKey, label, phases, index, open, disabled, onOpen, onToggle,
+}: {
+  nodeKey: string;
+  label: string;
+  phases: PhaseDraft[];
+  index: Map<string, PlanNodeRef>;
+  open: boolean;
+  disabled: boolean;
+  onOpen: (next: boolean) => void;
+  onToggle: (dep: string) => void;
+}) {
+  const deps = dependsOnOf(phases, nodeKey);
+  const groups = useMemo(
+    () => (open ? dependencyChoices(phases, nodeKey) : []),
+    [open, phases, nodeKey],
+  );
+  const selected = new Set(deps);
+
+  return (
+    <div className="pbx-deps">
+      <button
+        type="button"
+        className={`pbx-depbtn${deps.length ? ' has-deps' : ''}`}
+        aria-expanded={open}
+        aria-label={`Depends on — choose what “${label}” must follow`}
+        title="Depends on"
+        disabled={disabled}
+        onClick={() => onOpen(!open)}
+      >
+        ⇠ Depends on{deps.length ? ` · ${deps.length}` : ''}
+      </button>
+
+      {deps.map((k) => {
+        const n = index.get(k);
+        if (!n) return null;
+        return (
+          <span key={k} className="pbx-dep-chip">
+            {n.label}
+            <button
+              type="button"
+              className="pbx-dep-x"
+              aria-label={`Remove dependency on ${n.label}`}
+              disabled={disabled}
+              onClick={() => onToggle(k)}
+            >✕</button>
+          </span>
+        );
+      })}
+
+      {open ? (
+        <>
+          {/* Click-away. A plain overlay rather than a document listener: it
+              cannot leak past unmount, and Escape still closes from the panel. */}
+          <div className="pbx-dep-away" role="presentation" onClick={() => onOpen(false)} />
+          <div
+            className="pbx-dep-pop"
+            role="group"
+            aria-label={`What ${label} depends on`}
+            onKeyDown={(e) => { if (e.key === 'Escape') onOpen(false); }}
+          >
+            <p className="pbx-dep-hint">
+              Pick the stages that must finish first. Anything that would loop back on this
+              one is left out.
+            </p>
+            {groups.length === 0 ? (
+              <p className="pbx-dep-empty">Nothing else in this plan to depend on yet.</p>
+            ) : groups.map((g) => (
+              <div key={g.phase.key} className="pbx-dep-group">
+                <p className="pbx-dep-grouphd">{g.phase.label}</p>
+                {g.options.map((o) => (
+                  <label key={o.key} className={`pbx-dep-opt lvl-${o.level}`}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(o.key)}
+                      disabled={disabled}
+                      onChange={() => onToggle(o.key)}
+                    />
+                    <span>{o.label}{o.isPhase ? <em className="pbx-dep-whole"> · whole phase</em> : null}</span>
+                  </label>
+                ))}
+              </div>
+            ))}
+            <div className="pbx-dep-foot">
+              <button type="button" className="pbx-icon" style={{ width: 'auto', padding: '0 10px' }}
+                onClick={() => onOpen(false)}>Done</button>
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function PlanBuildEditor({
-  projectId, initialPhases, templateBody,
+  projectId, initialPhases, templateBody, parties = [],
 }: {
   projectId: string;
   /** An existing saved draft to resume editing; absent → scaffold from the template. */
@@ -57,6 +176,8 @@ export function PlanBuildEditor({
    * in, so an unreachable template still leaves a usable editor.
    */
   templateBody?: TemplatePhase[];
+  /** The project's members — the ONLY parties a stage may be assigned to. */
+  parties?: PartyRef[];
 }) {
   const router = useRouter();
   const resuming = initialPhases != null && initialPhases.length > 0;
@@ -80,21 +201,39 @@ export function PlanBuildEditor({
   const [savingDefault, setSavingDefault] = useState(false);
   const [defaultSaved, setDefaultSaved] = useState(false);
 
-  // The task-detail drawer (LINA-234). Holds the {phase, task} index of the open
-  // task, or null when closed. The drawer edits that task's description; status is
-  // read-only here — a draft has no reported progress, so it is always "Not
-  // started" until the plan is live (ADR-0019).
-  const [openTask, setOpenTask] = useState<{ pi: number; ti: number } | null>(null);
-  const active = openTask ? phases[openTask.pi]?.tasks[openTask.ti] ?? null : null;
+  // Today anchors the timeline's fallback window for an undated plan. Captured
+  // once per mount — a plan authored across midnight keeps its canvas.
+  const [todayIso] = useState(() => new Date().toISOString().slice(0, 10));
 
-  // Drag-to-reorder state. A phase drag and a task drag are mutually exclusive;
-  // a task only drops within its own phase (`pi` guards the drop). Reordering is
-  // a pure op (reorderPhase / reorderTask) — the same tested vocabulary as before,
-  // just driven by a grab instead of step arrows (pen: "drag a row").
-  const [dragPhase, setDragPhase] = useState<number | null>(null);
-  const [dragTask, setDragTask] = useState<{ pi: number; ti: number } | null>(null);
+  // The detail drawer (LINA-234). Holds the open row's index: {pi} alone for a
+  // PHASE (LINA-248 — phases open the same drawer, minus dates/description),
+  // plus `ti` for a task and `si` for a sub-task (LINA-243).
+  const [openRow, setOpenRow] = useState<{ pi: number; ti?: number; si?: number } | null>(null);
+  const activePhase = openRow ? phases[openRow.pi] ?? null : null;
+  const activeTask = openRow?.ti != null ? activePhase?.tasks[openRow.ti] ?? null : null;
+  const active = openRow?.si != null ? activeTask?.children[openRow.si] ?? null : activeTask;
+  const activeKey = openRow?.ti == null ? activePhase?.key : active?.key;
+
+  // "Depends on" (LINA-233). `openDeps` is the key of the row whose picker is
+  // open — one at a time. `serverCycle` holds the stages the SERVER named on a
+  // 409: it is the authority on the graph, and its answer outlives our own
+  // check, so the offending rows stay lit until edited.
+  const [openDeps, setOpenDeps] = useState<string | null>(null);
+  const [serverCycle, setServerCycle] = useState<Array<{ key: string | null; name: string }>>([]);
 
   const count = useMemo(() => taskCount(phases), [phases]);
+  const subs = useMemo(() => subtaskCount(phases), [phases]);
+  const index = useMemo(() => nodeIndex(phases), [phases]);
+  const dir = useMemo(() => partyIndex(parties), [parties]);
+
+  // The picker already refuses a choice that would loop, so this should never
+  // fire — it is the belt to that braces: "Save plan" stays disabled while a
+  // cycle exists (contract §4) rather than firing a request certain to 409.
+  const cycle = useMemo(() => detectCycle(phases), [phases]);
+  const litRows = useMemo(() => new Set<string>([
+    ...(cycle ?? []).map((n) => n.key),
+    ...serverCycle.map((s) => s.key).filter((k): k is string => typeof k === 'string'),
+  ]), [cycle, serverCycle]);
 
   // Every mutation goes through here so a fresh edit always clears a stale error
   // — and a stale "saved as your default", which described a structure the author
@@ -103,7 +242,20 @@ export function PlanBuildEditor({
     setPhases(next);
     setError(null);
     setDefaultSaved(false);
+    setServerCycle([]);
   }, []);
+
+  const toggleDep = useCallback((nodeKey: string, dep: string) => {
+    apply(toggleDependency(phases, nodeKey, dep));
+  }, [apply, phases]);
+
+  const assign = useCallback((nodeKey: string, partyId: string | null) => {
+    apply(setAssignee(phases, nodeKey, partyId));
+  }, [apply, phases]);
+
+  const retrade = useCallback((nodeKey: string, trade: string) => {
+    apply(setTrade(phases, nodeKey, trade));
+  }, [apply, phases]);
 
   // Back to the scaffold this editor opened on — the caller's resolved default,
   // not the hard-coded skeleton. Purely client-side: it discards unsaved edits in
@@ -134,22 +286,36 @@ export function PlanBuildEditor({
     }
   }, [phases]);
 
-  const dropPhase = useCallback((to: number) => {
-    setDragPhase((from) => {
-      if (from !== null && from !== to) apply(reorderPhase(phases, from, to));
-      return null;
-    });
+  const rename = useCallback((value: string, pi: number, ti?: number, si?: number) => {
+    apply(ti == null
+      ? renamePhase(phases, pi, value)
+      : si == null
+        ? renameTask(phases, pi, ti, value)
+        : renameSubtask(phases, pi, ti, si, value));
   }, [apply, phases]);
 
-  const dropTask = useCallback((pi: number, to: number) => {
-    setDragTask((d) => {
-      if (d && d.pi === pi && d.ti !== to) apply(reorderTask(phases, pi, d.ti, to));
-      return null;
-    });
+  const setDate = useCallback((
+    field: 'start' | 'end', value: string, pi: number, ti: number, si?: number,
+  ) => {
+    apply(si == null
+      ? setTaskDate(phases, pi, ti, field, value)
+      : setSubtaskDate(phases, pi, ti, si, field, value));
+  }, [apply, phases]);
+
+  // A Gantt drag or an empty-track click lands here: write the row's start and
+  // finish in one op. Same draft, same tested vocabulary the table's date
+  // inputs use — the timeline just computes the dates from a pointer.
+  const setDates = useCallback((
+    pi: number, ti: number, start: string, end: string, si?: number,
+  ) => {
+    apply(si == null
+      ? setTaskDates(phases, pi, ti, start, end)
+      : setSubtaskDates(phases, pi, ti, si, start, end));
   }, [apply, phases]);
 
   const submit = useCallback(async () => {
     setError(null);
+    setServerCycle([]);
     let stages;
     try {
       stages = toWire(phases); // client-side validation → pointed message, no round-trip
@@ -165,6 +331,34 @@ export function PlanBuildEditor({
       // plan is NOT sent for approval here; that is a separate act on /plan.
       router.push(`/projects/${projectId}/plan?drafted=${encodeURIComponent(result.auditEventId)}`);
     } catch (e) {
+      // THE SERVER IS THE AUTHORITY ON THE GRAPH (contract §3). It revalidates
+      // the whole thing on every save and names the offending stages, so a
+      // refusal is surfaced as ITS answer — the chain lights up on the rows and
+      // is spelled out in the alert, rather than being restated in our words.
+      if (e instanceof PlanAuthorError && e.code === 'dependency_cycle') {
+        const stagesOnCycle = e.details?.stages ?? [];
+        setServerCycle(stagesOnCycle);
+        setError(stagesOnCycle.length
+          ? `These stages depend on each other in a loop: ${stagesOnCycle.map((s) => s.name).join(' → ')} → ${stagesOnCycle[0].name}. Remove one of the links to save.`
+          : e.message);
+        setSubmitting(false);
+        return;
+      }
+      if (e instanceof PlanAuthorError && e.code === 'unknown_dependency') {
+        setError(`“${e.details?.stage ?? 'A stage'}” depends on something that is no longer in this plan. Remove that link and save again.`);
+        setSubmitting(false);
+        return;
+      }
+      // The project's member list is the picker's whole universe, so this should
+      // not be reachable — but a member removed from the build between the page
+      // load and the save makes it reachable, and the honest answer is to name
+      // the cause rather than restate the server's field-level wording.
+      if (e instanceof PlanAuthorError
+        && (e.code === 'unknown_assignee' || e.code === 'invalid_assignee')) {
+        setError('One of the owners on this plan is no longer on this build. Reload the page and pick again.');
+        setSubmitting(false);
+        return;
+      }
       if (e instanceof PlanAuthorError && (e.code === 'open_plan_exists' || e.code === 'draft_exists')) {
         // A plan is already open/being drafted on this build — the write is not
         // this screen's to make. Send the author to the live plan rather than
@@ -177,16 +371,19 @@ export function PlanBuildEditor({
     }
   }, [phases, projectId, router]);
 
+  const activeOwner = partyOf(dir, (openRow?.ti == null ? activePhase?.assigneePartyId : active?.assigneePartyId) ?? null);
+
   return (
-    <main className="pbx">
+    <main className="pbx pbx--grid">
       <header className="pbx-head">
         <div>
           <p className="pbx-eyebrow">{resuming ? 'Your draft' : 'New plan'}</p>
           <h1 className="pbx-title">Build the plan directly in LinkNMS</h1>
           <p className="pbx-lede">
-            Start from a standard skeleton, then rename, reorder, add and remove phases and tasks.
-            Date what you know — leave the rest blank. Saving keeps this as your private draft —
-            only you can see it, and nothing is sent until you choose to send it for approval.
+            Compose phases and tasks, assign an accountable specialty and owner, and set the dates
+            by clicking and dragging the bars — or leave what you don’t know blank. Saving keeps
+            this as your private draft — only you can see it, and nothing is sent until you choose
+            to send it for approval.
           </p>
         </div>
         <span className="pbx-draft">Draft — only you can see it</span>
@@ -196,6 +393,7 @@ export function PlanBuildEditor({
         <p className="pbx-count">
           {count} {count === 1 ? 'task' : 'tasks'} across {phases.length}{' '}
           {phases.length === 1 ? 'phase' : 'phases'}
+          {subs > 0 ? ` · ${subs} ${subs === 1 ? 'sub-task' : 'sub-tasks'}` : ''}
         </p>
         <div className="pbx-tools">
           {/* The light confirmation. Worded so it cannot be read as "sent": this
@@ -218,119 +416,65 @@ export function PlanBuildEditor({
         </div>
       </div>
 
-      <ol className="pbx-phases">
-        {phases.map((phase, pi) => (
-          <li
-            key={phase.key}
-            className={`pbx-phase${dragPhase === pi ? ' is-dragging' : ''}`}
-            onDragOver={(e) => { if (dragPhase !== null) e.preventDefault(); }}
-            onDrop={(e) => { if (dragPhase !== null) { e.preventDefault(); dropPhase(pi); } }}
-          >
-            <div className="pbx-phase-hd">
-              <span
-                className="pbx-grip"
-                role="button"
-                tabIndex={-1}
-                aria-label={`Drag to reorder phase ${pi + 1}`}
-                title="Drag to reorder"
-                draggable={!submitting}
-                onDragStart={(e) => { setDragPhase(pi); e.dataTransfer.effectAllowed = 'move'; }}
-                onDragEnd={() => setDragPhase(null)}
-              >⠿</span>
-              <span className="pbx-phase-n" aria-hidden>{pi + 1}</span>
-              <input
-                className="pbx-phase-name"
-                value={phase.name}
-                placeholder="Phase name"
-                aria-label={`Phase ${pi + 1} name`}
-                disabled={submitting}
-                onChange={(e) => apply(renamePhase(phases, pi, e.target.value))}
-              />
-              <span className="pbx-rowctl">
-                <button type="button" className="pbx-icon pbx-del" title="Remove phase"
-                  disabled={submitting}
-                  onClick={() => apply(removePhase(phases, pi))}>✕</button>
-              </span>
-            </div>
+      {/* The add callbacks return the FRESH node's key (add ops append, so it
+          is always the last one) — the grid opens rename on it focused
+          (founder follow-up, 2026-09-11). */}
+      <PlanGrid
+        phases={phases}
+        parties={parties}
+        litRows={litRows}
+        disabled={submitting}
+        todayIso={todayIso}
+        onOpenRow={(pi, ti, si) => setOpenRow({ pi, ti, si })}
+        onRename={rename}
+        onSetDate={setDate}
+        onDates={setDates}
+        onAssign={assign}
+        onTrade={retrade}
+        onAddPhase={() => {
+          const next = addPhase(phases);
+          apply(next);
+          return next[next.length - 1].key;
+        }}
+        onAddTask={(pi) => {
+          const next = addTask(phases, pi);
+          apply(next);
+          return next[pi].tasks[next[pi].tasks.length - 1].key;
+        }}
+        onAddSubtask={(pi, ti) => {
+          const next = addSubtask(phases, pi, ti);
+          apply(next);
+          const kids = next[pi].tasks[ti].children ?? [];
+          return kids[kids.length - 1].key;
+        }}
+        onRemovePhase={(pi) => apply(removePhase(phases, pi))}
+        onRemoveTask={(pi, ti) => apply(removeTask(phases, pi, ti))}
+        onRemoveSubtask={(pi, ti, si) => apply(removeSubtask(phases, pi, ti, si))}
+        onReorderPhase={(from, to) => apply(reorderPhase(phases, from, to))}
+        onReorderTask={(pi, from, to) => apply(reorderTask(phases, pi, from, to))}
+        onReorderSubtask={(pi, ti, from, to) => apply(reorderSubtask(phases, pi, ti, from, to))}
+        onPromote={(pi, ti, si) => apply(promoteNode(phases, pi, ti, si))}
+        onDemote={(pi, ti, si) => apply(demoteNode(phases, pi, ti, si))}
+      />
 
-            <div className="pbx-tasks">
-              {phase.tasks.length > 0 ? (
-                <div className="pbx-taskhdr" aria-hidden>
-                  <span /><span>Task</span><span>Start</span><span>End</span><span />
-                </div>
-              ) : null}
-              {phase.tasks.map((task, ti) => {
-                const dropTarget = dragTask?.pi === pi;
-                return (
-                <div
-                  key={task.key}
-                  className={`pbx-task${dragTask?.pi === pi && dragTask.ti === ti ? ' is-dragging' : ''}`}
-                  onDragOver={(e) => { if (dropTarget) e.preventDefault(); }}
-                  onDrop={(e) => { if (dropTarget) { e.preventDefault(); dropTask(pi, ti); } }}
-                >
-                  <span
-                    className="pbx-grip"
-                    role="button"
-                    tabIndex={-1}
-                    aria-label="Drag to reorder task"
-                    title="Drag to reorder"
-                    draggable={!submitting}
-                    onDragStart={(e) => { setDragTask({ pi, ti }); e.dataTransfer.effectAllowed = 'move'; }}
-                    onDragEnd={() => setDragTask(null)}
-                  >⠿</span>
-                  <input
-                    className="pbx-task-name"
-                    value={task.name}
-                    placeholder="Task name"
-                    aria-label={`Task name`}
-                    disabled={submitting}
-                    onChange={(e) => apply(renameTask(phases, pi, ti, e.target.value))}
-                  />
-                  <input
-                    type="date" className="pbx-date" value={task.start}
-                    aria-label="Start date" disabled={submitting}
-                    onChange={(e) => apply(setTaskDate(phases, pi, ti, 'start', e.target.value))}
-                  />
-                  <input
-                    type="date" className="pbx-date" value={task.end}
-                    aria-label="End date" disabled={submitting}
-                    onChange={(e) => apply(setTaskDate(phases, pi, ti, 'end', e.target.value))}
-                  />
-                  <span className="pbx-rowctl">
-                    <button
-                      type="button"
-                      className={`pbx-icon pbx-details${task.description.trim() ? ' has-note' : ''}`}
-                      title="Task details"
-                      aria-label={`Open details for ${task.name.trim() || 'this task'}`}
-                      disabled={submitting}
-                      onClick={() => setOpenTask({ pi, ti })}
-                    >
-                      ⋯{task.description.trim() ? <span className="pbx-dot" aria-hidden /> : null}
-                    </button>
-                    <button type="button" className="pbx-icon pbx-del" title="Remove task"
-                      disabled={submitting}
-                      onClick={() => apply(removeTask(phases, pi, ti))}>✕</button>
-                  </span>
-                </div>
-                );
-              })}
-              <button type="button" className="pbx-addtask" disabled={submitting}
-                onClick={() => apply(addTask(phases, pi))}>+ Add task</button>
-            </div>
-          </li>
-        ))}
-      </ol>
+      <p className="pgd-hint">
+        ↔ Drag a bar to move a task; drag its edges to change start or finish — the Start and
+        Finish columns update automatically. Click an undated row’s timeline to schedule it: the
+        bar starts on the clicked day and runs one week. Click a row to open its details.
+      </p>
 
-      <button type="button" className="pbx-addtask" disabled={submitting}
-        onClick={() => apply(addPhase(phases))} style={{ alignSelf: 'flex-start' }}>
-        + Add phase
-      </button>
+      {cycle ? (
+        <p role="alert" className="pbx-cycle">
+          <strong>These stages wait on each other in a loop:</strong>{' '}
+          {cycle.map((n) => n.label).join(' → ')} → {cycle[0].label}. Remove one of the links to save.
+        </p>
+      ) : null}
 
       {error ? <p role="alert" className="pbx-open">{error}</p> : null}
 
       <div className="pbx-actions">
         <Link className="btn" href={`/projects/${projectId}/plan`}>Cancel</Link>
-        <button type="button" className="btn primary" onClick={submit} disabled={submitting}>
+        <button type="button" className="btn primary" onClick={submit} disabled={submitting || cycle !== null}>
           {submitting ? 'Saving…' : 'Save plan'}
         </button>
       </div>
@@ -341,30 +485,40 @@ export function PlanBuildEditor({
         approval is requested until you choose <strong>Send for approval</strong> on the plan page.
       </p>
 
-      {openTask && active ? (
+      {openRow && activePhase && (openRow.ti == null || active) ? (
         <div
           className="pbx-drawer-scrim"
           role="presentation"
-          onClick={() => setOpenTask(null)}
+          onClick={() => { setOpenRow(null); setOpenDeps(null); }}
         >
           <aside
             className="pbx-drawer"
             role="dialog"
             aria-modal="true"
-            aria-label="Task details"
+            aria-label={openRow.ti == null ? 'Phase details' : openRow.si != null ? 'Sub-task details' : 'Task details'}
             onClick={(e) => e.stopPropagation()}
           >
             <header className="pbx-drawer-hd">
               <div>
-                <p className="pbx-drawer-eyebrow">Task details</p>
-                <h2 className="pbx-drawer-title">{active.name.trim() || 'Untitled task'}</h2>
+                <p className="pbx-drawer-eyebrow">
+                  {openRow.ti == null ? 'Phase details' : openRow.si != null ? 'Sub-task details' : 'Task details'}
+                </p>
+                <h2 className="pbx-drawer-title">
+                  {(openRow.ti == null ? activePhase.name : active!.name).trim()
+                    || (openRow.ti == null ? 'Untitled phase' : openRow.si != null ? 'Untitled sub-task' : 'Untitled task')}
+                </h2>
+                {openRow.si != null && activeTask ? (
+                  <p className="pbx-drawer-under">
+                    Under {activeTask.name.trim() || 'an untitled task'}
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"
                 className="pbx-icon"
                 title="Close"
-                aria-label="Close task details"
-                onClick={() => setOpenTask(null)}
+                aria-label="Close details"
+                onClick={() => { setOpenRow(null); setOpenDeps(null); }}
               >✕</button>
             </header>
 
@@ -378,19 +532,91 @@ export function PlanBuildEditor({
               </span>
             </div>
 
-            <label className="pbx-drawer-label" htmlFor="pbx-task-desc">Description</label>
-            <textarea
-              id="pbx-task-desc"
-              className="pbx-drawer-desc"
-              value={active.description}
-              placeholder="What is this task? Add scope, context, anything the other party should know."
-              maxLength={4000}
-              disabled={submitting}
-              onChange={(e) => apply(setTaskDescription(phases, openTask.pi, openTask.ti, e.target.value))}
-            />
+            <div className="pbx-drawer-meta">
+              <span className="pbx-drawer-label">Owner</span>
+              <span className="pbx-owner">
+                {activeOwner ? <PartyAvatar party={activeOwner} size="md" /> : <UnassignedAvatar size="md" />}
+                <select
+                  className="pbx-ownersel"
+                  value={(openRow.ti == null ? activePhase.assigneePartyId : active!.assigneePartyId) ?? ''}
+                  aria-label="Owner"
+                  disabled={submitting || parties.length === 0}
+                  onChange={(e) => activeKey && assign(activeKey, e.target.value || null)}
+                >
+                  <option value="">Unassigned</option>
+                  {parties.map((p) => (
+                    <option key={p.partyId} value={p.partyId}>{p.name} · {roleWord(p.role)}</option>
+                  ))}
+                </select>
+              </span>
+
+              <span className="pbx-drawer-label">Specialty</span>
+              <input
+                className="pbx-tradeinput"
+                value={openRow.ti == null ? activePhase.trade : active!.trade}
+                placeholder="e.g. Electrical"
+                maxLength={120}
+                aria-label="Specialty (trade)"
+                disabled={submitting}
+                onChange={(e) => activeKey && retrade(activeKey, e.target.value)}
+              />
+
+              {openRow.ti != null && active ? (
+                <>
+                  <span className="pbx-drawer-label">Start</span>
+                  <input
+                    type="date" className="pbx-date" value={active.start}
+                    aria-label="Start date" disabled={submitting}
+                    onChange={(e) => setDate('start', e.target.value, openRow.pi, openRow.ti!, openRow.si)}
+                  />
+                  <span className="pbx-drawer-label">Finish</span>
+                  <input
+                    type="date" className="pbx-date" value={active.end}
+                    aria-label="Finish date" disabled={submitting}
+                    onChange={(e) => setDate('end', e.target.value, openRow.pi, openRow.ti!, openRow.si)}
+                  />
+                </>
+              ) : null}
+
+              <span className="pbx-drawer-label">Depends on</span>
+              {activeKey ? (
+                <DependsOn
+                  nodeKey={activeKey}
+                  label={index.get(activeKey)?.label ?? 'this stage'}
+                  phases={phases}
+                  index={index}
+                  open={openDeps === activeKey}
+                  disabled={submitting}
+                  onOpen={(next) => setOpenDeps(next ? activeKey : null)}
+                  onToggle={(dep) => toggleDep(activeKey, dep)}
+                />
+              ) : null}
+            </div>
+
+            {openRow.ti != null && active ? (
+              <>
+                <label className="pbx-drawer-label" htmlFor="pbx-task-desc">Description</label>
+                <textarea
+                  id="pbx-task-desc"
+                  className="pbx-drawer-desc"
+                  value={active.description}
+                  placeholder="What is this task? Add scope, context, anything the other party should know."
+                  maxLength={4000}
+                  disabled={submitting}
+                  onChange={(e) => apply(openRow.si != null
+                    ? setSubtaskDescription(phases, openRow.pi, openRow.ti!, openRow.si, e.target.value)
+                    : setTaskDescription(phases, openRow.pi, openRow.ti!, e.target.value))}
+                />
+              </>
+            ) : (
+              <p className="pbx-status-hint">
+                A phase’s dates are read off its tasks — schedule those and the phase bar follows.
+              </p>
+            )}
 
             <div className="pbx-drawer-actions">
-              <button type="button" className="btn primary" onClick={() => setOpenTask(null)}>Done</button>
+              <button type="button" className="btn primary"
+                onClick={() => { setOpenRow(null); setOpenDeps(null); }}>Done</button>
             </div>
           </aside>
         </div>

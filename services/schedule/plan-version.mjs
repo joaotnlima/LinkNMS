@@ -32,7 +32,7 @@ const now = () => new Date().toISOString();
 // The only editable fields on a StageEdit (contract §5): dates + money only. No
 // structural (WBS/name/position) edits in B2.
 // Forbidden structural keys: D12a cannot restructure the WBS in B2.
-const STAGE_EDIT_FORBIDDEN = ['id', 'name', 'position', 'parentId', 'trade', 'importId'];
+const STAGE_EDIT_FORBIDDEN = ['id', 'name', 'position', 'parentId', 'trade', 'assigneePartyId', 'importId'];
 
 function normalizeCents(v) {
   if (!Number.isInteger(v)) {
@@ -189,8 +189,11 @@ export function createPlanVersionService({ store, ledger, identity }) {
 
   // The WBS stage tree for a version, rooted at top-level actions (parent_id null),
   // children nested. Dates preserved as plain date strings. Each node carries its
-  // resolved predecessor stage ids as `dependsOn` (ADR-0017 annex 2, LINA-233) so
-  // the FE can render predecessor chips; ids join to sibling nodes in this tree.
+  // resolved predecessor stage ids as `dependsOn` (ADR-0017 annex 2, LINA-233) AND
+  // the same edges typed as `dependencies` (ADR-0020, LINA-252). The legacy
+  // `dependsOn: string[]` is DUAL-EMITTED next to `dependencies: [{ on, type }]`
+  // until the FE consumes the typed shape in prod — never break the read shape
+  // between the BE and FE merges.
   async function stageTree(versionId) {
     const stages = await store.listStagesByPlanVersion(versionId);
     const roots = stages.filter((s) => s.parent_id == null).sort((a, b) => a.position - b.position);
@@ -206,7 +209,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
     const depsByStage = new Map();
     for (const d of await store.listStageDependenciesByPlanVersion(versionId)) {
       if (!depsByStage.has(d.stage_id)) depsByStage.set(d.stage_id, []);
-      depsByStage.get(d.stage_id).push(d.depends_on_stage_id);
+      depsByStage.get(d.stage_id).push(d);
     }
 
     const node = (s) => ({
@@ -214,11 +217,16 @@ export function createPlanVersionService({ store, ledger, identity }) {
       name: s.name,
       position: s.position,
       trade: s.trade ?? null,
+      assigneePartyId: s.assignee_party_id ?? null,
       description: s.description ?? null,
       plannedStartDate: s.planned_start_date ?? null,
       plannedEndDate: s.planned_end_date ?? null,
       plannedCostCents: s.planned_cost_cents ?? null,
-      dependsOn: depsByStage.get(s.id) ?? [],
+      dependsOn: (depsByStage.get(s.id) ?? []).map((d) => d.depends_on_stage_id),
+      dependencies: (depsByStage.get(s.id) ?? []).map((d) => ({
+        on: d.depends_on_stage_id,
+        type: d.dep_type,
+      })),
       children: (childrenOf.get(s.id) ?? []).map(node),
     });
     return roots.map(node);
@@ -487,6 +495,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
           position: s.position,
           parent_id: s.parent_id != null ? oldToNew.get(s.parent_id) : null,
           trade: s.trade,
+          assignee_party_id: s.assignee_party_id,
           import_id: null,
           source_row_ref: s.source_row_ref,
           scope_note: s.scope_note,
@@ -570,6 +579,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
         position: base + i + 1,
         parent_id: node.parentIndex == null ? null : ids[node.parentIndex],
         trade: node.trade,
+        assignee_party_id: node.assigneePartyId,
         import_id: null,
         source_row_ref: null,
         scope_note: null,
@@ -583,6 +593,24 @@ export function createPlanVersionService({ store, ledger, identity }) {
       });
     }
     return { rootCount, ids };
+  }
+
+  // Validate every distinct assigneePartyId in the authored tree is a party on
+  // the project (membership check via the identity port). Rejects with 400
+  // unknown_assignee for any party that is not a member — no cross-schema FK;
+  // the identity port's roleOf is the source of truth (ADR-0006 §1).
+  async function assertAssigneesOnProject(projectId, order) {
+    const distinct = new Set();
+    for (const node of order) {
+      if (node.assigneePartyId != null) distinct.add(node.assigneePartyId);
+    }
+    for (const pid of distinct) {
+      const role = await identity.roleOf(projectId, pid);
+      if (!role) {
+        throw new DomainError(400, 'unknown_assignee',
+          'assigneePartyId must reference a party that is a member of this project');
+      }
+    }
   }
 
   // ── POST …/plan-versions:author (LINA-228/LINA-230, ADR-0017 annex) ────────
@@ -607,6 +635,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
     await identity.authorize({ actorPartyId, action: ACTION.PROPOSE_PLAN, projectId });
 
     const order = validateAuthoredStages(stages);
+    await assertAssigneesOnProject(projectId, order);
 
     // Can't draft while a proposal is live: a single authoring thread per project
     // (B2 contract §1). Withdraw the open proposal first.
@@ -670,8 +699,8 @@ export function createPlanVersionService({ store, ledger, identity }) {
       // event (ADR-0017 annex 2 §1).
       const { rootCount, ids } = await insertAuthoredStages(tx, projectId, versionId, order, occurredAt);
       for (let i = 0; i < order.length; i += 1) {
-        for (const predIndex of order[i].dependsOn) {
-          await store.insertStageDependency(tx, ids[i], ids[predIndex]);
+        for (const dep of order[i].deps) {
+          await store.insertStageDependency(tx, ids[i], ids[dep.pred], dep.type);
         }
       }
 
@@ -778,9 +807,13 @@ export function createPlanVersionService({ store, ledger, identity }) {
   }
 
   // Validate the authored WBS tree and flatten it to a pre-order list with a
-  // parentIndex back-pointer (parents always precede their children). Two levels
-  // only — a sub-action may not carry children (the model's self-ref FK permits
-  // deeper nesting; this slice does not, matching the B1 parser).
+  // parentIndex back-pointer (parents always precede their children). Three
+  // levels at most — Action → Sub-action → Sub-sub-action; a node at depth 2 may
+  // not carry children (LINA-238, ADR-0019: the founder wanted depth-3 in
+  // authoring; task_type was declined). The model's self-ref FK permits unbounded
+  // nesting, so the cap is enforced here in application code. The B1 import parser
+  // stays two-level by construction (its sheet has only Action/Sub-action columns)
+  // and templates stay a two-level names-only scaffold (ADR-0018) — both deliberate.
   //
   // Two optional per-node fields ride the payload (ADR-0017 annex 2, LINA-233):
   //   - `key` — a stable author-local id for the node WITHIN this payload (the
@@ -797,6 +830,39 @@ export function createPlanVersionService({ store, ledger, identity }) {
   //     Cycle validation is total — the whole graph is revalidated on every save,
   //     so a draft can never be saved in a cyclic state.
   const KEY_MAX = 200;
+  // ADR-0020 (LINA-252) link types — one typed link per ordered stage pair.
+  const DEP_TYPES = new Set(['starts_after', 'starts_with', 'ends_with']);
+
+  // Resolve one `dependsOn` entry to { key, type }. Bare strings are the compat
+  // alias for { key, type: 'starts_after' }; the object form carries the type
+  // explicitly (missing type defaults to starts_after, the column default). An
+  // unknown type is refused (400 invalid_dependency_type) before any resolution.
+  function parseDepEntry(node, entry) {
+    if (typeof entry === 'string') {
+      if (entry === '' || entry.length > KEY_MAX) {
+        throw new DomainError(400, 'invalid_stages',
+          'a dependency key must be a non-empty string ≤ 200 chars');
+      }
+      return { key: entry, type: 'starts_after' };
+    }
+    if (entry !== null && typeof entry === 'object' && !Array.isArray(entry)) {
+      const key = entry.key;
+      if (typeof key !== 'string' || key === '' || key.length > KEY_MAX) {
+        throw new DomainError(400, 'invalid_stages',
+          'a typed dependency needs a non-empty key ≤ 200 chars');
+      }
+      const type = entry.type == null ? 'starts_after' : entry.type;
+      if (typeof type !== 'string' || !DEP_TYPES.has(type)) {
+        throw new DomainError(400, 'invalid_dependency_type',
+          `unknown dependency type "${type}" — must be starts_after, starts_with or ends_with`,
+          { key, stage: { key: node.key, name: node.name } });
+      }
+      return { key, type };
+    }
+    throw new DomainError(400, 'invalid_stages',
+      'dependsOn entries must be key strings or { key, type } objects');
+  }
+
   function validateAuthoredStages(stages) {
     if (!Array.isArray(stages) || stages.length === 0) {
       throw new DomainError(400, 'empty_plan', 'stages is required (a non-empty array of actions)');
@@ -820,6 +886,16 @@ export function createPlanVersionService({ store, ledger, identity }) {
           throw new DomainError(400, 'invalid_stages', 'trade must be a string ≤ 120 chars or null');
         }
         trade = raw.trade.trim() || null;
+      }
+      let assigneePartyId = null;
+      if (raw.assigneePartyId != null) {
+        if (typeof raw.assigneePartyId !== 'string' || raw.assigneePartyId.length > 200) {
+          throw new DomainError(400, 'invalid_assignee',
+            'assigneePartyId must be a party id (string) or null');
+        }
+        const cleaned = raw.assigneePartyId.trim();
+        if (!cleaned) throw new DomainError(400, 'invalid_assignee', 'assigneePartyId, when present, must not be empty');
+        assigneePartyId = cleaned;
       }
       let description = null;
       if (raw.description != null) {
@@ -849,9 +925,11 @@ export function createPlanVersionService({ store, ledger, identity }) {
         name,
         key,
         dependsOn: [],
+        deps: [],
         rawDependsOn: raw.dependsOn,
         parentIndex,
         trade,
+        assigneePartyId,
         description,
         plannedStartDate: normalizeDate(raw.plannedStartDate ?? null, 'plannedStartDate'),
         plannedEndDate: normalizeDate(raw.plannedEndDate ?? null, 'plannedEndDate'),
@@ -862,9 +940,9 @@ export function createPlanVersionService({ store, ledger, identity }) {
         if (!Array.isArray(children)) {
           throw new DomainError(400, 'invalid_stages', 'children must be an array');
         }
-        if (depth >= 1 && children.length > 0) {
+        if (depth >= 2 && children.length > 0) {
           throw new DomainError(400, 'too_deep',
-            'the plan is two levels only — a sub-action cannot have its own children');
+            'the plan is three levels deep at most — a sub-sub-action cannot have its own children');
         }
         for (const child of children) pushNode(child, index, depth + 1);
       }
@@ -873,17 +951,25 @@ export function createPlanVersionService({ store, ledger, identity }) {
 
     // Keys are registered by the walk above — but a `dependsOn` may reference a
     // key that only appears LATER in the DFS pre-order, so resolution runs as a
-    // second pass once the whole payload's key set is known.
+    // second pass once the whole payload's key set is known. Since LINA-252
+    // (ADR-0020) each entry is a bare key (compat alias for
+    // `{ key, type: 'starts_after' }`) or `{ key, type }`; the type rides the
+    // same in-memory edge into `insertStageDependency`.
     for (let i = 0; i < order.length; i += 1) {
       const node = order[i];
       const raw = node.rawDependsOn ?? [];
       if (!Array.isArray(raw)) {
-        throw new DomainError(400, 'invalid_stages', 'dependsOn must be an array of keys (strings)');
+        throw new DomainError(400, 'invalid_stages', 'dependsOn must be an array');
       }
-      for (const depKey of raw) {
-        if (typeof depKey !== 'string') {
-          throw new DomainError(400, 'invalid_stages', 'dependsOn must be an array of keys (strings)');
+      const seen = new Set();
+      for (const entry of raw) {
+        const { key: depKey, type: depType } = parseDepEntry(node, entry);
+        if (seen.has(depKey)) {
+          throw new DomainError(400, 'duplicate_dependency',
+            `stage "${node.name}" lists "${depKey}" as a predecessor more than once`,
+            { key: depKey, stage: { key: node.key, name: node.name } });
         }
+        seen.add(depKey);
         if (node.key != null && depKey === node.key) {
           throw new DomainError(400, 'self_dependency',
             `stage "${node.name}" cannot depend on itself`,
@@ -896,6 +982,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
             { key: depKey, stage: { key: node.key, name: node.name } });
         }
         node.dependsOn.push(pred);
+        node.deps.push({ pred, type: depType });
       }
     }
 

@@ -1,0 +1,236 @@
+// Unit tests for the Gantt drag-to-schedule / resize math (LINA-236).
+//
+// The component is layout + pointer plumbing; these seams are the logic:
+//   1. calendar-day parsing is UTC, rejects impossible days, and round-trips;
+//   2. a drag of N columns moves a task EXACTLY N calendar days (no TZ drift);
+//   3. move preserves duration; resize clamps so a task never ends before it
+//      starts; half-dated tasks stay grabbable.
+//
+// Run: node --test src/lib/plan-gantt.test.mjs
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  parseDay, formatDay, addDays, diffDays,
+  ganttWindow, barGeom, daysFromPixels,
+  moveBar, resizeStart, resizeEnd, applyDrag, scheduleWindow, clickDates,
+  baseWindow, clipBarGeom,
+} from './plan-gantt.ts';
+
+test('parseDay: UTC round-trip, rejects blanks and impossible days', () => {
+  assert.equal(parseDay('2026-03-01'), Date.UTC(2026, 2, 1));
+  assert.equal(formatDay(parseDay('2026-03-01')), '2026-03-01');
+  assert.equal(parseDay(''), null);
+  assert.equal(parseDay('2026-13-01'), null); // no month 13
+  assert.equal(parseDay('2026-02-30'), null); // February has no 30th
+  assert.equal(parseDay('2026-3-1'), null); // not zero-padded → not a valid day string
+});
+
+test('addDays: whole-day arithmetic across month and year boundaries', () => {
+  assert.equal(addDays('2026-01-31', 1), '2026-02-01');
+  assert.equal(addDays('2026-12-31', 1), '2027-01-01');
+  assert.equal(addDays('2026-03-10', -1), '2026-03-09');
+  assert.equal(addDays('', 5), ''); // blank passes through
+});
+
+test('addDays: no drift across a spring-forward DST boundary', () => {
+  // US DST 2026 begins 2026-03-08. A pure-UTC day math must still land on the 9th.
+  assert.equal(addDays('2026-03-08', 1), '2026-03-09');
+  assert.equal(diffDays('2026-03-07', '2026-03-09'), 2);
+});
+
+test('diffDays: signed whole days, null when either end unset', () => {
+  assert.equal(diffDays('2026-03-01', '2026-03-05'), 4);
+  assert.equal(diffDays('2026-03-05', '2026-03-01'), -4);
+  assert.equal(diffDays('2026-03-05', ''), null);
+});
+
+test('ganttWindow: earliest start to latest finish, padded both sides', () => {
+  const win = ganttWindow(
+    [{ start: '2026-03-10', end: '2026-03-12' }, { start: '2026-03-20', end: '' }],
+    3,
+  );
+  assert.equal(win.startDay, '2026-03-07'); // 03-10 − 3
+  assert.equal(win.endDay, '2026-03-23'); // 03-20 + 3
+  assert.equal(win.days, diffDays('2026-03-07', '2026-03-23') + 1);
+});
+
+test('ganttWindow: null when nothing is dated', () => {
+  assert.equal(ganttWindow([{ start: '', end: '' }]), null);
+  assert.equal(ganttWindow([]), null);
+});
+
+test('barGeom: inclusive span, same-day is one column', () => {
+  const win = ganttWindow([{ start: '2026-03-10', end: '2026-03-12' }], 3);
+  const bar = barGeom(win, '2026-03-10', '2026-03-12');
+  assert.equal(bar.offsetDays, 3); // window starts 03-07
+  assert.equal(bar.spanDays, 3); // 10,11,12 inclusive
+  assert.equal(bar.open, false);
+
+  const same = barGeom(win, '2026-03-11', '2026-03-11');
+  assert.equal(same.spanDays, 1);
+});
+
+test('barGeom: a half-dated task renders as a 1-day open bar', () => {
+  const win = ganttWindow([{ start: '2026-03-10', end: '2026-03-20' }], 3);
+  const startOnly = barGeom(win, '2026-03-15', '');
+  assert.equal(startOnly.spanDays, 1);
+  assert.equal(startOnly.open, true);
+  const endOnly = barGeom(win, '', '2026-03-15');
+  assert.equal(endOnly.spanDays, 1);
+  assert.equal(endOnly.open, true);
+});
+
+test('barGeom: null when undated or outside the window', () => {
+  const win = ganttWindow([{ start: '2026-03-10', end: '2026-03-12' }], 0);
+  assert.equal(barGeom(win, '', ''), null);
+  assert.equal(barGeom(win, '2026-04-01', '2026-04-02'), null); // past the padded window
+});
+
+test('daysFromPixels: snaps to nearest whole column', () => {
+  assert.equal(daysFromPixels(0, 28), 0);
+  assert.equal(daysFromPixels(28, 28), 1);
+  assert.equal(daysFromPixels(41, 28), 1); // < 1.5 cols → 1
+  assert.equal(daysFromPixels(42, 28), 2); // ≥ 1.5 cols → 2
+  assert.equal(daysFromPixels(-28, 28), -1);
+  assert.equal(daysFromPixels(100, 0), 0); // guard against a zero column width
+});
+
+test('moveBar: shifts both ends, preserves duration; blank end stays blank', () => {
+  const both = moveBar('2026-03-10', '2026-03-12', 5);
+  assert.deepEqual(both, { start: '2026-03-15', end: '2026-03-17' });
+  const open = moveBar('2026-03-10', '', 5);
+  assert.deepEqual(open, { start: '2026-03-15', end: '' });
+});
+
+test('resizeStart: moves start only, clamps at the end', () => {
+  assert.deepEqual(
+    resizeStart('2026-03-10', '2026-03-14', 2),
+    { start: '2026-03-12', end: '2026-03-14' },
+  );
+  // dragging the start past the end pins it to the end (never ends before it starts)
+  assert.deepEqual(
+    resizeStart('2026-03-10', '2026-03-14', 10),
+    { start: '2026-03-14', end: '2026-03-14' },
+  );
+  // with no end set, the start moves freely
+  assert.deepEqual(resizeStart('2026-03-10', '', 10), { start: '2026-03-20', end: '' });
+  // with no start set, nothing to resize
+  assert.deepEqual(resizeStart('', '2026-03-14', 2), { start: '', end: '2026-03-14' });
+});
+
+test('resizeEnd: moves end only, clamps at the start', () => {
+  assert.deepEqual(
+    resizeEnd('2026-03-10', '2026-03-14', 2),
+    { start: '2026-03-10', end: '2026-03-16' },
+  );
+  // dragging the end before the start pins it to the start
+  assert.deepEqual(
+    resizeEnd('2026-03-10', '2026-03-14', -10),
+    { start: '2026-03-10', end: '2026-03-10' },
+  );
+  assert.deepEqual(resizeEnd('', '2026-03-14', 2), { start: '', end: '2026-03-16' });
+});
+
+test('applyDrag: a zero-day drag is a no-op; dispatches by mode', () => {
+  assert.deepEqual(
+    applyDrag('move', '2026-03-10', '2026-03-12', 10, 28), // 10px < half a 28px col
+    { start: '2026-03-10', end: '2026-03-12' },
+  );
+  assert.deepEqual(
+    applyDrag('move', '2026-03-10', '2026-03-12', 28, 28),
+    { start: '2026-03-11', end: '2026-03-13' },
+  );
+  assert.deepEqual(
+    applyDrag('resize-end', '2026-03-10', '2026-03-12', 56, 28),
+    { start: '2026-03-10', end: '2026-03-14' },
+  );
+});
+
+// ── Always-visible timeline (LINA-248) ───────────────────────────────────────
+
+test('scheduleWindow: undated plan gets a today-anchored canvas', () => {
+  const win = scheduleWindow([{ start: '', end: '' }], '2026-09-11');
+  assert.ok(win);
+  assert.equal(win.startDay, '2026-09-08'); // today − 3 pad
+  assert.equal(win.days, 42);
+  assert.equal(win.endDay, '2026-10-19');
+});
+
+test('scheduleWindow: dated plan keeps its envelope, extended to minDays', () => {
+  // One short task → envelope is 1 + 2·3 pad = 7 days, extended right to 42.
+  const win = scheduleWindow([{ start: '2026-03-10', end: '2026-03-10' }], '2026-09-11');
+  assert.equal(win.startDay, '2026-03-07');
+  assert.equal(win.days, 42);
+  // A wide plan is left alone.
+  const wide = scheduleWindow([{ start: '2026-01-01', end: '2026-06-30' }], '2026-09-11');
+  assert.equal(wide.days, diffDays('2026-01-01', '2026-06-30') + 1 + 6);
+});
+
+test('scheduleWindow: garbage today with no dates → null (no canvas to draw)', () => {
+  assert.equal(scheduleWindow([], 'not-a-day'), null);
+});
+
+test('clickDates: plants a one-week bar on the clicked day, clamped to the window', () => {
+  const win = { startDay: '2026-09-08', endDay: '2026-10-19', days: 42 };
+  assert.deepEqual(clickDates(win, 3), { start: '2026-09-11', end: '2026-09-18' });
+  assert.deepEqual(clickDates(win, -5), { start: '2026-09-08', end: '2026-09-15' }); // clamp low
+  assert.deepEqual(clickDates(win, 99).start, '2026-10-19'); // clamp high
+});
+
+// ── Time base + clipping (LINA-248 follow-up) ────────────────────────────────
+
+test('baseWindow: auto delegates to the fitted scheduleWindow', () => {
+  const tasks = [{ start: '2026-03-10', end: '2026-05-20' }];
+  assert.deepEqual(baseWindow('auto', tasks, '2026-03-01'), scheduleWindow(tasks, '2026-03-01'));
+});
+
+test('baseWindow: fixed bases span exactly, anchored 2 days before the earliest dated day', () => {
+  const tasks = [{ start: '2026-03-10', end: '2026-06-20' }];
+  const week = baseWindow('week', tasks, '2026-01-01');
+  assert.deepEqual(week, { startDay: '2026-03-08', endDay: '2026-03-14', days: 7 });
+  assert.equal(baseWindow('quarter', tasks, '2026-01-01').days, 92);
+  assert.equal(baseWindow('year', tasks, '2026-01-01').days, 365);
+  // Nothing dated → anchored on today instead.
+  assert.equal(baseWindow('month', [], '2026-03-10').startDay, '2026-03-08');
+});
+
+test('baseWindow: custom uses the typed range; a bad or inverted range falls back to auto', () => {
+  const tasks = [{ start: '2026-03-10', end: '2026-03-20' }];
+  const c = baseWindow('custom', tasks, '2026-03-01', { from: '2026-04-01', to: '2026-04-30' });
+  assert.deepEqual(c, { startDay: '2026-04-01', endDay: '2026-04-30', days: 30 });
+  assert.deepEqual(
+    baseWindow('custom', tasks, '2026-03-01', { from: '2026-04-30', to: '2026-04-01' }),
+    scheduleWindow(tasks, '2026-03-01'),
+  );
+  assert.deepEqual(
+    baseWindow('custom', tasks, '2026-03-01', { from: '', to: '' }),
+    scheduleWindow(tasks, '2026-03-01'),
+  );
+});
+
+test('clipBarGeom: inside the window matches barGeom, no clip flags', () => {
+  const win = { startDay: '2026-03-01', endDay: '2026-03-31', days: 31 };
+  const clipped = clipBarGeom(win, '2026-03-05', '2026-03-10');
+  assert.deepEqual(clipped, { ...barGeom(win, '2026-03-05', '2026-03-10'), clipStart: false, clipEnd: false });
+});
+
+test('clipBarGeom: an overhanging bar is clamped to the window edge and flagged, not dropped', () => {
+  const win = { startDay: '2026-03-01', endDay: '2026-03-07', days: 7 };
+  // barGeom drops it — the whole reason clipBarGeom exists for narrow windows.
+  assert.equal(barGeom(win, '2026-02-25', '2026-03-03'), null);
+  assert.deepEqual(clipBarGeom(win, '2026-02-25', '2026-03-03'),
+    { offsetDays: 0, spanDays: 3, open: false, clipStart: true, clipEnd: false });
+  assert.deepEqual(clipBarGeom(win, '2026-03-05', '2026-03-20'),
+    { offsetDays: 4, spanDays: 3, open: false, clipStart: false, clipEnd: true });
+  // Spanning the whole window clips both ends down to the full 7 columns.
+  assert.deepEqual(clipBarGeom(win, '2026-02-01', '2026-04-01'),
+    { offsetDays: 0, spanDays: 7, open: false, clipStart: true, clipEnd: true });
+});
+
+test('clipBarGeom: entirely outside the window, or undated, is still null', () => {
+  const win = { startDay: '2026-03-01', endDay: '2026-03-07', days: 7 };
+  assert.equal(clipBarGeom(win, '2026-04-01', '2026-04-05'), null);
+  assert.equal(clipBarGeom(win, '2026-01-01', '2026-02-27'), null);
+  assert.equal(clipBarGeom(win, '', ''), null);
+});

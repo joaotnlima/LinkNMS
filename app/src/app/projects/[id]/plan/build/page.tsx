@@ -18,6 +18,8 @@ import { getBuild, getPlan, getPlanTemplate, isSignedIn } from '@/lib/api';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContext } from '@/server/portal-shell';
 import { hydrateDraft, type PhaseDraft, type TemplatePhase } from '@/lib/plan-authoring';
+import { directoryOf } from '@/lib/view';
+import { UNKNOWN_PARTY, type PartyRef } from '@/lib/party-display';
 import { PlanBuildEditor } from './PlanBuildEditor';
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +41,19 @@ export default async function PlanBuildPage({ params }: { params: Promise<{ id: 
   const draft: PhaseDraft[] | undefined =
     plan.current?.status === 'draft' ? hydrateDraft(plan.current.stages) : undefined;
 
+  // The assignee picker's whole universe (LINA-246). It is THIS build's members
+  // and nothing else: the schedule service checks membership on every authored
+  // assignee and answers `400 unknown_assignee` otherwise, so offering anyone
+  // else would be offering a refusal. Names are resolved here, server-side, from
+  // the project payload the page already fetched — never by a cross-service
+  // party lookup (ADR-0006 §1).
+  const directory = directoryOf(build);
+  const parties: PartyRef[] = build.members.map((m) => ({
+    partyId: m.partyId,
+    name: directory.get(m.partyId)?.name ?? UNKNOWN_PARTY,
+    role: m.role,
+  }));
+
   return (
     <PortalShell
       user={shell.user}
@@ -46,7 +61,7 @@ export default async function PlanBuildPage({ params }: { params: Promise<{ id: 
       activeBuild={{ id, name: build.name }}
       section="plan"
     >
-      <PlanBuildEditor projectId={id} initialPhases={draft} templateBody={template} />
+      <PlanBuildEditor projectId={id} initialPhases={draft} templateBody={template} parties={parties} />
     </PortalShell>
   );
 }
