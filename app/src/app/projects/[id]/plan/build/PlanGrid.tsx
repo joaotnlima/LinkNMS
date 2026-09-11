@@ -10,6 +10,22 @@
 // the name / specialty / dates columns RESIZE by dragging the header edges,
 // and start–finish read as one Dates column.
 //
+// LINA-259 layers seven UX behaviours onto the same grid — all presentational,
+// none touching the wire or the draft's shape:
+//   1. HOVER a bar → a dated label to its right (Mar 3 – Mar 10 · 8 days).
+//   2. A draggable DIVIDER resizes the table/Gantt split (session-persisted).
+//   3. A horizontal wheel / trackpad swipe over the grid PANS the timeline; the
+//      table columns stay pinned.
+//   4. DOUBLE-CLICK a column's resize handle → auto-fit it to its content (the
+//      name column is excluded).
+//   5. A segmented STATUS METER on each parent row (phase, task-with-children)
+//      counts its children by derived status — all "not started" on a fresh
+//      draft, by design (status is derived, never authored — ADR-0019).
+//   6. Column HEADERS drag-reorder (specialty / owner / dates); the name column
+//      stays pinned first (session-persisted order).
+//   7. PROMOTE / DEMOTE a row in the WBS (a row menu), respecting the depth-3
+//      cap — the pure ops in plan-authoring.ts do the reparenting.
+//
 // WHAT A ROW DOES (the founder's four asks, LINA-248):
 //   1. OWNER is a column: an avatar — the unassigned ring when nobody owns the
 //      stage — with the member <select> laid over it, so clicking the circle
@@ -33,14 +49,16 @@
 //      fresh node's key and the grid opens the editor on it.
 //
 // This component owns no draft state — every edit calls back into the editor's
-// pure ops (@/lib/plan-authoring), exactly as the old list and Gantt did.
-import { useCallback, useMemo, useRef, useState } from 'react';
+// pure ops (@/lib/plan-authoring), exactly as the old list and Gantt did. The
+// LINA-259 state it DOES own is view-only (the split, the column order, which
+// row's move-menu is open) and never leaves the browser.
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  addDays, applyDrag, baseWindow, clickDates, clipBarGeom, formatDay, parseDay,
+  addDays, applyDrag, baseWindow, clickDates, clipBarGeom, diffDays, formatDay, parseDay,
   type DragMode, type GanttWindow, type TimeBase,
 } from '@/lib/plan-gantt';
-import type { PhaseDraft, TaskDraft } from '@/lib/plan-authoring';
+import { childStatusCounts, type PhaseDraft, type StatusCounts, type TaskDraft } from '@/lib/plan-authoring';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 
@@ -60,6 +78,28 @@ const H = { phase: 36, task: 42, sub: 36, add: 34 } as const;
 const AXIS_H = 28;
 /** Resizable columns' minimum widths — below these the cell content breaks. */
 const COL_MIN = { name: 120, trade: 56, dates: 150 } as const;
+/** Largest a column may grow to (drag or auto-fit). */
+const COL_MAX = 560;
+
+// ── The reorderable middle columns (LINA-259 ask 6) ──────────────────────────
+// The name column is pinned first and never moves; grip and ID are fixed too.
+// Only these three reorder, and their widths reorder with them so the grid
+// template stays row-for-row consistent between the header and the body.
+type ColKey = 'trade' | 'owner' | 'dates';
+const DEFAULT_COL_ORDER: ColKey[] = ['trade', 'owner', 'dates'];
+const COL_TEMPLATE: Record<ColKey, string> = {
+  trade: 'var(--pgdw-trade, 96px)',
+  owner: '30px',
+  dates: 'var(--pgdw-dates, 176px)',
+};
+
+// Session-only view state (LINA-259): the split and the column order live for
+// the tab, not the account — a reading preference, not part of the plan.
+const SPLIT_KEY = 'pgd:split';
+const COLORDER_KEY = 'pgd:colorder';
+/** Panes never shrink past these — the table stays usable, the canvas visible. */
+const SPLIT_MIN_TABLE = 420;
+const SPLIT_MIN_CANVAS = 260;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -67,6 +107,19 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 function dayLabel(iso: string): string {
   const [, m, d] = iso.split('-').map(Number);
   return `${MONTHS[m - 1]} ${d}`;
+}
+
+/**
+ * The hover-tooltip text for a bar (LINA-259 ask 1): "Mar 3 – Mar 10 · 8 days"
+ * for a dated bar, the single day for a half-dated (open) one. All day math goes
+ * through parseDay/diffDays/formatDay — never a raw Date — so the count is exact
+ * regardless of timezone, the same discipline the drag math keeps.
+ */
+function barTip(start: string, end: string): string {
+  if (!start && !end) return '';
+  if (!start || !end) return dayLabel(start || end);
+  const n = (diffDays(start, end) ?? 0) + 1; // inclusive span
+  return `${dayLabel(start)} – ${dayLabel(end)} · ${n} ${n === 1 ? 'day' : 'days'}`;
 }
 
 /** 'YYYY-MM-DD' → weekday 0..6 (Mon=0) for the week-boundary axis ticks. */
@@ -124,6 +177,9 @@ export interface PlanGridProps {
   onReorderPhase: (from: number, to: number) => void;
   onReorderTask: (pi: number, from: number, to: number) => void;
   onReorderSubtask: (pi: number, ti: number, from: number, to: number) => void;
+  /** Promote / demote a row in the WBS (LINA-259 ask 7). No-op when disallowed. */
+  onPromote: (pi: number, ti: number, si?: number) => void;
+  onDemote: (pi: number, ti: number, si?: number) => void;
 }
 
 export function PlanGrid(props: PlanGridProps) {
@@ -178,6 +234,10 @@ export function PlanGrid(props: PlanGridProps) {
   // name / specialty / dates column; widths land as CSS vars on the root. ──
   const [colW, setColW] = useState<{ name?: number; trade?: number; dates?: number }>({});
   const rs = useRef<null | { col: keyof typeof COL_MIN; startX: number; startW: number }>(null);
+  // A reused canvas for auto-fit text measurement (LINA-259 ask 4).
+  const measure = useRef<CanvasRenderingContext2D | null>(null);
+  // The grid root — auto-fit reads its rendered cells to size a column to fit.
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const onResizeDown = useCallback((c: keyof typeof COL_MIN) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -190,13 +250,160 @@ export function PlanGrid(props: PlanGridProps) {
   const onResizeMove = useCallback((e: React.PointerEvent) => {
     const r = rs.current;
     if (!r) return;
-    const w = Math.min(560, Math.max(COL_MIN[r.col], Math.round(r.startW + e.clientX - r.startX)));
+    const w = Math.min(COL_MAX, Math.max(COL_MIN[r.col], Math.round(r.startW + e.clientX - r.startX)));
     setColW((prev) => (prev[r.col] === w ? prev : { ...prev, [r.col]: w }));
   }, []);
   const onResizeUp = useCallback((e: React.PointerEvent) => {
     if (!rs.current) return;
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* already released */ }
     rs.current = null;
+  }, []);
+
+  // Double-click a resize handle → auto-fit the column to its content (ask 4).
+  // The NAME column is excluded (its content is unbounded prose). Specialty
+  // measures the widest trade label; the dates column measures the two native
+  // date controls (their width is constant, so it fits the chrome, not a value).
+  const autoFit = useCallback((c: 'trade' | 'dates') => {
+    const root = rootRef.current;
+    if (!root) return;
+    const ctx = (measure.current ??= document.createElement('canvas').getContext('2d'));
+    if (!ctx) return;
+    const sample = root.querySelector(c === 'trade' ? '.pgd-tradeinput' : '.pgd-date') as HTMLElement | null;
+    ctx.font = (sample && getComputedStyle(sample).font) || '12px sans-serif';
+    let px = COL_MIN[c];
+    if (c === 'trade') {
+      let widest = 0;
+      root.querySelectorAll<HTMLInputElement>('.pgd-tradeinput').forEach((el) => {
+        widest = Math.max(widest, ctx.measureText(el.value || el.placeholder || '').width);
+      });
+      px = Math.ceil(widest) + 20; // input padding + a little breathing room
+    } else {
+      // Two 'YYYY-MM-DD' controls + the dash + the native picker's chrome.
+      px = Math.ceil(ctx.measureText('0000-00-00').width * 2) + 64;
+    }
+    const clamped = Math.min(COL_MAX, Math.max(COL_MIN[c], px));
+    setColW((prev) => (prev[c] === clamped ? prev : { ...prev, [c]: clamped }));
+  }, []);
+
+  // ── Column reorder (LINA-259 ask 6): the three middle headers drag-reorder;
+  // the chosen order is mirrored into the body and the grid template, and kept
+  // for the session. Anything unparseable falls back to the default order.
+  const [colOrder, setColOrder] = useState<ColKey[]>(DEFAULT_COL_ORDER);
+  const [dragCol, setDragCol] = useState<ColKey | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.sessionStorage.getItem(COLORDER_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed) && parsed.length === DEFAULT_COL_ORDER.length
+        && DEFAULT_COL_ORDER.every((c) => parsed.includes(c))) {
+        setColOrder(parsed as ColKey[]);
+      }
+    } catch { /* ignore malformed session state — the default order stands */ }
+  }, []);
+
+  const moveCol = useCallback((from: ColKey, to: ColKey) => {
+    setColOrder((prev) => {
+      const arr = prev.filter((c) => c !== from);
+      arr.splice(arr.indexOf(to), 0, from); // drop `from` in front of `to`
+      if (typeof window !== 'undefined') {
+        try { window.sessionStorage.setItem(COLORDER_KEY, JSON.stringify(arr)); } catch { /* quota / private mode */ }
+      }
+      return arr;
+    });
+  }, []);
+
+  // The grid template, name pinned, the three middle columns in the chosen
+  // order — set as a CSS var the header and every row read.
+  const colsTemplate = `20px 34px minmax(120px, var(--pgdw-name, 1fr)) ${colOrder.map((c) => COL_TEMPLATE[c]).join(' ')} 92px`;
+
+  // ── The table / Gantt split divider (LINA-259 ask 2): a draggable seam that
+  // resizes the two panes, persisted for the session. Seeded from the rendered
+  // table width on mount so the seam always has a home. ─────────────────────
+  const [split, setSplit] = useState<number | null>(null);
+  const gridWrapRef = useRef<HTMLDivElement | null>(null);
+  const tableRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const dividerDrag = useRef<null | { startX: number; startW: number }>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.sessionStorage.getItem(SPLIT_KEY);
+      const n = raw != null ? parseInt(raw, 10) : NaN;
+      if (Number.isFinite(n)) { setSplit(n); return; }
+    } catch { /* ignore */ }
+    // No stored split → seed from the current table width so the divider sits
+    // on the real seam rather than jumping when first grabbed.
+    const t = tableRef.current;
+    if (t) setSplit(Math.round(t.getBoundingClientRect().width));
+  }, []);
+
+  const clampSplit = useCallback((px: number) => {
+    const w = gridWrapRef.current?.getBoundingClientRect().width ?? px + SPLIT_MIN_CANVAS;
+    return Math.max(SPLIT_MIN_TABLE, Math.min(w - SPLIT_MIN_CANVAS, px));
+  }, []);
+
+  const onDividerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startW = split ?? tableRef.current?.getBoundingClientRect().width ?? SPLIT_MIN_TABLE;
+    dividerDrag.current = { startX: e.clientX, startW };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, [split]);
+  const onDividerMove = useCallback((e: React.PointerEvent) => {
+    const d = dividerDrag.current;
+    if (!d) return;
+    setSplit(clampSplit(Math.round(d.startW + e.clientX - d.startX)));
+  }, [clampSplit]);
+  const onDividerUp = useCallback((e: React.PointerEvent) => {
+    if (!dividerDrag.current) return;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* released */ }
+    dividerDrag.current = null;
+    if (typeof window !== 'undefined' && split != null) {
+      try { window.sessionStorage.setItem(SPLIT_KEY, String(split)); } catch { /* quota / private mode */ }
+    }
+  }, [split]);
+
+  // ── Horizontal wheel pans the timeline (LINA-259 ask 3). A horizontal swipe
+  // anywhere over the grid — even over the pinned table — scrolls only the
+  // canvas; vertical wheel is left alone so the page still scrolls and a focused
+  // date input still steps. Bound non-passive so preventDefault sticks. ──────
+  useEffect(() => {
+    const el = gridWrapRef.current;
+    if (!el) return undefined;
+    const onWheel = (e: WheelEvent) => {
+      const sc = scrollRef.current;
+      if (!sc) return;
+      if (e.deltaX !== 0 && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        sc.scrollLeft += e.deltaX;
+        e.preventDefault();
+      }
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // ── The row move-menu (LINA-259 ask 7): a small popover anchored to a row's
+  // ⋯ button offering Promote / Demote, each enabled only when the pure op
+  // would actually move the row (the same guards demoteNode/promoteNode keep).
+  const [menu, setMenu] = useState<
+    null | { pi: number; ti: number; si?: number; x: number; y: number; canPromote: boolean; canDemote: boolean }
+  >(null);
+
+  const openMenu = useCallback((e: React.MouseEvent, r: Extract<Row, { kind: 'task' }>) => {
+    e.stopPropagation();
+    const sub = r.si != null;
+    const hasChildren = (r.node.children ?? []).length > 0;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setMenu({
+      pi: r.pi, ti: r.ti, si: r.si,
+      x: rect.right, y: rect.bottom + 2,
+      canPromote: sub, // an L3 sub promotes to L2; an L2 task has no room above
+      canDemote: !sub && r.ti > 0 && !hasChildren, // nest under the row above, never past depth 3
+    });
   }, []);
 
   // ── Rename-in-place (ask 4): the ✎ button, and only it, opens the input. ──
@@ -333,6 +540,31 @@ export function PlanGrid(props: PlanGridProps) {
     );
   }, [editing, disabled, props]);
 
+  // A parent row's child-status meter (LINA-259 ask 5). Only the segments that
+  // have children are drawn, sized to their share; a fresh draft is all
+  // not-started, honestly grey. A leaf (no children) draws nothing.
+  const meter = useCallback((counts: StatusCounts, what: string) => {
+    if (counts.total === 0) return null;
+    const segs: Array<[string, number, string]> = [
+      ['is-done', counts.done, 'done'],
+      ['is-doing', counts.inProgress, 'in progress'],
+      ['is-todo', counts.notStarted, 'not started'],
+    ];
+    const title = segs.map(([, n, w]) => `${n} ${w}`).join(' · ');
+    return (
+      <span
+        className="pgd-meter"
+        role="img"
+        title={`${what}: ${title}`}
+        aria-label={`${what}: ${counts.total} — ${title}`}
+      >
+        {segs.map(([cls, n]) => (n > 0
+          ? <span key={cls} className={`pgd-meter-seg ${cls}`} style={{ flexGrow: n }} />
+          : null))}
+      </span>
+    );
+  }, []);
+
   const owner = useCallback((nodeKey: string, assigneePartyId: string | null, label: string) => {
     const p = partyOf(dir, assigneePartyId);
     return (
@@ -360,16 +592,55 @@ export function PlanGrid(props: PlanGridProps) {
   const resizer = (c: keyof typeof COL_MIN, what: string) => (
     <span
       className="pgd-hrs" role="separator" aria-label={`Resize the ${what} column`}
-      title="Drag to resize"
+      title={c === 'name' ? 'Drag to resize' : 'Drag to resize · double-click to fit'}
       onPointerDown={onResizeDown(c)} onPointerMove={onResizeMove}
       onPointerUp={onResizeUp} onPointerCancel={onResizeUp}
+      onDoubleClick={c === 'name' ? undefined : () => autoFit(c)}
     />
   );
 
+  // A draggable, droppable middle header cell (LINA-259 ask 6). The label span
+  // is the drag handle; the whole cell is the drop target, so releasing anywhere
+  // over "Specialty" moves the dragged column in front of it. The resizer keeps
+  // its own pointer gesture and never starts a column drag.
+  const headerCell = (c: ColKey) => {
+    const dropProps = {
+      onDragOver: (e: React.DragEvent) => { if (dragCol && dragCol !== c) e.preventDefault(); },
+      onDrop: (e: React.DragEvent) => {
+        if (!dragCol) return;
+        e.preventDefault();
+        if (dragCol !== c) moveCol(dragCol, c);
+        setDragCol(null);
+      },
+    };
+    const handle = (label: string) => (
+      <span
+        className={`pgd-hdrag${dragCol === c ? ' is-dragging' : ''}`}
+        draggable={!disabled}
+        title="Drag to reorder column"
+        onDragStart={(e) => { setDragCol(c); e.dataTransfer.effectAllowed = 'move'; }}
+        onDragEnd={() => setDragCol(null)}
+      >{label}</span>
+    );
+    if (c === 'owner') {
+      return <span key="owner" className="pgd-hdr-owner" {...dropProps}>{handle('Owner')}</span>;
+    }
+    return (
+      <span key={c} className="pgd-hcell" {...dropProps}>
+        {handle(c === 'trade' ? 'Specialty' : 'Dates')}
+        {resizer(c, c === 'trade' ? 'specialty' : 'dates')}
+      </span>
+    );
+  };
+
+  const activeMenuRow = menu; // stable reference for the popover render below
+
   return (
     <div
+      ref={rootRef}
       className="pgd"
       style={{
+        '--pgd-cols': colsTemplate,
         '--pgdw-name': colW.name ? `${colW.name}px` : undefined,
         '--pgdw-trade': colW.trade ? `${colW.trade}px` : undefined,
         '--pgdw-dates': colW.dates ? `${colW.dates}px` : undefined,
@@ -404,15 +675,17 @@ export function PlanGrid(props: PlanGridProps) {
         ) : null}
       </div>
 
-      <div className="pgd-grid">
+      <div
+        ref={gridWrapRef}
+        className="pgd-grid"
+        style={split != null ? { gridTemplateColumns: `${split}px 1fr` } : undefined}
+      >
         {/* ── Left: the editable table. ── */}
-        <div className="pgd-table">
+        <div className="pgd-table" ref={tableRef}>
           <div className="pgd-hdr" style={{ height: AXIS_H }}>
             <span /><span aria-hidden>ID</span>
             <span className="pgd-hcell"><span aria-hidden>Task</span>{resizer('name', 'task name')}</span>
-            <span className="pgd-hcell"><span aria-hidden>Specialty</span>{resizer('trade', 'specialty')}</span>
-            <span className="pgd-hdr-owner" aria-hidden>Owner</span>
-            <span className="pgd-hcell"><span aria-hidden>Dates</span>{resizer('dates', 'dates')}</span>
+            {colOrder.map(headerCell)}
             <span />
           </div>
 
@@ -428,6 +701,25 @@ export function PlanGrid(props: PlanGridProps) {
 
             if (r.kind === 'phase') {
               const id = `P${r.pi + 1}`;
+              const counts = childStatusCounts(r.phase);
+              const cellFor = (c: ColKey) => {
+                if (c === 'trade') {
+                  return (
+                    <span key="trade" className="pgd-trade">
+                      <input
+                        className="pgd-tradeinput" value={r.phase.trade} placeholder="Specialty"
+                        maxLength={120} aria-label={`Specialty for phase ${r.pi + 1}`}
+                        disabled={disabled}
+                        onChange={(e) => props.onTrade(r.key, e.target.value)}
+                      />
+                    </span>
+                  );
+                }
+                if (c === 'owner') {
+                  return <Fragment key="owner">{owner(r.key, r.phase.assigneePartyId, `phase ${r.pi + 1}`)}</Fragment>;
+                }
+                return <span key="dates" className="pgd-datecell" />;
+              };
               return (
                 <div
                   key={r.key}
@@ -450,17 +742,11 @@ export function PlanGrid(props: PlanGridProps) {
                     onDragEnd={() => setDragPhase(null)}
                   >⠿</span>
                   <span className="pgd-id">{id}</span>
-                  <span className="pgd-name">{name(r, id)}</span>
-                  <span className="pgd-trade">
-                    <input
-                      className="pgd-tradeinput" value={r.phase.trade} placeholder="Specialty"
-                      maxLength={120} aria-label={`Specialty for phase ${r.pi + 1}`}
-                      disabled={disabled}
-                      onChange={(e) => props.onTrade(r.key, e.target.value)}
-                    />
+                  <span className="pgd-name">
+                    {name(r, id)}
+                    {meter(counts, `Phase ${r.pi + 1}`)}
                   </span>
-                  {owner(r.key, r.phase.assigneePartyId, `phase ${r.pi + 1}`)}
-                  <span className="pgd-datecell" />
+                  {colOrder.map(cellFor)}
                   <span className="pgd-ctl">
                     <button type="button" className="pbx-icon pbx-del" title="Remove phase"
                       disabled={disabled} onClick={() => props.onRemovePhase(r.pi)}>✕</button>
@@ -474,6 +760,41 @@ export function PlanGrid(props: PlanGridProps) {
             const what = sub ? 'sub-task' : 'task';
             const isTaskDrag = !sub && dragTask?.pi === r.pi;
             const isSubDrag = sub && dragSub?.pi === r.pi && dragSub.ti === r.ti;
+            const counts = sub ? null : childStatusCounts(r.node);
+            const cellFor = (c: ColKey) => {
+              if (c === 'trade') {
+                return (
+                  <span key="trade" className="pgd-trade">
+                    <input
+                      className="pgd-tradeinput" value={r.node.trade} placeholder="Specialty"
+                      maxLength={120} aria-label={`Specialty for ${what} ${id}`}
+                      disabled={disabled}
+                      onChange={(e) => props.onTrade(r.key, e.target.value)}
+                    />
+                  </span>
+                );
+              }
+              if (c === 'owner') {
+                return <Fragment key="owner">{owner(r.key, r.node.assigneePartyId, `${what} ${id}`)}</Fragment>;
+              }
+              // Start and finish share ONE column (founder follow-up): two inputs
+              // around a dash, reading as "start – finish".
+              return (
+                <span key="dates" className="pgd-datecell pgd-dates">
+                  <input
+                    type="date" className="pgd-date" value={r.node.start}
+                    aria-label={`${what} ${id} start date`} disabled={disabled}
+                    onChange={(e) => props.onSetDate('start', e.target.value, r.pi, r.ti, r.si)}
+                  />
+                  <span className="pgd-datesep" aria-hidden>–</span>
+                  <input
+                    type="date" className="pgd-date" value={r.node.end}
+                    aria-label={`${what} ${id} finish date`} disabled={disabled}
+                    onChange={(e) => props.onSetDate('end', e.target.value, r.pi, r.ti, r.si)}
+                  />
+                </span>
+              );
+            };
             return (
               <div
                 key={r.key}
@@ -507,38 +828,20 @@ export function PlanGrid(props: PlanGridProps) {
                 <span className="pgd-id">{id}</span>
                 <span className="pgd-name">
                   {name(r, id)}
+                  {counts ? meter(counts, `Task ${id}`) : null}
                   {r.node.description.trim() ? <span className="pgt-lbl-dot" aria-hidden /> : null}
                 </span>
-                <span className="pgd-trade">
-                  <input
-                    className="pgd-tradeinput" value={r.node.trade} placeholder="Specialty"
-                    maxLength={120} aria-label={`Specialty for ${what} ${id}`}
-                    disabled={disabled}
-                    onChange={(e) => props.onTrade(r.key, e.target.value)}
-                  />
-                </span>
-                {owner(r.key, r.node.assigneePartyId, `${what} ${id}`)}
-                {/* Start and finish share ONE column (founder follow-up):
-                    two inputs around a dash, reading as "start – finish". */}
-                <span className="pgd-datecell pgd-dates">
-                  <input
-                    type="date" className="pgd-date" value={r.node.start}
-                    aria-label={`${what} ${id} start date`} disabled={disabled}
-                    onChange={(e) => props.onSetDate('start', e.target.value, r.pi, r.ti, r.si)}
-                  />
-                  <span className="pgd-datesep" aria-hidden>–</span>
-                  <input
-                    type="date" className="pgd-date" value={r.node.end}
-                    aria-label={`${what} ${id} finish date`} disabled={disabled}
-                    onChange={(e) => props.onSetDate('end', e.target.value, r.pi, r.ti, r.si)}
-                  />
-                </span>
+                {colOrder.map(cellFor)}
                 <span className="pgd-ctl">
                   {!sub ? (
                     <button type="button" className="pbx-icon" title="Add sub-task"
                       aria-label={`Add a sub-task under ${what} ${id}`} disabled={disabled}
                       onClick={() => setEditing(props.onAddSubtask(r.pi, r.ti))}>＋</button>
                   ) : null}
+                  <button type="button" className="pbx-icon" title="Move in outline (promote / demote)"
+                    aria-label={`Move ${what} ${id} in the outline`} aria-haspopup="menu"
+                    disabled={disabled}
+                    onClick={(e) => openMenu(e, r)}>⋯</button>
                   <button type="button" className="pbx-icon pbx-del" title={`Remove ${what}`}
                     disabled={disabled}
                     onClick={() => (sub
@@ -557,8 +860,20 @@ export function PlanGrid(props: PlanGridProps) {
           </div>
         </div>
 
+        {/* The draggable seam between the table and the timeline (ask 2). */}
+        {split != null ? (
+          <div
+            className="pgd-divider" role="separator" aria-orientation="vertical"
+            aria-label="Drag to resize the table and timeline"
+            title="Drag to resize"
+            style={{ left: split }}
+            onPointerDown={onDividerDown} onPointerMove={onDividerMove}
+            onPointerUp={onDividerUp} onPointerCancel={onDividerUp}
+          />
+        ) : null}
+
         {/* ── Right: the always-visible timeline canvas. ── */}
-        <div className="pgt-scroll">
+        <div className="pgt-scroll" ref={scrollRef}>
           {win ? (
             <div className="pgt-canvas" style={{ width: canvasWidth }}>
               <div className="pgt-axis" style={{ height: AXIS_H }}>
@@ -632,6 +947,14 @@ export function PlanGrid(props: PlanGridProps) {
                         ) : null}
                       </div>
                     ) : null}
+                    {/* The hover tooltip, a sibling right after the bar so a pure
+                        CSS `:hover +` reveal keeps it out of the drag path (ask 1). */}
+                    {bar ? (
+                      <span
+                        className="pgt-tip" aria-hidden
+                        style={{ left: bar.offsetDays * col + Math.max(2, bar.spanDays * col - 2) + 6 }}
+                      >{barTip(r.node.start, r.node.end)}</span>
+                    ) : null}
                   </div>
                 );
               })}
@@ -640,6 +963,30 @@ export function PlanGrid(props: PlanGridProps) {
           ) : null}
         </div>
       </div>
+
+      {/* The row move-menu popover (ask 7). Click-away closes; each item is a
+          no-op path when the reparent is disallowed, so the guard is visible. */}
+      {activeMenuRow ? (
+        <>
+          <div className="pgd-menu-away" role="presentation" onClick={() => setMenu(null)} />
+          <div
+            className="pgd-menu" role="menu" aria-label="Move in outline"
+            style={{ left: activeMenuRow.x, top: activeMenuRow.y }}
+            onKeyDown={(e) => { if (e.key === 'Escape') setMenu(null); }}
+          >
+            <button
+              type="button" role="menuitem" className="pgd-menu-item"
+              disabled={disabled || !activeMenuRow.canPromote}
+              onClick={() => { props.onPromote(activeMenuRow.pi, activeMenuRow.ti, activeMenuRow.si); setMenu(null); }}
+            >⇤ Promote (outdent)</button>
+            <button
+              type="button" role="menuitem" className="pgd-menu-item"
+              disabled={disabled || !activeMenuRow.canDemote}
+              onClick={() => { props.onDemote(activeMenuRow.pi, activeMenuRow.ti, activeMenuRow.si); setMenu(null); }}
+            >⇥ Demote (indent)</button>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
