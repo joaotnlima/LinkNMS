@@ -205,6 +205,16 @@
   color: var(--ink-35);
 }
 
+/* The two doors put no link in this line (their Terms/Privacy are named, not
+ * linked — see AuthShell). The invitation-accept surface overrides the line with
+ * its way out (LINA-225), and an escape hatch at ink-35 would be a link you can
+ * only find by hovering, so it carries the same weight the preview notice gives
+ * its links. */
+.au-legal a {
+  color: var(--owner);
+  font-weight: 600;
+}
+
 /* ── The Clerk card ──────────────────────────────────────────────────────── */
 
 /* Clerk's own chrome is off (`authShellAppearance`): inside this column the
