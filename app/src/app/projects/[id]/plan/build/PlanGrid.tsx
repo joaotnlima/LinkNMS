@@ -260,15 +260,21 @@ export function PlanGrid(props: PlanGridProps) {
   }, []);
 
   // Double-click a resize handle → auto-fit the column to its content (ask 4).
-  // The NAME column is excluded (its content is unbounded prose). Specialty
-  // measures the widest trade label; the dates column measures the two native
-  // date controls (their width is constant, so it fits the chrome, not a value).
-  const autoFit = useCallback((c: 'trade' | 'dates') => {
+  // Specialty measures the widest trade label; the dates column measures the two
+  // native date controls (their width is constant, so it fits the chrome, not a
+  // value); TASK measures the longest stage name that is currently ellipsised.
+  //
+  // Fitting Task is safe despite it being the flexible track: its template is
+  // `minmax(120px, var(--pgdw-name, 1fr))`, so the fitted px lands as the MAX
+  // and the 120px floor stays structurally enforced by CSS — the column can be
+  // fitted to its content and still never render below its minimum (LINA-261).
+  const autoFit = useCallback((c: keyof typeof COL_MIN) => {
     const root = rootRef.current;
     if (!root) return;
     const ctx = (measure.current ??= document.createElement('canvas').getContext('2d'));
     if (!ctx) return;
-    const sample = root.querySelector(c === 'trade' ? '.pgd-tradeinput' : '.pgd-date') as HTMLElement | null;
+    const selector = c === 'trade' ? '.pgd-tradeinput' : c === 'name' ? '.pgd-nametxt' : '.pgd-date';
+    const sample = root.querySelector(selector) as HTMLElement | null;
     ctx.font = (sample && getComputedStyle(sample).font) || '12px sans-serif';
     let px = COL_MIN[c];
     if (c === 'trade') {
@@ -277,6 +283,16 @@ export function PlanGrid(props: PlanGridProps) {
         widest = Math.max(widest, ctx.measureText(el.value || el.placeholder || '').width);
       });
       px = Math.ceil(widest) + 20; // input padding + a little breathing room
+    } else if (c === 'name') {
+      // Every level's name, measured in ITS OWN font — a phase row is bold and a
+      // sub-task row is 12px, so one ruler would mis-size two of the three.
+      let widest = 0;
+      root.querySelectorAll<HTMLElement>('.pgd-nametxt').forEach((el) => {
+        ctx.font = getComputedStyle(el).font || '13px sans-serif';
+        widest = Math.max(widest, ctx.measureText(el.textContent ?? '').width);
+      });
+      // The row's own indent, the ✎ button beside the name, and the cell gap.
+      px = Math.ceil(widest) + 56;
     } else {
       // Two 'YYYY-MM-DD' controls + the dash + the native picker's chrome.
       px = Math.ceil(ctx.measureText('0000-00-00').width * 2) + 64;
@@ -592,10 +608,10 @@ export function PlanGrid(props: PlanGridProps) {
   const resizer = (c: keyof typeof COL_MIN, what: string) => (
     <span
       className="pgd-hrs" role="separator" aria-label={`Resize the ${what} column`}
-      title={c === 'name' ? 'Drag to resize' : 'Drag to resize · double-click to fit'}
+      title="Drag to resize · double-click to fit"
       onPointerDown={onResizeDown(c)} onPointerMove={onResizeMove}
       onPointerUp={onResizeUp} onPointerCancel={onResizeUp}
-      onDoubleClick={c === 'name' ? undefined : () => autoFit(c)}
+      onDoubleClick={() => autoFit(c)}
     />
   );
 
