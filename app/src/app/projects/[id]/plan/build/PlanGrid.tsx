@@ -2,10 +2,13 @@
 
 // The unified plan grid (LINA-248) — the ONE face of the "Build the plan"
 // editor. The List/Timeline toggle is gone: every row is an editable table row
-// on the left (id · name · specialty · owner · start · finish) AND a timeline
-// track on the right, aligned row-for-row, so composing the plan and scheduling
-// it are the same gesture on the same screen (pen: "Build the plan — schedule
-// (Gantt)").
+// on the left (id · name · specialty · owner · dates) AND a timeline track on
+// the right, aligned row-for-row, so composing the plan and scheduling it are
+// the same gesture on the same screen (pen: "Build the plan — schedule
+// (Gantt)"). Follow-ups (2026-09-11): the toolbar picks the timeline's TIME
+// BASE (fit / week / month / quarter / 6 months / year / custom start–end),
+// the name / specialty / dates columns RESIZE by dragging the header edges,
+// and start–finish read as one Dates column.
 //
 // WHAT A ROW DOES (the founder's four asks, LINA-248):
 //   1. OWNER is a column: an avatar — the unassigned ring when nobody owns the
@@ -34,18 +37,29 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import {
-  addDays, applyDrag, barGeom, clickDates, formatDay, parseDay, scheduleWindow,
-  type DragMode, type GanttWindow,
+  addDays, applyDrag, baseWindow, clickDates, clipBarGeom, formatDay, parseDay,
+  type DragMode, type GanttWindow, type TimeBase,
 } from '@/lib/plan-gantt';
 import type { PhaseDraft, TaskDraft } from '@/lib/plan-authoring';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 
-/** Pixels per day column. Wide enough to grab an edge; the canvas scrolls. */
-const COL = 30;
+// Pixels per day column, per time base (LINA-248 follow-up): the base the
+// author picks is a READING scale, so a week spreads its 7 days wide while a
+// year compresses to a page-ish sweep. 'custom' is sized after the window is
+// known (fit ~1120px, clamped so a day is never ungrabbable-thin).
+const BASE_PX: Record<Exclude<TimeBase, 'custom'>, number> = {
+  auto: 30, week: 64, month: 30, quarter: 12, half: 6, year: 3,
+};
+const BASE_LABELS: Array<[TimeBase, string]> = [
+  ['auto', 'Fit plan'], ['week', 'Week'], ['month', 'Month'], ['quarter', 'Quarter'],
+  ['half', '6 months'], ['year', 'Year'], ['custom', 'Custom range'],
+];
 /** Row heights, shared by the table cell and its track so the panes align. */
 const H = { phase: 36, task: 42, sub: 36, add: 34 } as const;
 const AXIS_H = 28;
+/** Resizable columns' minimum widths — below these the cell content breaks. */
+const COL_MIN = { name: 120, trade: 56, dates: 150 } as const;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -130,13 +144,60 @@ export function PlanGrid(props: PlanGridProps) {
     return out;
   }, [phases]);
 
-  // The window spans every dated stage; an undated plan still gets a canvas
-  // anchored on today so a first bar can be clicked into being (LINA-248).
+  // ── The time base (founder follow-up, 2026-09-11): the author picks the
+  // reading scale — fit / week / month / quarter / 6 months / year — or types
+  // the exact start–end window they want. Session-local view state only.
+  const [base, setBase] = useState<TimeBase>('auto');
+  const [customRange, setCustomRange] = useState<{ from: string; to: string }>({ from: '', to: '' });
+
+  // The window spans the picked base; 'auto' fits every dated stage, and an
+  // undated plan still gets a canvas anchored on today so a first bar can be
+  // clicked into being (LINA-248).
   const win = useMemo(() => {
     const dated: Array<{ start: string; end: string }> = [];
     rows.forEach((r) => { if (r.kind === 'task') dated.push({ start: r.node.start, end: r.node.end }); });
-    return scheduleWindow(dated, todayIso);
-  }, [rows, todayIso]);
+    return baseWindow(base, dated, todayIso, customRange);
+  }, [rows, todayIso, base, customRange]);
+
+  // Day-column width follows the base; a custom window sizes itself to read at
+  // roughly one screen, never thinner than a grabbable 3px day.
+  const col = base === 'custom'
+    ? (win ? Math.max(3, Math.min(30, Math.floor(1120 / win.days))) : 30)
+    : BASE_PX[base];
+
+  const onPickBase = useCallback((next: TimeBase) => {
+    // Entering custom seeds the inputs with the window currently on screen, so
+    // the author edits a sensible range instead of typing from blank.
+    if (next === 'custom' && win && !(parseDay(customRange.from) !== null && parseDay(customRange.to) !== null)) {
+      setCustomRange({ from: win.startDay, to: win.endDay });
+    }
+    setBase(next);
+  }, [win, customRange]);
+
+  // ── Column resize (founder follow-up): dragging a header edge widens the
+  // name / specialty / dates column; widths land as CSS vars on the root. ──
+  const [colW, setColW] = useState<{ name?: number; trade?: number; dates?: number }>({});
+  const rs = useRef<null | { col: keyof typeof COL_MIN; startX: number; startW: number }>(null);
+
+  const onResizeDown = useCallback((c: keyof typeof COL_MIN) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const cell = (e.currentTarget as HTMLElement).parentElement as HTMLElement;
+    rs.current = { col: c, startX: e.clientX, startW: cell.getBoundingClientRect().width };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+  const onResizeMove = useCallback((e: React.PointerEvent) => {
+    const r = rs.current;
+    if (!r) return;
+    const w = Math.min(560, Math.max(COL_MIN[r.col], Math.round(r.startW + e.clientX - r.startX)));
+    setColW((prev) => (prev[r.col] === w ? prev : { ...prev, [r.col]: w }));
+  }, []);
+  const onResizeUp = useCallback((e: React.PointerEvent) => {
+    if (!rs.current) return;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    rs.current = null;
+  }, []);
 
   // ── Rename-in-place (ask 4): the ✎ button, and only it, opens the input. ──
   const [editing, setEditing] = useState<string | null>(null);
@@ -167,9 +228,9 @@ export function PlanGrid(props: PlanGridProps) {
   const onBarMove = useCallback((e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
-    const next = applyDrag(d.mode, d.start, d.end, e.clientX - d.startX, COL);
+    const next = applyDrag(d.mode, d.start, d.end, e.clientX - d.startX, col);
     props.onDates(d.pi, d.ti, next.start, next.end, d.si);
-  }, [props]);
+  }, [props, col]);
 
   const onBarUp = useCallback((e: React.PointerEvent) => {
     if (!drag.current) return;
@@ -185,9 +246,9 @@ export function PlanGrid(props: PlanGridProps) {
   ) => {
     if (disabled || r.node.start || r.node.end) return;
     const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
-    const d = clickDates(w, x / COL);
+    const d = clickDates(w, x / col);
     props.onDates(r.pi, r.ti, d.start, d.end, r.si);
-  }, [disabled, props]);
+  }, [disabled, props, col]);
 
   // Row click opens the drawer — unless the click landed on a control.
   const onRowClick = useCallback((e: React.MouseEvent, r: Row) => {
@@ -196,12 +257,24 @@ export function PlanGrid(props: PlanGridProps) {
     props.onOpenRow(r.pi, r.kind === 'task' ? r.ti : undefined, r.kind === 'task' ? r.si : undefined);
   }, [props]);
 
+  // Wide day columns tick weekly ("Mar 9"); compressed bases (quarter and up)
+  // tick on month boundaries ("Mar", with the year on January) so the labels
+  // never pile onto each other.
   const axis = win ? Array.from({ length: win.days }, (_, i) => {
     const iso = addDays(win.startDay, i);
-    const wd = weekday(iso);
-    return { i, iso, tick: wd === 0 || i === 0, label: (wd === 0 || i === 0) ? dayLabel(iso) : '' };
+    let tick: boolean;
+    let label = '';
+    if (col >= 20) {
+      tick = weekday(iso) === 0 || i === 0;
+      if (tick) label = dayLabel(iso);
+    } else {
+      const [y, m, d] = iso.split('-').map(Number);
+      tick = d === 1 || i === 0;
+      if (tick) label = m === 1 || i === 0 ? `${MONTHS[m - 1]} '${String(y).slice(2)}` : MONTHS[m - 1];
+    }
+    return { i, iso, tick, label };
   }) : [];
-  const canvasWidth = win ? win.days * COL : 0;
+  const canvasWidth = win ? win.days * col : 0;
   const todayOffset = win === null ? null
     : (parseDay(todayIso) !== null && parseDay(win.startDay) !== null
       ? Math.round(((parseDay(todayIso) as number) - (parseDay(win.startDay) as number)) / 86_400_000)
@@ -284,14 +357,63 @@ export function PlanGrid(props: PlanGridProps) {
     );
   }, [dir, parties, disabled, props]);
 
+  const resizer = (c: keyof typeof COL_MIN, what: string) => (
+    <span
+      className="pgd-hrs" role="separator" aria-label={`Resize the ${what} column`}
+      title="Drag to resize"
+      onPointerDown={onResizeDown(c)} onPointerMove={onResizeMove}
+      onPointerUp={onResizeUp} onPointerCancel={onResizeUp}
+    />
+  );
+
   return (
-    <div className="pgd">
+    <div
+      className="pgd"
+      style={{
+        '--pgdw-name': colW.name ? `${colW.name}px` : undefined,
+        '--pgdw-trade': colW.trade ? `${colW.trade}px` : undefined,
+        '--pgdw-dates': colW.dates ? `${colW.dates}px` : undefined,
+      } as React.CSSProperties}
+    >
+      {/* ── The time-base toolbar: pick the reading scale, or type the exact
+          window. View state only — it never touches the plan. ── */}
+      <div className="pgd-toolbar">
+        <label className="pgd-tb-lbl">
+          Timeline
+          <select
+            className="pgd-tb-sel" value={base} aria-label="Timeline scale"
+            onChange={(e) => onPickBase(e.target.value as TimeBase)}
+          >
+            {BASE_LABELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        {base === 'custom' ? (
+          <span className="pgd-tb-range">
+            <input
+              type="date" className="pgd-tb-date" value={customRange.from}
+              aria-label="Timeline start"
+              onChange={(e) => setCustomRange((p) => ({ ...p, from: e.target.value }))}
+            />
+            <span aria-hidden>–</span>
+            <input
+              type="date" className="pgd-tb-date" value={customRange.to}
+              aria-label="Timeline end"
+              onChange={(e) => setCustomRange((p) => ({ ...p, to: e.target.value }))}
+            />
+          </span>
+        ) : null}
+      </div>
+
       <div className="pgd-grid">
         {/* ── Left: the editable table. ── */}
         <div className="pgd-table">
-          <div className="pgd-hdr" style={{ height: AXIS_H }} aria-hidden>
-            <span /><span>ID</span><span>Task</span><span>Specialty</span>
-            <span className="pgd-hdr-owner">Owner</span><span>Start</span><span>Finish</span><span />
+          <div className="pgd-hdr" style={{ height: AXIS_H }}>
+            <span /><span aria-hidden>ID</span>
+            <span className="pgd-hcell"><span aria-hidden>Task</span>{resizer('name', 'task name')}</span>
+            <span className="pgd-hcell"><span aria-hidden>Specialty</span>{resizer('trade', 'specialty')}</span>
+            <span className="pgd-hdr-owner" aria-hidden>Owner</span>
+            <span className="pgd-hcell"><span aria-hidden>Dates</span>{resizer('dates', 'dates')}</span>
+            <span />
           </div>
 
           {rows.map((r) => {
@@ -338,7 +460,7 @@ export function PlanGrid(props: PlanGridProps) {
                     />
                   </span>
                   {owner(r.key, r.phase.assigneePartyId, `phase ${r.pi + 1}`)}
-                  <span className="pgd-datecell" /><span className="pgd-datecell" />
+                  <span className="pgd-datecell" />
                   <span className="pgd-ctl">
                     <button type="button" className="pbx-icon pbx-del" title="Remove phase"
                       disabled={disabled} onClick={() => props.onRemovePhase(r.pi)}>✕</button>
@@ -396,14 +518,15 @@ export function PlanGrid(props: PlanGridProps) {
                   />
                 </span>
                 {owner(r.key, r.node.assigneePartyId, `${what} ${id}`)}
-                <span className="pgd-datecell">
+                {/* Start and finish share ONE column (founder follow-up):
+                    two inputs around a dash, reading as "start – finish". */}
+                <span className="pgd-datecell pgd-dates">
                   <input
                     type="date" className="pgd-date" value={r.node.start}
                     aria-label={`${what} ${id} start date`} disabled={disabled}
                     onChange={(e) => props.onSetDate('start', e.target.value, r.pi, r.ti, r.si)}
                   />
-                </span>
-                <span className="pgd-datecell">
+                  <span className="pgd-datesep" aria-hidden>–</span>
                   <input
                     type="date" className="pgd-date" value={r.node.end}
                     aria-label={`${what} ${id} finish date`} disabled={disabled}
@@ -441,7 +564,7 @@ export function PlanGrid(props: PlanGridProps) {
               <div className="pgt-axis" style={{ height: AXIS_H }}>
                 {axis.map((c) => (
                   <div key={c.i} className={`pgt-axis-cell${c.tick ? ' is-tick' : ''}`}
-                    style={{ left: c.i * COL, width: COL }}>
+                    style={{ left: c.i * col, width: col }}>
                     {c.label ? <span className="pgt-axis-lbl">{c.label}</span> : null}
                   </div>
                 ))}
@@ -453,17 +576,17 @@ export function PlanGrid(props: PlanGridProps) {
                 }
                 if (r.kind === 'phase') {
                   const env = phaseEnvelope(r.phase);
-                  const bar = env ? barGeom(win, env.start, env.end) : null;
+                  const bar = env ? clipBarGeom(win, env.start, env.end) : null;
                   return (
                     <div key={`tp-${r.pi}`} className="pgt-band" style={{ height: H.phase }}>
                       {bar ? (
                         <div className="pgd-envbar" aria-hidden
-                          style={{ left: bar.offsetDays * COL + 1, width: bar.spanDays * COL - 2 }} />
+                          style={{ left: bar.offsetDays * col + 1, width: Math.max(2, bar.spanDays * col - 2) }} />
                       ) : null}
                     </div>
                   );
                 }
-                const bar = barGeom(win, r.node.start, r.node.end);
+                const bar = clipBarGeom(win, r.node.start, r.node.end);
                 const undated = !r.node.start && !r.node.end;
                 return (
                   <div
@@ -474,14 +597,14 @@ export function PlanGrid(props: PlanGridProps) {
                     onClick={(e) => onTrackClick(e, win, r)}
                   >
                     {axis.map((c) =>
-                      c.tick ? <div key={c.i} className="pgt-gridline" style={{ left: c.i * COL }} /> : null)}
+                      c.tick ? <div key={c.i} className="pgt-gridline" style={{ left: c.i * col }} /> : null)}
                     {todayOffset !== null && todayOffset >= 0 && todayOffset < win.days ? (
-                      <div className="pgd-today" style={{ left: todayOffset * COL }} aria-hidden />
+                      <div className="pgd-today" style={{ left: todayOffset * col }} aria-hidden />
                     ) : null}
                     {bar ? (
                       <div
                         className={`pgt-bar${r.si != null ? ' is-sub' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}`}
-                        style={{ left: bar.offsetDays * COL + 1, width: bar.spanDays * COL - 2 }}
+                        style={{ left: bar.offsetDays * col + 1, width: Math.max(2, bar.spanDays * col - 2) }}
                         role="button" tabIndex={-1}
                         aria-label={
                           `${r.node.name.trim() || (r.si != null ? 'Sub-task' : 'Task')}: `
@@ -494,13 +617,15 @@ export function PlanGrid(props: PlanGridProps) {
                         onPointerUp={onBarUp}
                         onPointerCancel={onBarUp}
                       >
-                        {!bar.open && r.node.start ? (
+                        {/* A clipped edge is the WINDOW's edge, not the task's —
+                            no resize handle there (the body still drags). */}
+                        {!bar.open && !bar.clipStart && r.node.start ? (
                           <span className="pgt-handle pgt-handle-l" aria-hidden
                             onPointerDown={(e) => onBarDown(e, r, 'resize-start')}
                             onPointerMove={onBarMove} onPointerUp={onBarUp} onPointerCancel={onBarUp} />
                         ) : null}
                         <span className="pgt-bar-lbl">{r.node.name.trim() || 'Untitled'}</span>
-                        {!bar.open && r.node.end ? (
+                        {!bar.open && !bar.clipEnd && r.node.end ? (
                           <span className="pgt-handle pgt-handle-r" aria-hidden
                             onPointerDown={(e) => onBarDown(e, r, 'resize-end')}
                             onPointerMove={onBarMove} onPointerUp={onBarUp} onPointerCancel={onBarUp} />

@@ -133,6 +133,60 @@ export function scheduleWindow(
   };
 }
 
+// ── The time base (LINA-248 follow-up) ───────────────────────────────────────
+
+/**
+ * The reading scale of the timeline. 'auto' fits the dated plan
+ * (scheduleWindow); the fixed bases show exactly that much calendar anchored on
+ * the plan's earliest dated day (or today); 'custom' is an author-typed
+ * start/end pair for whatever reading window they want.
+ */
+export type TimeBase = 'auto' | 'week' | 'month' | 'quarter' | 'half' | 'year' | 'custom';
+
+const BASE_SPAN_DAYS: Record<Exclude<TimeBase, 'auto' | 'custom'>, number> = {
+  week: 7, month: 31, quarter: 92, half: 183, year: 365,
+};
+
+/**
+ * The window a given time base spans. Fixed bases anchor 2 days before the
+ * plan's earliest dated day — today when nothing is dated — so the first bar
+ * sits near the left edge with a little room to drag it earlier. A 'custom'
+ * base uses the author's own start/end when both parse and are ordered;
+ * otherwise (and for 'auto') it falls back to the fitted scheduleWindow.
+ */
+export function baseWindow(
+  base: TimeBase,
+  tasks: ReadonlyArray<{ start: string; end: string }>,
+  todayIso: string,
+  custom?: { from: string; to: string },
+): GanttWindow | null {
+  if (base === 'custom' && custom) {
+    const s = parseDay(custom.from);
+    const e = parseDay(custom.to);
+    if (s !== null && e !== null && e >= s) {
+      return { startDay: formatDay(s), endDay: formatDay(e), days: Math.round((e - s) / MS_PER_DAY) + 1 };
+    }
+  }
+  if (base === 'auto' || base === 'custom') return scheduleWindow(tasks, todayIso);
+
+  const dated: number[] = [];
+  for (const t of tasks) {
+    const s = parseDay(t.start);
+    const e = parseDay(t.end);
+    if (s !== null) dated.push(s);
+    if (e !== null) dated.push(e);
+  }
+  const anchor = dated.length ? Math.min(...dated) : parseDay(todayIso);
+  if (anchor === null) return null;
+  const span = BASE_SPAN_DAYS[base];
+  const start = anchor - 2 * MS_PER_DAY;
+  return {
+    startDay: formatDay(start),
+    endDay: formatDay(start + (span - 1) * MS_PER_DAY),
+    days: span,
+  };
+}
+
 /**
  * Click-to-schedule (LINA-248): a click on an empty track at day column
  * `dayOffset` plants a bar there — start on the clicked day, finish one week
@@ -178,6 +232,42 @@ export function barGeom(win: GanttWindow, start: string, end: string): BarGeom |
   const spanDays = Math.round((hi - lo) / MS_PER_DAY) + 1;
   if (offsetDays < 0 || offsetDays + spanDays > win.days) return null;
   return { offsetDays, spanDays, open };
+}
+
+/**
+ * barGeom, but CLIPPED to the window instead of dropped (LINA-248 follow-up):
+ * a fixed or custom time base is a reading window the author chose, and a task
+ * that overhangs it must stay visible and grabbable, not vanish. The overhang
+ * sides are flagged so the component can suppress the resize handle on an edge
+ * that isn't really the task's edge. Null only when the task is undated or
+ * lies entirely outside the window.
+ */
+export function clipBarGeom(
+  win: GanttWindow, start: string, end: string,
+): (BarGeom & { clipStart: boolean; clipEnd: boolean }) | null {
+  const s = parseDay(start);
+  const e = parseDay(end);
+  if (s === null && e === null) return null;
+  const winStart = parseDay(win.startDay);
+  if (winStart === null) return null;
+
+  const open = s === null || e === null;
+  const lo = Math.min(...[s, e].filter((x): x is number => x !== null));
+  const hi = Math.max(...[s, e].filter((x): x is number => x !== null));
+
+  const loDays = Math.round((lo - winStart) / MS_PER_DAY);
+  const hiDays = Math.round((hi - winStart) / MS_PER_DAY);
+  if (hiDays < 0 || loDays > win.days - 1) return null;
+
+  const from = Math.max(0, loDays);
+  const to = Math.min(win.days - 1, hiDays);
+  return {
+    offsetDays: from,
+    spanDays: to - from + 1,
+    open,
+    clipStart: loDays < 0,
+    clipEnd: hiDays > win.days - 1,
+  };
 }
 
 // ── Turning a drag into new dates ────────────────────────────────────────────
