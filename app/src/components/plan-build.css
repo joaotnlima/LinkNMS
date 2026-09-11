@@ -351,6 +351,13 @@
 }
 .pgd-nameinput:focus { outline: none; }
 
+/* Rename sits beside the name (founder follow-up): the ✎ next to the text,
+   the ✓ next to the open input. Both stay out of the ellipsis' way. */
+.pgd-namedit, .pgd-nameok { flex: 0 0 auto; width: 22px; height: 22px; font-size: 11px; }
+.pgd-namedit { color: var(--muted); }
+.pgd-row:hover .pgd-namedit, .pgd-namedit:focus-visible { color: var(--fg); }
+.pgd-nameok { color: var(--plan-baseline); border-color: var(--plan-baseline); }
+
 .pgd-trade { min-width: 0; }
 .pgd-tradeinput {
   width: 100%; min-width: 0; font: inherit; font-size: 12px;

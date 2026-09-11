@@ -341,6 +341,9 @@ export function PlanBuildEditor({
         </button>
       </div>
 
+      {/* The add callbacks return the FRESH node's key (add ops append, so it
+          is always the last one) — the grid opens rename on it focused
+          (founder follow-up, 2026-09-11). */}
       <PlanGrid
         phases={phases}
         parties={parties}
@@ -353,9 +356,22 @@ export function PlanBuildEditor({
         onDates={setDates}
         onAssign={assign}
         onTrade={retrade}
-        onAddPhase={() => apply(addPhase(phases))}
-        onAddTask={(pi) => apply(addTask(phases, pi))}
-        onAddSubtask={(pi, ti) => apply(addSubtask(phases, pi, ti))}
+        onAddPhase={() => {
+          const next = addPhase(phases);
+          apply(next);
+          return next[next.length - 1].key;
+        }}
+        onAddTask={(pi) => {
+          const next = addTask(phases, pi);
+          apply(next);
+          return next[pi].tasks[next[pi].tasks.length - 1].key;
+        }}
+        onAddSubtask={(pi, ti) => {
+          const next = addSubtask(phases, pi, ti);
+          apply(next);
+          const kids = next[pi].tasks[ti].children ?? [];
+          return kids[kids.length - 1].key;
+        }}
         onRemovePhase={(pi) => apply(removePhase(phases, pi))}
         onRemoveTask={(pi, ti) => apply(removeTask(phases, pi, ti))}
         onRemoveSubtask={(pi, ti, si) => apply(removeSubtask(phases, pi, ti, si))}
