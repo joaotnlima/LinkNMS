@@ -306,28 +306,49 @@
 .pgd {
   border: 1px solid var(--outline); border-radius: var(--r-ctrl); overflow: hidden; background: var(--paper);
 }
-.pgd-grid { display: grid; grid-template-columns: minmax(560px, 46%) 1fr; }
+/* The split is DRAGGABLE (LINA-261 behaviour 2): the table's width is the
+   component's `--pgd-split`, the divider is its own track, and the timeline
+   takes whatever is left. clampSplit keeps both panes above their floor. */
+.pgd-grid { display: grid; grid-template-columns: var(--pgd-split, 560px) 6px minmax(0, 1fr); }
 .pgd-table { border-right: 1px solid var(--outline); min-width: 0; }
 
-/* One template for the header and every row: grip · id · name · specialty ·
-   owner · dates · actions. The name cell flexes; the name / specialty / dates
-   widths are CSS vars the component sets when a header edge is dragged
-   (founder follow-up: resizable columns, start–finish merged into one). */
+/* One template for the header and every row: grip · id · …the ordered data
+   columns… · actions. The order and the widths are DATA now (LINA-261
+   behaviour 6) — the component builds the whole track list in plan-columns'
+   `columnTemplate` and hands it over as `--pgd-cols`, so dragging a header to a
+   new position is a state change rather than a stylesheet rewrite. The fallback
+   is the shipped default order, for the paint before hydration. */
 .pgd-hdr, .pgd-row {
   display: grid; align-items: center; gap: var(--s2);
-  grid-template-columns:
-    20px 34px minmax(120px, var(--pgdw-name, 1fr)) var(--pgdw-trade, 96px)
-    30px var(--pgdw-dates, 176px) 92px;
+  grid-template-columns: var(--pgd-cols, 20px 34px minmax(120px, 1fr) 96px 30px 96px 176px 92px);
   padding: 0 var(--s2);
 }
+
+/* The divider itself: a thin hit target that thickens its line on hover, the
+   same visual language as the column resizers. */
+.pgd-split {
+  cursor: col-resize; touch-action: none; position: relative;
+  background: var(--outline); border: none; padding: 0;
+}
+.pgd-split::after {
+  content: ''; position: absolute; inset: 0 -3px; /* a grabbable strip wider than the line */
+}
+.pgd-split:hover, .pgd-split:active { background: var(--outline-strong); }
+.pgd-split:focus-visible { outline: 2px solid var(--owner); outline-offset: -1px; }
 .pgd-hdr {
   font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
   color: var(--muted); border-bottom: 1px solid var(--outline); background: var(--sunken);
 }
-.pgd-hdr-owner { justify-self: center; }
-
-/* A resizable header cell: the grab strip rides its right edge. */
-.pgd-hcell { position: relative; display: flex; align-items: center; min-width: 0; align-self: stretch; }
+/* A header cell: draggable to reorder (behaviour 6) unless it is the pinned
+   Task column, with the resize grab strip riding its right edge. */
+.pgd-hcell {
+  position: relative; display: flex; align-items: center; min-width: 0; align-self: stretch;
+  cursor: grab; overflow: hidden;
+}
+.pgd-hcell.is-pinned { cursor: default; }
+.pgd-hcell.is-dragging { opacity: 0.45; }
+/* The drop target reads as a line the column will land against. */
+.pgd-hcell:not(.is-pinned):hover { color: var(--fg); }
 .pgd-hrs {
   position: absolute; right: calc(-1 * var(--s2) / 2 - 3px); top: 0; bottom: 0; width: 7px;
   cursor: col-resize; touch-action: none;
@@ -357,6 +378,9 @@
 
 .pgd-row { border-bottom: 1px solid var(--outline); cursor: pointer; }
 .pgd-row:hover { background: var(--sunken); }
+/* A row is focusable so Tab / Shift+Tab can re-parent it (LINA-261 behaviour 7);
+   the ring is how the author knows which row the next key press will move. */
+.pgd-row:focus-visible { outline: 2px solid var(--owner); outline-offset: -2px; }
 .pgd-row.is-dragging { opacity: 0.45; }
 .pgd-row.is-cycle { outline: 1px solid var(--danger); outline-offset: -1px; }
 
@@ -404,6 +428,8 @@
 /* Owner: the avatar states who — the unassigned ring when nobody — and the
    member <select> sits invisibly on top of it, so clicking the circle opens
    the dropdown of everyone invited to this build (founder ask 1). */
+/* The owner column is a fixed narrow track; the avatar centres inside it. */
+.pgd-ownercell { display: grid; place-items: center; min-width: 0; }
 .pgd-owner { position: relative; display: inline-grid; place-items: center; justify-self: center; }
 .pgd-ownersel {
   position: absolute; inset: 0; width: 100%; height: 100%;
@@ -411,6 +437,29 @@
 }
 .pgd-ownersel:disabled { cursor: default; }
 .pgd-owner:has(.pgd-ownersel:focus-visible) { outline: 2px solid var(--owner); border-radius: 999px; }
+
+/* ── The status column (LINA-261 behaviour 5) ──────────────────────────────
+   A LEAF row states its own derived status as a badge; a PARENT row — a phase,
+   or a task with sub-tasks — counts its descendant leaves by status. Status is
+   derived and never authored (ADR-0019), so in the build editor everything
+   honestly reads not-started; the same markup lights up on a live plan. */
+.pgd-statuscell { min-width: 0; display: flex; align-items: center; overflow: hidden; }
+.pgd-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--outline); border-radius: 999px;
+  padding: 2px 7px; white-space: nowrap;
+}
+.pgd-badge.is-in-progress { color: var(--owner); border-color: var(--owner); }
+.pgd-badge.is-done { color: var(--plan-baseline); border-color: var(--plan-baseline); }
+.pgd-badge.is-blocked { color: var(--danger); border-color: var(--danger); }
+
+.pgd-counts { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; }
+.pgd-cnt { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); }
+.pgd-cnt > span { font-size: 10px; }
+/* The two buckets that mean progress carry colour; not-started stays muted, so
+   a row with real movement in it is the one the eye lands on. */
+.pgd-cnt.is-done { color: var(--plan-baseline); }
+.pgd-cnt.is-doing { color: var(--owner); }
 
 .pgd-datecell { min-width: 0; }
 /* Start – finish as ONE cell: two date inputs around a dash. */
@@ -465,6 +514,9 @@
      no longer align 1:1, so the canvas keeps its own axis for orientation. */
   .pgd-grid { grid-template-columns: 1fr; }
   .pgd-table { border-right: none; border-bottom: 1px solid var(--outline); }
+  /* Stacked, there is no split to drag — the divider would be a horizontal bar
+     that resizes nothing, so it goes away entirely (out of the tab order too). */
+  .pgd-split { display: none; }
 }
 
 /* ── Gantt timeline (LINA-236) ────────────────────────────────────────────── */
@@ -544,6 +596,21 @@
   flex: 1 1 auto; min-width: 0; padding: 0 8px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 600; pointer-events: none;
 }
+/* The hover-dates label (LINA-261 behaviour 1). It sits OUTSIDE the bar — the
+   bar clips its own overflow — absolutely positioned at the bar's right edge,
+   so it costs no layout and nothing reflows when it appears. Pointer-
+   transparent, so the bar underneath is still grabbable through it. */
+.pgt-bar-dates {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  white-space: nowrap; pointer-events: none; z-index: 2;
+  font-size: 11px; font-weight: 600; color: var(--fg);
+  background: var(--paper); border: 1px solid var(--outline); border-radius: 5px;
+  padding: 2px 6px;
+  opacity: 0; transition: opacity 90ms ease-out;
+}
+.pgt-bar:hover + .pgt-bar-dates, .pgt-bar:focus-visible + .pgt-bar-dates { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .pgt-bar-dates { transition: none; } }
+
 .pgt-handle { flex: none; width: 8px; align-self: stretch; cursor: ew-resize; touch-action: none; }
 .pgt-handle-l { border-right: 1px solid color-mix(in srgb, var(--plan-baseline) 50%, transparent); }
 .pgt-handle-r { border-left: 1px solid color-mix(in srgb, var(--plan-baseline) 50%, transparent); }

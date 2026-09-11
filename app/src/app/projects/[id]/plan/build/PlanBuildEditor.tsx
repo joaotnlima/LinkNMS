@@ -40,7 +40,8 @@ import Link from 'next/link';
 
 import {
   PlanAuthorError,
-  addPhase, addSubtask, addTask, authorPlan, dependencyChoices, dependsOnOf, detectCycle, nodeIndex,
+  addPhase, addSubtask, addTask, authorPlan, canDemote, canPromote, demoteNode,
+  dependencyChoices, dependsOnOf, detectCycle, nodeIndex, promoteNode,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
   reorderPhase, reorderSubtask, reorderTask,
   seedSkeleton, setAssignee, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
@@ -378,12 +379,30 @@ export function PlanBuildEditor({
         onReorderPhase={(from, to) => apply(reorderPhase(phases, from, to))}
         onReorderTask={(pi, from, to) => apply(reorderTask(phases, pi, from, to))}
         onReorderSubtask={(pi, ti, from, to) => apply(reorderSubtask(phases, pi, ti, from, to))}
+        // Re-parenting one WBS level (LINA-261 behaviour 7). Both ops return the
+        // SAME array when the move is illegal — a task with no preceding
+        // sibling, a sub-task that would land at level 4 — so `apply` is handed
+        // the current draft and the gesture is a silent no-op, which is what a
+        // key press deserves. The row's own button is disabled in that case, so
+        // the no-op is only ever reachable from the keyboard.
+        //
+        // No endpoint is involved: the draft saves as a whole-tree snapshot, so
+        // restructuring the tree here IS the re-parent. Keys are preserved by
+        // both ops, so `dependsOn` edges survive and the save-path cycle check
+        // (which a re-parent cannot trip — it adds no edges) is untouched.
+        onPromote={(pi, ti, si) => apply(promoteNode(phases, pi, ti, si))}
+        onDemote={(pi, ti, si) => apply(demoteNode(phases, pi, ti, si))}
+        canPromoteRow={(pi, ti, si) => canPromote(phases, pi, ti, si)}
+        canDemoteRow={(pi, ti, si) => canDemote(phases, pi, ti, si)}
       />
 
       <p className="pgd-hint">
         ↔ Drag a bar to move a task; drag its edges to change start or finish — the Start and
         Finish columns update automatically. Click an undated row’s timeline to schedule it: the
         bar starts on the clicked day and runs one week. Click a row to open its details.
+        Hover a bar to read its planned dates. Drag a column header to reorder the table,
+        or double-click a header edge to fit the column to its content. With a row focused,
+        Tab makes it a sub-task of the row above and Shift+Tab lifts it back out.
       </p>
 
       {cycle ? (

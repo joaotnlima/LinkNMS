@@ -80,6 +80,17 @@ export const PLAN_SKELETON: ReadonlyArray<{ name: string; tasks: readonly string
 // dependencies) available at the third level without a parallel model; the depth
 // cap is not in the type but in the vocabulary: nothing below adds a child to a
 // sub-task, so `children` on a sub-task is always [] (LINA-243, ADR-0019).
+
+/**
+ * A stage's progress status, mirroring the server's `STATUSES`. It is DERIVED
+ * from reported progress and NEVER authored (ADR-0019: status comes from
+ * `stage_progress`, which a draft has none of). The field exists here READ-ONLY
+ * so a hydrated LIVE plan can feed real progress into the parent-row counters
+ * (LINA-261 behaviour 5) without a parallel model — no op in this file ever
+ * writes it, and on an authored draft it is simply absent (→ 'not_started').
+ */
+export type StageStatus = 'not_started' | 'in_progress' | 'blocked' | 'done';
+
 export interface TaskDraft {
   key: string; name: string; start: string; end: string; description: string;
   /** Local keys of this task's predecessors (LINA-233). */
@@ -90,6 +101,12 @@ export interface TaskDraft {
   trade: string;
   /** Sub-sub-actions under this task. Always [] on a sub-task (the 3-level cap). */
   children: TaskDraft[];
+  /**
+   * DERIVED progress, never authored (ADR-0019). Absent on an authored draft;
+   * present only when a live plan is hydrated for read. The parent-row counters
+   * (LINA-261) read it, defaulting to 'not_started' — no op here ever sets it.
+   */
+  status?: StageStatus;
 }
 export interface PhaseDraft {
   key: string; name: string; tasks: TaskDraft[];
@@ -163,6 +180,8 @@ interface DraftStageNode {
   assigneePartyId?: string | null;
   /** Free-form specialty label, or null. */
   trade?: string | null;
+  /** DERIVED status, present only on a hydrated LIVE plan (LINA-261). */
+  status?: StageStatus | null;
   children?: DraftStageNode[] | null;
 }
 
@@ -196,6 +215,10 @@ export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
       // has no owner for comes back null, which is "Unassigned" and not a guess.
       assigneePartyId: t.assigneePartyId ?? null,
       trade: t.trade ?? '',
+      // Read-only derived status the counters read — absent on a draft, real on
+      // a hydrated live plan. Never authored (ADR-0019), so it is only carried
+      // when the server actually reported one.
+      ...(t.status ? { status: t.status } : {}),
       children: deep ? (t.children ?? []).map((s) => readTask(s, 's', false)) : [],
     };
   };
@@ -437,6 +460,90 @@ export function reorderSubtask(
 ): PhaseDraft[] {
   const task = phases[pi].tasks[ti];
   return replaceTask(phases, pi, ti, { ...task, children: reorder(kids(task), from, to) });
+}
+
+// ── WBS level: promote / demote (LINA-261 behaviour 7) ───────────────────────
+// Re-parent a node ONE level within its phase, never breaking the three-level
+// contract (ADR-0019). Two properties make this safe to do entirely client-side:
+//
+//   • KEYS ARE PRESERVED VERBATIM. The 't-'/'s-' prefix is cosmetic — nothing
+//     reads it — so a moved node keeps its identity and every `dependsOn` edge
+//     pointing AT it stays valid. Re-keying would orphan those edges; we don't.
+//   • Nothing here adds an edge, so a re-parent cannot introduce a cycle. The
+//     save path's existing `detectCycle` check is untouched and still authoritative.
+//
+// The draft persists as a whole-tree snapshot (`authorPlan` sends every stage on
+// every save and the server rebuilds atomically), so restructuring the tree here
+// IS the re-parent — there is no backend op for it, by design.
+//
+// Every guard that would create a fourth level, or climb above a phase, is a
+// NO-OP returning the SAME array reference. The UI reads that identity to know
+// the gesture did nothing (Tab on an un-demotable row just does nothing), which
+// is friendlier than a thrown error on a key press.
+
+/**
+ * PROMOTE — lift a node one level up:
+ *   • a sub-task (L3) becomes a task (L2) in its phase, inserted directly AFTER
+ *     its former parent so it reads where the author left it. A sub-task's
+ *     `children` is always [] (the depth cap), so it lands as a valid L2.
+ *   • a task (L2) has nowhere to go — a phase is the ceiling — so it no-ops.
+ *     (Promoting a task INTO a phase is deliberately out of scope for V1.)
+ *
+ * `si` names the sub-task; omit it to (attempt to) promote the task at `ti`.
+ */
+export function promoteNode(
+  phases: PhaseDraft[], pi: number, ti: number, si?: number,
+): PhaseDraft[] {
+  if (si == null) return phases; // an L2 task cannot promote above phase level
+  const phase = phases[pi];
+  if (!phase) return phases;
+  const task = phase.tasks[ti];
+  if (!task) return phases;
+  const sub = kids(task)[si];
+  if (!sub) return phases;
+  const tasks = phase.tasks.slice();
+  tasks[ti] = { ...task, children: kids(task).filter((_, i) => i !== si) };
+  tasks.splice(ti + 1, 0, { ...sub, children: [] });
+  return replaceAt(phases, pi, { ...phase, tasks });
+}
+
+/**
+ * DEMOTE — push a node one level down:
+ *   • a task (L2) becomes a sub-task (L3) of its immediately PRECEDING sibling,
+ *     appended as that task's last child. Allowed ONLY when (a) a preceding
+ *     sibling exists and (b) the task has NO children of its own — otherwise
+ *     those children would ride down to a fourth level, which the wire refuses
+ *     as `too_deep`. Either bar is a no-op.
+ *   • a sub-task (L3) is already at the floor — demoting it under another
+ *     sub-task would be level 4 — so it no-ops. Out of scope for V1.
+ *
+ * `si` names the sub-task; omit it to (attempt to) demote the task at `ti`.
+ */
+export function demoteNode(
+  phases: PhaseDraft[], pi: number, ti: number, si?: number,
+): PhaseDraft[] {
+  if (si != null) return phases; // an L3 sub-task cannot demote further
+  const phase = phases[pi];
+  if (!phase) return phases;
+  const task = phase.tasks[ti];
+  if (!task) return phases;
+  if (ti === 0) return phases; // no preceding sibling to nest under
+  if (kids(task).length > 0) return phases; // its children would land at level 4
+  const prev = phase.tasks[ti - 1];
+  const tasks = phase.tasks.filter((_, i) => i !== ti);
+  // Dropping `ti` leaves the preceding sibling where it was, at ti-1.
+  tasks[ti - 1] = { ...prev, children: [...kids(prev), { ...task, children: [] }] };
+  return replaceAt(phases, pi, { ...phase, tasks });
+}
+
+/** Whether promoting this node would change anything — the UI disables on false. */
+export function canPromote(phases: PhaseDraft[], pi: number, ti: number, si?: number): boolean {
+  return promoteNode(phases, pi, ti, si) !== phases;
+}
+
+/** Whether demoting this node would change anything — the UI disables on false. */
+export function canDemote(phases: PhaseDraft[], pi: number, ti: number, si?: number): boolean {
+  return demoteNode(phases, pi, ti, si) !== phases;
 }
 
 // ── Dependencies: "depends on" (LINA-233, ADR-0017 annex 2) ─────────────────
@@ -712,6 +819,56 @@ export function subtaskCount(phases: PhaseDraft[]): number {
     (acc, p) => acc + p.tasks.reduce((n, t) => n + kids(t).length, 0),
     0,
   );
+}
+
+// ── Derived child counters on a parent row (LINA-261 behaviour 5) ────────────
+// A parent row — a phase, or a task that has sub-tasks — summarises the work
+// beneath it as three counts: done / in progress / not started. The unit counted
+// is the DESCENDANT LEAF: the rows that carry actual work. A task with sub-tasks
+// is a container, so it contributes its sub-tasks and not itself; a task without
+// sub-tasks is itself a leaf.
+//
+// Status is DERIVED, never authored (ADR-0019), so in the BUILD EDITOR every
+// leaf reads 'not_started' and the counters honestly show all-not-started —
+// nothing here invents progress. The same function lights up for real the moment
+// a hydrated LIVE plan carries `status`.
+
+/** Done / in-progress / not-started over a parent's descendant leaves. */
+export interface StatusCounts {
+  done: number;
+  inProgress: number;
+  notStarted: number;
+  /** The leaves counted — 0 means "this row is itself a leaf, draw no counter". */
+  total: number;
+}
+
+/** Every descendant LEAF of a parent row, in reading order. */
+function leavesOf(node: PhaseDraft | TaskDraft): TaskDraft[] {
+  const children: TaskDraft[] = 'tasks' in node ? node.tasks : kids(node);
+  return children.flatMap((c) => {
+    const grandkids = kids(c);
+    return grandkids.length > 0 ? grandkids : [c];
+  });
+}
+
+/**
+ * Count a parent row's descendant leaves by derived status. A LEAF row returns
+ * all zeros (`total: 0`) — the caller draws its own derived badge instead.
+ *
+ * 'blocked' folds into `inProgress`: a blocked stage is work under way that is
+ * stuck, not work not begun, and a three-count summary has no fourth bucket.
+ * Pure over the draft — it reads `status` and writes nothing.
+ */
+export function leafStatusCounts(node: PhaseDraft | TaskDraft): StatusCounts {
+  const counts: StatusCounts = { done: 0, inProgress: 0, notStarted: 0, total: 0 };
+  for (const leaf of leavesOf(node)) {
+    counts.total += 1;
+    const s = leaf.status ?? 'not_started';
+    if (s === 'done') counts.done += 1;
+    else if (s === 'in_progress' || s === 'blocked') counts.inProgress += 1;
+    else counts.notStarted += 1;
+  }
+  return counts;
 }
 
 // ── The wire edge ─────────────────────────────────────────────────────────────

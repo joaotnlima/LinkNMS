@@ -24,6 +24,8 @@ import {
   moveSubtask, reorderSubtask, subtaskCount,
   // Owner + specialty (LINA-235/246).
   setAssignee, setTrade, stageMeta,
+  // WBS promote / demote + parent-row counters (LINA-261).
+  promoteNode, demoteNode, canPromote, canDemote, leafStatusCounts,
 } from './plan-authoring.ts';
 
 test('skeleton: three phases, names only, no dates or sub-tasks (the issue scope)', () => {
@@ -595,4 +597,217 @@ test('hydrateDraft: assignee + trade round-trip, and a stage with neither is una
   const wire = toWire(phases);
   assert.equal(wire[0].assigneePartyId, 'p-owner');
   assert.equal(wire[0].children[1].children[0].trade, 'Wiring');
+});
+
+// ── WBS promote / demote (LINA-261 behaviour 7) ──────────────────────────────
+// Re-parenting is client-side only: the draft saves as a whole-tree snapshot, so
+// restructuring the tree here IS the move. The properties that make that safe —
+// keys survive, the depth cap holds, refusals are no-ops — are what these cover.
+
+test('promoteNode: a sub-task becomes a task, landing right after its old parent', () => {
+  let phases = seedSkeleton();
+  phases = addSubtask(phases, 0, 0);
+  phases = renameSubtask(phases, 0, 0, 0, 'Order the rebar');
+  const subKey = phases[0].tasks[0].children[0].key;
+  const parentKey = phases[0].tasks[0].key;
+  const nextKey = phases[0].tasks[1].key;
+  const before = phases;
+
+  phases = promoteNode(phases, 0, 0, 0);
+
+  assert.equal(phases[0].tasks[0].children.length, 0, 'lifted out of its parent');
+  assert.equal(phases[0].tasks[0].key, parentKey);
+  assert.equal(phases[0].tasks[1].key, subKey, 'inserted directly AFTER the old parent');
+  assert.equal(phases[0].tasks[1].name, 'Order the rebar');
+  assert.deepEqual(phases[0].tasks[1].children, [], 'lands as a valid level-2 task');
+  assert.equal(phases[0].tasks[2].key, nextKey, 'the rest of the phase shifts down intact');
+  assert.equal(before[0].tasks[0].children.length, 1, 'original untouched (no mutation)');
+  assert.equal(phases[1], before[1], 'other phases keep identity');
+});
+
+test('promoteNode: the key is preserved verbatim, so dependsOn edges survive', () => {
+  let phases = seedSkeleton();
+  phases = addSubtask(phases, 0, 0);
+  const subKey = phases[0].tasks[0].children[0].key;
+  const dependentKey = phases[0].tasks[1].key;
+  // Something downstream waits on the sub-task.
+  phases = setDependsOn(phases, dependentKey, [subKey]);
+
+  phases = promoteNode(phases, 0, 0, 0);
+
+  const promoted = phases[0].tasks.find((t) => t.key === subKey);
+  assert.ok(promoted, 'the node kept its key — re-keying would orphan the edge');
+  const dependent = phases[0].tasks.find((t) => t.key === dependentKey);
+  assert.deepEqual(dependent.dependsOn, [subKey], 'the edge still points at it');
+  // And the graph is still legal — a re-parent adds no edge, so it cannot loop.
+  assert.equal(detectCycle(phases), null);
+  // It survives the wire, which is the real proof nothing was orphaned.
+  assert.ok(toWire(phases).length > 0);
+});
+
+test('promoteNode: promoting a TASK is out of scope — a phase is the ceiling', () => {
+  const phases = seedSkeleton();
+  assert.equal(promoteNode(phases, 0, 1), phases, 'same reference = nothing happened');
+  assert.equal(canPromote(phases, 0, 1), false);
+});
+
+test('promoteNode: an index that names nothing is a no-op, never a throw', () => {
+  const phases = seedSkeleton();
+  assert.equal(promoteNode(phases, 9, 0, 0), phases);
+  assert.equal(promoteNode(phases, 0, 9, 0), phases);
+  assert.equal(promoteNode(phases, 0, 0, 9), phases, 'the task has no sub-tasks at all');
+});
+
+test('demoteNode: a task becomes the last child of its preceding sibling', () => {
+  let phases = seedSkeleton();
+  const prevKey = phases[0].tasks[0].key;
+  const movingKey = phases[0].tasks[1].key;
+  const tasksBefore = phases[0].tasks.length;
+  const before = phases;
+
+  phases = demoteNode(phases, 0, 1);
+
+  assert.equal(phases[0].tasks.length, tasksBefore - 1, 'it left the task level');
+  assert.equal(phases[0].tasks[0].key, prevKey, 'the preceding sibling stayed put');
+  assert.equal(phases[0].tasks[0].children.length, 1);
+  assert.equal(phases[0].tasks[0].children[0].key, movingKey, 'key preserved verbatim');
+  assert.deepEqual(phases[0].tasks[0].children[0].children, []);
+  assert.equal(before[0].tasks.length, tasksBefore, 'original untouched (no mutation)');
+});
+
+test('demoteNode: appended LAST, after any sub-tasks the sibling already had', () => {
+  let phases = seedSkeleton();
+  phases = addSubtask(phases, 0, 0);
+  const existingSub = phases[0].tasks[0].children[0].key;
+  const movingKey = phases[0].tasks[1].key;
+
+  phases = demoteNode(phases, 0, 1);
+
+  assert.deepEqual(
+    phases[0].tasks[0].children.map((s) => s.key), [existingSub, movingKey],
+  );
+});
+
+test('demoteNode: refused with no preceding sibling, or when it has children', () => {
+  let phases = seedSkeleton();
+
+  // (a) The first task in a phase has nothing to nest under.
+  assert.equal(demoteNode(phases, 0, 0), phases, 'same reference = refused');
+  assert.equal(canDemote(phases, 0, 0), false);
+
+  // (b) A task with sub-tasks would carry them down to a fourth level.
+  phases = addSubtask(phases, 0, 1);
+  assert.equal(demoteNode(phases, 0, 1), phases);
+  assert.equal(canDemote(phases, 0, 1), false);
+
+  // Emptying it again makes the move legal.
+  const emptied = removeSubtask(phases, 0, 1, 0);
+  assert.equal(canDemote(emptied, 0, 1), true);
+  assert.notEqual(demoteNode(emptied, 0, 1), emptied);
+});
+
+test('demoteNode: a sub-task cannot demote further — level 4 is out of scope', () => {
+  let phases = seedSkeleton();
+  phases = addSubtask(phases, 0, 0);
+  phases = addSubtask(phases, 0, 0);
+  assert.equal(demoteNode(phases, 0, 0, 1), phases, 'same reference = nothing happened');
+  assert.equal(canDemote(phases, 0, 0, 1), false);
+});
+
+test('promote/demote round-trip: the tree comes back, and toWire never sees level 4', () => {
+  let phases = seedSkeleton();
+  phases = addSubtask(phases, 0, 0);
+  phases = renameSubtask(phases, 0, 0, 0, 'Order the rebar');
+  const shape = JSON.stringify(phases);
+
+  const roundTripped = demoteNode(promoteNode(phases, 0, 0, 0), 0, 1);
+  assert.equal(JSON.stringify(roundTripped), shape, 'promote then demote is identity');
+
+  // Whatever state the author leaves it in, the wire stays three levels deep.
+  for (const tree of [phases, promoteNode(phases, 0, 0, 0), roundTripped]) {
+    for (const phase of toWire(tree)) {
+      for (const task of phase.children ?? []) {
+        for (const sub of task.children ?? []) {
+          assert.equal((sub.children ?? []).length, 0, 'never a fourth level');
+        }
+      }
+    }
+  }
+});
+
+// ── Parent-row status counters (LINA-261 behaviour 5) ────────────────────────
+// Status is DERIVED, never authored (ADR-0019), so on a draft the counters
+// honestly read all-not-started. They light up only when a live plan hydrates
+// real progress in.
+
+test('leafStatusCounts: a draft has no progress, so every leaf is not-started', () => {
+  let phases = seedSkeleton();
+  phases = addSubtask(phases, 0, 0);
+
+  const phase = leafStatusCounts(phases[0]);
+  assert.equal(phase.done, 0);
+  assert.equal(phase.inProgress, 0);
+  assert.equal(phase.notStarted, phase.total);
+  assert.ok(phase.total > 0);
+});
+
+test('leafStatusCounts: a container task contributes its sub-tasks, not itself', () => {
+  let phases = seedSkeleton();
+  const plainTasks = phases[0].tasks.length;
+  phases = addSubtask(phases, 0, 0);
+  phases = addSubtask(phases, 0, 0);
+
+  // The phase's leaves: 2 sub-tasks + every OTHER task (which are leaves).
+  assert.equal(leafStatusCounts(phases[0]).total, 2 + (plainTasks - 1));
+  // The container task's own counter is over its two sub-tasks.
+  assert.equal(leafStatusCounts(phases[0].tasks[0]).total, 2);
+  // A leaf task counts nothing — the row draws its derived badge instead.
+  assert.equal(leafStatusCounts(phases[0].tasks[1]).total, 0);
+});
+
+test('leafStatusCounts: a hydrated LIVE plan feeds real progress in', () => {
+  const phases = hydrateDraft([
+    {
+      id: 's1', name: 'Phase', children: [
+        { id: 's2', name: 'Done task', status: 'done', children: [] },
+        { id: 's3', name: 'Running task', status: 'in_progress', children: [] },
+        { id: 's4', name: 'Fresh task', children: [] },
+        {
+          id: 's5', name: 'Container', status: 'in_progress', children: [
+            { id: 's6', name: 'Sub done', status: 'done' },
+            { id: 's7', name: 'Sub blocked', status: 'blocked' },
+          ],
+        },
+      ],
+    },
+  ]);
+
+  const counts = leafStatusCounts(phases[0]);
+  assert.equal(counts.total, 5, 'the container is not counted, its two children are');
+  assert.equal(counts.done, 2, 'the done task + the done sub-task');
+  assert.equal(counts.inProgress, 2, 'the running task + the blocked sub-task');
+  assert.equal(counts.notStarted, 1, 'a stage the server reported no status for');
+
+  // 'blocked' folds into in-progress: stuck work is work under way, not unstarted.
+  assert.deepEqual(leafStatusCounts(phases[0].tasks[3]), {
+    done: 1, inProgress: 1, notStarted: 0, total: 2,
+  });
+});
+
+test('status is read-only: no authoring op ever sets or drops it', () => {
+  const phases = hydrateDraft([
+    { id: 's1', name: 'Phase', children: [{ id: 's2', name: 'T', status: 'done', children: [] }] },
+  ]);
+  assert.equal(phases[0].tasks[0].status, 'done');
+
+  // Renaming, dating, assigning — none of them touch the derived field.
+  let next = renameTask(phases, 0, 0, 'Renamed');
+  next = setTaskDate(next, 0, 0, 'start', '2026-05-01');
+  next = setAssignee(next, phases[0].tasks[0].key, 'p-1');
+  assert.equal(next[0].tasks[0].status, 'done', 'carried, never rewritten');
+
+  // A draft authored from scratch simply has none.
+  assert.equal(seedSkeleton()[0].tasks[0].status, undefined);
+  // And it never reaches the wire — the server owns status.
+  assert.equal('status' in toWire(next)[0].children[0], false);
 });
