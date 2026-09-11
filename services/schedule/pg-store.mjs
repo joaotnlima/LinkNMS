@@ -39,6 +39,7 @@ function mapStage(r) {
     position: r.position,
     parent_id: r.parent_id,
     trade: r.trade,
+    assignee_party_id: r.assignee_party_id ?? null,
     import_id: r.import_id,
     plan_version_id: r.plan_version_id,
     source_row_ref: r.source_row_ref,
@@ -188,14 +189,16 @@ export function createPgStore({ pool = getPool() } = {}) {
   async function insertStage(client, row) {
     const { rows } = await client.query(
       `insert into schedule.stage
-         (id, project_id, name, position, parent_id, trade, import_id, source_row_ref,
+         (id, project_id, name, position, parent_id, trade, assignee_party_id,
+          import_id, source_row_ref,
           scope_note, description, planned_start_date, planned_end_date, planned_cost_cents,
           plan_version_id, created_at, updated_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        returning *`,
       [
         row.id, row.project_id, row.name, row.position, row.parent_id ?? null,
-        row.trade ?? null, row.import_id ?? null, row.source_row_ref ?? null,
+        row.trade ?? null, row.assignee_party_id ?? null,
+        row.import_id ?? null, row.source_row_ref ?? null,
         row.scope_note, row.description ?? null,
         row.planned_start_date, row.planned_end_date, row.planned_cost_cents,
         row.plan_version_id ?? null, row.created_at, row.updated_at,
