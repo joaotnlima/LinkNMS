@@ -7,20 +7,30 @@
 // under `node --test` and safe to call from both the service orchestration and
 // a future endpoint.
 //
-// RULES (from ADR-0017 §5 and the dependency semantics):
-//   1. A predecessor must FINISH before its dependent starts — the day after
-//      all predecessors finish is the earliest a stage can begin.
-//   2. User-set dates are anchors — they are never moved.
-//   3. A stage with only one date set gets a 1-day default for the other end.
-//   4. A stage with no dependencies and no dates stays undated (no anchor).
-//   5. The graph is always a DAG (server-side rejectDependencyCycles ensures
+// RULES (from ADR-0017 §5 and ADR-0020 typed-dependency semantics):
+//   1. Only MISSING dates are filled — user-set dates are anchors, never moved.
+//   2. Link types (ADR-0020) constrain the dependent's fields when filling
+//      missing dates only:
+//        starts_after (FS)  → dependent start = pred end + 1 day
+//        starts_with  (SS)  → dependent start = pred start
+//        ends_with    (FF)  → dependent end = pred end (start = end when the
+//                             start is still missing — the 1-day rule stands)
+//   3. Multiple constraints on the SAME field → the latest date wins
+//      (most restrictive).
+//   4. A stage with only one date set gets a 1-day default for the other end.
+//   5. A stage with no dependencies and no dates stays undated (no anchor).
+//   6. The graph is always a DAG (server-side rejectDependencyCycles ensures
 //      this before any write), so no cycle handling is needed here.
-//   6. No duration model exists — every computed stage is 1 calendar day.
-//   7. Calendar math uses UTC 'YYYY-MM-DD' days (same as plan-gantt.ts) — no
+//   7. No duration model exists — a computed stage defaults to 1 calendar day
+//      (end = start) unless an ends_with constraint pulls its end later.
+//   8. Calendar math uses UTC 'YYYY-MM-DD' days (same as plan-gantt.ts) — no
 //      timezone drift, no DST surprises.
 //
 // Input shape mirrors the wire format from getPlan / authorPlan:
-//   stages:  [{ id, plannedStartDate, plannedEndDate, dependsOn: [predId, …] }, …]
+//   stages: [{ id, plannedStartDate, plannedEndDate,
+//              dependsOn: [{ on: predId, type }] | [predId, …], … }, …]
+//   `dependencies` (typed) wins when both shapes are present; each element may
+//   be a bare pred id (compat = starts_after) or { on, type }.
 //
 // Output:
 //   { computed: Map<stageId, { plannedStartDate, plannedEndDate }> }
@@ -73,7 +83,7 @@ function maxDate(...dates) {
 /**
  * Compute missing stage dates from the dependency graph.
  *
- * @param {ReadonlyArray<{id: string, plannedStartDate?: string|null, plannedEndDate?: string|null, dependsOn?: ReadonlyArray<string>}>} stages
+ * @param {ReadonlyArray<{id: string, plannedStartDate?: string|null, plannedEndDate?: string|null, dependsOn?: ReadonlyArray<string | {on: string, type?: string}>, dependencies?: ReadonlyArray<{on: string, type?: string}>}>} stages
  * @returns {{ computed: Map<string, {plannedStartDate: string, plannedEndDate: string}> }}
  */
 export function autoSchedule(stages) {
@@ -81,41 +91,34 @@ export function autoSchedule(stages) {
     return { computed: new Map() };
   }
 
-  // Index stages by id for fast lookup.
+  // Index stages by id for fast lookup, normalising each dependency entry to an
+  // edge { on, type }. `dependencies` (typed, the getPlan shape) wins; fall back
+  // to `dependsOn` (bare ids = starts_after) for callers wired pre-ADR-0020.
   const byId = new Map();
   for (const s of stages) {
+    const rawEdges = s.dependencies ?? s.dependsOn ?? [];
+    const edges = (Array.isArray(rawEdges) ? rawEdges : []).map((dep) => {
+      if (typeof dep === 'string') return { on: dep, type: 'starts_after' };
+      return { on: dep.on, type: dep.type ?? 'starts_after' };
+    });
     byId.set(s.id, {
       id: s.id,
       startDate: s.plannedStartDate ?? null,
       endDate: s.plannedEndDate ?? null,
-      predecessors: [...(s.dependsOn ?? [])],
+      edges,
     });
   }
 
-  // Validate: every dependsOn target must exist.
+  // Validate: every dependency target must exist.
   for (const s of byId.values()) {
-    for (const pred of s.predecessors) {
-      if (!byId.has(pred)) {
-        throw new Error(`autoSchedule: stage "${s.id}" depends on unknown stage "${pred}"`);
+    for (const edge of s.edges) {
+      if (!byId.has(edge.on)) {
+        throw new Error(`autoSchedule: stage "${s.id}" depends on unknown stage "${edge.on}"`);
       }
     }
   }
 
-  // Build in-degree map (number of predecessors whose dates are NOT yet resolved
-  // to an end date).  This drives the fixed-point iteration.
-  //
-  // We also need a reverse map: for each stage, which stages depend on it
-  // (dependents), so we can re-evaluate dependents when a predecessor gets its
-  // end date filled in.
-  const dependents = new Map(); // stageId → Set<stageId>
-  for (const s of byId.values()) {
-    for (const pred of s.predecessors) {
-      if (!dependents.has(pred)) dependents.set(pred, new Set());
-      dependents.get(pred).add(s.id);
-    }
-  }
-
-  // Work list: stages whose predecessors all have end dates (or have no
+  // Work list: stages whose predecessors all have dates (or have no
   // predecessors) and that themselves lack a complete date pair.  We re-check
   // after each date computation because computing a date for stage X may
   // unblock stage Y that depends on X.
@@ -134,35 +137,67 @@ export function autoSchedule(stages) {
     }
   }
 
+  const dated = (s) => s.startDate != null && s.endDate != null;
+
+  // Compute one stage's missing dates from its resolved edges. Returns null when
+  // any predecessor is still undated (the stage can't be resolved yet).
+  function computeFromEdges(s) {
+    const startCands = [];
+    const endCands = [];
+    for (const edge of s.edges) {
+      const pred = byId.get(edge.on);
+      if (!pred) return null;
+      if (edge.type === 'starts_after') {
+        startCands.push(addDays(pred.endDate, 1));
+      } else if (edge.type === 'starts_with') {
+        startCands.push(pred.startDate);
+      } else { // ends_with
+        endCands.push(pred.endDate);
+      }
+    }
+    const startFloor = maxDate(...startCands);
+    const endFloor = maxDate(...endCands);
+    // All predecessors dated but no numeric constraint on either field cannot
+    // happen (each edge contributes to startCands or endCands); guard anyway.
+    if (startFloor == null && endFloor == null) return null;
+
+    let start;
+    let end;
+    if (startFloor != null) {
+      start = startFloor;
+      end = endFloor != null ? maxDate(endFloor, start) : start;
+    } else {
+      // ends_with only — the 1-day rule stands: start = end.
+      end = endFloor;
+      start = end;
+    }
+    return { start, end };
+  }
+
   // Fixed-point iteration: keep going until no more dates are computed.
   let changed = true;
   while (changed) {
     changed = false;
     for (const s of byId.values()) {
       // Already fully dated (anchor or previously computed) → skip.
-      if (s.startDate && s.endDate) continue;
+      if (dated(s)) continue;
 
       // Stages with no predecessors and no dates stay undated (no anchor).
-      if (s.predecessors.length === 0) continue;
+      if (s.edges.length === 0) continue;
 
-      // Check that ALL predecessors have end dates.
-      const allPredsDated = s.predecessors.every((predId) => {
-        const pred = byId.get(predId);
-        return pred && pred.endDate != null;
+      // Check that ALL predecessors are dated (a normalized half-date counts:
+      // it is a full anchor by the time the forward pass needs it).
+      const allPredsDated = s.edges.every((edge) => {
+        const pred = byId.get(edge.on);
+        return pred != null && dated(pred);
       });
       if (!allPredsDated) continue;
 
-      // Compute: start = day after the latest predecessor's end; end = start
-      // (1-day default duration).
-      const predEndDates = s.predecessors
-        .map((predId) => byId.get(predId).endDate)
-        .filter(Boolean);
-      const latestPredEnd = maxDate(...predEndDates);
+      const dates = computeFromEdges(s);
+      if (dates == null) continue;
 
-      if (latestPredEnd == null) continue;
-
-      s.startDate = addDays(latestPredEnd, 1);
-      s.endDate = s.startDate;
+      s.startDate = dates.start;
+      s.endDate = dates.end;
 
       computed.set(s.id, { plannedStartDate: s.startDate, plannedEndDate: s.endDate });
       changed = true;

@@ -313,12 +313,15 @@ export function createPgStore({ pool = getPool() } = {}) {
     return rows[0] ?? null;
   }
 
-  async function insertStageDependency(client, stageId, dependsOnStageId) {
+  // dep_type (migration 0010, ADR-0020): starts_after (FS, the default) ·
+  // starts_with (SS) · ends_with (FF). Bare-string authoring and the import path
+  // land as starts_after via the column default when depType is omitted.
+  async function insertStageDependency(client, stageId, dependsOnStageId, depType = 'starts_after') {
     const { rows } = await client.query(
-      `insert into schedule.stage_dependency (stage_id, depends_on_stage_id)
-       values ($1,$2)
+      `insert into schedule.stage_dependency (stage_id, depends_on_stage_id, dep_type)
+       values ($1,$2,$3)
        returning *`,
-      [stageId, dependsOnStageId],
+      [stageId, dependsOnStageId, depType],
     );
     return rows[0];
   }
@@ -337,11 +340,12 @@ export function createPgStore({ pool = getPool() } = {}) {
     );
   }
 
-  // The resolved predecessor graph of a version: { stage_id, depends_on_stage_id }
-  // rows so `getPlan` can attach each stage's `dependsOn` (stage ids) in one read.
+  // The resolved predecessor graph of a version: { stage_id, depends_on_stage_id,
+  // dep_type } rows so `getPlan` can attach each stage's `dependsOn` (stage ids)
+  // and typed `dependencies` in one read.
   async function listStageDependenciesByPlanVersion(planVersionId) {
     const { rows } = await pool.query(
-      `select d.stage_id, d.depends_on_stage_id
+      `select d.stage_id, d.depends_on_stage_id, d.dep_type
          from schedule.stage_dependency d
          join schedule.stage s on s.id = d.stage_id
         where s.plan_version_id = $1
