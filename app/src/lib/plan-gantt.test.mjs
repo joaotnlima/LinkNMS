@@ -14,7 +14,7 @@ import {
   parseDay, formatDay, addDays, diffDays,
   ganttWindow, barGeom, daysFromPixels,
   moveBar, resizeStart, resizeEnd, applyDrag, scheduleWindow, clickDates,
-  baseWindow, clipBarGeom,
+  baseWindow, clipBarGeom, barRect, connectorPath,
 } from './plan-gantt.ts';
 
 test('parseDay: UTC round-trip, rejects blanks and impossible days', () => {
@@ -233,4 +233,108 @@ test('clipBarGeom: entirely outside the window, or undated, is still null', () =
   assert.equal(clipBarGeom(win, '2026-04-01', '2026-04-05'), null);
   assert.equal(clipBarGeom(win, '2026-01-01', '2026-02-27'), null);
   assert.equal(clipBarGeom(win, '', ''), null);
+});
+
+// ── Dependency connectors (ADR-0020 §6, LINA-253) ────────────────────────────
+// The anchor rule per type, and the two routes `starts_after` can take, are the
+// whole visual claim the arrows make — so they are asserted here rather than
+// eyeballed on a plan. Coordinates: a bar box is { x, width } with `y` the
+// vertical middle of its row.
+
+test('barRect: the bar box the connectors anchor to is the one the bar renders at', () => {
+  assert.deepEqual(barRect(0, 1, 30), { x: 1, width: 28 });
+  assert.deepEqual(barRect(3, 5, 30), { x: 91, width: 148 });
+  // A hair-thin day column still leaves a grabbable 2px bar, never a negative one.
+  assert.deepEqual(barRect(2, 1, 3), { x: 7, width: 2 });
+});
+
+test('connectorPath: starts_after routes pred RIGHT edge → dep LEFT edge, arrow right', () => {
+  const pred = { x: 100, width: 60, y: 20 };   // right edge 160
+  const dep = { x: 300, width: 60, y: 60 };
+  const c = connectorPath(pred, dep, 'starts_after');
+  assert.deepEqual(c.points[0], { x: 160, y: 20 });                    // leaves the finish
+  assert.deepEqual(c.points[c.points.length - 1], { x: 300, y: 60 });  // arrives at the start
+  assert.equal(c.head, 'right');
+  // Forward route: out, down one stub short of the dependent, in.
+  assert.deepEqual(c.points, [
+    { x: 160, y: 20 }, { x: 288, y: 20 }, { x: 288, y: 60 }, { x: 300, y: 60 },
+  ]);
+  assert.equal(c.d, 'M160 20 L288 20 L288 60 L300 60');
+});
+
+test('connectorPath: starts_after routes AROUND when the dependent starts before the pred finishes', () => {
+  const pred = { x: 100, width: 200, y: 20 };  // right edge 300
+  const dep = { x: 140, width: 60, y: 60 };    // starts inside the predecessor
+  const c = connectorPath(pred, dep, 'starts_after');
+  // Out right of the predecessor, along the lane between the two rows, back in.
+  assert.deepEqual(c.points, [
+    { x: 300, y: 20 }, { x: 312, y: 20 }, { x: 312, y: 40 },
+    { x: 128, y: 40 }, { x: 128, y: 60 }, { x: 140, y: 60 },
+  ]);
+  // Still anchored on the two edges the type constrains, still pointing in.
+  assert.deepEqual(c.points[0], { x: 300, y: 20 });
+  assert.deepEqual(c.points[c.points.length - 1], { x: 140, y: 60 });
+  assert.equal(c.head, 'right');
+});
+
+test('connectorPath: starts_with is LEFT → LEFT, routed outside both bars', () => {
+  const pred = { x: 200, width: 60, y: 20 };
+  const dep = { x: 120, width: 60, y: 60 };
+  const c = connectorPath(pred, dep, 'starts_with');
+  assert.deepEqual(c.points, [
+    { x: 200, y: 20 }, { x: 108, y: 20 }, { x: 108, y: 60 }, { x: 120, y: 60 },
+  ]);
+  // 108 is left of BOTH left edges — the elbow never crosses a bar it connects.
+  assert.ok(c.points[1].x < Math.min(pred.x, dep.x));
+  assert.equal(c.head, 'right');
+});
+
+test('connectorPath: ends_with is RIGHT → RIGHT, routed outside both bars, arrow left', () => {
+  const pred = { x: 100, width: 60, y: 20 };   // right edge 160
+  const dep = { x: 180, width: 100, y: 60 };   // right edge 280
+  const c = connectorPath(pred, dep, 'ends_with');
+  assert.deepEqual(c.points, [
+    { x: 160, y: 20 }, { x: 292, y: 20 }, { x: 292, y: 60 }, { x: 280, y: 60 },
+  ]);
+  assert.ok(c.points[1].x > Math.max(160, 280));
+  assert.equal(c.head, 'left'); // it arrives at the finish from the right
+});
+
+test('connectorPath: never routes off the left of the canvas', () => {
+  const c = connectorPath({ x: 1, width: 20, y: 20 }, { x: 1, width: 20, y: 60 }, 'starts_with');
+  assert.ok(c.points.every((p) => p.x >= 1));
+  // A dependent hard against the left edge can still be reached backward.
+  const back = connectorPath({ x: 1, width: 200, y: 20 }, { x: 2, width: 20, y: 60 }, 'starts_after');
+  assert.ok(back.points.every((p) => p.x >= 1));
+  assert.deepEqual(back.points[back.points.length - 1], { x: 2, y: 60 });
+});
+
+test('connectorPath: every segment is orthogonal, and none repeats', () => {
+  const cases = [
+    [{ x: 100, width: 60, y: 20 }, { x: 300, width: 60, y: 60 }, 'starts_after'],
+    [{ x: 100, width: 200, y: 20 }, { x: 140, width: 60, y: 60 }, 'starts_after'],
+    [{ x: 200, width: 60, y: 20 }, { x: 120, width: 60, y: 60 }, 'starts_with'],
+    [{ x: 100, width: 60, y: 20 }, { x: 180, width: 100, y: 60 }, 'ends_with'],
+  ];
+  for (const [pred, dep, type] of cases) {
+    const { points } = connectorPath(pred, dep, type);
+    for (let i = 1; i < points.length; i += 1) {
+      const a = points[i - 1];
+      const b = points[i];
+      assert.ok(a.x === b.x || a.y === b.y, `${type} segment ${i} is diagonal`);
+      assert.ok(a.x !== b.x || a.y !== b.y, `${type} segment ${i} is zero-length`);
+    }
+  }
+});
+
+test('connectorPath: the path tracks the bars — a dragged bar moves its anchors with it', () => {
+  const pred = { x: 100, width: 60, y: 20 };
+  const dep = { x: 300, width: 60, y: 60 };
+  const before = connectorPath(pred, dep, 'starts_after');
+  // The same link after the dependent is dragged 30px (one day at the default
+  // column width) later: the head follows, nothing else is remembered.
+  const after = connectorPath(pred, { ...dep, x: 330 }, 'starts_after');
+  assert.deepEqual(after.points[after.points.length - 1], { x: 330, y: 60 });
+  assert.deepEqual(after.points[0], before.points[0]);
+  assert.notDeepEqual(after.d, before.d);
 });

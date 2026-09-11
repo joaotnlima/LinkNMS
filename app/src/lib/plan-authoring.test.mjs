@@ -19,8 +19,9 @@ import {
   hydrateDraft,
   // Plan templates (LINA-242).
   seedFromTemplate, toTemplateBody,
-  // Dependencies (LINA-233).
+  // Dependencies (LINA-233), typed by ADR-0020 / LINA-253.
   planNodes, dependencyChoices, dependsOnOf, setDependsOn, toggleDependency, detectCycle,
+  setDependencyType, planLinks, DEP_TYPES, DEP_LABELS, DEFAULT_DEP_TYPE, isDepType,
   // The third level (LINA-243).
   addSubtask, renameSubtask, setSubtaskDate, setSubtaskDates, setSubtaskDescription, removeSubtask,
   moveSubtask, reorderSubtask, subtaskCount,
@@ -321,8 +322,10 @@ test('dependencyChoices: every other stage is offered, grouped by phase; self an
   // B1 after A2: now A2 (and anything upstream of it) may not be made to wait on
   // B1 — that is the cycle the server would refuse, kept off the menu.
   phases = toggleDependency(phases, 'b1', 'a2');
-  assert.deepEqual(phases[1].tasks[0].dependsOn, ['a2']);
-  assert.deepEqual(dependsOnOf(phases, 'b1'), ['a2'], 'read back by key, phase or task alike');
+  assert.deepEqual(phases[1].tasks[0].dependsOn, [{ on: 'a2', type: 'starts_after' }],
+    'a new link is born starts_after — the ADR default and the column default');
+  assert.deepEqual(dependsOnOf(phases, 'b1'), [{ on: 'a2', type: 'starts_after' }],
+    'read back by key, phase or task alike');
   assert.ok(!keys('a2').includes('b1'), 'a choice that would close a cycle is withheld');
   assert.ok(keys('a2').includes('a1'), 'unrelated stages are still offered');
 
@@ -332,11 +335,94 @@ test('dependencyChoices: every other stage is offered, grouped by phase; self an
   assert.deepEqual(phases[1].tasks[0].dependsOn, [], 'toggle removes');
 });
 
-test('detectCycle: agrees with the server, and names the loop in order', () => {
+// ── Typed links (ADR-0020, LINA-253) ────────────────────────────────────────
+// The founder's ask: not THAT one stage waits on another, but HOW. The type is
+// carried per link, defaults to starts_after, and is blind to everything the
+// graph rules already decide — cycles, choices, cleanup.
+
+test('the type vocabulary is exactly the three the founder named, default first', () => {
+  // These labels are the ASK, verbatim (LINA-251 → ADR-0020 §1). Pinned here so
+  // a well-meaning reword ("After", "Finish-to-start") fails a test rather than
+  // quietly changing what the user is being asked to say.
+  assert.deepEqual([...DEP_TYPES], ['starts_after', 'starts_with', 'ends_with']);
+  assert.deepEqual(DEP_TYPES.map((t) => DEP_LABELS[t]), ['Starts after', 'Starts with', 'Ends with']);
+  assert.equal(DEFAULT_DEP_TYPE, 'starts_after', 'the default is the one the column defaults to');
+  assert.equal(DEP_TYPES[0], DEFAULT_DEP_TYPE, 'and it is offered first');
+  assert.ok(DEP_TYPES.every(isDepType));
+  // Deliberately NOT in v1 (ADR-0020 §1): start-to-finish and lag days.
+  assert.ok(!isDepType('starts_to_finish'));
+  assert.ok(!isDepType(undefined) && !isDepType(null));
+});
+
+test('setDependencyType: re-types one link and leaves the rest of the graph alone', () => {
+  let phases = [
+    { key: 'p1', name: 'P', dependsOn: [], tasks: [
+      { key: 't1', name: 'T1', start: '', end: '', description: '', dependsOn: [] },
+      { key: 't2', name: 'T2', start: '', end: '', description: '', dependsOn: [] },
+      { key: 't3', name: 'T3', start: '', end: '', description: '', dependsOn: [] },
+    ] },
+  ];
+  phases = toggleDependency(phases, 't3', 't1');
+  phases = toggleDependency(phases, 't3', 't2');
+  phases = setDependencyType(phases, 't3', 't1', 'starts_with');
+  assert.deepEqual(dependsOnOf(phases, 't3'), [
+    { on: 't1', type: 'starts_with' },
+    { on: 't2', type: 'starts_after' },
+  ], 'only the named link is re-typed, and the author order holds');
+
+  // Re-typing a pair that is NOT linked cannot create the link.
+  const untouched = setDependencyType(phases, 't1', 't2', 'ends_with');
+  assert.deepEqual(dependsOnOf(untouched, 't1'), []);
+  assert.equal(untouched, phases, 'a no-op returns the same array');
+
+  // Removing the link takes its type with it — a re-tick starts over at default.
+  phases = toggleDependency(phases, 't3', 't1');
+  phases = toggleDependency(phases, 't3', 't1');
+  assert.deepEqual(dependsOnOf(phases, 't3').find((d) => d.on === 't1'),
+    { on: 't1', type: 'starts_after' }, 'a stale type is never resurrected');
+});
+
+test('setDependsOn: one link per ordered pair, and never to itself', () => {
   const phases = [
     { key: 'p1', name: 'P', dependsOn: [], tasks: [
-      { key: 'x', name: 'X', start: '', end: '', description: '', dependsOn: ['y'] },
-      { key: 'y', name: 'Y', start: '', end: '', description: '', dependsOn: ['x'] },
+      { key: 't1', name: 'T1', start: '', end: '', description: '', dependsOn: [] },
+      { key: 't2', name: 'T2', start: '', end: '', description: '', dependsOn: [] },
+    ] },
+  ];
+  // Two typed links to the SAME target is `400 duplicate_dependency` server-side
+  // (ADR-0020 §2: the type qualifies the link, it does not multiply it).
+  const deduped = setDependsOn(phases, 't2', [
+    { on: 't1', type: 'starts_with' },
+    { on: 't1', type: 'ends_with' },
+  ]);
+  assert.deepEqual(dependsOnOf(deduped, 't2'), [{ on: 't1', type: 'starts_with' }], 'the first wins');
+  // Self-links are `400 self_dependency` — dropped before they reach the draft.
+  const selfish = setDependsOn(phases, 't2', [{ on: 't2', type: 'starts_after' }]);
+  assert.deepEqual(dependsOnOf(selfish, 't2'), []);
+});
+
+test('planLinks: every link flattened for the Gantt, typed and in reading order', () => {
+  let phases = [
+    { key: 'p1', name: 'P', dependsOn: [], tasks: [
+      { key: 't1', name: 'T1', start: '', end: '', description: '', dependsOn: [] },
+      { key: 't2', name: 'T2', start: '', end: '', description: '', dependsOn: [] },
+    ] },
+  ];
+  assert.deepEqual(planLinks(phases), [], 'a fresh plan draws no arrows');
+  phases = toggleDependency(phases, 't2', 't1');
+  phases = setDependencyType(phases, 't2', 't1', 'ends_with');
+  phases = toggleDependency(phases, 't2', 'p1');
+  assert.deepEqual(planLinks(phases), [
+    { from: 't2', to: 't1', type: 'ends_with' },
+    { from: 't2', to: 'p1', type: 'starts_after' },
+  ], 'from = the stage carrying the link, to = its predecessor');
+});
+
+test('detectCycle: agrees with the server, and stays TYPE-BLIND (one DAG, ADR-0020 §4)', () => {
+  const phases = [
+    { key: 'p1', name: 'P', dependsOn: [], tasks: [
+      { key: 'x', name: 'X', start: '', end: '', description: '', dependsOn: [{ on: 'y', type: 'starts_after' }] },
+      { key: 'y', name: 'Y', start: '', end: '', description: '', dependsOn: [{ on: 'x', type: 'starts_after' }] },
     ] },
   ];
   const cycle = detectCycle(phases);
@@ -344,14 +430,32 @@ test('detectCycle: agrees with the server, and names the loop in order', () => {
   assert.deepEqual(new Set(cycle.map((n) => n.key)), new Set(['x', 'y']));
   assert.equal(detectCycle(setDependsOn(phases, 'y', [])), null);
   // A deep chain that does not close is not a cycle.
-  assert.equal(detectCycle(setDependsOn(phases, 'x', ['p1'])), null);
+  assert.equal(detectCycle(setDependsOn(phases, 'x', [{ on: 'p1', type: 'starts_after' }])), null);
+  // A MUTUAL starts_with pair is arguably coherent in other PM tools; ADR-0020
+  // §4 refuses it anyway, so the client must agree rather than let a save 409.
+  const mutual = setDependencyType(
+    setDependencyType(phases, 'x', 'y', 'starts_with'), 'y', 'x', 'starts_with',
+  );
+  assert.ok(detectCycle(mutual), 'type does not buy a loop an exemption');
+});
+
+test('dependencyChoices / dependents stay type-blind too', () => {
+  let phases = [
+    { key: 'p1', name: 'P', dependsOn: [], tasks: [
+      { key: 't1', name: 'T1', start: '', end: '', description: '', dependsOn: [] },
+      { key: 't2', name: 'T2', start: '', end: '', description: '', dependsOn: [] },
+    ] },
+  ];
+  phases = setDependencyType(toggleDependency(phases, 't2', 't1'), 't2', 't1', 'ends_with');
+  const keys = (k) => dependencyChoices(phases, k).flatMap((g) => g.options.map((o) => o.key));
+  assert.ok(!keys('t1').includes('t2'), 'an ends_with downstream is withheld exactly like a starts_after one');
 });
 
 test('removing a stage takes its inbound links with it', () => {
   let phases = [
     { key: 'p1', name: 'P', dependsOn: [], tasks: [
       { key: 't1', name: 'T1', start: '', end: '', description: '', dependsOn: [] },
-      { key: 't2', name: 'T2', start: '', end: '', description: '', dependsOn: ['t1'] },
+      { key: 't2', name: 'T2', start: '', end: '', description: '', dependsOn: [{ on: 't1', type: 'starts_with' }] },
     ] },
   ];
   phases = removeTask(phases, 0, 0);
@@ -365,33 +469,59 @@ test('toWire: sends every node key and the whole graph, dropping edges to rows i
       // Blank row: not sent — so the edge naming it must not be sent either.
       { key: 't9', name: '  ', start: '', end: '', description: '', dependsOn: [] },
     ] },
-    { key: 'p2', name: 'Phase B', dependsOn: ['p1'], tasks: [
-      { key: 't2', name: 'Task 2', start: '', end: '', description: '', dependsOn: ['t1', 't9'] },
+    { key: 'p2', name: 'Phase B', dependsOn: [{ on: 'p1', type: 'starts_after' }], tasks: [
+      { key: 't2', name: 'Task 2', start: '', end: '', description: '', dependsOn: [
+        { on: 't1', type: 'starts_with' }, { on: 't9', type: 'starts_after' },
+      ] },
     ] },
   ];
   const wire = toWire(phases);
   assert.equal(wire[0].key, 'p1');
   assert.deepEqual(wire[0].dependsOn, [], 'always present — a cleared row must clear server-side');
   assert.equal(wire[0].children[0].key, 't1');
-  assert.deepEqual(wire[1].dependsOn, ['p1'], 'a phase may follow a phase');
-  assert.deepEqual(wire[1].children[0].dependsOn, ['t1'], 'the edge to the dropped blank row is gone');
+  // Contract v5 (ADR-0020 §3): OBJECTS, never bare strings — even for the
+  // default type, so the payload says what it means rather than leaning on the
+  // column default.
+  assert.deepEqual(wire[1].dependsOn, [{ key: 'p1', type: 'starts_after' }], 'a phase may follow a phase');
+  assert.deepEqual(wire[1].children[0].dependsOn, [{ key: 't1', type: 'starts_with' }],
+    'the type rides along, and the edge to the dropped blank row is gone');
 });
 
-test('hydrateDraft: server stage ids come back as local keys, dangling edges dropped', () => {
+test('hydrateDraft: typed server edges come back as local keys; dangling and dup edges dropped', () => {
   const phases = hydrateDraft([
-    { id: 's1', name: 'Phase A', dependsOn: [], children: [
-      { id: 's2', name: 'Task 1', dependsOn: [] },
+    { id: 's1', name: 'Phase A', dependencies: [], children: [
+      { id: 's2', name: 'Task 1', dependencies: [] },
     ] },
-    // Depends on a stage EARLIER in the tree and on one that is not in it at all.
-    { id: 's3', name: 'Phase B', dependsOn: ['s2', 'gone'], children: [
-      { id: 's4', name: 'Task 2', dependsOn: ['s3'] },
+    // Links a stage EARLIER in the tree and one that is not in the tree at all.
+    { id: 's3', name: 'Phase B', dependencies: [{ on: 's2', type: 'ends_with' }, { on: 'gone', type: 'starts_after' }], children: [
+      { id: 's4', name: 'Task 2', dependencies: [{ on: 's3', type: 'starts_with' }] },
     ] },
   ]);
-  assert.deepEqual(phases[1].dependsOn, [phases[0].tasks[0].key]);
-  assert.deepEqual(phases[1].tasks[0].dependsOn, [phases[1].key]);
-  // Re-saving the hydrated draft round-trips the graph through the local keys.
+  assert.deepEqual(phases[1].dependsOn, [{ on: phases[0].tasks[0].key, type: 'ends_with' }]);
+  assert.deepEqual(phases[1].tasks[0].dependsOn, [{ on: phases[1].key, type: 'starts_with' }]);
+  // Re-saving the hydrated draft round-trips the graph AND the types.
   const wire = toWire(phases);
-  assert.deepEqual(wire[1].dependsOn, [wire[0].children[0].key]);
+  assert.deepEqual(wire[1].dependsOn, [{ key: wire[0].children[0].key, type: 'ends_with' }]);
+});
+
+test('hydrateDraft: a missing or unknown type reads as starts_after, the column default', () => {
+  const phases = hydrateDraft([
+    { id: 'h1', name: 'Phase A', children: [{ id: 'h2', name: 'Task 1' }] },
+    { id: 'h3', name: 'Phase B', dependencies: [{ on: 'h2' }] },
+    // A type this client does not know would be a server the FE is behind — read
+    // it as the default rather than carry a value the next save would 400 on.
+    { id: 'h4', name: 'Phase C', dependencies: [{ on: 'h2', type: 'starts_to_finish' }, { on: 'h2', type: 'ends_with' }] },
+  ]);
+  assert.deepEqual(phases[1].dependsOn, [{ on: phases[0].tasks[0].key, type: 'starts_after' }]);
+  assert.deepEqual(phases[2].dependsOn, [{ on: phases[0].tasks[0].key, type: 'starts_after' }],
+    'and a repeated target keeps its first entry — one link per pair');
+  // The legacy untyped `dependsOn` the service still dual-emits is IGNORED here:
+  // reading it would mean inventing a type it never carried.
+  const legacyOnly = hydrateDraft([
+    { id: 'l1', name: 'Phase A' },
+    { id: 'l2', name: 'Phase B', dependsOn: ['l1'] },
+  ]);
+  assert.deepEqual(legacyOnly[1].dependsOn, []);
 });
 
 // ── The third level: sub-sub-actions (LINA-243, ADR-0019) ───────────────────
@@ -477,7 +607,7 @@ test('a sub-task is a stage: it is numbered 1.2.3, offered as a dependency, and 
       { key: 't1', name: 'Framing', start: '', end: '', description: '', dependsOn: [], children: [
         { key: 's1', name: 'Order the rebar', start: '', end: '', description: '', dependsOn: [], children: [] },
       ] },
-      { key: 't2', name: 'Pour', start: '', end: '', description: '', dependsOn: ['s1'], children: [] },
+      { key: 't2', name: 'Pour', start: '', end: '', description: '', dependsOn: [{ on: 's1', type: 'starts_after' }], children: [] },
     ] },
   ];
   const nodes = planNodes(phases);
@@ -491,14 +621,15 @@ test('a sub-task is a stage: it is numbered 1.2.3, offered as a dependency, and 
   assert.deepEqual(keys('s1'), ['p1', 't1'], 't2 is downstream of s1, so it would loop');
   assert.ok(keys('t2').includes('s1'));
 
-  phases = setDependsOn(phases, 's1', ['t1']);
-  assert.deepEqual(dependsOnOf(phases, 's1'), ['t1'], 'read back by key at the third level too');
+  phases = setDependsOn(phases, 's1', [{ on: 't1', type: 'ends_with' }]);
+  assert.deepEqual(dependsOnOf(phases, 's1'), [{ on: 't1', type: 'ends_with' }],
+    'read back by key at the third level too');
   assert.equal(phases[0].tasks[1].dependsOn.length, 1, 'a sibling row is not disturbed');
   phases = toggleDependency(phases, 's1', 't1');
   assert.deepEqual(dependsOnOf(phases, 's1'), [], 'toggle removes at the third level');
 
   // A cycle through a sub-task is caught by the same check the server runs.
-  const looped = setDependsOn(phases, 's1', ['t2']);
+  const looped = setDependsOn(phases, 's1', [{ on: 't2', type: 'starts_after' }]);
   assert.ok(detectCycle(looped), 't2 → s1 → t2 is a loop');
 
   // Removing the sub-task takes the edge that named it, or the next save 400s.
@@ -512,7 +643,7 @@ test('toWire: a task emits its sub-tasks as children, blanks dropped, nameless r
   const wire = toWire([
     { key: 'p1', name: 'Phase A', dependsOn: [], tasks: [
       { key: 't1', name: 'Framing', start: '', end: '', description: '', dependsOn: [], children: [
-        { key: 's1', name: ' Order the rebar ', start: '2026-04-01', end: '', description: ' 12mm ', dependsOn: ['t2'], children: [] },
+        { key: 's1', name: ' Order the rebar ', start: '2026-04-01', end: '', description: ' 12mm ', dependsOn: [{ on: 't2', type: 'ends_with' }], children: [] },
         // Never filled in — dropped, and the edge naming it goes too.
         { key: 's9', name: '   ', start: '', end: '', description: '', dependsOn: [], children: [] },
       ] },
@@ -526,7 +657,8 @@ test('toWire: a task emits its sub-tasks as children, blanks dropped, nameless r
   assert.equal(framing.children[0].description, '12mm');
   assert.equal(framing.children[0].plannedStartDate, '2026-04-01');
   assert.equal(framing.children[0].plannedEndDate, null);
-  assert.deepEqual(framing.children[0].dependsOn, ['t2'], 'a sub-task may follow any stage');
+  assert.deepEqual(framing.children[0].dependsOn, [{ key: 't2', type: 'ends_with' }],
+    'a sub-task may be linked to any stage, and carries its type to the wire');
   assert.equal(wire[0].children[1].children, undefined, 'a task with no sub-tasks omits the field');
 
   // A nameless sub-task under a named task is a refusal, not a silent drop.
@@ -567,9 +699,9 @@ test('hydrateDraft: grandchildren come back as sub-tasks, with their edges re-ke
   const phases = hydrateDraft([
     { id: 'g1', name: 'Phase A', dependsOn: [], children: [
       { id: 'g2', name: 'Framing', dependsOn: [], children: [
-        { id: 'g3', name: 'Order the rebar', description: 'Grade 500', plannedStartDate: '2026-04-01', dependsOn: ['g4'] },
+        { id: 'g3', name: 'Order the rebar', description: 'Grade 500', plannedStartDate: '2026-04-01', dependencies: [{ on: 'g4', type: 'starts_with' }] },
       ] },
-      { id: 'g4', name: 'Pour', dependsOn: [], children: [] },
+      { id: 'g4', name: 'Pour', dependencies: [], children: [] },
     ] },
   ]);
   const sub = phases[0].tasks[0].children[0];
@@ -578,13 +710,14 @@ test('hydrateDraft: grandchildren come back as sub-tasks, with their edges re-ke
   assert.equal(sub.start, '2026-04-01');
   assert.equal(sub.end, '', 'a missing wire date hydrates to the editor’s empty string');
   assert.deepEqual(sub.children, []);
-  // The edge came back as a SERVER stage id and is now a local key.
-  assert.deepEqual(sub.dependsOn, [phases[0].tasks[1].key]);
+  // The edge came back as a SERVER stage id and is now a local key, typed.
+  assert.deepEqual(sub.dependsOn, [{ on: phases[0].tasks[1].key, type: 'starts_with' }]);
 
   // Round-trip: re-saving the hydrated draft ships the same shape back.
   const wire = toWire(phases);
   assert.equal(wire[0].children[0].children.length, 1);
-  assert.deepEqual(wire[0].children[0].children[0].dependsOn, [wire[0].children[1].key]);
+  assert.deepEqual(wire[0].children[0].children[0].dependsOn,
+    [{ key: wire[0].children[1].key, type: 'starts_with' }]);
 
   // A server tree deeper than three levels cannot be edited here — the extra
   // level is dropped rather than carried into a save the server would refuse.

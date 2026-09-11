@@ -35,7 +35,9 @@
 // Only `{ stages }`. The acting party is the session, resolved server-side — a
 // client that could name itself could stamp authorship as someone else (§0).
 // Since LINA-233 the tree also carries its predecessor graph: each node's local
-// `key` plus the keys it `dependsOn`. THE WHOLE GRAPH GOES ON EVERY SAVE — the
+// `key` plus the TYPED links it `dependsOn` — `{ key, type }`, where the type is
+// Starts after / Starts with / Ends with (ADR-0020, contract v5; the generic
+// "depends on" is gone). THE WHOLE GRAPH GOES ON EVERY SAVE — the
 // server rebuilds a draft's links atomically inside the same transaction as the
 // stages, so there is no second endpoint and no partial edit to reconcile.
 // SAVING IS PRIVATE DRAFTING (LINA-230): the write lands as a DRAFT (one
@@ -48,30 +50,39 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 import {
-  PlanAuthorError,
+  DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
   addPhase, addSubtask, addTask, authorPlan, demoteNode, dependencyChoices, dependsOnOf, detectCycle, nodeIndex,
   promoteNode,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
   reorderPhase, reorderSubtask, reorderTask,
   saveMyDefaultTemplate, seedFromTemplate, seedSkeleton,
-  setAssignee, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
+  setAssignee, setDependencyType, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
   setTaskDate, setTaskDates, setTaskDescription, setTrade,
   subtaskCount, taskCount, toggleDependency, toTemplateBody, toWire,
-  type PhaseDraft, type PlanNodeRef, type TemplatePhase,
+  type DepType, type PhaseDraft, type PlanNodeRef, type TemplatePhase,
 } from '@/lib/plan-authoring';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 import { PlanGrid } from './PlanGrid';
 import '@/components/plan-build.css';
 
-// ── "Depends on" (LINA-233, ADR-0017 annex 2) ───────────────────────────────
-// One control for phases, tasks and sub-tasks alike — any stage may depend on
+// ── "Scheduling links" (LINA-233; typed by ADR-0020 / LINA-253) ─────────────
+// One control for phases, tasks and sub-tasks alike — any stage may be linked to
 // any other. Since LINA-248 it lives in the detail drawer (the founder's rows
-// carry who/what/when; the graph is drawer detail). It is a button plus, when
-// there is something to show, predecessor chips; the picker itself is a popover
-// of checkboxes grouped by phase, each option printed as the pen prints it.
-function DependsOn({
-  nodeKey, label, phases, index, open, disabled, onOpen, onToggle,
+// carry who/what/when; the graph is drawer detail).
+//
+// THE GENERIC "DEPENDS ON" IS GONE. A link no longer just says THAT one stage
+// waits on another — it says HOW: Starts after / Starts with / Ends with. So the
+// control is two gestures, deliberately separate:
+//   1. the POPOVER picks WHICH stages this one is linked to (checkboxes grouped
+//      by phase, exactly as before — a new link is born "Starts after");
+//   2. each linked chip then carries its own type <select>, so changing what a
+//      link MEANS never risks unpicking it.
+// That split is why re-ticking a checked stage still removes the link outright:
+// the picker is membership, the chip is meaning, and neither does the other's
+// job by accident.
+function SchedulingLinks({
+  nodeKey, label, phases, index, open, disabled, onOpen, onToggle, onRetype,
 }: {
   nodeKey: string;
   label: string;
@@ -81,13 +92,14 @@ function DependsOn({
   disabled: boolean;
   onOpen: (next: boolean) => void;
   onToggle: (dep: string) => void;
+  onRetype: (dep: string, type: DepType) => void;
 }) {
   const deps = dependsOnOf(phases, nodeKey);
   const groups = useMemo(
     () => (open ? dependencyChoices(phases, nodeKey) : []),
     [open, phases, nodeKey],
   );
-  const selected = new Set(deps);
+  const selected = new Set(deps.map((d) => d.on));
 
   return (
     <div className="pbx-deps">
@@ -95,26 +107,40 @@ function DependsOn({
         type="button"
         className={`pbx-depbtn${deps.length ? ' has-deps' : ''}`}
         aria-expanded={open}
-        aria-label={`Depends on — choose what “${label}” must follow`}
-        title="Depends on"
+        aria-label={`Scheduling links — choose what “${label}” is scheduled against`}
+        title="Link this stage to another one’s dates"
         disabled={disabled}
         onClick={() => onOpen(!open)}
       >
-        ⇠ Depends on{deps.length ? ` · ${deps.length}` : ''}
+        ⇠ Link to a stage{deps.length ? ` · ${deps.length}` : ''}
       </button>
 
-      {deps.map((k) => {
-        const n = index.get(k);
+      {deps.map((d) => {
+        const n = index.get(d.on);
         if (!n) return null;
         return (
-          <span key={k} className="pbx-dep-chip">
-            {n.label}
+          <span key={d.on} className="pbx-dep-chip">
+            {/* The type sits FIRST, so the chip reads as a sentence:
+                "Starts after · 1.2 Design & Engineering". */}
+            <select
+              className="pbx-dep-type"
+              value={d.type}
+              aria-label={`How “${label}” is scheduled against ${n.label}`}
+              title={`This stage ${DEP_HINTS[d.type]}`}
+              disabled={disabled}
+              onChange={(e) => onRetype(d.on, e.target.value as DepType)}
+            >
+              {DEP_TYPES.map((t) => (
+                <option key={t} value={t}>{DEP_LABELS[t]}</option>
+              ))}
+            </select>
+            <span className="pbx-dep-name">{n.label}</span>
             <button
               type="button"
               className="pbx-dep-x"
-              aria-label={`Remove dependency on ${n.label}`}
+              aria-label={`Remove the scheduling link to ${n.label}`}
               disabled={disabled}
-              onClick={() => onToggle(k)}
+              onClick={() => onToggle(d.on)}
             >✕</button>
           </span>
         );
@@ -128,15 +154,15 @@ function DependsOn({
           <div
             className="pbx-dep-pop"
             role="group"
-            aria-label={`What ${label} depends on`}
+            aria-label={`What ${label} is scheduled against`}
             onKeyDown={(e) => { if (e.key === 'Escape') onOpen(false); }}
           >
             <p className="pbx-dep-hint">
-              Pick the stages that must finish first. Anything that would loop back on this
-              one is left out.
+              Pick the stages this one is scheduled against — you say how each link works on
+              the chip afterwards. Anything that would loop back on this one is left out.
             </p>
             {groups.length === 0 ? (
-              <p className="pbx-dep-empty">Nothing else in this plan to depend on yet.</p>
+              <p className="pbx-dep-empty">Nothing else in this plan to link to yet.</p>
             ) : groups.map((g) => (
               <div key={g.phase.key} className="pbx-dep-group">
                 <p className="pbx-dep-grouphd">{g.phase.label}</p>
@@ -247,6 +273,12 @@ export function PlanBuildEditor({
 
   const toggleDep = useCallback((nodeKey: string, dep: string) => {
     apply(toggleDependency(phases, nodeKey, dep));
+  }, [apply, phases]);
+
+  // Re-typing a link is a plan edit like any other: same `apply`, so a stale
+  // cycle error clears the moment the author touches the graph.
+  const retypeDep = useCallback((nodeKey: string, dep: string, type: DepType) => {
+    apply(setDependencyType(phases, nodeKey, dep, type));
   }, [apply, phases]);
 
   const assign = useCallback((nodeKey: string, partyId: string | null) => {
@@ -578,9 +610,9 @@ export function PlanBuildEditor({
                 </>
               ) : null}
 
-              <span className="pbx-drawer-label">Depends on</span>
+              <span className="pbx-drawer-label">Scheduling links</span>
               {activeKey ? (
-                <DependsOn
+                <SchedulingLinks
                   nodeKey={activeKey}
                   label={index.get(activeKey)?.label ?? 'this stage'}
                   phases={phases}
@@ -589,6 +621,7 @@ export function PlanBuildEditor({
                   disabled={submitting}
                   onOpen={(next) => setOpenDeps(next ? activeKey : null)}
                   onToggle={(dep) => toggleDep(activeKey, dep)}
+                  onRetype={(dep, type) => retypeDep(activeKey, dep, type)}
                 />
               ) : null}
             </div>
