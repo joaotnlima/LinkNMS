@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import {
   parseDay, formatDay, addDays, diffDays,
   ganttWindow, barGeom, daysFromPixels,
-  moveBar, resizeStart, resizeEnd, applyDrag,
+  moveBar, resizeStart, resizeEnd, applyDrag, scheduleWindow, clickDates,
 } from './plan-gantt.ts';
 
 test('parseDay: UTC round-trip, rejects blanks and impossible days', () => {
@@ -144,4 +144,35 @@ test('applyDrag: a zero-day drag is a no-op; dispatches by mode', () => {
     applyDrag('resize-end', '2026-03-10', '2026-03-12', 56, 28),
     { start: '2026-03-10', end: '2026-03-14' },
   );
+});
+
+// ── Always-visible timeline (LINA-248) ───────────────────────────────────────
+
+test('scheduleWindow: undated plan gets a today-anchored canvas', () => {
+  const win = scheduleWindow([{ start: '', end: '' }], '2026-09-11');
+  assert.ok(win);
+  assert.equal(win.startDay, '2026-09-08'); // today − 3 pad
+  assert.equal(win.days, 42);
+  assert.equal(win.endDay, '2026-10-19');
+});
+
+test('scheduleWindow: dated plan keeps its envelope, extended to minDays', () => {
+  // One short task → envelope is 1 + 2·3 pad = 7 days, extended right to 42.
+  const win = scheduleWindow([{ start: '2026-03-10', end: '2026-03-10' }], '2026-09-11');
+  assert.equal(win.startDay, '2026-03-07');
+  assert.equal(win.days, 42);
+  // A wide plan is left alone.
+  const wide = scheduleWindow([{ start: '2026-01-01', end: '2026-06-30' }], '2026-09-11');
+  assert.equal(wide.days, diffDays('2026-01-01', '2026-06-30') + 1 + 6);
+});
+
+test('scheduleWindow: garbage today with no dates → null (no canvas to draw)', () => {
+  assert.equal(scheduleWindow([], 'not-a-day'), null);
+});
+
+test('clickDates: plants a one-week bar on the clicked day, clamped to the window', () => {
+  const win = { startDay: '2026-09-08', endDay: '2026-10-19', days: 42 };
+  assert.deepEqual(clickDates(win, 3), { start: '2026-09-11', end: '2026-09-18' });
+  assert.deepEqual(clickDates(win, -5), { start: '2026-09-08', end: '2026-09-15' }); // clamp low
+  assert.deepEqual(clickDates(win, 99).start, '2026-10-19'); // clamp high
 });
