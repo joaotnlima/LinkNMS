@@ -98,6 +98,52 @@ export function ganttWindow(
   };
 }
 
+/**
+ * The window the ALWAYS-VISIBLE timeline spans (LINA-248). The Gantt is no
+ * longer a toggled view, so it needs a canvas even when nothing is dated yet —
+ * otherwise there is nowhere to click a first bar into being. Dated plans get
+ * the usual envelope (ganttWindow); an undated plan gets `minDays` columns
+ * anchored a `pad` before today. A dated window narrower than `minDays` is
+ * extended to the right so early one-task plans still leave room to schedule
+ * the rest by pointer.
+ */
+export function scheduleWindow(
+  tasks: ReadonlyArray<{ start: string; end: string }>,
+  todayIso: string,
+  pad = 3,
+  minDays = 42,
+): GanttWindow | null {
+  const dated = ganttWindow(tasks, pad);
+  const base = dated ?? (() => {
+    const t = parseDay(todayIso);
+    if (t === null) return null;
+    const start = t - pad * MS_PER_DAY;
+    return {
+      startDay: formatDay(start),
+      endDay: formatDay(start + (minDays - 1) * MS_PER_DAY),
+      days: minDays,
+    };
+  })();
+  if (base === null) return null;
+  if (base.days >= minDays) return base;
+  return {
+    startDay: base.startDay,
+    endDay: addDays(base.startDay, minDays - 1),
+    days: minDays,
+  };
+}
+
+/**
+ * Click-to-schedule (LINA-248): a click on an empty track at day column
+ * `dayOffset` plants a bar there — start on the clicked day, finish one week
+ * later — which the author then drags wherever they see fit.
+ */
+export function clickDates(win: GanttWindow, dayOffset: number): Dates {
+  const clamped = Math.max(0, Math.min(win.days - 1, Math.floor(dayOffset)));
+  const start = addDays(win.startDay, clamped);
+  return { start, end: addDays(start, 7) };
+}
+
 // ── Bar geometry ─────────────────────────────────────────────────────────────
 
 export interface BarGeom {

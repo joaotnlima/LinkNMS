@@ -296,18 +296,132 @@
   .pbx-drawer { width: 100%; border-left: none; }
 }
 
-/* ── List / Timeline toggle (LINA-236) ────────────────────────────────────── */
-.pbx-toolbar-r { display: inline-flex; align-items: center; gap: var(--s3); }
-.pbx-viewtog {
-  display: inline-flex; padding: 2px; gap: 2px;
-  border: 1px solid var(--outline); border-radius: 999px; background: var(--sunken);
+/* ── The unified plan grid (LINA-248) ─────────────────────────────────────────
+   One face, not two: the editable table on the left and the Gantt canvas on the
+   right, row-aligned by fixed heights the component sets inline. The pgt-*
+   canvas classes (axis, tracks, bars, handles) carry over from LINA-236/244
+   unchanged — only the left pane grew from labels into the table. */
+.pbx--grid { max-width: none; }
+
+.pgd {
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl); overflow: hidden; background: var(--paper);
 }
-.pbx-viewtab {
-  border: none; background: transparent; color: var(--muted);
-  padding: 5px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer;
+.pgd-grid { display: grid; grid-template-columns: minmax(560px, 46%) 1fr; }
+.pgd-table { border-right: 1px solid var(--outline); min-width: 0; }
+
+/* One template for the header and every row: grip · id · name · specialty ·
+   owner · start · finish · actions. The name cell is the one that flexes. */
+.pgd-hdr, .pgd-row {
+  display: grid; align-items: center; gap: var(--s2);
+  grid-template-columns: 20px 34px minmax(90px, 1fr) 96px 30px 112px 112px 92px;
+  padding: 0 var(--s2);
 }
-.pbx-viewtab:hover { color: var(--fg); }
-.pbx-viewtab.is-on { background: var(--paper); color: var(--fg); box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 12%, transparent); }
+.pgd-hdr {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--muted); border-bottom: 1px solid var(--outline); background: var(--sunken);
+}
+.pgd-hdr-owner { justify-self: center; }
+
+.pgd-row { border-bottom: 1px solid var(--outline); cursor: pointer; }
+.pgd-row:hover { background: var(--sunken); }
+.pgd-row.is-dragging { opacity: 0.45; }
+.pgd-row.is-cycle { outline: 1px solid var(--danger); outline-offset: -1px; }
+
+.pgd-row-phase {
+  background: var(--sunken); font-weight: 700;
+}
+.pgd-row-phase .pgd-nametxt { color: var(--fg); text-transform: none; }
+.pgd-row-phase .pgd-id { color: var(--plan-baseline); }
+
+/* The third level indents its name, same demotion as everywhere else. */
+.pgd-row-sub .pgd-name { padding-left: 16px; font-size: 12px; color: var(--muted); }
+.pgd-row-sub .pgd-id { font-size: 10px; }
+
+.pgd-id {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  white-space: nowrap; overflow: hidden;
+}
+.pgd-name { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
+.pgd-nametxt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pgd-untitled { font-style: normal; color: var(--muted); }
+.pgd-nameinput {
+  width: 100%; min-width: 0; font: inherit; font-size: 13px;
+  border: 1px solid var(--plan-baseline); background: var(--paper); border-radius: 6px;
+  padding: 4px 6px; color: var(--fg);
+}
+.pgd-nameinput:focus { outline: none; }
+
+.pgd-trade { min-width: 0; }
+.pgd-tradeinput {
+  width: 100%; min-width: 0; font: inherit; font-size: 12px;
+  border: 1px solid transparent; border-bottom-color: var(--outline);
+  background: transparent; color: var(--fg); padding: 2px 4px;
+}
+.pgd-tradeinput:hover:not(:disabled) { border-bottom-color: var(--outline-strong); }
+.pgd-tradeinput:focus-visible { outline: 2px solid var(--owner); outline-offset: 0; }
+.pgd-tradeinput:disabled { opacity: 0.5; }
+
+/* Owner: the avatar states who — the unassigned ring when nobody — and the
+   member <select> sits invisibly on top of it, so clicking the circle opens
+   the dropdown of everyone invited to this build (founder ask 1). */
+.pgd-owner { position: relative; display: inline-grid; place-items: center; justify-self: center; }
+.pgd-ownersel {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer;
+}
+.pgd-ownersel:disabled { cursor: default; }
+.pgd-owner:has(.pgd-ownersel:focus-visible) { outline: 2px solid var(--owner); border-radius: 999px; }
+
+.pgd-datecell { min-width: 0; }
+.pgd-date {
+  width: 100%; min-width: 0; font: inherit; font-size: 12px;
+  border: 1px solid transparent; background: transparent; border-radius: 6px;
+  padding: 4px 4px; color: var(--fg);
+}
+.pgd-date:hover:not(:disabled) { border-color: var(--outline); }
+.pgd-date:focus { outline: none; border-color: var(--plan-baseline); background: var(--paper); }
+
+.pgd-ctl { display: inline-flex; gap: 3px; justify-content: flex-end; }
+.pgd-ctl .pbx-icon { width: 26px; height: 26px; font-size: 12px; }
+
+.pgd-addrow { display: flex; align-items: center; padding: 0 var(--s2); border-bottom: 1px solid var(--outline); }
+.pgd-add {
+  border: none; background: transparent; color: var(--plan-baseline);
+  padding: 4px 8px; cursor: pointer; font-size: 12px; font-weight: 600;
+}
+.pgd-add:hover:not(:disabled) { text-decoration: underline; }
+.pgd-add:disabled { opacity: 0.5; cursor: default; }
+
+/* Canvas extras. The phase track carries a muted derived envelope bar; a
+   clickable (undated) track invites the first click; today is a hairline. */
+.pgd-track-add { border-bottom: 1px solid var(--outline); }
+.pgt-track.is-clickable { cursor: copy; }
+.pgt-track.is-clickable:hover { background: color-mix(in srgb, var(--plan-baseline) 5%, transparent); }
+.pgd-envbar {
+  position: absolute; top: 12px; height: 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--plan-baseline) 45%, var(--paper));
+  pointer-events: none;
+}
+.pgd-today {
+  position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none;
+  background: color-mix(in srgb, var(--warn-fg, #b45309) 55%, transparent);
+}
+
+.pgd-hint { color: var(--muted); font-size: 13px; margin: 0; }
+
+/* The drawer's meta block (LINA-248): label / control pairs. */
+.pbx-drawer-meta {
+  display: grid; grid-template-columns: 92px 1fr; gap: var(--s2) var(--s3); align-items: center;
+}
+.pbx-drawer-meta .pbx-tradeinput { width: 100%; }
+.pbx-drawer-meta .pbx-deps { padding: 0; }
+
+@media (max-width: 960px) {
+  /* Narrow screens stack the panes: table first, timeline under it. The rows
+     no longer align 1:1, so the canvas keeps its own axis for orientation. */
+  .pgd-grid { grid-template-columns: 1fr; }
+  .pgd-table { border-right: none; border-bottom: 1px solid var(--outline); }
+}
 
 /* ── Gantt timeline (LINA-236) ────────────────────────────────────────────── */
 .pgt {
