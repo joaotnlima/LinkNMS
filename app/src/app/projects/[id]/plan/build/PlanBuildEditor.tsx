@@ -40,7 +40,8 @@ import Link from 'next/link';
 
 import {
   PlanAuthorError,
-  addPhase, addSubtask, addTask, authorPlan, dependencyChoices, dependsOnOf, detectCycle, nodeIndex,
+  addPhase, addSubtask, addTask, authorPlan, demoteNode, dependencyChoices, dependsOnOf, detectCycle, nodeIndex,
+  promoteNode,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
   reorderPhase, reorderSubtask, reorderTask,
   seedSkeleton, setAssignee, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
@@ -378,6 +379,8 @@ export function PlanBuildEditor({
         onReorderPhase={(from, to) => apply(reorderPhase(phases, from, to))}
         onReorderTask={(pi, from, to) => apply(reorderTask(phases, pi, from, to))}
         onReorderSubtask={(pi, ti, from, to) => apply(reorderSubtask(phases, pi, ti, from, to))}
+        onPromote={(pi, ti, si) => apply(promoteNode(phases, pi, ti, si))}
+        onDemote={(pi, ti, si) => apply(demoteNode(phases, pi, ti, si))}
       />
 
       <p className="pgd-hint">

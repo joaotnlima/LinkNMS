@@ -24,6 +24,8 @@ import {
   moveSubtask, reorderSubtask, subtaskCount,
   // Owner + specialty (LINA-235/246).
   setAssignee, setTrade, stageMeta,
+  // Child-status meter + WBS promote/demote (LINA-259).
+  childStatusCounts, promoteNode, demoteNode,
 } from './plan-authoring.ts';
 
 test('skeleton: three phases, names only, no dates or sub-tasks (the issue scope)', () => {
@@ -595,4 +597,118 @@ test('hydrateDraft: assignee + trade round-trip, and a stage with neither is una
   const wire = toWire(phases);
   assert.equal(wire[0].assigneePartyId, 'p-owner');
   assert.equal(wire[0].children[1].children[0].trade, 'Wiring');
+});
+
+// ── Child-status meter (LINA-259 ask 5) ──────────────────────────────────────
+
+test('childStatusCounts: a fresh draft is honestly all not-started (no fabricated progress)', () => {
+  const phases = seedSkeleton();
+  const c = childStatusCounts(phases[0]); // a phase counts its tasks
+  assert.equal(c.total, phases[0].tasks.length);
+  assert.equal(c.done, 0);
+  assert.equal(c.inProgress, 0);
+  assert.equal(c.notStarted, c.total);
+
+  // A leaf task (no sub-tasks) has an all-zero meter — the caller draws none.
+  assert.deepEqual(childStatusCounts(phases[0].tasks[0]), { done: 0, inProgress: 0, notStarted: 0, total: 0 });
+});
+
+test('childStatusCounts: derives from an optional status, folding blocked into in-progress', () => {
+  // Statuses only ever arrive via hydration (never authored); simulate a live plan.
+  const phases = hydrateDraft([
+    {
+      id: 'p', name: 'Phase',
+      children: [
+        { id: 't1', name: 'Done', status: 'done', children: [] },
+        { id: 't2', name: 'Going', status: 'in_progress', children: [] },
+        { id: 't3', name: 'Stuck', status: 'blocked', children: [] },
+        { id: 't4', name: 'Fresh', children: [] }, // no status → not_started
+      ],
+    },
+  ]);
+  const c = childStatusCounts(phases[0]);
+  assert.deepEqual(c, { done: 1, inProgress: 2, notStarted: 1, total: 4 });
+  // The optional status survives hydration but authoring never sets it.
+  assert.equal(phases[0].tasks[0].status, 'done');
+  assert.equal(phases[0].tasks[3].status, undefined);
+});
+
+// ── WBS promote / demote (LINA-259 ask 7) ────────────────────────────────────
+
+test('promoteNode: an L3 sub-task becomes an L2 task right after its former parent', () => {
+  let phases = [emptyPhase('Phase')];
+  phases = addTask(phases, 0); // task A at ti 0
+  phases = renameTask(phases, 0, 0, 'A');
+  phases = addTask(phases, 0); // task B at ti 1
+  phases = renameTask(phases, 0, 1, 'B');
+  phases = addSubtask(phases, 0, 0); // sub under A
+  phases = renameSubtask(phases, 0, 0, 0, 'A.1');
+  const subKey = phases[0].tasks[0].children[0].key;
+
+  const out = promoteNode(phases, 0, 0, 0);
+  assert.equal(out[0].tasks.length, 3);
+  assert.equal(out[0].tasks[0].name, 'A');
+  assert.equal(out[0].tasks[0].children.length, 0, 'sub left its former parent');
+  assert.equal(out[0].tasks[1].key, subKey, 'sub inserted right after its parent');
+  assert.equal(out[0].tasks[1].name, 'A.1');
+  assert.equal(out[0].tasks[2].name, 'B');
+  // Pure: original untouched.
+  assert.equal(phases[0].tasks[0].children.length, 1);
+});
+
+test('promoteNode: an L2 task cannot climb above phase level (no-op)', () => {
+  let phases = [emptyPhase('Phase')];
+  phases = addTask(phases, 0);
+  phases = renameTask(phases, 0, 0, 'A');
+  assert.equal(promoteNode(phases, 0, 0), phases, 'same array, unchanged');
+});
+
+test('demoteNode: an L2 task nests under its preceding sibling as an L3 sub-task', () => {
+  let phases = [emptyPhase('Phase')];
+  phases = addTask(phases, 0);
+  phases = renameTask(phases, 0, 0, 'A');
+  phases = addTask(phases, 0);
+  phases = renameTask(phases, 0, 1, 'B');
+  const bKey = phases[0].tasks[1].key;
+
+  const out = demoteNode(phases, 0, 1);
+  assert.equal(out[0].tasks.length, 1, 'B left the task list');
+  assert.equal(out[0].tasks[0].name, 'A');
+  assert.equal(out[0].tasks[0].children.length, 1);
+  assert.equal(out[0].tasks[0].children[0].key, bKey);
+  assert.equal(out[0].tasks[0].children[0].name, 'B');
+  // toWire keeps it three levels deep — never throws too_deep.
+  const wire = toWire(out);
+  assert.equal(wire[0].children[0].children[0].name, 'B');
+});
+
+test('demoteNode: the guards — first sibling, a task with children, and an L3 sub are all no-ops', () => {
+  let phases = [emptyPhase('Phase')];
+  phases = addTask(phases, 0); // A
+  phases = renameTask(phases, 0, 0, 'A');
+  phases = addTask(phases, 0); // B
+  phases = renameTask(phases, 0, 1, 'B');
+  phases = addSubtask(phases, 0, 1); // B has a child now
+  phases = renameSubtask(phases, 0, 1, 0, 'B.1');
+
+  // First sibling A has nothing to nest under.
+  assert.equal(demoteNode(phases, 0, 0), phases);
+  // B has a child — demoting it would create a fourth level.
+  assert.equal(demoteNode(phases, 0, 1), phases);
+  // An L3 sub-task cannot demote further.
+  assert.equal(demoteNode(phases, 0, 1, 0), phases);
+});
+
+test('promote/demote never produce a too-deep tree (round-trip through toWire)', () => {
+  let phases = [emptyPhase('Phase')];
+  phases = addTask(phases, 0);
+  phases = renameTask(phases, 0, 0, 'A');
+  phases = addSubtask(phases, 0, 0);
+  phases = renameSubtask(phases, 0, 0, 0, 'A.1');
+  // Promote the sub to L2, then demote it back under A — a round trip.
+  let out = promoteNode(phases, 0, 0, 0); // A.1 now an L2 task at ti 1
+  out = demoteNode(out, 0, 1); // back under A as a sub-task
+  assert.doesNotThrow(() => toWire(out));
+  assert.equal(out[0].tasks.length, 1);
+  assert.equal(out[0].tasks[0].children.length, 1);
 });
