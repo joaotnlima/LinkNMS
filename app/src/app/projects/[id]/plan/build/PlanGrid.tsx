@@ -20,8 +20,14 @@
 //      LINA-236 math, untouched). An undated plan still gets a canvas: the
 //      window falls back to today (scheduleWindow).
 //   4. CLICKING THE ROW opens the detail drawer (the editor owns it). The name
-//      is text, not a permanent input — the ✎ button on the row is the one way
-//      to rename in place, so a click on the row is never a rename by accident.
+//      is text, not a permanent input — the ✎ button, sitting RIGHT BESIDE the
+//      name (founder follow-up, 2026-09-11), is the one way to rename in place,
+//      so a click on the row is never a rename by accident. While the input is
+//      open a ✓ button beside it commits the name (Enter and clicking away
+//      commit too — the ✓ is the visible affordance).
+//   5. ADDING a phase/task/sub-task drops the new row straight into rename mode
+//      with the input focused (founder follow-up): the add callbacks return the
+//      fresh node's key and the grid opens the editor on it.
 //
 // This component owns no draft state — every edit calls back into the editor's
 // pure ops (@/lib/plan-authoring), exactly as the old list and Gantt did.
@@ -94,9 +100,10 @@ export interface PlanGridProps {
   onDates: (pi: number, ti: number, start: string, end: string, si?: number) => void;
   onAssign: (nodeKey: string, partyId: string | null) => void;
   onTrade: (nodeKey: string, trade: string) => void;
-  onAddPhase: () => void;
-  onAddTask: (pi: number) => void;
-  onAddSubtask: (pi: number, ti: number) => void;
+  /** Add ops return the NEW node's key so the grid can open rename on it. */
+  onAddPhase: () => string;
+  onAddTask: (pi: number) => string;
+  onAddSubtask: (pi: number, ti: number) => string;
   onRemovePhase: (pi: number) => void;
   onRemoveTask: (pi: number, ti: number) => void;
   onRemoveSubtask: (pi: number, ti: number, si: number) => void;
@@ -208,26 +215,48 @@ export function PlanGrid(props: PlanGridProps) {
     const key = r.kind === 'add' ? '' : r.key;
     if (editing === key) {
       return (
-        <input
-          className="pgd-nameinput"
-          value={value}
-          placeholder={isPhase ? 'Phase name' : 'Task name'}
-          aria-label={`${isPhase ? 'Phase' : 'Task'} ${id} name`}
-          autoFocus
-          disabled={disabled}
-          onChange={(e) => props.onRename(
-            e.target.value, r.pi,
-            r.kind === 'task' ? r.ti : undefined, r.kind === 'task' ? r.si : undefined,
-          )}
-          onBlur={() => setEditing(null)}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setEditing(null); }}
-        />
+        <>
+          <input
+            className="pgd-nameinput"
+            value={value}
+            placeholder={isPhase ? 'Phase name' : 'Task name'}
+            aria-label={`${isPhase ? 'Phase' : 'Task'} ${id} name`}
+            autoFocus
+            disabled={disabled}
+            onChange={(e) => props.onRename(
+              e.target.value, r.pi,
+              r.kind === 'task' ? r.ti : undefined, r.kind === 'task' ? r.si : undefined,
+            )}
+            onBlur={() => setEditing(null)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setEditing(null); }}
+          />
+          {/* The visible "commit" affordance the founder asked for. The input's
+              blur already commits, so this button only needs to exist — clicking
+              it blurs the input and both paths end the same way. */}
+          <button
+            type="button"
+            className="pbx-icon pgd-nameok"
+            title="Confirm name"
+            aria-label={`Confirm ${isPhase ? 'phase' : 'task'} ${id} name`}
+            onClick={() => setEditing(null)}
+          >✓</button>
+        </>
       );
     }
     return (
-      <span className="pgd-nametxt" title={value}>
-        {value.trim() || <em className="pgd-untitled">{isPhase ? 'Untitled phase' : 'Untitled task'}</em>}
-      </span>
+      <>
+        <span className="pgd-nametxt" title={value}>
+          {value.trim() || <em className="pgd-untitled">{isPhase ? 'Untitled phase' : 'Untitled task'}</em>}
+        </span>
+        <button
+          type="button"
+          className="pbx-icon pgd-namedit"
+          title={isPhase ? 'Rename phase' : 'Rename task'}
+          aria-label={`Rename ${isPhase ? 'phase' : 'task'} ${id}`}
+          disabled={disabled}
+          onClick={() => setEditing(key)}
+        >✎</button>
+      </>
     );
   }, [editing, disabled, props]);
 
@@ -270,7 +299,7 @@ export function PlanGrid(props: PlanGridProps) {
               return (
                 <div key={`add-${r.pi}`} className="pgd-addrow" style={{ height: H.add }}>
                   <button type="button" className="pgd-add" disabled={disabled}
-                    onClick={() => props.onAddTask(r.pi)}>+ Add task</button>
+                    onClick={() => setEditing(props.onAddTask(r.pi))}>+ Add task</button>
                 </div>
               );
             }
@@ -311,9 +340,6 @@ export function PlanGrid(props: PlanGridProps) {
                   {owner(r.key, r.phase.assigneePartyId, `phase ${r.pi + 1}`)}
                   <span className="pgd-datecell" /><span className="pgd-datecell" />
                   <span className="pgd-ctl">
-                    <button type="button" className="pbx-icon" title="Rename phase"
-                      aria-label={`Rename phase ${r.pi + 1}`} disabled={disabled}
-                      onClick={() => setEditing(r.key)}>✎</button>
                     <button type="button" className="pbx-icon pbx-del" title="Remove phase"
                       disabled={disabled} onClick={() => props.onRemovePhase(r.pi)}>✕</button>
                   </span>
@@ -385,13 +411,10 @@ export function PlanGrid(props: PlanGridProps) {
                   />
                 </span>
                 <span className="pgd-ctl">
-                  <button type="button" className="pbx-icon" title={`Rename ${what}`}
-                    aria-label={`Rename ${what} ${id}`} disabled={disabled}
-                    onClick={() => setEditing(r.key)}>✎</button>
                   {!sub ? (
                     <button type="button" className="pbx-icon" title="Add sub-task"
                       aria-label={`Add a sub-task under ${what} ${id}`} disabled={disabled}
-                      onClick={() => props.onAddSubtask(r.pi, r.ti)}>＋</button>
+                      onClick={() => setEditing(props.onAddSubtask(r.pi, r.ti))}>＋</button>
                   ) : null}
                   <button type="button" className="pbx-icon pbx-del" title={`Remove ${what}`}
                     disabled={disabled}
@@ -404,7 +427,8 @@ export function PlanGrid(props: PlanGridProps) {
           })}
 
           <div className="pgd-addrow" style={{ height: H.add }}>
-            <button type="button" className="pgd-add" disabled={disabled} onClick={props.onAddPhase}>
+            <button type="button" className="pgd-add" disabled={disabled}
+              onClick={() => setEditing(props.onAddPhase())}>
               + Add phase
             </button>
           </div>
