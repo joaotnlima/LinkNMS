@@ -36,11 +36,13 @@ import {
   addPhase, addSubtask, addTask, authorPlan, dependencyChoices, dependsOnOf, detectCycle, nodeIndex,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
   reorderPhase, reorderSubtask, reorderTask,
-  seedSkeleton, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
-  setTaskDate, setTaskDates, setTaskDescription,
+  seedSkeleton, setAssignee, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
+  setTaskDate, setTaskDates, setTaskDescription, setTrade, stageMeta,
   subtaskCount, taskCount, toggleDependency, toWire,
   type PhaseDraft, type PlanNodeRef,
 } from '@/lib/plan-authoring';
+import { PartyAvatar, TradeChip, UnassignedAvatar } from '@/components/PartyAvatar';
+import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 import { PlanGantt } from './PlanGantt';
 import '@/components/plan-build.css';
 
@@ -145,12 +147,104 @@ function DependsOn({
   );
 }
 
+// ── Owner + specialty (LINA-235/246, ADR-0017 annex 3) ──────────────────────
+// The meta row under every stage: WHO owns it, WHAT trade it is, and WHAT it
+// waits on. One row at all three levels — a phase can belong to a trade end to
+// end, a task to one person, a sub-task to a different sub — so there is no
+// reason for a per-level variant, and `setAssignee`/`setTrade` address a stage
+// by key exactly as `setDependsOn` does.
+//
+// THE PICKER IS SEEDED FROM THE PROJECT MEMBERS AND NOTHING ELSE. It is a plain
+// <select> of the parties this build already holds, plus "Unassigned". There is
+// no free-text party field and no invite-from-here: an id the project does not
+// know comes back `400 unknown_assignee`, and a picker that could produce one
+// would be an invitation to hit it. If the person who should own a stage is not
+// in this list, they are not on the build yet — which is an invite, not a typo.
+//
+// ASSIGNING GRANTS NOTHING. Naming a party here records who is expected to do
+// the work. It does not widen what they can read or write by one field — their
+// membership role decides that, before and after (annex 3). Nothing on this
+// screen or behind it consults the assignee to authorise anything.
+function StageMeta({
+  nodeKey, label, phases, index, parties, open, disabled, onOpen, onToggle, onAssign, onTrade,
+}: {
+  nodeKey: string;
+  label: string;
+  phases: PhaseDraft[];
+  index: Map<string, PlanNodeRef>;
+  parties: PartyRef[];
+  open: boolean;
+  disabled: boolean;
+  onOpen: (next: boolean) => void;
+  onToggle: (dep: string) => void;
+  onAssign: (partyId: string | null) => void;
+  onTrade: (trade: string) => void;
+}) {
+  const meta = stageMeta(phases, nodeKey);
+  const dir = useMemo(() => partyIndex(parties), [parties]);
+  const owner = partyOf(dir, meta.assigneePartyId);
+
+  return (
+    <div className="pbx-meta">
+      <div className="pbx-owner">
+        {owner ? <PartyAvatar party={owner} size="md" /> : <UnassignedAvatar size="md" />}
+        <select
+          className="pbx-ownersel"
+          value={meta.assigneePartyId ?? ''}
+          aria-label={`Owner of ${label}`}
+          disabled={disabled || parties.length === 0}
+          onChange={(e) => onAssign(e.target.value || null)}
+        >
+          <option value="">Unassigned</option>
+          {parties.map((p) => (
+            <option key={p.partyId} value={p.partyId}>
+              {p.name} · {roleWord(p.role)}
+            </option>
+          ))}
+          {/* An owner the directory no longer holds stays selectable rather than
+              silently snapping to "Unassigned" — clearing someone's name is an
+              edit, and an edit is the author's to make. */}
+          {meta.assigneePartyId && !dir.has(meta.assigneePartyId) ? (
+            <option value={meta.assigneePartyId}>{owner?.name}</option>
+          ) : null}
+        </select>
+      </div>
+
+      <label className="pbx-tradefield">
+        <span className="pbx-tradelbl">Trade</span>
+        <input
+          className="pbx-tradeinput"
+          value={meta.trade}
+          placeholder="e.g. Electrical"
+          maxLength={120}
+          aria-label={`Trade for ${label}`}
+          disabled={disabled}
+          onChange={(e) => onTrade(e.target.value)}
+        />
+      </label>
+
+      <DependsOn
+        nodeKey={nodeKey}
+        label={label}
+        phases={phases}
+        index={index}
+        open={open}
+        disabled={disabled}
+        onOpen={onOpen}
+        onToggle={onToggle}
+      />
+    </div>
+  );
+}
+
 export function PlanBuildEditor({
-  projectId, initialPhases,
+  projectId, initialPhases, parties = [],
 }: {
   projectId: string;
   /** An existing saved draft to resume editing; absent → seed the skeleton. */
   initialPhases?: PhaseDraft[];
+  /** The project's members — the ONLY parties a stage may be assigned to. */
+  parties?: PartyRef[];
 }) {
   const router = useRouter();
   const resuming = initialPhases != null && initialPhases.length > 0;
@@ -213,6 +307,14 @@ export function PlanBuildEditor({
 
   const toggleDep = useCallback((nodeKey: string, dep: string) => {
     apply(toggleDependency(phases, nodeKey, dep));
+  }, [apply, phases]);
+
+  const assign = useCallback((nodeKey: string, partyId: string | null) => {
+    apply(setAssignee(phases, nodeKey, partyId));
+  }, [apply, phases]);
+
+  const retrade = useCallback((nodeKey: string, trade: string) => {
+    apply(setTrade(phases, nodeKey, trade));
   }, [apply, phases]);
 
   const reset = useCallback(() => apply(seedSkeleton()), [apply]);
@@ -284,6 +386,16 @@ export function PlanBuildEditor({
       }
       if (e instanceof PlanAuthorError && e.code === 'unknown_dependency') {
         setError(`“${e.details?.stage ?? 'A stage'}” depends on something that is no longer in this plan. Remove that link and save again.`);
+        setSubmitting(false);
+        return;
+      }
+      // The project's member list is the picker's whole universe, so this should
+      // not be reachable — but a member removed from the build between the page
+      // load and the save makes it reachable, and the honest answer is to name
+      // the cause rather than restate the server's field-level wording.
+      if (e instanceof PlanAuthorError
+        && (e.code === 'unknown_assignee' || e.code === 'invalid_assignee')) {
+        setError('One of the owners on this plan is no longer on this build. Reload the page and pick again.');
         setSubmitting(false);
         return;
       }
@@ -385,17 +497,21 @@ export function PlanBuildEditor({
               </span>
             </div>
 
-            {/* A phase is a stage like any other — it may follow another phase,
-                or a single task in one (scope = any-stage, ADR-0017 annex 2). */}
-            <DependsOn
+            {/* A phase is a stage like any other — it may be owned, tagged with a
+                trade, and may follow another phase or a single task in one
+                (scope = any-stage, ADR-0017 annex 2). */}
+            <StageMeta
               nodeKey={phase.key}
               label={index.get(phase.key)?.label ?? `Phase ${pi + 1}`}
               phases={phases}
               index={index}
+              parties={parties}
               open={openDeps === phase.key}
               disabled={submitting}
               onOpen={(next) => setOpenDeps(next ? phase.key : null)}
               onToggle={(dep) => toggleDep(phase.key, dep)}
+              onAssign={(partyId) => assign(phase.key, partyId)}
+              onTrade={(trade) => retrade(phase.key, trade)}
             />
 
             <div className="pbx-tasks">
@@ -457,15 +573,18 @@ export function PlanBuildEditor({
                       onClick={() => apply(removeTask(phases, pi, ti))}>✕</button>
                   </span>
                 </div>
-                <DependsOn
+                <StageMeta
                   nodeKey={task.key}
                   label={index.get(task.key)?.label ?? 'this task'}
                   phases={phases}
                   index={index}
+                  parties={parties}
                   open={openDeps === task.key}
                   disabled={submitting}
                   onOpen={(next) => setOpenDeps(next ? task.key : null)}
                   onToggle={(dep) => toggleDep(task.key, dep)}
+                  onAssign={(partyId) => assign(task.key, partyId)}
+                  onTrade={(trade) => retrade(task.key, trade)}
                 />
 
                 {/* The third level (LINA-243). A sub-task is a stage like any
@@ -530,15 +649,18 @@ export function PlanBuildEditor({
                               onClick={() => apply(removeSubtask(phases, pi, ti, si))}>✕</button>
                           </span>
                         </div>
-                        <DependsOn
+                        <StageMeta
                           nodeKey={sub.key}
                           label={index.get(sub.key)?.label ?? 'this sub-task'}
                           phases={phases}
                           index={index}
+                          parties={parties}
                           open={openDeps === sub.key}
                           disabled={submitting}
                           onOpen={(next) => setOpenDeps(next ? sub.key : null)}
                           onToggle={(dep) => toggleDep(sub.key, dep)}
+                          onAssign={(partyId) => assign(sub.key, partyId)}
+                          onTrade={(trade) => retrade(sub.key, trade)}
                         />
                       </div>
                     );

@@ -165,3 +165,29 @@
 .pb-version-n { font-size: 12px; font-weight: 700; color: var(--muted); min-width: 28px; }
 .pb-version-b { display: flex; flex-direction: column; gap: 1px; }
 .pb-version-t { font-size: 13px; font-weight: 600; }
+
+/* ---- owner + trade on a plan row (LINA-246) ----
+   The name cell carries three things now: the stage name, who owns it, and which
+   trade it is. They sit on one line and wrap together rather than becoming two
+   more columns — most stages carry neither an owner nor a trade, and empty
+   columns would make that absence look like a gap the plan failed to fill.
+
+   The owner's ROLE is printed in words next to the avatar, so the tint is never
+   the only thing saying which side of the table this person is on (FR9). */
+.pi-cell-name {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px var(--s2);
+}
+.pb-stage-nm { overflow-wrap: anywhere; }
+.pb-owner { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.pb-owner-nm {
+  font-size: 12px; font-weight: 650; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px;
+}
+.pb-owner-role { font-size: 11px; }
+
+@media (max-width: 720px) {
+  /* Stack on a phone: the stage name keeps the first line, the attribution drops
+     underneath it whole rather than splitting mid-name. */
+  .pi-cell-name { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .pb-owner-nm { max-width: 100%; }
+}

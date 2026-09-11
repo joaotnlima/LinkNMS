@@ -22,6 +22,8 @@ import {
   // The third level (LINA-243).
   addSubtask, renameSubtask, setSubtaskDate, setSubtaskDates, setSubtaskDescription, removeSubtask,
   moveSubtask, reorderSubtask, subtaskCount,
+  // Owner + specialty (LINA-235/246).
+  setAssignee, setTrade, stageMeta,
 } from './plan-authoring.ts';
 
 test('skeleton: three phases, names only, no dates or sub-tasks (the issue scope)', () => {
@@ -481,4 +483,116 @@ test('hydrateDraft: grandchildren come back as sub-tasks, with their edges re-ke
   ]);
   assert.deepEqual(tooDeep[0].tasks[0].children[0].children, []);
   assert.doesNotThrow(() => toWire(tooDeep));
+});
+
+// ── Owner + specialty (LINA-235/246, ADR-0017 annex 3) ──────────────────────
+
+test('setAssignee / setTrade address a stage by key at all three levels', () => {
+  let phases = seedSkeleton();
+  phases = addSubtask(phases, 0, 0);
+  const phaseKey = phases[0].key;
+  const taskKey = phases[0].tasks[0].key;
+  const subKey = phases[0].tasks[0].children[0].key;
+
+  const before = phases;
+  phases = setAssignee(phases, phaseKey, 'party-a');
+  phases = setAssignee(phases, taskKey, 'party-b');
+  phases = setAssignee(phases, subKey, 'party-c');
+  phases = setTrade(phases, taskKey, 'Electrical');
+
+  assert.equal(phases[0].assigneePartyId, 'party-a');
+  assert.equal(phases[0].tasks[0].assigneePartyId, 'party-b');
+  assert.equal(phases[0].tasks[0].children[0].assigneePartyId, 'party-c');
+  assert.equal(phases[0].tasks[0].trade, 'Electrical');
+
+  // Pure: the original draft is untouched, and a phase nothing was written to
+  // keeps its identity (so React does not re-render the whole plan per keystroke).
+  assert.equal(before[0].assigneePartyId, null);
+  assert.equal(before[0].tasks[0].trade, '');
+  assert.equal(phases[1], before[1]);
+
+  // Clearing is a first-class edit, not an absence of one.
+  phases = setAssignee(phases, taskKey, null);
+  assert.equal(phases[0].tasks[0].assigneePartyId, null);
+  phases = setTrade(phases, taskKey, '');
+  assert.equal(phases[0].tasks[0].trade, '');
+});
+
+test('stageMeta reads back what was written, at any level, and null for an unknown key', () => {
+  let phases = seedSkeleton();
+  phases = addSubtask(phases, 1, 0);
+  const subKey = phases[1].tasks[0].children[0].key;
+  phases = setAssignee(phases, subKey, 'party-x');
+  phases = setTrade(phases, subKey, 'Roofing');
+
+  assert.deepEqual(stageMeta(phases, subKey), { assigneePartyId: 'party-x', trade: 'Roofing' });
+  assert.deepEqual(stageMeta(phases, 'nope'), { assigneePartyId: null, trade: '' });
+});
+
+test('toWire: owner + trade go on every node, blanks normalise to null', () => {
+  let phases = [emptyPhase('Phase')];
+  phases = addTask(phases, 0);
+  phases = renameTask(phases, 0, 0, 'Task');
+  phases = addSubtask(phases, 0, 0);
+  phases = renameSubtask(phases, 0, 0, 0, 'Sub');
+  phases = setAssignee(phases, phases[0].key, 'p-phase');
+  phases = setTrade(phases, phases[0].tasks[0].key, '  Plumbing  ');
+  phases = setAssignee(phases, phases[0].tasks[0].children[0].key, 'p-sub');
+
+  const [phase] = toWire(phases);
+  assert.equal(phase.assigneePartyId, 'p-phase');
+  // An untouched trade is null on the wire, never '' — the server stores a trade
+  // or nothing, and '' would be a third state neither side has a meaning for.
+  assert.equal(phase.trade, null);
+
+  const [task] = phase.children;
+  assert.equal(task.trade, 'Plumbing'); // trimmed
+  assert.equal(task.assigneePartyId, null);
+
+  const [sub] = task.children;
+  assert.equal(sub.assigneePartyId, 'p-sub');
+  assert.equal(sub.trade, null);
+});
+
+test('toWire: a row whose ONLY content is an owner or a trade still needs a name', () => {
+  // Assigning somebody counts as touching the row (so it is not silently
+  // dropped), but a nameless stage is still the refusal it always was — which is
+  // exactly what the server answers with `invalid_name`.
+  let phases = [emptyPhase('Phase')];
+  phases = addTask(phases, 0);
+  phases = setAssignee(phases, phases[0].tasks[0].key, 'p-1');
+  assert.throws(() => toWire(phases), (e) => e instanceof PlanAuthorError && e.code === 'invalid_name');
+
+  phases = renameTask(phases, 0, 0, 'Now named');
+  const [phase] = toWire(phases);
+  assert.equal(phase.children.length, 1);
+  assert.equal(phase.children[0].assigneePartyId, 'p-1');
+});
+
+test('hydrateDraft: assignee + trade round-trip, and a stage with neither is unassigned', () => {
+  const phases = hydrateDraft([
+    {
+      id: 's1', name: 'Phase', assigneePartyId: 'p-owner', trade: 'General',
+      children: [
+        { id: 's2', name: 'Task', assigneePartyId: null, trade: null, children: [] },
+        {
+          id: 's3', name: 'Task 2', assigneePartyId: 'p-sub', trade: 'Electrical',
+          children: [{ id: 's4', name: 'Sub', assigneePartyId: 'p-sub2', trade: 'Wiring' }],
+        },
+      ],
+    },
+  ]);
+
+  assert.equal(phases[0].assigneePartyId, 'p-owner');
+  assert.equal(phases[0].trade, 'General');
+  assert.equal(phases[0].tasks[0].assigneePartyId, null);
+  assert.equal(phases[0].tasks[0].trade, '');
+  assert.equal(phases[0].tasks[1].assigneePartyId, 'p-sub');
+  assert.equal(phases[0].tasks[1].children[0].assigneePartyId, 'p-sub2');
+  assert.equal(phases[0].tasks[1].children[0].trade, 'Wiring');
+
+  // And the whole thing survives a save/re-save: hydrate → toWire keeps it.
+  const wire = toWire(phases);
+  assert.equal(wire[0].assigneePartyId, 'p-owner');
+  assert.equal(wire[0].children[1].children[0].trade, 'Wiring');
 });

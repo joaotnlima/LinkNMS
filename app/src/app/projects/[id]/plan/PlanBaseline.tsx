@@ -45,6 +45,8 @@ import {
   type StageEdit, type StageRow,
 } from '@/lib/plan-baseline';
 import { formatDateTime, moneyPrecise } from '@/lib/format';
+import { PartyAvatar, TradeChip } from '@/components/PartyAvatar';
+import { partyIndex, partyOf, roleWord } from '@/lib/party-display';
 import '@/components/plan-baseline.css';
 
 export interface PartyRef { partyId: string; name: string; role: string }
@@ -142,6 +144,7 @@ export function PlanBaseline({ projectId, view, actorPartyId, parties }: Props) 
           <PlanTable
             rows={rows}
             scale={scale}
+            parties={parties}
             caption={editing ? `Version ${current.versionNo}, as proposed — unchanged` : undefined}
             dimmed={editing}
           />
@@ -356,14 +359,17 @@ function DraftPanel() {
 // ── The plan table — the B1 preview components, reused ───────────────────────
 
 function PlanTable({
-  rows, scale, caption, dimmed,
+  rows, scale, caption, dimmed, parties,
 }: {
   rows: StageRow[];
   scale: GanttScale | null;
   caption?: string;
   dimmed?: boolean;
+  /** The project's members — the directory owner avatars resolve against. */
+  parties: PartyRef[];
 }) {
   const flat = preorder(rows);
+  const dir = partyIndex(parties);
   const total = totalCents(rows);
   const counts = stageCounts(rows);
 
@@ -384,12 +390,29 @@ function PlanTable({
       </div>
       {flat.map(({ node, depth }) => {
         const bar = scale ? barGeometry(node, scale) : null;
+        // Who owns this stage, resolved from the members this page already holds
+        // (LINA-246). Null is the common, honest case — an unassigned stage gets
+        // no avatar and no placeholder person, because there is nobody on it.
+        const owner = partyOf(dir, node.assigneePartyId);
         return (
           // A plan may now be three levels deep (LINA-243), so the indent has to
           // say WHICH level — one shared "is-sub" would print a sub-sub-action
           // as if it sat beside its own parent.
           <div key={node.id} className={`pi-planrow ${depth ? 'is-sub' : ''} ${depth > 1 ? 'is-sub2' : ''}`.trim()}>
-            <span className="pi-cell-name">{node.name}</span>
+            <span className="pi-cell-name">
+              <span className="pb-stage-nm">{node.name}</span>
+              {/* Owner and trade ride WITH the name, not in columns of their own:
+                  most stages carry neither, and two mostly-empty columns would
+                  make the absence look like a layout the plan failed to fill. */}
+              {owner ? (
+                <span className="pb-owner">
+                  <PartyAvatar party={owner} size="sm" />
+                  <span className="pb-owner-nm">{owner.name}</span>
+                  <span className="pb-owner-role cap">{roleWord(owner.role)}</span>
+                </span>
+              ) : null}
+              {node.trade ? <TradeChip trade={node.trade} /> : null}
+            </span>
             <span className="pi-cell-dates num">{dateRange(node)}</span>
             <span className="pb-cell-value num">
               {node.costCents == null ? <span className="pi-dash">—</span> : moneyPrecise(node.costCents)}
@@ -649,14 +672,6 @@ function statusSentence(status: PlanVersionSummary['status']): string {
     case 'rejected': return 'Rejected';
     default: return 'Proposed';
   }
-}
-
-/** The role as the parties call themselves. `null` is an honest gap, never a guess. */
-function roleWord(role: string | null): string {
-  if (role === 'owner') return 'Owner';
-  if (role === 'counterparty') return 'General contractor';
-  if (role === 'subcontractor') return 'Trade';
-  return 'Party';
 }
 
 function awaitedName(

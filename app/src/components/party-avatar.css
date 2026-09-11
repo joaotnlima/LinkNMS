@@ -1,0 +1,55 @@
+/* PartyAvatar + TradeChip (LINA-246).
+
+   The brand-book `.av` primitive (PartyInvite.stories.js) at the two sizes the
+   plan surfaces need: `md` on the editor's owner control, `sm` on a plan row
+   where it sits inline with the stage name.
+
+   Tints come from the PARTY tokens — --owner / --builder — which are the one
+   palette globals.css keeps out of the neutral re-base on purpose ("PARTY
+   surfaces stay on --owner/--builder by design"). Colour says which side of the
+   table; the role is always in the accessible name beside it, never colour
+   alone (FR9). */
+
+.pav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  user-select: none;
+}
+
+.pav--md { width: 28px; height: 28px; font-size: 11px; }
+.pav--sm { width: 22px; height: 22px; font-size: 10px; }
+
+.pav--owner { background: var(--owner-muted); color: var(--owner-fg); }
+.pav--builder { background: var(--builder-muted); color: var(--builder-fg); }
+
+/* Unassigned is an ABSENCE, drawn as one: a dashed ring with an em dash, so it
+   never reads as a person whose initials failed to load. */
+.pav--none {
+  background: transparent;
+  color: var(--muted);
+  border: 1px dashed var(--outline);
+  font-weight: 600;
+}
+
+/* The specialty chip. Deliberately quieter than a status badge: a trade is a
+   label on the work, not a state of it — a chip that shouted would compete with
+   the RAG vocabulary that does carry state. */
+.ptrade {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--outline);
+  border-radius: 999px;
+  background: var(--sunken);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}

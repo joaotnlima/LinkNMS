@@ -45,6 +45,14 @@ export interface PlanStageNode {
   name: string;
   position: number;
   trade: string | null;
+  /**
+   * The member who owns this stage, by party id — null = unassigned (LINA-235,
+   * migration 0009). An ID and nothing else: names and avatars are resolved on
+   * the client from the project members (ADR-0006 §1), so a renamed party is
+   * renamed on the plan rather than leaving a frozen copy here. Optional because
+   * the read predates it and the older fixtures do not carry it.
+   */
+  assigneePartyId?: string | null;
   plannedStartDate: string | null;
   plannedEndDate: string | null;
   plannedCostCents: number | null;
@@ -120,6 +128,8 @@ export interface StageRow {
   id: string;
   name: string;
   trade: string | null;
+  /** The owning member's party id, or null (LINA-246). Never a name. */
+  assigneePartyId: string | null;
   start: string | null;
   end: string | null;
   costCents: number | null;
@@ -131,6 +141,7 @@ export function toRows(nodes: PlanStageNode[]): StageRow[] {
     id: n.id,
     name: n.name,
     trade: n.trade,
+    assigneePartyId: n.assigneePartyId ?? null,
     start: n.plannedStartDate,
     end: n.plannedEndDate,
     costCents: n.plannedCostCents,
