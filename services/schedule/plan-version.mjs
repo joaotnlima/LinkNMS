@@ -32,7 +32,7 @@ const now = () => new Date().toISOString();
 // The only editable fields on a StageEdit (contract §5): dates + money only. No
 // structural (WBS/name/position) edits in B2.
 // Forbidden structural keys: D12a cannot restructure the WBS in B2.
-const STAGE_EDIT_FORBIDDEN = ['id', 'name', 'position', 'parentId', 'trade', 'importId'];
+const STAGE_EDIT_FORBIDDEN = ['id', 'name', 'position', 'parentId', 'trade', 'assigneePartyId', 'importId'];
 
 function normalizeCents(v) {
   if (!Number.isInteger(v)) {
@@ -214,6 +214,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
       name: s.name,
       position: s.position,
       trade: s.trade ?? null,
+      assigneePartyId: s.assignee_party_id ?? null,
       description: s.description ?? null,
       plannedStartDate: s.planned_start_date ?? null,
       plannedEndDate: s.planned_end_date ?? null,
@@ -487,6 +488,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
           position: s.position,
           parent_id: s.parent_id != null ? oldToNew.get(s.parent_id) : null,
           trade: s.trade,
+          assignee_party_id: s.assignee_party_id,
           import_id: null,
           source_row_ref: s.source_row_ref,
           scope_note: s.scope_note,
@@ -570,6 +572,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
         position: base + i + 1,
         parent_id: node.parentIndex == null ? null : ids[node.parentIndex],
         trade: node.trade,
+        assignee_party_id: node.assigneePartyId,
         import_id: null,
         source_row_ref: null,
         scope_note: null,
@@ -583,6 +586,24 @@ export function createPlanVersionService({ store, ledger, identity }) {
       });
     }
     return { rootCount, ids };
+  }
+
+  // Validate every distinct assigneePartyId in the authored tree is a party on
+  // the project (membership check via the identity port). Rejects with 400
+  // unknown_assignee for any party that is not a member — no cross-schema FK;
+  // the identity port's roleOf is the source of truth (ADR-0006 §1).
+  async function assertAssigneesOnProject(projectId, order) {
+    const distinct = new Set();
+    for (const node of order) {
+      if (node.assigneePartyId != null) distinct.add(node.assigneePartyId);
+    }
+    for (const pid of distinct) {
+      const role = await identity.roleOf(projectId, pid);
+      if (!role) {
+        throw new DomainError(400, 'unknown_assignee',
+          'assigneePartyId must reference a party that is a member of this project');
+      }
+    }
   }
 
   // ── POST …/plan-versions:author (LINA-228/LINA-230, ADR-0017 annex) ────────
@@ -607,6 +628,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
     await identity.authorize({ actorPartyId, action: ACTION.PROPOSE_PLAN, projectId });
 
     const order = validateAuthoredStages(stages);
+    await assertAssigneesOnProject(projectId, order);
 
     // Can't draft while a proposal is live: a single authoring thread per project
     // (B2 contract §1). Withdraw the open proposal first.
@@ -825,6 +847,16 @@ export function createPlanVersionService({ store, ledger, identity }) {
         }
         trade = raw.trade.trim() || null;
       }
+      let assigneePartyId = null;
+      if (raw.assigneePartyId != null) {
+        if (typeof raw.assigneePartyId !== 'string' || raw.assigneePartyId.length > 200) {
+          throw new DomainError(400, 'invalid_assignee',
+            'assigneePartyId must be a party id (string) or null');
+        }
+        const cleaned = raw.assigneePartyId.trim();
+        if (!cleaned) throw new DomainError(400, 'invalid_assignee', 'assigneePartyId, when present, must not be empty');
+        assigneePartyId = cleaned;
+      }
       let description = null;
       if (raw.description != null) {
         if (typeof raw.description !== 'string') {
@@ -856,6 +888,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
         rawDependsOn: raw.dependsOn,
         parentIndex,
         trade,
+        assigneePartyId,
         description,
         plannedStartDate: normalizeDate(raw.plannedStartDate ?? null, 'plannedStartDate'),
         plannedEndDate: normalizeDate(raw.plannedEndDate ?? null, 'plannedEndDate'),

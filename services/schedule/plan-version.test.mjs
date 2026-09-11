@@ -886,3 +886,105 @@ test('authorPlan + proposePlan: the appended events extend a verifiable hash cha
   assert.equal(chain[0].prevHash, GENESIS_HASH);
   assert.deepEqual(verifyChain(chain), { verified: true });
 });
+
+// ── assignee (LINA-235, ADR-0017 annex 3) ──────────────────────────────────
+
+test('authorPlan: assigneePartyId is stored, read back through getPlan (LINA-235)', async () => {
+  const { service, store } = build();
+
+  const out = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: 'Phase A', assigneePartyId: GC, children: [
+        { name: 'Task 1', assigneePartyId: OWNER },
+        { name: 'Task 2' }, // unassigned
+      ] },
+    ],
+  });
+  assert.equal(out.status, 'draft');
+
+  const view = await service.getPlan(PROJECT, GC);
+  const phase = view.current.stages[0];
+  assert.equal(phase.assigneePartyId, GC);
+  assert.equal(phase.children[0].assigneePartyId, OWNER);
+  assert.equal(phase.children[1].assigneePartyId, null);
+});
+
+test('authorPlan: re-saving preserves the latest assigneePartyId (LINA-235)', async () => {
+  const { service, store } = build();
+
+  // First save with GC as assignee.
+  const first = await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'A', assigneePartyId: GC }],
+  });
+  const v1 = await service.getPlan(PROJECT, GC);
+  assert.equal(v1.current.stages[0].assigneePartyId, GC);
+
+  // Re-save with OWNER as assignee — replaces the draft in place.
+  await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'A', assigneePartyId: OWNER }],
+  });
+  const v2 = await service.getPlan(PROJECT, GC);
+  assert.equal(v2.current.stages[0].assigneePartyId, OWNER);
+  // Same draft row, same version id.
+  assert.equal(v2.current.id, first.planVersionId);
+});
+
+test('authorPlan: a stage without assigneePartyId has null assigneePartyId (LINA-235)', async () => {
+  const { service } = build();
+  await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'A', trade: 'Plumbing' }],
+  });
+  const view = await service.getPlan(PROJECT, GC);
+  assert.equal(view.current.stages[0].assigneePartyId, null);
+  assert.equal(view.current.stages[0].trade, 'Plumbing');
+});
+
+test('authorPlan: unknown assigneePartyId (not a project member) → 400 unknown_assignee (LINA-235)', async () => {
+  const { service } = build();
+  await assert.rejects(
+    service.authorPlan(PROJECT, GC, {
+      stages: [{ name: 'A', assigneePartyId: 'not-a-party' }],
+    }),
+    (e) => e.status === 400 && e.code === 'unknown_assignee',
+  );
+});
+
+test('authorPlan: invalid assigneePartyId shape → 400 invalid_assignee (LINA-235)', async () => {
+  const { service } = build();
+  // Empty string is rejected even if membership check would pass.
+  await assert.rejects(
+    service.authorPlan(PROJECT, GC, {
+      stages: [{ name: 'A', assigneePartyId: '  ' }],
+    }),
+    (e) => e.status === 400 && e.code === 'invalid_assignee',
+  );
+  // Non-string rejected.
+  await assert.rejects(
+    service.authorPlan(PROJECT, GC, {
+      stages: [{ name: 'A', assigneePartyId: 123 }],
+    }),
+    (e) => e.status === 400 && e.code === 'invalid_assignee',
+  );
+});
+
+test('requestChanges: the forked version carries the assigneePartyId unchanged (LINA-235)', async () => {
+  const { service, store } = build();
+
+  // Author a draft with an assignee, then propose it so the reviewer can fork it.
+  const draft = await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'Phase A', assigneePartyId: OWNER, children: [{ name: 'Task 1' }] }],
+  });
+  await service.proposePlan(draft.planVersionId, GC);
+  // The drafter (GC) authors; the OTHER party (owner) reviews via requestChanges.
+  const forking = store.listStagesByPlanVersion(draft.planVersionId);
+
+  const res = await service.requestChanges(draft.planVersionId, OWNER, {
+    stages: [{ stageId: forking.find((s) => s.parent_id == null).id, plannedCostCents: 500_000 }],
+  });
+  assert.equal(res.status, 'proposed');
+
+  const forkedStages = store.listStagesByPlanVersion(res.newVersionId);
+  const phase = forkedStages.find((s) => s.parent_id == null);
+  assert.equal(phase.assignee_party_id, OWNER); // structural field survives the fork
+  assert.equal(phase.trade, null);
+});

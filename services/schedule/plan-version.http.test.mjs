@@ -232,3 +232,48 @@ test('proposePlan: 200 flips the draft to proposed; the version id from the path
   assert.equal(v.status, 'proposed');
   assert.equal(v.version_no, 1);
 });
+
+// ── assignee (LINA-235, ADR-0017 annex 3) ──────────────────────────────────
+
+test('authorPlan: 201 with assigneePartyId stored; getPlan returns assigneePartyId per stage (LINA-235)', async () => {
+  const { http, store } = build();
+  const res = await http.authorPlan({
+    session: gc,
+    params: { projectId: PROJECT },
+    body: {
+      stages: [
+        { name: 'Phase A', assigneePartyId: GC, children: [
+          { name: 'Task 1', assigneePartyId: OWNER },
+        ] },
+      ],
+    },
+  });
+  assert.equal(res.status, 201);
+
+  const view = await http.getPlan({ session: gc, params: { projectId: PROJECT } });
+  assert.equal(view.status, 200);
+  const phase = view.body.current.stages[0];
+  assert.equal(phase.assigneePartyId, GC);
+  assert.equal(phase.children[0].assigneePartyId, OWNER);
+  assert.equal(phase.children.length, 1); // only Task 1 in the save
+});
+
+test('authorPlan: unknown assigneePartyId → 400 unknown_assignee (LINA-235)', async () => {
+  const { http } = build();
+  const res = await http.authorPlan({
+    session: gc, params: { projectId: PROJECT },
+    body: { stages: [{ name: 'A', assigneePartyId: 'not-a-party' }] },
+  });
+  assert.equal(res.status, 400);
+  assert.equal(res.body.error.code, 'unknown_assignee');
+});
+
+test('authorPlan: empty/blank assigneePartyId → 400 invalid_assignee (LINA-235)', async () => {
+  const { http } = build();
+  const res = await http.authorPlan({
+    session: gc, params: { projectId: PROJECT },
+    body: { stages: [{ name: 'A', assigneePartyId: '  ' }] },
+  });
+  assert.equal(res.status, 400);
+  assert.equal(res.body.error.code, 'invalid_assignee');
+});

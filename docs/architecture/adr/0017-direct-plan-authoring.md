@@ -350,3 +350,79 @@ drag/Gantt §5 item, deferred).
   it ships — this annex is a prerequisite, not a commitment to it.
 - Tech debt: none introduced; the `key`/`dependsOn` payload shape is additive and
   backward-compatible (existing `:author` callers omit both).
+
+---
+
+## Annex 3 (LINA-235, 2026-09-11) — per-stage assignee + specialty tags
+
+**Status: Accepted** (ratified by Full-Stack Architect on merge of PR #109, 2026-09-11).
+Scope: the ADR-0017 §5 "per-task owner / assignee avatars" and "specialty/trade
+tags" items, which this annex ships as the **backend** slice (migration + `:author`
+payload + wire contract). The FE-side surface (assignee picker, avatar/initials
+rendering) is a thin follow-up owning the projection, not this schema.
+
+### Why this one, and why now
+
+The founder surfaced LINA-235 ("Add a per-stage assignee column … plus owner
+avatars and specialty tags") and routed it to the Back-End Developer with explicit
+Architect sign-off (Architect handoff on LINA-235, 2026-09-11). `stage.trade`
+already exists (migration 0002, free-form label) — the *tag* half needs no schema
+change, only surfacing in `:author` + `getPlan`. What was missing is the
+**assignee**: who owns the stage.
+
+### Decision
+
+#### 1. Assignee = a reference to a party/membership on the project, not a free-form name
+
+Add `schedule.stage.assignee_party_id uuid NULL` (migration **0009** — the next
+free number; 0008 is the latest). Bare uuid ref per ADR-0006 §1 (schema isolation:
+**no cross-schema FK**). Nullable, default null = "unassigned" (matches v1 where
+every stage is unassigned). Additive and reversible; no backfill.
+
+Membership validity is enforced **by the schedule service at `:author` time**
+against the identity port (`roleOf`) — an `assigneePartyId` naming a party that is
+not a member is `400 unknown_assignee`. An orphaned reference (party removed from
+a project later) degrades to "unknown" on read, which is the correct failure mode:
+no cross-schema FK that could block membership removal.
+
+#### 2. Assignment rides the existing `:author` draft save — one ledger event, no new surface
+
+`:author` gains an optional `assigneePartyId` per stage node (and surfaces the
+existing `trade`). Assignment is part of "the draft saved at T": written into the
+current draft's stage rows, one `plan_drafted` event per save, same transaction as
+the projection — identical tamper-evidence discipline to import and to the
+dependencies annex (annex 2). No new endpoint, no new ledger type, no incremental
+assign/unassign API. Re-save replaces the draft's stages in place (annex 1), so a
+re-assignment edit simply lands on the next save.
+
+#### 3. The wire contract surfaces `assigneePartyId` + `trade` per stage
+
+`getPlan` stage nodes carry `trade` (unchanged) and `assigneePartyId` (new;
+uuid or null). Display names and avatar initials are **projected by the FE from
+the project members directory it already holds** (`GET /projects/:id` →
+`members[].displayName`), not by a cross-service party-name lookup — avatars are a
+pure FE projection of a party, consistent with ADR-0006. `requestChanges` forks
+the stage rows, carrying `assignee_party_id` and `trade` through unchanged
+(structure is copied; only dates/money may be patched — assignee is now in the B2
+forbidden-fields list).
+
+#### 4. Permission invariant: assigned ≠ granted
+
+Assignment mutates the plan, so it rides the existing plan-authoring authz
+(draft-owner writes; `:author` is `PROPOSE_PLAN`, ADR-0004) — **no new
+capability**. Naming a party as a stage's assignee grants that party **no** write
+or visibility rights beyond what its membership + role already confer; those stay
+governed by `identity.membership` and the capability table. This is stated as an
+invariant so "assign" never gets conflated with "grant" by a later slice.
+
+### Backend consequences
+
+- `schedule.stage.assignee_party_id` (0009) + `insertStage`/`mapStage` column
+  plumbing + `:author` validation (`unknown_assignee`) + `getPlan` shape.
+- The 0009 migration is additive and reversible; no data backfill; no grant
+  change (`schedule_app` already holds INSERT/UPDATE/SELECT on `schedule.stage`).
+- The frozen authoring contract (`slice-direct-plan-authoring-contract.md`) bumps
+  to v4 with the assignee/trade fields and the two new error codes
+  (`invalid_assignee` 400, `unknown_assignee` 400).
+- FE follow-up (assignee picker, avatar/initials, specialty chips) is tracked as a
+  child issue of LINA-235, coordinating with the Frontend Developer.
