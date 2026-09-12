@@ -20,6 +20,7 @@ import { buildShellContext } from '@/server/portal-shell';
 import { hydrateDraft, type PhaseDraft, type TemplatePhase } from '@/lib/plan-authoring';
 import { directoryOf } from '@/lib/view';
 import { UNKNOWN_PARTY, type PartyRef } from '@/lib/party-display';
+import { stageKeysOf } from '@/lib/task-workspace';
 import { PlanBuildEditor } from './PlanBuildEditor';
 
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,12 @@ export default async function PlanBuildPage({ params }: { params: Promise<{ id: 
   const draft: PhaseDraft[] | undefined =
     plan.current?.status === 'draft' ? hydrateDraft(plan.current.stages) : undefined;
 
+  // The stage keys the SERVER holds (LINA-250). The drawer's workspace — the
+  // comments and files on a task — only opens for these: a row the author adds
+  // in this tab has no stage behind it yet, so its section says "save the plan
+  // first" instead of writing to a key that would 404.
+  const savedStageKeys = [...stageKeysOf(plan.current?.stages)];
+
   // The assignee picker's whole universe (LINA-246). It is THIS build's members
   // and nothing else: the schedule service checks membership on every authored
   // assignee and answers `400 unknown_assignee` otherwise, so offering anyone
@@ -61,7 +68,13 @@ export default async function PlanBuildPage({ params }: { params: Promise<{ id: 
       activeBuild={{ id, name: build.name }}
       section="plan"
     >
-      <PlanBuildEditor projectId={id} initialPhases={draft} templateBody={template} parties={parties} />
+      <PlanBuildEditor
+        projectId={id}
+        initialPhases={draft}
+        templateBody={template}
+        parties={parties}
+        savedStageKeys={savedStageKeys}
+      />
     </PortalShell>
   );
 }

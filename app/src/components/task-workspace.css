@@ -1,0 +1,64 @@
+/* The task workspace — comments + files on a plan task (LINA-250).
+   Tokens only (tokens.json is the single source, ADR-0009): no new palette, no
+   literal colours. Sized for the 440px drawer first; the permalink page reuses
+   the same rules at a wider measure, so there is one look, not two. */
+
+.tws {
+  display: flex; flex-direction: column; gap: var(--s3);
+  border-top: 1px solid var(--outline); padding-top: var(--s3);
+}
+.tws-h { margin: 0; font-size: 14px; font-weight: 700; }
+.tws-sub { margin: 0; font-size: 13px; font-weight: 650; }
+.tws-quiet { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; max-width: 52ch; }
+.tws-error { margin: 0; color: var(--danger); font-size: 12px; font-weight: 600; }
+.tws-label { font-size: 13px; font-weight: 600; color: var(--fg); }
+.tws-hint { color: var(--muted); font-size: 11px; max-width: 34ch; }
+
+/* ── Thread ──────────────────────────────────────────────────────────────── */
+.tws-thread {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: var(--s3);
+  max-height: 320px; overflow-y: auto;
+}
+.tws-comment { display: flex; gap: var(--s2); align-items: flex-start; }
+.tws-comment-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tws-comment-hd {
+  margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;
+  font-size: 12px;
+}
+.tws-who { font-weight: 650; }
+.tws-role, .tws-when { color: var(--muted); font-size: 11px; }
+.tws-comment-text {
+  margin: 0; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* ── Composer ────────────────────────────────────────────────────────────── */
+.tws-composer { display: flex; flex-direction: column; gap: var(--s2); }
+.tws-input {
+  min-height: 84px; resize: vertical; font: inherit; line-height: 1.5; color: var(--fg);
+  border: 1px solid var(--outline); background: var(--paper);
+  border-radius: 8px; padding: 8px 10px;
+}
+.tws-input:focus { outline: none; border-color: var(--plan-baseline); }
+.tws-composer-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+}
+
+/* ── Files ───────────────────────────────────────────────────────────────── */
+.tws-files { display: flex; flex-direction: column; gap: var(--s2); }
+.tws-files-hd { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.tws-upload { width: auto; padding: 0 10px; }
+/* Hidden, not display:none — the label-less native input is driven by the
+   button above it, and a removed input cannot be clicked programmatically. */
+.tws-fileinput {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+.tws-filelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.tws-file {
+  display: flex; flex-direction: column; gap: 1px;
+  border: 1px solid var(--outline); border-radius: 8px; background: var(--sunken);
+  padding: 6px 10px;
+}
+.tws-filename { font-size: 13px; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+.tws-filemeta { color: var(--muted); font-size: 11px; }
