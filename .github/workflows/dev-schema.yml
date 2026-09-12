@@ -1,0 +1,95 @@
+# Development schema gate (LINA-267).
+#
+# The `dev` branch mirrors main's `prod-schema.yml` for the staging pipeline: the
+# Portal's `dev` branch deploys to dev.portal.linknms.com as a Vercel preview
+# backed by the Neon `dev` database branch. Just like production, the app deploys
+# from git automatically but the schema does NOT — so this workflow applies
+# pending migrations to the Neon `dev` branch on every push to `dev`, then
+# read-only verifies the branch matches the tree.
+#
+# This is the whole point of the two-pipeline setup: a feature's migrations get
+# exercised against a real, disposable Postgres (the `dev` Neon branch) before
+# the change is ever promoted to `main`/production.
+#
+# WHY A SEPARATE WORKFLOW (not a matrix on prod-schema.yml)
+# Keeping the prod gate untouched means a mistake here can never widen the
+# production credential's blast radius: this job only ever sees the `development`
+# environment secret (the Neon `dev` branch migrator), never the production one.
+#
+# SECURITY
+# `on: push: branches: [dev]` ONLY — never `pull_request`, so a fork PR cannot
+# execute it or read its secrets. MIGRATOR_DATABASE_URL here is the Neon `dev`
+# branch migrator, scoped to the `development` GitHub environment.
+name: Development schema
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+# Never run two migrations against the dev branch at once, and never cancel one
+# mid-flight — db/migrate.mjs is transactional per file, but a cancelled run
+# leaves the remaining files unapplied and the next push racing it.
+concurrency:
+  group: dev-schema
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply pending migrations to the dev branch
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fail loudly if the migrator credential is missing
+        env:
+          MIGRATOR_DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+        run: |
+          if [ -z "${MIGRATOR_DATABASE_URL}" ]; then
+            echo "::error::MIGRATOR_DATABASE_URL is not set in the 'development' environment."
+            echo "The dev schema gate is unprovisioned — pushes to dev are NOT applying"
+            echo "migrations to the Neon dev branch. Add the secret (Neon dev branch,"
+            echo "role: migrator) and re-run."
+            exit 1
+          fi
+          psql --version
+
+      # Forward-only, transactional per file, checksum-tracked — safe on every
+      # push: with nothing pending it is a no-op by construction.
+      - name: Show what is pending (dry run)
+        env:
+          MIGRATOR_DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+        run: node db/migrate.mjs --dry-run
+
+      - name: Apply
+        env:
+          MIGRATOR_DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+        run: node db/migrate.mjs
+
+  verify:
+    name: Verify the dev branch matches dev
+    needs: [migrate]
+    if: needs.migrate.result == 'success'
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Read-only by construction — every statement in the checker is a SELECT
+      # against a catalog. Reuses the migrator credential (no separate read-only
+      # role on the dev branch; acceptable for a disposable staging DB).
+      - name: Drift + grant-matrix check
+        env:
+          MIGRATOR_DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+        run: node scripts/check-prod-schema.mjs
