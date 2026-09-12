@@ -46,6 +46,17 @@ export interface PlanStageNode {
   position: number;
   trade: string | null;
   /**
+   * The stage's STABLE address (LINA-249, migration 0011) — client-minted at
+   * author time, persisted on the row, re-sent on every save. `null` for
+   * import-seeded and legacy stages, which never had one.
+   *
+   * This is what the task workspace and the task permalink anchor on, and why
+   * they anchor on it: `id` is re-minted on every draft save (stages are deleted
+   * and reinserted), so a thread hung off the id would detach from its task the
+   * next time the author pressed Save.
+   */
+  key?: string | null;
+  /**
    * The member who owns this stage, by party id — null = unassigned (LINA-235,
    * migration 0009). An ID and nothing else: names and avatars are resolved on
    * the client from the project members (ADR-0006 §1), so a renamed party is

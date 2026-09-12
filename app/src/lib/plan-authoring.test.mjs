@@ -955,3 +955,44 @@ test('promote/demote never produce a too-deep tree (round-trip through toWire)',
   assert.equal(out[0].tasks.length, 1);
   assert.equal(out[0].tasks[0].children.length, 1);
 });
+
+// ── Stage identity survives a resume (LINA-250; persisted by LINA-249) ───────
+// The saved key is the address the task workspace and the task permalink hang
+// off. Re-keying a resumed draft would orphan every comment and file on it and
+// break every link already shared, so hydration reuses what the server sent and
+// only mints for a stage that never had one.
+test('hydrateDraft: a saved key is reused; a keyless stage still gets a fresh one', () => {
+  const phases = hydrateDraft([
+    { id: 's1', key: 'p-7', name: 'Phase A', children: [
+      { id: 's2', key: 't-9', name: 'Task 1', children: [{ id: 's3', key: 's-4', name: 'Sub 1' }] },
+      { id: 's4', name: 'Legacy task' }, // import-seeded: no key was ever stored
+    ] },
+  ]);
+  assert.equal(phases[0].key, 'p-7');
+  assert.equal(phases[0].tasks[0].key, 't-9');
+  assert.equal(phases[0].tasks[0].children[0].key, 's-4');
+  assert.ok(phases[0].tasks[1].key, 'the keyless stage is still addressable locally');
+  assert.notEqual(phases[0].tasks[1].key, 't-9');
+
+  // And the saved keys reach the wire unchanged, so the next save writes the
+  // same addresses back rather than a new set.
+  const wire = toWire(phases);
+  assert.equal(wire[0].key, 'p-7');
+  assert.equal(wire[0].children[0].key, 't-9');
+  assert.equal(wire[0].children[0].children[0].key, 's-4');
+});
+
+test('hydrateDraft: minting continues PAST the saved keys — no duplicate_key on the next add', () => {
+  // A fresh page load starts the counter at 0 while the draft already holds
+  // t-1/t-2; without absorbing them, "Add task" would mint t-1 a second time and
+  // the save would come back 400 duplicate_key.
+  const phases = hydrateDraft([
+    { id: 'a', key: 'p-1', name: 'Phase A', children: [
+      { id: 'b', key: 't-1', name: 'One' },
+      { id: 'c', key: 't-2', name: 'Two' },
+    ] },
+  ]);
+  const next = addTask(phases, 0);
+  const keys = next[0].tasks.map((t) => t.key);
+  assert.equal(new Set(keys).size, keys.length, 'every key in the phase is distinct');
+});

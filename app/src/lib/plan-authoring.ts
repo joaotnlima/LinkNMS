@@ -193,6 +193,22 @@ export function newKey(prefix = 'k'): string {
   return `${prefix}-${keySeq}`;
 }
 
+/**
+ * Push the minting counter past keys that already exist (LINA-250).
+ *
+ * Since hydration REUSES a saved key (it is the workspace's address), a resumed
+ * draft arrives carrying `t-1`, `t-2`, … while the counter in this fresh page
+ * load is still 0 — so the next "Add task" would mint `t-1` a second time and
+ * the save would come back `400 duplicate_key`. Absorbing the suffixes first is
+ * what keeps a resumed draft addable to.
+ */
+function absorbKeys(keys: Iterable<string>): void {
+  for (const key of keys) {
+    const n = /^[a-z]+-(\d+)$/.exec(key);
+    if (n) keySeq = Math.max(keySeq, Number(n[1]));
+  }
+}
+
 function emptyTask(name = ''): TaskDraft {
   return {
     key: newKey('t'), name, start: '', end: '', description: '',
@@ -254,6 +270,16 @@ export { emptyTask, emptySubtask };
 interface DraftStageNode {
   /** The server's stage id — the currency `dependsOn` comes back in. */
   id?: string;
+  /**
+   * The stage's PERSISTED key (LINA-249, migration 0011), when it has one.
+   *
+   * Hydration reuses it instead of minting a fresh one, and that is not a
+   * convenience: the key is the address the task workspace and the task
+   * permalink hang off (LINA-250). Re-keying a resumed draft would silently
+   * orphan every comment and file on it and break every link already shared,
+   * because the next save would write the new keys over the old ones.
+   */
+  key?: string | null;
   name: string;
   description?: string | null;
   plannedStartDate?: string | null;
@@ -292,7 +318,10 @@ export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
   // sub-task is dropped: the editor has no row to show it on, and carrying it
   // would make the next save the `too_deep` the server has already refused.
   const readTask = (t: DraftStageNode, prefix: string, deep: boolean): TaskDraft => {
-    const key = newKey(prefix);
+    // The saved key wins. A fresh one is minted only for a stage that never had
+    // one (import-seeded and pre-LINA-249 rows), so resuming a draft neither
+    // orphans its workspace nor breaks a shared task link.
+    const key = t.key || newKey(prefix);
     if (t.id) keyByStageId.set(t.id, key);
     return {
       key,
@@ -313,7 +342,7 @@ export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
   };
 
   const phases: PhaseDraft[] = stages.map((p) => {
-    const key = newKey('p');
+    const key = p.key || newKey('p');
     if (p.id) keyByStageId.set(p.id, key);
     return {
       key,
@@ -324,6 +353,14 @@ export function hydrateDraft(stages: DraftStageNode[]): PhaseDraft[] {
       tasks: (p.children ?? []).map((t) => readTask(t, 't', true)),
     };
   });
+
+  // Every key this draft now holds — saved ones included, whether or not the
+  // node carried a stage id — so the next minted key cannot collide with one
+  // the server already has (see absorbKeys).
+  absorbKeys(phases.flatMap((p) => [
+    p.key,
+    ...p.tasks.flatMap((t) => [t.key, ...t.children.map((s) => s.key)]),
+  ]));
 
   // An edge whose type the server does not name falls back to the default —
   // the same thing migration 0010's column default does for a pre-ADR-0020 row,

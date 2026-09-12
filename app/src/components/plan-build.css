@@ -669,3 +669,11 @@
 @media (max-width: 720px) {
   .pgt-grid { grid-template-columns: minmax(120px, 40%) 1fr; }
 }
+
+/* Drawer header tools (LINA-250) — "Copy link" beside the close ✕. */
+.pbx-drawer-hdtools { display: flex; align-items: center; gap: var(--s2); flex: 0 0 auto; }
+.tws-copy { width: auto; padding: 0 10px; white-space: nowrap; }
+
+/* The task permalink page (LINA-250) — the read-only face of a task on a
+   proposed or frozen version. Narrower than the grid: it is one task, not a plan. */
+.pbx--task { max-width: 760px; display: flex; flex-direction: column; gap: var(--s4); }

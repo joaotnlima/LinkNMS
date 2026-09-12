@@ -207,6 +207,27 @@ lookup, so an unknown stage under a project the party can't see is 403, never
 - Presigned/access-controlled reads (v1 serves public CDN URLs from R2; the
   `blobStore` port + opaque `blob_url` keep the door open — see ADR-0021 trade-off).
 
+## 7a. What the FE built against this (LINA-250, shipped)
+
+- **`/projects/:id/plan/tasks/:stageKey`** — a task's own URL. It resolves the
+  key against the version the caller may read (`getPlan`) and `notFound()`s an
+  unknown one. On the author's own **draft** it renders the authoring grid with
+  the task's drawer already open; on a **proposed/accepted** version it renders a
+  read-only task page carrying the same workspace section (opening the editor
+  over a version that is out for approval would invite a save the service
+  refuses). Opening a task from the grid rewrites the address bar to this URL via
+  `history.replaceState` — a Next navigation would discard the unsaved draft.
+- **Drawer section** (`app/src/components/TaskWorkspace.tsx`): thread, append-only
+  composer, file list + upload. No edit/delete affordance anywhere, mirroring the
+  grants. Authors are named from the project's members, never from the row.
+- **Stage keys now survive a resume.** `hydrateDraft` reuses the persisted `key`
+  instead of minting a fresh one (and pushes its key counter past the saved
+  suffixes so the next add cannot collide). Without this the workspace address
+  changed on every save and every shared link rotted — the FE half of §1.
+- A task the author has just added in the editor has no persisted key yet, so its
+  section reads "save the plan to start the conversation" rather than opening a
+  thread whose first write would 404.
+
 ## 8. What this unblocks
 
 The task workspace drawer (comments + files on any task) and — mechanically — any
