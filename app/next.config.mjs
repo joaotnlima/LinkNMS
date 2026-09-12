@@ -22,8 +22,11 @@ const nextConfig = {
   // external keeps the bundler from trying to statically resolve them. `exceljs`
   // (the LINA-206 plan-import parser in services/schedule) is a heavy server-only
   // workbook reader with the same dynamic-require shape — keep it external too so
-  // the .xlsx parse never leaks into a client bundle.
-  serverExternalPackages: ['pg', 'exceljs'],
+  // the .xlsx parse never leaks into a client bundle. `@vercel/blob` (the
+  // LINA-249 task-attachment store in services/schedule/blob-store.mjs) is a
+  // server-only upload SDK reached via a lazy `import()`; keep it external so the
+  // bundler never tries to trace it into a client chunk.
+  serverExternalPackages: ['pg', 'exceljs', '@vercel/blob'],
 
   // `services/ledger/db.mjs` does `import pg from 'pg'`, and webpack resolves a
   // bare specifier from the IMPORTING file's directory — <repo>/services/…,
@@ -37,12 +40,17 @@ const nextConfig = {
   // against a second, differently-versioned `pg` that happens to be hoisted
   // somewhere above the repo. `exceljs` (imported the same way from
   // services/schedule/plan-import-parser.mjs) needs the identical pin — without
-  // it the production build dies with "Can't resolve 'exceljs'".
+  // it the production build dies with "Can't resolve 'exceljs'". `@vercel/blob`
+  // is imported the same bare-specifier way from services/schedule/blob-store.mjs
+  // (a lazy `import('@vercel/blob')`); webpack still resolves the specifier at
+  // build time from the importing file's dir, so it needs the identical pin or
+  // the production build dies with "Can't resolve '@vercel/blob'".
   webpack(config) {
     config.resolve.alias = {
       ...config.resolve.alias,
       pg: path.join(appDir, 'node_modules', 'pg'),
       exceljs: path.join(appDir, 'node_modules', 'exceljs'),
+      '@vercel/blob': path.join(appDir, 'node_modules', '@vercel/blob'),
     };
     return config;
   },

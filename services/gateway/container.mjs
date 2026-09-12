@@ -53,6 +53,7 @@ import { createDecisionHttp } from '../decision/http.mjs';
 import { createPgStore as createChangeOrderPgStore } from '../change_order/pg-store.mjs';
 
 import { createPgStore as createSchedulePgStore } from '../schedule/pg-store.mjs';
+import { createVercelBlobStore } from '../schedule/blob-store.mjs';
 
 
 // Per-service connection string with an explicit single-role fallback. Returning
@@ -154,6 +155,11 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
     decisionAuthz: (identity) => createIdentityAuthz({ identity }),
     changeOrderStore,
     scheduleStore: createSchedulePgStore({ pool: pools.schedule }),
+    // Task-workspace attachment bytes (LINA-249): Vercel Blob on the deployed
+    // target. Lazy adapter — nothing is fetched at construction; the first
+    // upload surfaces a missing store/token as a loud wiring error, never a
+    // silent in-memory fallback (composition-root rule).
+    blobStore: createVercelBlobStore(),
   });
 
   const {

@@ -42,6 +42,7 @@ function mapStage(r) {
     assignee_party_id: r.assignee_party_id ?? null,
     import_id: r.import_id,
     plan_version_id: r.plan_version_id,
+    key: r.key ?? null,
     source_row_ref: r.source_row_ref,
     scope_note: r.scope_note,
     description: r.description ?? null,
@@ -65,6 +66,37 @@ function mapProgress(r) {
     note: r.note,
     reported_by_party_id: r.reported_by_party_id,
     reported_at: toIso(r.reported_at),
+  };
+}
+
+// A task-workspace comment row (LINA-249). API shape uses the domain names the
+// HTTP layer emits; the store keeps snake_case like every other mapper.
+function mapComment(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    project_id: r.project_id,
+    stage_key: r.stage_key,
+    author_party_id: r.author_party_id,
+    body: r.body,
+    created_at: toIso(r.created_at),
+  };
+}
+
+// A task-workspace attachment row (LINA-249). size_bytes is bigint → string from
+// pg; normalised to a number like planned_cost_cents.
+function mapAttachment(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    project_id: r.project_id,
+    stage_key: r.stage_key,
+    uploader_party_id: r.uploader_party_id,
+    file_name: r.file_name,
+    content_type: r.content_type,
+    size_bytes: toNum(r.size_bytes),
+    blob_url: r.blob_url,
+    created_at: toIso(r.created_at),
   };
 }
 
@@ -185,20 +217,23 @@ export function createPgStore({ pool = getPool() } = {}) {
 
   // INSERT a stage. `seq` is GENERATED ALWAYS AS IDENTITY — never supplied.
   // parent_id/trade/import_id/source_row_ref are the Slice B1 WBS/import columns
-  // (nullable; null for hand-added stages).
+  // (nullable; null for hand-added stages). `key` (LINA-249) is the stable
+  // client-minted identity the task-workspace tables anchor on — only
+  // `:author` supplies it; every other call site passes undefined → NULL.
   async function insertStage(client, row) {
     const { rows } = await client.query(
       `insert into schedule.stage
          (id, project_id, name, position, parent_id, trade, assignee_party_id,
-          import_id, source_row_ref,
+          import_id, source_row_ref, key,
           scope_note, description, planned_start_date, planned_end_date, planned_cost_cents,
           plan_version_id, created_at, updated_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        returning *`,
       [
         row.id, row.project_id, row.name, row.position, row.parent_id ?? null,
         row.trade ?? null, row.assignee_party_id ?? null,
         row.import_id ?? null, row.source_row_ref ?? null,
+        row.key ?? null,
         row.scope_note, row.description ?? null,
         row.planned_start_date, row.planned_end_date, row.planned_cost_cents,
         row.plan_version_id ?? null, row.created_at, row.updated_at,
@@ -627,6 +662,79 @@ export function createPgStore({ pool = getPool() } = {}) {
     return rows.map(mapMovement);
   }
 
+  // ── Task workspace (LINA-249) — comments & attachments ─────────────────────
+  // Append-only collaboration rows anchored on (project_id, stage_key), NOT
+  // stage row ids (a draft re-save churns ids; the key survives). The schema
+  // grants are INSERT/SELECT only — no update/delete surface exists here by
+  // construction, mirroring stage_progress. No ledger seam: these rows are
+  // chatter, not agreement change.
+
+  // Is a stage key LIVE on the project, i.e. does it address a stage on the
+  // shared record or its author's open draft? "Current plan or open draft": the
+  // OPEN proposal, the draft, the AGREED baseline, or a pre-versioning legacy
+  // stage (v.id IS NULL). A key whose only stage sits on a terminal version
+  // (withdrawn/rejected/superseded, or an accepted version displaced by a newer
+  // baseline) is NOT addressable — the workspace rejects it with a 404. The
+  // caller has ALREADY authorized membership before this runs, though the query
+  // is project-scoped regardless.
+  async function stageLiveByKey(projectId, stageKey) {
+    const { rows } = await pool.query(
+      `select 1 from schedule.stage s
+         left join schedule.plan_version v on v.id = s.plan_version_id
+        where s.project_id = $1 and s.key = $2
+          and (v.id is null or v.status in ('draft','proposed','accepted'))
+        limit 1`,
+      [projectId, stageKey],
+    );
+    return rows.length > 0;
+  }
+
+  async function insertStageComment(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.stage_comment
+         (id, project_id, stage_key, author_party_id, body, created_at)
+       values ($1,$2,$3,$4,$5,$6)
+       returning *`,
+      [row.id, row.project_id, row.stage_key, row.author_party_id, row.body, row.created_at],
+    );
+    return mapComment(rows[0]);
+  }
+
+  // Oldest → newest; (created_at, id) is the deterministic total order (ids are
+  // uuids only to break timestamp ties).
+  async function listStageCommentsByKey(projectId, stageKey) {
+    const { rows } = await pool.query(
+      `select * from schedule.stage_comment
+        where project_id = $1 and stage_key = $2
+        order by created_at, id`,
+      [projectId, stageKey],
+    );
+    return rows.map(mapComment);
+  }
+
+  async function insertStageAttachment(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.stage_attachment
+         (id, project_id, stage_key, uploader_party_id, file_name, content_type,
+          size_bytes, blob_url, created_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       returning *`,
+      [row.id, row.project_id, row.stage_key, row.uploader_party_id,
+        row.file_name, row.content_type, row.size_bytes, row.blob_url, row.created_at],
+    );
+    return mapAttachment(rows[0]);
+  }
+
+  async function listStageAttachmentsByKey(projectId, stageKey) {
+    const { rows } = await pool.query(
+      `select * from schedule.stage_attachment
+        where project_id = $1 and stage_key = $2
+        order by created_at, id`,
+      [projectId, stageKey],
+    );
+    return rows.map(mapAttachment);
+  }
+
   // ── Plan templates (LINA-241, ADR-0018) — mutable CRUD, no ledger seam ──────
   // Each is a single statement (no audit append to co-commit), so none takes a tx.
 
@@ -679,6 +787,8 @@ export function createPgStore({ pool = getPool() } = {}) {
     insertLineMaterial, getLineMaterial, updateLineMaterial,
     listLineMaterialsByStage, listLineMaterialsByVersion,
     insertMaterialMovement, listMovementsByProject, listMovementsByLine,
+    stageLiveByKey, insertStageComment, listStageCommentsByKey,
+    insertStageAttachment, listStageAttachmentsByKey,
     getSystemDefaultTemplate, getUserDefaultTemplate, upsertUserDefaultTemplate,
   };
 }

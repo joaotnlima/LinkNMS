@@ -48,6 +48,13 @@ feeds the B2 D11–D13 proposal surface unchanged.
 > project membership (identity port `roleOf`); an unknown party is rejected with
 > `400 unknown_assignee`. The draft's assignee is read back through `getPlan` as
 > `assigneePartyId` per stage; the FE resolves display names and avatar initials
+
+> **v6 change (LINA-249).** The `key` is now **persisted** on the stage row
+> (`schedule.stage.key`, migration 0011) and emitted on the WBS node in the read
+> shape, so per-task rails (comments/attachments — the task workspace slice)
+> address a task stably across re-saves. Keys remain client-minted, ≤ 200 chars,
+> unique per `(project_id, key, plan_version_id)`; server rows are still re-minted
+> UUIDs per save. `:author` writes `node.key ?? null`.
 > from its already-loaded project members directory. Assignment rides the same
 > tamper-evident `:author` write as every other stage field — one `plan_drafted`
 > ledger event per save. The `trade` label (free-form, migration 0002) is surfaced
@@ -124,8 +131,11 @@ Rules:
   membership — a party that is not on the project → `400 unknown_assignee`.
   Blank / non-string → `400 invalid_assignee`. Null / omitted = unassigned.
 - `key` (optional): non-empty string ≤ 200 chars, unique across the payload →
-  `400 duplicate_key` on a repeat. Keys are author-local only — resolved to server
-  stage ids in-transaction and never persisted.
+  `400 duplicate_key` on a repeat. Keys are author-local until LINA-249: they are
+  resolved to server stage ids in-transaction, and — since the task-workspace
+  slice — **persisted** on the stage row (`schedule.stage.key`, migration 0011)
+  and emitted back on the WBS node in the read shape, so per-task rails (comments
+  / attachments, LINA-249) address a task stably across re-saves.
 - `dependsOn` (optional): an array of keys naming this node's **predecessors**
   (any distinct stage — root or sub-action — is a valid target; there is no
   parent/level constraint). Validated server-side **before any write**:

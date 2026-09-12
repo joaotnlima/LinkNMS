@@ -136,6 +136,8 @@ export function createInMemoryStore() {
   const baselines = new Map(); // schedule.project_baseline pointer (upsert, per project)
   const lineMaterials = [];    // schedule.line_material rows
   const movements = [];        // schedule.material_movement rows (append-only)
+  const comments = [];         // schedule.stage_comment rows (append-only, LINA-249)
+  const attachments = [];      // schedule.stage_attachment rows (append-only, LINA-249)
   // schedule.plan_template rows (mutable CRUD; NO audit weight — outside the
   // tamper-evident record, ADR-0018). Seeded with the single system default so
   // the resolve ladder (user → system) has the same source of truth the DB
@@ -550,6 +552,50 @@ export function createInMemoryStore() {
       .map((m) => ({ ...m }));
   }
 
+  // ── Task workspace (LINA-249) — comments & attachments ─────────────────────
+  // Append-only rows anchored on (project_id, stage_key), mirroring the pg
+  // adapter. No update/delete surface exists here at all (the interface has no
+  // such methods), which is what makes append-only a property of the contract.
+
+  // Is a stage key LIVE — a stage with that key exists on a draft, an open
+  // proposal, the agreed baseline, or a pre-versioning legacy stage? Mirrors
+  // the pg query (LINA-249).
+  function stageLiveByKey(projectId, stageKey) {
+    return [...stages.values()].some((s) => {
+      if (s.project_id !== projectId || s.key !== stageKey) return false;
+      if (s.plan_version_id == null) return true;
+      const v = versions.find((x) => x.id === s.plan_version_id);
+      return !v || ['draft', 'proposed', 'accepted'].includes(v.status);
+    });
+  }
+
+  // Append-only INSERT; returns a copy so a caller can never mutate history.
+  function insertStageComment(_tx, row) {
+    const stored = { ...row };
+    comments.push(stored);
+    return { ...stored };
+  }
+
+  function listStageCommentsByKey(projectId, stageKey) {
+    return comments
+      .filter((c) => c.project_id === projectId && c.stage_key === stageKey)
+      .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))
+      .map((c) => ({ ...c }));
+  }
+
+  function insertStageAttachment(_tx, row) {
+    const stored = { ...row };
+    attachments.push(stored);
+    return { ...stored };
+  }
+
+  function listStageAttachmentsByKey(projectId, stageKey) {
+    return attachments
+      .filter((a) => a.project_id === projectId && a.stage_key === stageKey)
+      .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))
+      .map((a) => ({ ...a }));
+  }
+
   // ── Plan templates (LINA-241, ADR-0018) — mutable CRUD, no audit weight ─────
 
   function getSystemDefaultTemplate() {
@@ -605,10 +651,13 @@ export function createInMemoryStore() {
     insertLineMaterial, getLineMaterial, updateLineMaterial,
     listLineMaterialsByStage, listLineMaterialsByVersion,
     insertMaterialMovement, listMovementsByProject, listMovementsByLine,
+    stageLiveByKey, insertStageComment, listStageCommentsByKey,
+    insertStageAttachment, listStageAttachmentsByKey,
     getSystemDefaultTemplate, getUserDefaultTemplate, upsertUserDefaultTemplate,
     _stages: stages, _progress: progress, _imports: imports, _dependencies: dependencies,
     _versions: versions, _acceptances: acceptances, _baselines: baselines,
     _lineMaterials: lineMaterials, _movements: movements, _planTemplates: planTemplates,
+    _comments: comments, _attachments: attachments,
   };
 }
 
