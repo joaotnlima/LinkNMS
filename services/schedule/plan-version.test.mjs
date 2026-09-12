@@ -1099,3 +1099,47 @@ test('requestChanges: the forked version carries the assigneePartyId unchanged (
   assert.equal(phase.assignee_party_id, OWNER); // structural field survives the fork
   assert.equal(phase.trade, null);
 });
+
+// ── stable stage identity (LINA-249) ───────────────────────────────────────
+
+test('LINA-249: the client-minted `key` is PERSISTED on the stage row and read back through getPlan', async () => {
+  const { service, store } = build();
+
+  const out = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: '1 · Pre-Construction', key: 'pre-construction', children: [
+        { name: '1.1 Planning & Feasibility', key: 'paf' },
+        { name: '1.2 Design & Engineering' }, // no key → null
+      ] },
+    ],
+  });
+
+  // The stored draft stages carry the key (migration 0011 column) or null.
+  const rows = store.listStagesByPlanVersion(out.planVersionId);
+  const byKey = new Map(rows.map((s) => [s.key, s]));
+  assert.equal(byKey.get('pre-construction').parent_id, null);
+  assert.equal(byKey.get('paf').parent_id, byKey.get('pre-construction').id);
+  assert.equal(rows.find((s) => s.name === '1.2 Design & Engineering').key, null);
+
+  // The read shape emits the key on each WBS node (authoritative, not best-effort).
+  const view = await service.getPlan(PROJECT, GC);
+  const phase = view.current.stages[0];
+  assert.equal(phase.key, 'pre-construction');
+  assert.equal(phase.children[0].key, 'paf');
+  assert.equal(phase.children[1].key, null);
+
+  // Re-save keeps the keys: a comment anchored to `paf` survives the draft
+  // replace (the stage row id churns; the key does not).
+  const before = store.listStagesByPlanVersion(out.planVersionId).find((s) => s.key === 'paf');
+  const out2 = await service.authorPlan(PROJECT, GC, {
+    stages: [
+      { name: '1 · Pre-Construction', key: 'pre-construction', children: [
+        { name: '1.1 Planning & Feasibility (edited)', key: 'paf' },
+      ] },
+    ],
+  });
+  const after = store.listStagesByPlanVersion(out2.planVersionId).find((s) => s.key === 'paf');
+  assert.equal(after.name, '1.1 Planning & Feasibility (edited)');
+  assert.ok(before.id !== after.id, 'row id churns per save');
+  assert.equal(before.key, after.key, 'the key survives a re-save');
+});

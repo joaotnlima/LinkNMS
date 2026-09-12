@@ -35,6 +35,7 @@ import { createPlanImportService } from './schedule/plan-import.mjs';
 import { createPlanVersionService } from './schedule/plan-version.mjs';
 import { createMaterialsService } from './schedule/materials.mjs';
 import { createPlanTemplateService } from './schedule/plan-template.mjs';
+import { createTaskWorkspaceService } from './schedule/task-workspace.mjs';
 import { PARSER } from './schedule/plan-import-parser.mjs';
 import { createScheduleHttp } from './schedule/http.mjs';
 
@@ -82,6 +83,9 @@ export function resetAnalyticsForTests() {
  * @param {Object} ports.identityStore          Identity store adapter
  * @param {Object} ports.changeOrderStore       Change Order store adapter
  * @param {Object} [ports.scheduleStore]        Schedule store adapter (omit → no schedule service)
+ * @param {Object} [ports.blobStore]            Attachment blob store (`put({fileName,contentType,buffer})`
+ *   → URL). REQUIRED when `scheduleStore` is present — the deployed container
+ *   always injects the Vercel Blob adapter (LINA-249).
  * @param {Object} [ports.decisionStore]        Decision store adapter (omit → no decision service)
  * @param {Object|Function} [ports.decisionAuthz]  Decision authorizer, or a
  *   `(identity) => authz` factory for authorizers built over the Identity
@@ -101,6 +105,7 @@ export function createServices({
   changeOrderStore,
   seats = null,
   scheduleStore = null,
+  blobStore = null,
   decisionStore = null,
   decisionAuthz = null,
   clock = undefined,
@@ -207,6 +212,17 @@ export function createServices({
     ? createPlanTemplateService({ store: scheduleStore })
     : null;
 
+  // Task workspace (LINA-249): per-stage comments & attachments over the SAME
+  // store and identity authorizer. Collaboration chatter — NO ledger seam, NO
+  // party scoping (every member reads and writes both boxes). The blob store is
+  // REQUIRED whenever a schedule store is present, and the deployed target
+  // always injects it — a silent in-memory fallback would look wired and lose
+  // every upload to a serverless cold start (the composition-root rule: loud,
+  // not memory).
+  const taskWorkspace = scheduleStore
+    ? createTaskWorkspaceService({ store: scheduleStore, identity, blob: blobStore })
+    : null;
+
   // NOTE (LINA-189): there is no waitlist service here any more. The portal used
   // to compose one over `waitlist.signup` — a SECOND waitlist that captured an
   // address and did nothing else with it, while the marketing site's funnel
@@ -221,7 +237,7 @@ export function createServices({
     changeOrder,
     schedule,
     changeOrderHttp: createChangeOrderHttp({ service: changeOrder, identity }),
-    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials, planTemplate }) : null,
+    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials, planTemplate, taskWorkspace }) : null,
   };
 }
 

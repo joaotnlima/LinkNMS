@@ -258,6 +258,102 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  # ── Slice LINA-249 task workspace (per-stage comments & attachments) ───────
+
+  /projects/{projectId}/plan/stages/{stageKey}/workspace:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/StageKey'
+    get:
+      tags: [schedule]
+      summary: Task workspace (LINA-249) — one fetch of comments + attachments
+      description: >-
+        The comment thread and file list for one task, keyed by the stable
+        client-minted `stage.key` (not the stage row id, which re-mints per save).
+        Oldest → newest on both rails. Readable by any project member.
+      responses:
+        '200':
+          description: The workspace.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Workspace' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /projects/{projectId}/plan/stages/{stageKey}/comments:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/StageKey'
+    post:
+      tags: [schedule]
+      summary: Append a task comment (LINA-249) — any project member
+      description: >-
+        Appends one comment to the stage's thread. Author is the session party
+        (ADR-0004); a body-supplied author is ignored. Append-only: no edit or
+        delete (the table grants SELECT + INSERT only). Not a ledger event —
+        comments are chatter, not agreement change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StageCommentCreate' }
+      responses:
+        '201':
+          description: The created comment.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [comment]
+                properties:
+                  comment: { $ref: '#/components/schemas/StageComment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /projects/{projectId}/plan/stages/{stageKey}/attachments:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/StageKey'
+    post:
+      tags: [schedule]
+      summary: Upload a task attachment (LINA-249) — any project member
+      description: >-
+        Uploads one file (multipart `$file` part) to Vercel Blob and records the
+        row. Content type is sniffed server-side from magic bytes (allowlist:
+        images + pdf + office docs); browser-declared types are never trusted.
+        10 MB cap (413). Uploader is the session party; a client-supplied
+        uploader is ignored. Append-only.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: The created attachment row (blob URL + server metadata).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [attachment]
+                properties:
+                  attachment: { $ref: '#/components/schemas/StageAttachment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/AttachmentTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+
   # ── Slice B3 live record + materials + budget movement (LINA-217) ───────────
 
   /projects/{projectId}/record:
@@ -434,6 +530,14 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    StageKey:
+      name: stageKey
+      in: path
+      required: true
+      description: >-
+        The stable client-minted task key (schedule.stage.key, LINA-249). Not a
+        UUID; ≤ 200 chars.
+      schema: { type: string, minLength: 1, maxLength: 200 }
 
   responses:
     BadRequest:
@@ -447,6 +551,12 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     NotFound:
       description: The stage does not exist.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    AttachmentTooLarge:
+      description: File exceeds the 10 MB cap (LINA-249).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    UnsupportedMediaType:
+      description: File type is not on the allowlist (images + pdf + office docs, LINA-249).
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   schemas:
@@ -912,3 +1022,44 @@ components:
             name: { type: string }
             isDefault: { type: boolean }
             updatedAt: { type: string, format: date-time }
+
+    StageCommentCreate:
+      type: object
+      required: [body]
+      additionalProperties: false
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: Trimmed server-side. A body-supplied author is ignored.
+    StageComment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        body: { type: string, maxLength: 4000 }
+        authorPartyId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+    StageAttachment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        fileName: { type: string, maxLength: 255 }
+        contentType:
+          type: string
+          description: Server-sniffed from magic bytes; never the browser-declared type.
+        sizeBytes: { type: integer, maximum: 10485760 }
+        uploaderPartyId: { type: string, format: uuid }
+        blobUrl: { type: string, format: uri, description: Public Vercel Blob URL. }
+        createdAt: { type: string, format: date-time }
+    Workspace:
+      type: object
+      description: One fetch for the task workspace/task-detail drawer (LINA-249).
+      properties:
+        stageKey: { type: string, maxLength: 200 }
+        comments:
+          type: array
+          items: { $ref: '#/components/schemas/StageComment' }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/StageAttachment' }

@@ -214,6 +214,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
 
     const node = (s) => ({
       id: s.id,
+      key: s.key ?? null,
       name: s.name,
       position: s.position,
       trade: s.trade ?? null,
@@ -582,6 +583,7 @@ export function createPlanVersionService({ store, ledger, identity }) {
         assignee_party_id: node.assigneePartyId,
         import_id: null,
         source_row_ref: null,
+        key: node.key ?? null,
         scope_note: null,
         description: node.description,
         planned_start_date: node.plannedStartDate,
@@ -817,8 +819,10 @@ export function createPlanVersionService({ store, ledger, identity }) {
   //
   // Two optional per-node fields ride the payload (ADR-0017 annex 2, LINA-233):
   //   - `key` — a stable author-local id for the node WITHIN this payload (the
-  //     FE's local row id). Unique across the payload; only meaningful for
-  //     resolution, never persisted.
+  //     FE's local row id). Unique across the payload; used for resolution and,
+  //     since LINA-249, PERSISTED on the stage row as `schedule.stage.key` — the
+  //     stable identity the task-workspace comments/attachments anchor on, so
+  //     they survive a draft re-save and a version bump.
   //   - `dependsOn` — an array of keys this node's stage must follow (its
   //     predecessors). Cross-level deps are permitted (any distinct stage is a
   //     valid target). Each key is resolved to a predecessor flat-list index

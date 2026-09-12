@@ -39,8 +39,9 @@ const actorOf = (session) => session?.partyId ?? null;
  * @param {import('./plan-version.mjs').createPlanVersionService} [deps.planVersion]
  * @param {import('./materials.mjs').createMaterialsService} [deps.materials]
  * @param {import('./plan-template.mjs').createPlanTemplateService} [deps.planTemplate]
+ * @param {import('./task-workspace.mjs').createTaskWorkspaceService} [deps.taskWorkspace]
  */
-export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null, planTemplate = null }) {
+export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null, planTemplate = null, taskWorkspace = null }) {
   if (!service) throw new Error('createScheduleHttp requires { service }');
 
   // GET /projects/:projectId/plan — the plan-baseline D11–D13 view (B2 contract
@@ -239,9 +240,47 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
     } catch (err) { return errorBody(err); }
   }
 
+  // ── Task workspace (LINA-249) — per-stage comments & attachments ──────────
+  // Members only, both directions shared build context (NOT party-scoped like a
+  // private draft). The actor is the session party — the client never names the
+  // author/uploader (ADR-0004). No ledger seam: these are collaboration chatter,
+  // not agreement change (the accepting existing schedule service's `authorPlan`
+  // discipline — the route only wires session→actor).
+
+  // GET /projects/:projectId/plan/stages/:stageKey/workspace — one fetch for
+  // the drawer/page: { comments, attachments }, oldest → newest.
+  async function getWorkspace({ session, params }) {
+    try {
+      const out = await taskWorkspace.getWorkspace(
+        params.projectId, params.stageKey, actorOf(session));
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /projects/:projectId/plan/stages/:stageKey/comments — append a comment.
+  async function addStageComment({ session, params, body }) {
+    try {
+      const out = await taskWorkspace.addComment(
+        params.projectId, params.stageKey, actorOf(session), body ?? {});
+      return { status: 201, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /projects/:projectId/plan/stages/:stageKey/attachments — multipart
+  // upload; the bytes ride the `file` seam (the same transport plan-import
+  // uses). Server-side type sniff + 10 MB cap inside the service.
+  async function addStageAttachment({ session, params, file }) {
+    try {
+      const out = await taskWorkspace.addAttachment(
+        params.projectId, params.stageKey, actorOf(session), file);
+      return { status: 201, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
   return { getPlan, addStage, getStage, updateStage, reportProgress,
     inspectPlanImport, columnsPlanImport, previewPlanImport, confirmPlanImport,
     withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan, authorPlan, proposePlan,
     getRecord, getStageMaterials, authorMaterials, swapMaterial, getBudgetMovement,
-    resolvePlanTemplate, savePlanTemplate };
+    resolvePlanTemplate, savePlanTemplate,
+    getWorkspace, addStageComment, addStageAttachment };
 }
