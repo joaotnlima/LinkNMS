@@ -45,7 +45,7 @@
 // no approval is requested. Sending for approval is a separate, deliberate act on
 // the plan page ("Send for approval"). On save we hand the returned audit id to
 // /plan, which shows the "draft saved" stamp once and links to the audit trail.
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -63,6 +63,8 @@ import {
 } from '@/lib/plan-authoring';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
+import { TaskWorkspace } from '@/components/TaskWorkspace';
+import { taskPath } from '@/lib/task-workspace';
 import { PlanGrid } from './PlanGrid';
 import '@/components/plan-build.css';
 
@@ -190,8 +192,33 @@ function SchedulingLinks({
   );
 }
 
+/**
+ * Where a stage key sits in the draft — the permalink's `{pi, ti, si}`.
+ *
+ * Null when the key names nothing here: the permalink page has already refused
+ * an unknown key with `notFound()`, so this is the narrow case where the editor
+ * scaffolded a different plan than the link was written against, and the honest
+ * answer is to open no drawer rather than the wrong one.
+ */
+function rowOfKey(
+  phases: PhaseDraft[], key: string,
+): { pi: number; ti?: number; si?: number } | null {
+  for (let pi = 0; pi < phases.length; pi += 1) {
+    if (phases[pi].key === key) return { pi };
+    const tasks = phases[pi].tasks;
+    for (let ti = 0; ti < tasks.length; ti += 1) {
+      if (tasks[ti].key === key) return { pi, ti };
+      const kids = tasks[ti].children ?? [];
+      for (let si = 0; si < kids.length; si += 1) {
+        if (kids[si].key === key) return { pi, ti, si };
+      }
+    }
+  }
+  return null;
+}
+
 export function PlanBuildEditor({
-  projectId, initialPhases, templateBody, parties = [],
+  projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
 }: {
   projectId: string;
   /** An existing saved draft to resume editing; absent → scaffold from the template. */
@@ -204,6 +231,15 @@ export function PlanBuildEditor({
   templateBody?: TemplatePhase[];
   /** The project's members — the ONLY parties a stage may be assigned to. */
   parties?: PartyRef[];
+  /**
+   * The stage keys the SERVER holds for this build (LINA-250). A task's
+   * workspace — its comments and files — only exists for these: a row the author
+   * just added has a local key and no stage behind it, so its section says "save
+   * the plan first" rather than opening a thread every write would 404 on.
+   */
+  savedStageKeys?: string[];
+  /** The task a permalink asked for, opened in the drawer on mount. */
+  openStageKey?: string | null;
 }) {
   const router = useRouter();
   const resuming = initialPhases != null && initialPhases.length > 0;
@@ -234,7 +270,12 @@ export function PlanBuildEditor({
   // The detail drawer (LINA-234). Holds the open row's index: {pi} alone for a
   // PHASE (LINA-248 — phases open the same drawer, minus dates/description),
   // plus `ti` for a task and `si` for a sub-task (LINA-243).
-  const [openRow, setOpenRow] = useState<{ pi: number; ti?: number; si?: number } | null>(null);
+  // Opened on mount when a permalink named a task (LINA-250) — the row is found
+  // in the hydrated draft, whose keys are the server's since LINA-250 made
+  // hydration reuse them.
+  const [openRow, setOpenRow] = useState<{ pi: number; ti?: number; si?: number } | null>(
+    () => (openStageKey ? rowOfKey(initialPhases ?? [], openStageKey) : null),
+  );
   const activePhase = openRow ? phases[openRow.pi] ?? null : null;
   const activeTask = openRow?.ti != null ? activePhase?.tasks[openRow.ti] ?? null : null;
   const active = openRow?.si != null ? activeTask?.children[openRow.si] ?? null : activeTask;
@@ -246,6 +287,38 @@ export function PlanBuildEditor({
   // check, so the offending rows stay lit until edited.
   const [openDeps, setOpenDeps] = useState<string | null>(null);
   const [serverCycle, setServerCycle] = useState<Array<{ key: string | null; name: string }>>([]);
+
+  // ── The address bar follows the drawer (LINA-250, Jira behaviour) ──────────
+  // Opening a SAVED task puts its permalink in the address bar, so the URL is
+  // always the thing to share; closing puts the plan back. replaceState, not
+  // push and not router.replace: a Next navigation would re-render the page and
+  // throw away the unsaved draft in this editor, and stacking a history entry
+  // per row would turn Back into an undo of clicks nobody made.
+  const saved = useMemo(() => new Set(savedStageKeys), [savedStageKeys]);
+  const workspaceKey = activeKey && saved.has(activeKey) ? activeKey : null;
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const next = workspaceKey ? taskPath(projectId, workspaceKey) : `/projects/${projectId}/plan/build`;
+    if (window.location.pathname !== next) window.history.replaceState(null, '', next);
+  }, [projectId, workspaceKey]);
+
+  // A fresh task means a fresh link — the "Copied" flash must not carry over.
+  useEffect(() => { setCopied(false); }, [workspaceKey]);
+
+  const copyLink = useCallback(async () => {
+    if (!workspaceKey) return;
+    const url = `${window.location.origin}${taskPath(projectId, workspaceKey)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+    } catch {
+      // No clipboard permission (or an insecure context): the address bar
+      // already holds this exact URL, so say that rather than fail silently.
+      setError('Copy from the address bar — this browser did not allow the copy.');
+    }
+  }, [projectId, workspaceKey]);
 
   const count = useMemo(() => taskCount(phases), [phases]);
   const subs = useMemo(() => subtaskCount(phases), [phases]);
@@ -545,13 +618,28 @@ export function PlanBuildEditor({
                   </p>
                 ) : null}
               </div>
-              <button
-                type="button"
-                className="pbx-icon"
-                title="Close"
-                aria-label="Close details"
-                onClick={() => { setOpenRow(null); setOpenDeps(null); }}
-              >✕</button>
+              <div className="pbx-drawer-hdtools">
+                {/* Shown only for a SAVED task: a link to a row that exists
+                    nowhere but this tab would open a 404 for whoever got it. */}
+                {workspaceKey ? (
+                  <button
+                    type="button"
+                    className="pbx-icon tws-copy"
+                    title="Copy this task’s link"
+                    aria-label="Copy this task’s link"
+                    onClick={() => void copyLink()}
+                  >
+                    {copied ? 'Copied' : 'Copy link'}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="pbx-icon"
+                  title="Close"
+                  aria-label="Close details"
+                  onClick={() => { setOpenRow(null); setOpenDeps(null); }}
+                >✕</button>
+              </div>
             </header>
 
             {/* Status is DERIVED from reported progress, never authored (ADR-0019).
@@ -646,6 +734,12 @@ export function PlanBuildEditor({
                 A phase’s dates are read off its tasks — schedule those and the phase bar follows.
               </p>
             )}
+
+            {/* The task workspace (LINA-250): the conversation and the files on
+                this task. `workspaceKey` is null until the plan holds this row —
+                the section then says so rather than collecting comments locally
+                that no reload would bring back. */}
+            <TaskWorkspace projectId={projectId} stageKey={workspaceKey} parties={parties} />
 
             <div className="pbx-drawer-actions">
               <button type="button" className="btn primary"
