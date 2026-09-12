@@ -115,19 +115,21 @@ Collected rules:
   stages re-mint UUIDs per save. Liveness is checked at service time
   (`stageLiveByKey`), never cached.
 
-## 3. Attachment storage — Vercel Blob
+## 3. Attachment storage — Cloudflare R2 (S3 API) — see ADR-0021
 
-- Bytes go to **Vercel Blob** via the `@vercel/blob` SDK (`put`, `access:
-  'public'`, `addRandomSuffix: true`). The store returns the public URL; the
-  URL + metadata land in `schedule.stage_attachment`.
-- **Deploy prerequisite, not a code blocker:** a Blob store must exist on the
-  traggo Vercel dashboard so `BLOB_READ_WRITE_TOKEN` (or OIDC auto-config) is
-  available at runtime. The adapter fails **loudly** on the first upload if no
-  credential exists — there is no silent in-memory fallback in the deployed
-  composition root (a memory fallback would look wired and lose every upload to
-  a serverless cold start).
-- Local dev: `vercel env pull` to obtain `BLOB_READ_WRITE_TOKEN`; the contract
-  tests use an in-memory fake (`createInMemoryBlobStore`).
+- Bytes go to **Cloudflare R2** via its S3-compatible API
+  (`@aws-sdk/client-s3` `PutObjectCommand`), written under
+  `attachments/<uuid>-<fileName>`. The adapter returns the object's **public CDN
+  URL** (`R2_PUBLIC_BASE_URL/<key>`); the URL + metadata land in
+  `schedule.stage_attachment`. R2 replaced Vercel Blob (LINA-266) for CDN
+  performance — same `blob` port, no schema/read-path change.
+- **Deploy prerequisite, not a code blocker:** the five `R2_*` vars (see
+  ADR-0021) must be set on the `linknms-portal` Vercel project. The adapter fails
+  **loudly** on the first upload if any is missing — there is no silent in-memory
+  fallback in the deployed composition root (a memory fallback would look wired
+  and lose every upload to a serverless cold start).
+- Local dev: `vercel env pull` to obtain the `R2_*` vars; the contract tests use
+  an in-memory fake (`createInMemoryBlobStore`).
 - **Allowlist** (server-side magic-byte sniff, browser type ignored):
   images (PNG/JPEG/GIF/WebP/SVG), PDF, and common office documents
   (doc/xls/ppt/docx/xlsx/pptx). Anything else → 415.
@@ -202,8 +204,8 @@ lookup, so an unknown stage under a project the party can't see is 403, never
 - Whether a re-baselined (frozen) plan's stages stop accepting new comments
   (the `stageLiveByKey` set is decided in the BE child and re-verified in review;
   this doc defaults to *live stages do*).
-- Cloudflare/other blob provider parity (Vercel Blob is the only store in v1;
-  the `blobStore` port keeps the door open).
+- Presigned/access-controlled reads (v1 serves public CDN URLs from R2; the
+  `blobStore` port + opaque `blob_url` keep the door open — see ADR-0021 trade-off).
 
 ## 8. What this unblocks
 

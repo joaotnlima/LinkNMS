@@ -5,15 +5,16 @@
 //
 //   put({ fileName, contentType, buffer }) → Promise<string>  the object's URL
 //
-// - `createVercelBlobStore()` — production. Wraps `@vercel/blob`'s `put()`
-//   (server-side upload from the route handler; the `blob_url` column stores
-//   the returned public URL). **Lazy import**: `@vercel/blob` is loaded only on
-//   the first upload, so reads (and any code path that never uploads) stay
-//   lean. The token is `BLOB_READ_WRITE_TOKEN`; a missing token is a clear,
+// - `createR2BlobStore()` — production (LINA-266). Cloudflare R2 via its
+//   S3-compatible API (`@aws-sdk/client-s3` `PutObjectCommand`; server-side
+//   upload from the route handler; the `blob_url` column stores the object's
+//   public CDN URL). R2 was chosen over Vercel Blob for CDN performance
+//   (founder call, LINA-266). **Lazy import**: `@aws-sdk/client-s3` is loaded
+//   only on the first upload, so reads (and any code path that never uploads)
+//   stay lean. Config comes from R2_* env; a missing credential is a clear,
 //   loud wiring error — NOT a silent fallback that would look wired and lose
-//   every upload. Vercel Blob ships inside every Vercel plan (no paid add-on
-//   strictly required); enabling the store + minting the token in the traggo
-//   dashboard is a deploy prerequisite owned by the Full-Stack Architect.
+//   every upload. Keys carry a random UUID so the public URL is unguessable
+//   (bearer-URL access; see ADR-0021 for the public-CDN vs presigned trade-off).
 // - `createInMemoryBlobStore()` — tests / local. Objects live in memory and
 //   never leave the process; URLs are `blob://<id>/<fileName>`. The stored map
 //   is exposed as `_objects` so a test can assert exactly what was stored.
@@ -32,31 +33,70 @@ export function createInMemoryBlobStore() {
   return { put, _objects: objects };
 }
 
-export function createVercelBlobStore({ token = process.env.BLOB_READ_WRITE_TOKEN } = {}) {
-  // Credentials resolve inside the SDK (`token` defaults to the
-  // BLOB_READ_WRITE_TOKEN env, which Vercel injects for the project's Blob
-  // store, or OIDC trust where the deployed runtime offers it). We only check
-  // that SOME credential exists so a hung-first-upload reads as a clear wiring
-  // error, not an SDK stack.
-  const canAuthenticate = () =>
-    Boolean(token) || Boolean(process.env.VERCEL_OIDC_TOKEN);
+// Strip a leading/trailing slash so join is unambiguous whatever the env holds.
+const trimSlashes = (s) => String(s).replace(/^\/+|\/+$/g, '');
 
-  async function put({ fileName, contentType, buffer }) {
-    if (!canAuthenticate()) {
+export function createR2BlobStore({
+  endpoint = process.env.R2_S3_ENDPOINT,
+  bucket = process.env.R2_BUCKET,
+  accessKeyId = process.env.R2_ACCESS_KEY_ID,
+  secretAccessKey = process.env.R2_SECRET_ACCESS_KEY,
+  publicBaseUrl = process.env.R2_PUBLIC_BASE_URL,
+} = {}) {
+  // Fail loud at the FIRST upload if any piece of the wiring is missing, so a
+  // half-configured store reads as an explicit error rather than an SDK stack
+  // (or, worse, a successful put to a bucket whose objects nothing can serve).
+  function assertConfigured() {
+    const missing = [
+      ['R2_S3_ENDPOINT', endpoint],
+      ['R2_BUCKET', bucket],
+      ['R2_ACCESS_KEY_ID', accessKeyId],
+      ['R2_SECRET_ACCESS_KEY', secretAccessKey],
+      ['R2_PUBLIC_BASE_URL', publicBaseUrl],
+    ].filter(([, v]) => !v).map(([k]) => k);
+    if (missing.length) {
       throw new Error(
-        'Vercel Blob is not configured: create a Blob store in the Vercel ' +
-        'dashboard (per the deploy note) so BLOB_READ_WRITE_TOKEN / OIDC exists ' +
-        'before accepting uploads',
+        `Cloudflare R2 is not configured: set ${missing.join(', ')} on the ` +
+        'linknms-portal Vercel project (per the LINA-266 deploy note) before ' +
+        'accepting uploads',
       );
     }
-    // Lazy: the npm package is only needed when bytes actually arrive.
-    const { put: blobPut } = await import('@vercel/blob');
-    const result = await blobPut(`attachments/${randomUUID()}-${fileName}`, buffer, {
-      access: 'public',
-      contentType,
-      addRandomSuffix: true,
-    });
-    return result.url;
+  }
+
+  // One client per adapter instance, built lazily on first use so construction
+  // stays free and the SDK never loads on read-only paths. `region: 'auto'` is
+  // R2's required value; the S3 client just needs a non-empty region.
+  let clientPromise;
+  async function getClient() {
+    if (!clientPromise) {
+      clientPromise = import('@aws-sdk/client-s3').then(({ S3Client }) =>
+        new S3Client({
+          region: 'auto',
+          endpoint,
+          credentials: { accessKeyId, secretAccessKey },
+        }),
+      );
+    }
+    return clientPromise;
+  }
+
+  async function put({ fileName, contentType, buffer }) {
+    assertConfigured();
+    // Random UUID prefix: two uploads of the same name never collide, and the
+    // resulting public URL is unguessable.
+    const key = `attachments/${randomUUID()}-${fileName}`;
+    const client = await getClient();
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+    await client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+    }));
+    // The public CDN URL the FE renders. R2 objects are served from the bucket's
+    // public base (r2.dev dev URL or a custom domain); we store the ready URL so
+    // the read path stays a straight column read.
+    return `${trimSlashes(publicBaseUrl)}/${key}`;
   }
 
   return { put };
