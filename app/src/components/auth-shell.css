@@ -171,7 +171,13 @@
 
 .au-col {
   width: 100%;
-  max-width: 380px;
+  /* LINA-202: widened from the pen's 380px. Clerk lays its SSO providers out as
+   * a single row of block buttons, and at 380px three of them squeezed each
+   * label until Facebook clipped to "Facebo…". The founder's call was to give
+   * the whole component room rather than hack individual buttons, so the fix is
+   * here on the column that bounds the card — whatever set of providers Clerk
+   * renders now has space to show its full label. */
+  max-width: 460px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -227,7 +233,15 @@
   gap: 16px;
 }
 
-/* Pen `SSO` — three block buttons, 8px radius, hairline in Outline Strong. */
+/* Pen `SSO` — block buttons, 8px radius, hairline in Outline Strong. Clerk lays
+ * them in a single flex row; let that row WRAP so a provider that can't fit on
+ * one line drops to the next instead of clipping its label (LINA-202). Belt to
+ * the wider `.au-col` above: the column gives room for the common 3-provider
+ * row, and this keeps a 4th from ever truncating. */
+.au-clerk .cl-socialButtons {
+  flex-wrap: wrap;
+}
+
 .au-clerk .cl-socialButtonsBlockButton {
   border: 1px solid var(--outline-strong);
   border-radius: 8px;
@@ -237,6 +251,13 @@
   font-size: 14px;
   font-weight: 600;
   box-shadow: none;
+}
+
+/* Don't let Clerk ellipsize the provider label — with the room the column now
+ * gives, the full word should always show (LINA-202). */
+.au-clerk .cl-socialButtonsBlockButtonText {
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .au-clerk .cl-socialButtonsBlockButton:hover {
