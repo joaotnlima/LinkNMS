@@ -5,7 +5,7 @@
 // ── WHY THIS IS A CLIENT COMPONENT AND NOT A SERVER ONE ──────────────────────
 // Every other read in this app happens in a server component. This one cannot,
 // and the reason is specific rather than stylistic: per ADR-0023 §5 the
-// `GET /api/rfp/token/:token` call is what MINTS the short-lived scoped cookie
+// `GET /api/v1/rfp/token/:token` call is what MINTS the short-lived scoped cookie
 // that the subsequent upload and submit are authenticated by. A `Set-Cookie` on
 // a fetch made from a server component lands in the server's own response to
 // itself and never reaches the visitor's browser — the page would render and

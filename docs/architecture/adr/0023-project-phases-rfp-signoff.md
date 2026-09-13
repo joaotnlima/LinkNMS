@@ -291,15 +291,32 @@ send()
      WHERE r.token_hash = $1
   → REJECT if phase_status != 'active'   ← dynamic expiry
       (procurement closed → constructor already chosen → RFP window over)
-  → REJECT if r.status = 'submitted'     ← single-use for submission
+  → include the proposal if r.status = 'submitted'   ← see LINA-294 amendment
   → set a short-lived signed cookie (httpOnly, sameSite=strict, 1-hour TTL)
     scoped to /rfp/[token]/* so multi-tab stays authenticated
-  → respond with the RFP detail + proposal form
+  → respond with the RFP detail + proposal form (+ proposal when submitted)
 
-POST /rfp/[token]/proposals
+POST /api/v1/rfp/token/[token]/proposal      ← path amended, see LINA-294
   → verify same cookie + re-check token_hash AND phase still active
+  → REJECT if r.status = 'submitted'   ← single-use lives HERE, on the write
   → INSERT rfp_proposal, UPDATE rfp_recipient.status = 'submitted'
 ```
+
+> **Amendment (LINA-294, Architect — ratifying the LINA-284 slice contract).**
+> Two changes to the flow above, both settled in
+> `docs/architecture/slice-rfp-token-contract.md`:
+>
+> 1. **The GET no longer rejects a submitted recipient — it returns their
+>    `proposal`.** Single-use moves to the POST (the write), where it belongs.
+>    The `/rfp/[token]/submitted` confirmation page re-reads the GET so the
+>    read-back is the server's record rather than a copy of a form post that
+>    dies on reload; a recipient reading their own bid leaks nothing they did
+>    not write, and the token still scopes it to exactly that recipient.
+> 2. **Paths are versioned and namespaced:**
+>    `GET /api/v1/rfp/token/:token`, `POST …/portfolio-images`,
+>    `POST …/proposal` (singular). Under `/api/v1/` like every other route; the
+>    `token/` segment kept so public token access never collides with a future
+>    authenticated `/api/v1/rfp/:id`. BE implements these on LINA-279.
 
 No Clerk session is created. The token is single-use for submission (the same
 cookie lets the `/rfp/[token]/submitted` confirmation page render). Selecting a

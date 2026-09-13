@@ -78,21 +78,28 @@ path too. Say so on LINA-279 and this section becomes a footnote.
 
 ## 3. Endpoints (BE — LINA-279)
 
-Base path per the LINA-284 issue text: **`/api/rfp/token/:token`**.
+Base path: **`/api/v1/rfp/token/:token`**.
 
-> **Discrepancy to settle (Architect).** ADR-0023 §5 writes the submit as
-> `POST /rfp/[token]/proposals` (plural, no `/api/rfp/token` prefix); the issue
-> text writes `GET /api/rfp/token/:token` and
-> `POST /api/rfp/token/:token/proposal` (singular). The FE implements the
-> **issue's** paths, because that is the assignment it was given. Changing them
-> is a one-line edit in `app/src/lib/rfp-proposal.ts → base()`.
+> **RESOLVED (Architect, LINA-294).** The base is
+> **`/api/v1/rfp/token/:token`**, and the sub-actions stay singular
+> (`/proposal`). Two things settled here:
 >
-> Note also that this sits at `/api/rfp/...`, **outside** the `/api/v1/` tree
-> every other route in this app lives under. That is the issue's wording, not a
-> considered decision — if the Architect would rather it were
-> `/api/v1/rfp/token/:token`, it is the same one-line edit.
+> - **Under `/api/v1/`, not outside it.** Every other route in this app is
+>   versioned; a public route is still a contract we may need to evolve, so it
+>   is versioned like the rest. Precedent: the invitation preview lives at
+>   `GET /api/v1/invitations/:token` — the closest sibling to this flow.
+> - **The `token/` segment is kept on purpose.** The invitation route can drop
+>   it because invitations are *only ever* token-addressed; an RFP is also
+>   addressed by id from the authenticated composer/inbox, so a future
+>   `/api/v1/rfp/:id` is likely. Keeping `token/` namespaces the public,
+>   token-addressed access apart from that, so the two can never collide.
+>
+> ADR-0023 §5 wrote the submit as `POST /rfp/[token]/proposals` (plural); this
+> supersedes that path. The FE already carried the resolved path in
+> `app/src/lib/rfp-proposal.ts → base()`. **LINA-279 (BE) builds against the
+> paths in this section.**
 
-### Route 1 — `GET /api/rfp/token/:token`
+### Route 1 — `GET /api/v1/rfp/token/:token`
 
 Mints the scoped cookie (§2) and returns the RFP behind the link.
 
@@ -117,24 +124,24 @@ and `portfolio_images` jsonb columns, camelCased on the wire:
 { "key": "…", "filename": "plans.pdf", "size": 402133, "contentType": "application/pdf", "url": "https://…" }
 ```
 
-> **DECISION 1 — `proposal` is returned, not refused.** ADR-0023 §5 says the GET
-> should `REJECT if r.status = 'submitted'`. The FE needs the opposite: the
+> **DECISION 1 — `proposal` is returned, not refused. RATIFIED (Architect,
+> LINA-294); supersedes ADR-0023 §5.** ADR-0023 §5 said the GET should
+> `REJECT if r.status = 'submitted'`. The FE needs the opposite: the
 > confirmation page re-reads this endpoint so that what it shows is what the
 > server actually holds, rather than a souvenir of a form submission that
 > evaporates on reload, bookmark or forward. **Single-use applies to the POST,
-> not to the GET.** A read of one's own submitted bid leaks nothing the submitter
-> did not write.
->
-> If the BE keeps the ADR's rejection instead, the confirmation page degrades
-> gracefully — it shows the thank-you without the detail list — but the read-back
-> is lost, and that is the part that makes it a record.
+> not to the GET** — the POST is the write, and it alone must reject a second
+> submission (`already_submitted`). A read of one's own submitted bid leaks
+> nothing the submitter did not write; the token still scopes it to exactly
+> that recipient. **LINA-279 (BE) implements the GET as: return `proposal` when
+> `r.status = 'submitted'`; enforce single-use on the POST.**
 
 > **DECISION 2 — `specialties` is a flat `string[]`.** The issue asks for
 > "specialty requirements" on the page; ADR-0023 §2 has no column for it. If
 > LINA-279 models it as rows or as a typed enum, send the display labels here and
 > keep the shape.
 
-### Route 2 — `POST /api/rfp/token/:token/portfolio-images`
+### Route 2 — `POST /api/v1/rfp/token/:token/portfolio-images`
 
 `multipart/form-data`, **one** `file` part and nothing else — no declared type,
 no size, no uploader. All three are re-derived server-side. Mirrors the stage
@@ -145,9 +152,11 @@ attachment upload exactly (LINA-249, `handleUpload` → `readUpload`).
 { "image": { /* FileRef */ } }
 ```
 
-> **DECISION 3 — a separate upload route, not files inside the proposal POST.**
-> The gateway's `handleUpload` reads a single file part; there is no multi-file
-> multipart idiom in this codebase. One-file-at-a-time also lets a contractor see
+> **DECISION 3 — a separate upload route, not files inside the proposal POST.
+> RATIFIED (Architect, LINA-294).** The gateway's `handleUpload` reads a single
+> file part; there is no multi-file multipart idiom in this codebase. Mirroring
+> the stage-attachment upload (LINA-249) keeps one idiom across the app.
+> One-file-at-a-time also lets a contractor see
 > each image land (and retry one that fails) instead of losing a whole form to
 > the fourth upload. The proposal body then carries `FileRef`s, which is exactly
 > what `portfolio_images jsonb` stores.
@@ -156,7 +165,7 @@ Server-side: images only (JPEG/PNG/WebP/HEIC), sniffed not trusted; 10 MB cap pe
 file (same as stage attachments); at most **8** per recipient — the FE enforces
 all three as a courtesy and shows the server's answer when it disagrees.
 
-### Route 3 — `POST /api/rfp/token/:token/proposal`
+### Route 3 — `POST /api/v1/rfp/token/:token/proposal`
 
 `application/json`. Re-checks the token **and** that the phase is still `active`
 before writing (rule 2).

@@ -7,7 +7,7 @@
 // the form. It would also be a lie the moment the contractor bookmarks this URL,
 // forwards it to a colleague, or simply reloads — three things people do with a
 // page that says "we got it". So the details come from the same
-// `GET /api/rfp/token/:token` the form uses, and what is shown is what the
+// `GET /api/v1/rfp/token/:token` the form uses, and what is shown is what the
 // server actually holds. This is the "who decided this, when" promise applied to
 // the one screen an outside party ever sees: the read-back is the record, not a
 // souvenir of a form submission.

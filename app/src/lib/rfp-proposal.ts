@@ -319,7 +319,12 @@ export function submittedPath(token: string): string {
 // ── The three calls (contract §3) ────────────────────────────────────────────
 
 function base(token: string): string {
-  return `/api/rfp/token/${encodeURIComponent(token)}`;
+  // Under the versioned tree like every other API route in this app, with the
+  // `token/` segment kept on purpose: it namespaces public, token-addressed
+  // access apart from any future authenticated `/api/v1/rfp/:id` route, so the
+  // two can never collide on the same path. Ratified by the Architect on
+  // LINA-294 (precedent: the invitation preview at /api/v1/invitations/:token).
+  return `/api/v1/rfp/token/${encodeURIComponent(token)}`;
 }
 
 /**
@@ -356,7 +361,7 @@ async function refuse(res: Response): Promise<RfpTokenError> {
 }
 
 /**
- * GET /api/rfp/token/:token — the RFP behind the link (contract §3 route 1).
+ * GET /api/v1/rfp/token/:token — the RFP behind the link (contract §3 route 1).
  *
  * This is also the call that mints the short-lived scoped cookie ADR-0023 §5
  * describes, which is why the form page makes it from the BROWSER rather than
