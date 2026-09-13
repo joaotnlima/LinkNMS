@@ -100,6 +100,36 @@ function mapAttachment(r) {
   };
 }
 
+// Project phase + sign-off shapers (LINA-278, ADR-0023). responsible_party_ids
+// is a uuid[] — pg returns it as a JS array already; default to [] defensively.
+function mapPhase(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    project_id: r.project_id,
+    kind: r.kind,
+    name: r.name,
+    status: r.status,
+    sequence: toNum(r.sequence),
+    responsible_party_ids: r.responsible_party_ids ?? [],
+    created_at: toIso(r.created_at),
+    updated_at: toIso(r.updated_at),
+  };
+}
+
+function mapSignOff(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    phase_id: r.phase_id,
+    requested_by: r.requested_by,
+    requested_at: toIso(r.requested_at),
+    status: r.status,
+    resolved_at: r.resolved_at ? toIso(r.resolved_at) : null,
+    resolution_comment: r.resolution_comment ?? null,
+  };
+}
+
 // Slice B2 plan versioning (LINA-200, contract §3) shapers. plan_version /
 // plan_acceptance / project_baseline rows are snake_case in the DB; these map
 // them to the same camelCase-less snake_case shape the in-memory store returns,
@@ -771,8 +801,110 @@ export function createPgStore({ pool = getPool() } = {}) {
     return mapTemplate(rows[0]);
   }
 
+  // ── Project phases + sign-off (LINA-278, ADR-0023) ──────────────────────────
+
+  // Idempotent seed insert. ON CONFLICT (project_id, kind) DO NOTHING makes a
+  // concurrent seed a no-op (returns null) rather than a unique violation that
+  // would abort the surrounding transaction — mirrors the in-memory contract.
+  async function insertPhase(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.project_phase
+         (id, project_id, kind, name, status, sequence, responsible_party_ids,
+          created_at, updated_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       on conflict (project_id, kind) do nothing
+       returning *`,
+      [row.id, row.project_id, row.kind, row.name, row.status, row.sequence,
+        row.responsible_party_ids ?? [], row.created_at, row.updated_at],
+    );
+    return rows.length ? mapPhase(rows[0]) : null;
+  }
+
+  async function listPhasesByProject(projectId) {
+    const { rows } = await pool.query(
+      `select * from schedule.project_phase
+        where project_id = $1
+        order by sequence`,
+      [projectId]);
+    return rows.map(mapPhase);
+  }
+
+  async function getPhaseById(id) {
+    const { rows } = await pool.query(
+      'select * from schedule.project_phase where id = $1', [id]);
+    return mapPhase(rows[0] ?? null);
+  }
+
+  async function getPhaseByKind(projectId, kind) {
+    const { rows } = await pool.query(
+      'select * from schedule.project_phase where project_id = $1 and kind = $2',
+      [projectId, kind]);
+    return mapPhase(rows[0] ?? null);
+  }
+
+  async function countPhasesByProject(projectId) {
+    const { rows } = await pool.query(
+      'select count(*)::int as n from schedule.project_phase where project_id = $1',
+      [projectId]);
+    return rows[0].n;
+  }
+
+  // In-place status walk. The DB trigger project_phase_signed_off_one_way rejects
+  // any attempt to walk a signed_off phase back out (raised as P0001).
+  async function updatePhaseStatus(client, id, status) {
+    const { rows } = await client.query(
+      `update schedule.project_phase
+          set status = $2, updated_at = now()
+        where id = $1
+       returning *`,
+      [id, status]);
+    return rows.length ? mapPhase(rows[0]) : null;
+  }
+
+  async function insertSignOffRequest(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.phase_sign_off_request
+         (id, phase_id, requested_by, requested_at, status, resolved_at, resolution_comment)
+       values ($1,$2,$3,$4,$5,$6,$7)
+       returning *`,
+      [row.id, row.phase_id, row.requested_by, row.requested_at, row.status,
+        row.resolved_at ?? null, row.resolution_comment ?? null]);
+    return mapSignOff(rows[0]);
+  }
+
+  async function getSignOffRequest(id) {
+    const { rows } = await pool.query(
+      'select * from schedule.phase_sign_off_request where id = $1', [id]);
+    return mapSignOff(rows[0] ?? null);
+  }
+
+  async function listSignOffRequestsByPhase(phaseId) {
+    const { rows } = await pool.query(
+      `select * from schedule.phase_sign_off_request
+        where phase_id = $1
+        order by requested_at, id`,
+      [phaseId]);
+    return rows.map(mapSignOff);
+  }
+
+  // Resolve a pending request in place (approve/reject). The WHERE status =
+  // 'pending' guard makes this a no-op (null) if the request was already
+  // resolved by a concurrent call — the service maps that to a typed 409.
+  async function resolveSignOffRequest(client, id, { status, resolvedAt, resolutionComment }) {
+    const { rows } = await client.query(
+      `update schedule.phase_sign_off_request
+          set status = $2, resolved_at = $3, resolution_comment = $4
+        where id = $1 and status = 'pending'
+       returning *`,
+      [id, status, resolvedAt, resolutionComment ?? null]);
+    return rows.length ? mapSignOff(rows[0]) : null;
+  }
+
   return {
     transaction,
+    insertPhase, listPhasesByProject, getPhaseById, getPhaseByKind,
+    countPhasesByProject, updatePhaseStatus,
+    insertSignOffRequest, getSignOffRequest, listSignOffRequestsByPhase, resolveSignOffRequest,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
     insertPlanImport, getPlanImportByIdempotencyKey, insertStageDependency,
     deleteStageDependenciesByPlanVersion, listStageDependenciesByPlanVersion,

@@ -169,6 +169,42 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
   } = services;
   const parties = createPartyStore({ pool: pools.identity });
 
+  const identityHttp = createIdentityHttp({
+    service: identity,
+    // Batched portfolio counts (ADR-0012 §A1): Identity must not read the
+    // decision/change_order schemas, so the two grouped folds are wired here
+    // from each service's store. Both are per-batch grouped queries — never
+    // N list calls per card.
+    counts: {
+      decisions: (projectIds) => decisionStore.countProjects(projectIds),
+      changeOrders: (projectIds) => changeOrderStore.countProjects(projectIds),
+    },
+  });
+
+  // Phase seed-on-create (LINA-278, ADR-0023 §3). Project creation is Identity's
+  // (its schema owns the project row); the two default phases live in `schedule`.
+  // Rather than let Identity write another service's schema, the gateway
+  // orchestrates: after a project is created it asks the phase service to seed
+  // procurement/execution, reading `hasSignedContractor` from the create body to
+  // decide which phase starts active. Seeding is best-effort and idempotent — a
+  // missed seed is recovered by lazy-init on the first GET /phases — so a phase
+  // failure never fails the (already-committed) project creation.
+  if (services.phases) {
+    const baseCreateProject = identityHttp.createProject;
+    identityHttp.createProject = async (ctx) => {
+      const res = await baseCreateProject(ctx);
+      if (res?.status === 201 && res.body?.id) {
+        const hasSignedContractor = ctx?.body?.hasSignedContractor === true;
+        try {
+          await services.phases.ensurePhases(res.body.id, { hasSignedContractor });
+        } catch (e) {
+          console.error('[phases] seed-on-create failed; GET /phases will lazy-init', e);
+        }
+      }
+      return res;
+    };
+  }
+
   return {
     pools,
     identity,
@@ -178,20 +214,10 @@ export function createContainer({ urls = {}, roles = {}, analytics = getAnalytic
     ledger: ledgerReader,
     services: {
       identity, decision: decisionService, changeOrder: changeOrderService,
-      schedule: scheduleService,
+      schedule: scheduleService, phases: services.phases,
     },
     http: {
-      identity: createIdentityHttp({
-        service: identity,
-        // Batched portfolio counts (ADR-0012 §A1): Identity must not read the
-        // decision/change_order schemas, so the two grouped folds are wired here
-        // from each service's store. Both are per-batch grouped queries — never
-        // N list calls per card.
-        counts: {
-          decisions: (projectIds) => decisionStore.countProjects(projectIds),
-          changeOrders: (projectIds) => changeOrderStore.countProjects(projectIds),
-        },
-      }),
+      identity: identityHttp,
       decision: createDecisionHttp({ service: decisionService }),
       changeOrder: services.changeOrderHttp,
       schedule: services.scheduleHttp,
