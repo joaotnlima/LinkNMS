@@ -522,3 +522,52 @@ constraints.
 **Migration note:** the current migration head is `schedule/0011`; PRD v2 keeps
 everything in **one** migration `schedule/0012_project_phases_rfp_signoff.sql`
 (now including `plan_change_log` and *omitting* `rfp_recipient.token_expires_at`).
+
+---
+
+## Addendum A — LINA-277 / LINA-278 implementation decisions
+
+Shipped together (migration 0012 + phase lifecycle API) because the one-way
+`signed_off` transition and the immutable audit surfaces are one tightly-coupled
+slice over the `schedule` schema. Four decisions refine §2/§3/§8 as built:
+
+1. **Sign-off resolution is IN PLACE, not append-only.** §2's "append-only
+   sign-off ledger (rejection = new row)" note contradicts the endpoint contract
+   (`/sign-off/:requestId/approve|reject`), the `resolved_at`/`resolution_comment`
+   columns, and the `resolved_iff_not_pending` CHECK — all of which require
+   resolving the addressed request row itself. `phase_sign_off_request` therefore
+   grants `SELECT+INSERT+UPDATE`; approve/reject stamps `status + resolved_at +
+   resolution_comment` on the pending row, guarded by the partial
+   `UNIQUE (phase_id) WHERE status='pending'` index. **Tamper-evidence for the
+   sign-off DECISION lives in the one-way `project_phase` trigger + the immutable
+   `plan_change_log` + the change-order ledger — not in the workflow request
+   row,** which is a mutable-lifecycle record like `rfp`/`rfp_recipient`.
+
+2. **Sign-off authorization (interim, pending PRD Q1).** Q1 (owner-only vs GC
+   request) is unanswered, so v1 requires project **membership** to request, and
+   bars the **requester from approving their own request** (`cannot_self_approve`)
+   — a plan is signed off *by the other party*, never self-approved. This
+   integrity floor holds regardless of how Q1 lands; the finer GC-requests /
+   owner-approves rule narrows it later without schema change.
+
+3. **Phase seed-at-create is gateway-orchestrated, not Identity-owned.** Project
+   creation is Identity's (it owns the project row); the phase tables live in
+   `schedule`. Rather than have Identity write another service's schema (an
+   ADR-0006 §1 boundary break), the gateway container seeds phases *after*
+   `createProject` returns, reading `hasSignedContractor` from the create body.
+   Seeding is best-effort + idempotent (`ON CONFLICT (project_id,kind) DO
+   NOTHING`); a missed seed is recovered by lazy-init on the first `GET /phases`,
+   so a phase failure never fails the already-committed project creation.
+
+4. **Change-order guard + `plan_change_log` writes are a follow-up child.** This
+   slice ships the audit-critical primitive — the one-way `signed_off` transition
+   (DB trigger + service) and `assertPlanEditable(projectId)`, the guard the plan
+   mutation handlers call. Wiring that guard into `:author`/`:propose`/stage
+   PATCH/DELETE and writing pre-sign-off `plan_change_log` field diffs is a
+   separate BE child (the migration table + the guard primitive already exist, so
+   it is a wiring task, not new schema). Until it lands, the `signed_off` phase is
+   immutable but the plan-edit *lock* is not yet enforced at the mutation
+   handlers.
+
+**RFP recipient/proposal token APIs and email** remain separate downstream
+children (their tables ship in 0012; no endpoints in this slice).
