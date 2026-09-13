@@ -531,17 +531,24 @@ Shipped together (migration 0012 + phase lifecycle API) because the one-way
 `signed_off` transition and the immutable audit surfaces are one tightly-coupled
 slice over the `schedule` schema. Four decisions refine §2/§3/§8 as built:
 
-1. **Sign-off resolution is IN PLACE, not append-only.** §2's "append-only
-   sign-off ledger (rejection = new row)" note contradicts the endpoint contract
-   (`/sign-off/:requestId/approve|reject`), the `resolved_at`/`resolution_comment`
-   columns, and the `resolved_iff_not_pending` CHECK — all of which require
-   resolving the addressed request row itself. `phase_sign_off_request` therefore
-   grants `SELECT+INSERT+UPDATE`; approve/reject stamps `status + resolved_at +
-   resolution_comment` on the pending row, guarded by the partial
-   `UNIQUE (phase_id) WHERE status='pending'` index. **Tamper-evidence for the
-   sign-off DECISION lives in the one-way `project_phase` trigger + the immutable
-   `plan_change_log` + the change-order ledger — not in the workflow request
-   row,** which is a mutable-lifecycle record like `rfp`/`rfp_recipient`.
+1. **Sign-off resolution is IN PLACE, not append-only — fixed forward in
+   migration 0013.** Migration 0012 (LINA-277, #129) shipped
+   `phase_sign_off_request` with an append-only grant (`SELECT+INSERT`) and an
+   "append-only ledger, rejection = new row" comment. But the table it created is
+   built for in-place resolution: the `resolved_at`/`resolution_comment` columns,
+   the `resolved_iff_not_pending` CHECK, and the partial
+   `UNIQUE (phase_id) WHERE status='pending'` index all describe resolving the
+   addressed request row — and the endpoint contract
+   (`/sign-off/:requestId/approve|reject`) is request-addressed. With INSERT-only,
+   a pending row can never be resolved and a second terminal row leaves it stuck
+   pending, permanently blocking the one-pending index. Because 0012 is already
+   applied (byte-frozen by the prod schema-gate), the fix is **forward-only:
+   migration 0013 `GRANT UPDATE ON phase_sign_off_request`**, enabling approve/
+   reject to stamp `status + resolved_at + resolution_comment` on the pending row.
+   **Tamper-evidence for the sign-off DECISION lives in the one-way
+   `project_phase` trigger + the immutable `plan_change_log` + the change-order
+   ledger — not in the workflow request row,** which is a mutable-lifecycle record
+   like `rfp`/`rfp_recipient` (both of which already grant UPDATE in 0012).
 
 2. **Sign-off authorization (interim, pending PRD Q1).** Q1 (owner-only vs GC
    request) is unanswered, so v1 requires project **membership** to request, and

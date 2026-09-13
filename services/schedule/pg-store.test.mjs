@@ -94,7 +94,7 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
     // errors mean it exists and are safely ignored.
     for (const f of ['0003_plan_versioning.sql', '0005_plan_draft_status.sql',
       '0006_stage_description.sql', '0007_stage_dependency_draft_delete.sql',
-      '0012_project_phases_rfp_signoff.sql']) {
+      '0012_project_phases_rfp_signoff.sql', '0013_phase_sign_off_grant_update.sql']) {
       try { await pool.query(await readFile(join(here, 'migrations', f), 'utf8')); }
       catch (err) {
         // 42704 = DROP CONSTRAINT on a constraint 0005 already dropped (re-run);
