@@ -257,6 +257,18 @@ const checks = [
   ["Portal · light, state chips (LINA-92)", "text", "state-danger on state-danger-muted", "state-danger", "state-danger-muted", "GAP: the .pen ships no state-danger-fg, so the base tone is the only candidate for .form-error / .integrity.bad text."],
   ["Portal · light, state chips (LINA-92)", "text", "success on plan-closed-muted (ok chip)", "success", "plan-closed-muted", "The .badge.ok pairing, now that --success and --plan-closed are one value."],
 
+  /* --- §8a-bis the clay-amber pending-change family (LINA-282 / ADR-0023 §6).
+     Filed as `fixed`/`fixed-non-text` rather than plain `text`/`non-text` so the
+     family actually GATES: the ADR requires it to clear the contrast gate in both
+     themes, and a non-gating check reports a breakage while still exiting 0. --- */
+  ["Portal · light, pending-change (LINA-282)", "fixed", "status-pending-change-fg on status-pending-change-muted", "status-pending-change-fg", "status-pending-change-muted", "The 'Change pending' chip on its own tint, and the locked row's text."],
+  ["Portal · light, pending-change (LINA-282)", "fixed", "status-pending-change-fg on paper", "status-pending-change-fg", "paper", "Chip text where the fill is omitted."],
+  ["Portal · light, pending-change (LINA-282)", "fixed", "status-pending-change-fg on surface-sunken", "status-pending-change-fg", "surface-sunken", "The locked grid's zebra/header band."],
+  ["Portal · light, pending-change (LINA-282)", "fixed-non-text", "status-pending-change as the row marker on status-pending-change-muted", "status-pending-change", "status-pending-change-muted", "The 3px left marker that carries the state on the filled row."],
+  ["Portal · light, pending-change (LINA-282)", "fixed", "white on status-pending-change (filled control)", "white", "status-pending-change", "Any filled chip/button in the family."],
+  ["Portal · light, pending-change (LINA-282)", "non-text", "status-pending-change-muted row fill on paper", "status-pending-change-muted", "paper", "A FILL, like plan-baseline-muted. Documented, not gated: it cannot carry the state alone, which is why the chip is mandatory."],
+  ["Portal · light, pending-change (LINA-282)", "decorative", "status-pending-change-line on status-pending-change-muted", "status-pending-change-line", "status-pending-change-muted", "Chip border beside contrasting text."],
+
   /* --- §8b the -fg rungs the .pen omits, verified in the same run.
      Each of these MUST pass or the portal migration regresses accessibility
      against the palette it is replacing. --- */
@@ -329,6 +341,13 @@ const checks = [
   ["Portal · dark, state chips (LINA-106)", "fixed", "success-fg on plan-closed-muted (ok chip)", "d:success-fg", "d:plan-closed-muted", "The .badge.ok pairing — --ok-bg aliases the plan-closed tint, since the .pen specifies no state-success ramp."],
   ["Portal · dark, state chips (LINA-106)", "decorative", "state-warning-line on state-warning-muted", "d:state-warning-line", "d:state-warning-muted", "Chip border beside contrasting text."],
   ["Portal · dark, state chips (LINA-106)", "decorative", "state-danger-line on state-danger-muted", "d:state-danger-line", "d:state-danger-muted", "Chip border."],
+
+  ["Portal · dark, pending-change (LINA-282)", "fixed", "status-pending-change-fg on status-pending-change-muted", "d:status-pending-change-fg", "d:status-pending-change-muted", "The 'Change pending' chip on its own tint."],
+  ["Portal · dark, pending-change (LINA-282)", "fixed", "status-pending-change-fg on paper", "d:status-pending-change-fg", "d:paper", "Chip text where the fill is omitted."],
+  ["Portal · dark, pending-change (LINA-282)", "fixed", "status-pending-change-fg on surface-sunken", "d:status-pending-change-fg", "d:surface-sunken", "The locked grid's zebra/header band."],
+  ["Portal · dark, pending-change (LINA-282)", "fixed-non-text", "status-pending-change as the row marker on paper", "d:status-pending-change", "d:paper", "The left marker on the dark field."],
+  ["Portal · dark, pending-change (LINA-282)", "fixed-non-text", "status-pending-change as the row marker on status-pending-change-muted", "d:status-pending-change", "d:status-pending-change-muted", "The marker on the filled row."],
+  ["Portal · dark, pending-change (LINA-282)", "decorative", "status-pending-change-line on status-pending-change-muted", "d:status-pending-change-line", "d:status-pending-change-muted", "Chip border."],
 
   /* --- §8e the portal's plan surfaces in dark (LINA-92) ---
      This is where the migration found a live accessibility bug. globals.css

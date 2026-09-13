@@ -1,0 +1,98 @@
+/* Execution-phase sign-off — banners, modals, history (LINA-282, ADR-0023 §6).
+
+   Every colour here resolves through a token. The one net-new family is
+   --status-pending-change (clay/amber), added to design-system/tokens.json in
+   this issue with light + dark rungs and gating contrast checks; it is aliased
+   below in the same shorthand style globals.css uses for ok/warn/bad, so a
+   consumer writes --pend-fg and the dark scheme follows for free. */
+
+:root {
+  --pend-fg: var(--status-pending-change-fg);
+  --pend-bg: var(--status-pending-change-muted);
+  --pend-bd: var(--status-pending-change-line);
+  --pend-mark: var(--status-pending-change);
+}
+
+.so { display: flex; flex-direction: column; gap: var(--s3); }
+
+/* ── The driver's ask ─────────────────────────────────────────────────────── */
+.so-ask { display: flex; flex-direction: column; gap: var(--s1); align-items: flex-start; }
+.so-askbtn[disabled] { opacity: .55; cursor: not-allowed; }
+.so-blocked { margin: 0; }
+
+/* ── Banners. One shape, four tones — the state is carried by the icon and the
+      sentence as well as the tint, never by colour alone. ─────────────────── */
+.so-banner {
+  display: flex; gap: var(--s3); align-items: flex-start;
+  padding: var(--s3); border: 1px solid var(--outline);
+  border-radius: var(--r-overlay); background: var(--raised);
+}
+.so-banner svg { width: 18px; height: 18px; stroke-width: 2.2; fill: none; flex: 0 0 auto; margin-top: 2px; }
+.so-banner-t { margin: 0 0 2px; font-weight: 650; }
+.so-banner .cap { margin: 0; }
+.so-banner .btn-row { margin-top: var(--s3); }
+
+.so-banner.is-await { background: var(--warn-bg); border-color: var(--warn-bd); color: var(--warn-fg); }
+.so-banner.is-await svg { stroke: var(--warn-fg); }
+.so-banner.is-decide { background: var(--pend-bg); border-color: var(--pend-bd); color: var(--pend-fg); }
+.so-banner.is-decide svg { stroke: var(--pend-fg); }
+.so-banner.is-reject { background: var(--bad-bg); border-color: var(--bad-bd); color: var(--bad-fg); }
+.so-banner.is-reject svg { stroke: var(--bad-fg); }
+.so-banner.is-signed { background: var(--ok-bg); border-color: var(--ok-bd); color: var(--ok-fg); }
+.so-banner.is-signed svg { stroke: var(--ok-fg); }
+
+/* The banner's own caption must stay readable on the tint, so it inherits the
+   banner's -fg rung rather than the page's --muted, which is measured against
+   paper and not against these fills. */
+.so-banner .cap { color: inherit; opacity: .85; }
+.so-decide-body { display: flex; flex-direction: column; }
+
+/* A refusal is quoted, not summarised. */
+.so-quote {
+  margin: var(--s2) 0; padding: var(--s2) var(--s3);
+  border-left: 3px solid currentColor; background: var(--raised);
+  color: var(--fg); font-size: 14px; white-space: pre-wrap;
+}
+
+/* ── Collapsed-header stamp (the accordion's read-at-a-glance answer) ─────── */
+.so-hdr { display: inline-flex; align-items: center; gap: var(--s2); }
+.so-hdr-stamp { margin: 0; }
+
+/* ── History ──────────────────────────────────────────────────────────────── */
+.so-history { border: 1px solid var(--outline); border-radius: var(--r-overlay); background: var(--raised); }
+.so-history > summary { padding: var(--s3); cursor: pointer; font-weight: 600; }
+.so-log { list-style: none; margin: 0; padding: 0 var(--s3) var(--s3); display: flex; flex-direction: column; gap: var(--s3); }
+.so-log-row { display: flex; flex-direction: column; gap: var(--s1); align-items: flex-start; }
+.so-log-txt { font-size: 13px; color: var(--muted); }
+
+/* ── Modals ───────────────────────────────────────────────────────────────── */
+.so-scrim {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(22, 24, 29, .38);
+  display: flex; align-items: center; justify-content: center; padding: var(--s4);
+}
+.so-modal {
+  width: min(480px, 100%); background: var(--raised); color: var(--fg);
+  border: 1px solid var(--outline); border-radius: var(--r-overlay);
+  box-shadow: var(--shadow-lg); padding: var(--s4);
+  display: flex; flex-direction: column; gap: var(--s3);
+}
+.so-modal-t { margin: 0; font-size: 18px; line-height: 1.2; }
+.so-modal-body { display: flex; flex-direction: column; gap: var(--s2); }
+.so-modal-body p { margin: 0; }
+.so-modal-actions { justify-content: flex-end; }
+.so-label { font-size: 13px; font-weight: 600; }
+.so-textarea {
+  width: 100%; padding: 10px 11px; font: inherit; font-size: 14px;
+  border: 1px solid var(--outline-strong); border-radius: var(--r-ctrl);
+  background: var(--sunken); color: var(--fg); resize: vertical;
+}
+.so-textarea:focus { outline: none; border-color: var(--plan-baseline); }
+
+/* ── The clay/amber chip, and the locked row it belongs to ────────────────── */
+.badge.pending-change { color: var(--pend-fg); background: var(--pend-bg); border-color: var(--pend-bd); }
+.badge.pending-change svg { stroke: var(--pend-fg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .so-scrim, .so-modal { transition: none; }
+}

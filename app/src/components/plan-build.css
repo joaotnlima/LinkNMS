@@ -677,3 +677,23 @@
 /* The task permalink page (LINA-250) — the read-only face of a task on a
    proposed or frozen version. Narrower than the grid: it is one task, not a plan. */
 .pbx--task { max-width: 760px; display: flex; flex-direction: column; gap: var(--s4); }
+
+/* ── Rows with a change order in flight (LINA-282, ADR-0023 §6) ─────────────
+   Only ever appear on a LOCKED plan: once the execution phase is signed off,
+   the grid is read-only and the clay/amber tint marks the rows a change order
+   is moving underneath. The colour is deliberately NOT the signal on its own —
+   the row also carries a "Change pending" chip (.badge.pending-change, defined
+   with the family's aliases in sign-off.css), because the locked grid is
+   aria-disabled and a tint alone would be unreadable to half of who needs it.
+   The 3px left marker is what makes the row findable when scanning fast. */
+.pgd-row.is-pending-change {
+  background: var(--status-pending-change-muted);
+  box-shadow: inset 3px 0 0 var(--status-pending-change);
+}
+.pgd-row.is-pending-change .pgd-id,
+.pgd-row.is-pending-change .pgd-name { color: var(--status-pending-change-fg); }
+
+.pgt-bar.is-pending-change {
+  background: var(--status-pending-change-muted);
+  border-color: var(--status-pending-change);
+}
