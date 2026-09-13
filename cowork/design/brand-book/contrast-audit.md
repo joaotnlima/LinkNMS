@@ -16,7 +16,7 @@ what is behind it — measuring the token in isolation tells you nothing. Where 
 backdrop is a photograph the audit probes the two cases that decide the outcome:
 a blown-highlight pixel (`#ffffff`) and a mid-grey (`#808080`).
 
-**153 checks · 23 blocking failures · 0 proposed fixes that do not hold.**
+**166 checks · 24 blocking failures · 0 proposed fixes that do not hold.**
 
 ### Landing · on the Ink field
 
@@ -183,6 +183,18 @@ a blown-highlight pixel (`#ffffff`) and a mid-grey (`#808080`).
 | state-danger on state-danger-muted | `#9b3b2f` | `#f6e2de` | 5.51:1 | text | 4.5 | PASS | GAP: the .pen ships no state-danger-fg, so the base tone is the only candidate for .form-error / .integrity.bad text. |
 | success on plan-closed-muted (ok chip) | `#2f7d5b` | `#dcebe3` | 4.05:1 | text | 4.5 | **FAIL** | The .badge.ok pairing, now that --success and --plan-closed are one value. |
 
+### Portal · light, pending-change (LINA-282)
+
+| Check | Foreground → effective | Onto | Ratio | Kind | Min | Result | Where |
+|---|---|---|---|---|---|---|---|
+| status-pending-change-fg on status-pending-change-muted | `#8c4c14` | `#f9e8cd` | 5.52:1 | fixed | 4.5 | PASS | The 'Change pending' chip on its own tint, and the locked row's text. |
+| status-pending-change-fg on paper | `#8c4c14` | `#fbfaf7` | 6.37:1 | fixed | 4.5 | PASS | Chip text where the fill is omitted. |
+| status-pending-change-fg on surface-sunken | `#8c4c14` | `#f1efe8` | 5.78:1 | fixed | 4.5 | PASS | The locked grid's zebra/header band. |
+| status-pending-change as the row marker on status-pending-change-muted | `#a9601f` | `#f9e8cd` | 3.98:1 | fixed-non-text | 3.0 | PASS | The 3px left marker that carries the state on the filled row. |
+| white on status-pending-change (filled control) | `#ffffff` | `#a9601f` | 4.79:1 | fixed | 4.5 | PASS | Any filled chip/button in the family. |
+| status-pending-change-muted row fill on paper | `#f9e8cd` | `#fbfaf7` | 1.15:1 | non-text | 3.0 | **FAIL** | A FILL, like plan-baseline-muted. Documented, not gated: it cannot carry the state alone, which is why the chip is mandatory. |
+| status-pending-change-line on status-pending-change-muted | `#e6c290` | `#f9e8cd` | 1.40:1 | decorative | — | n/a — decorative | Chip border beside contrasting text. |
+
 ### Portal · light, the -fg rungs (must pass)
 
 | Check | Foreground → effective | Onto | Ratio | Kind | Min | Result | Where |
@@ -263,6 +275,17 @@ a blown-highlight pixel (`#ffffff`) and a mid-grey (`#808080`).
 | state-warning-line on state-warning-muted | `#b37d35` | `#2e2519` | 4.23:1 | decorative | — | n/a — decorative | Chip border beside contrasting text. |
 | state-danger-line on state-danger-muted | `#b85848` | `#2e1c19` | 3.49:1 | decorative | — | n/a — decorative | Chip border. |
 
+### Portal · dark, pending-change (LINA-282)
+
+| Check | Foreground → effective | Onto | Ratio | Kind | Min | Result | Where |
+|---|---|---|---|---|---|---|---|
+| status-pending-change-fg on status-pending-change-muted | `#f0b36a` | `#2e2416` | 8.23:1 | fixed | 4.5 | PASS | The 'Change pending' chip on its own tint. |
+| status-pending-change-fg on paper | `#f0b36a` | `#1a1915` | 9.52:1 | fixed | 4.5 | PASS | Chip text where the fill is omitted. |
+| status-pending-change-fg on surface-sunken | `#f0b36a` | `#131210` | 10.13:1 | fixed | 4.5 | PASS | The locked grid's zebra/header band. |
+| status-pending-change as the row marker on paper | `#c9812f` | `#1a1915` | 5.58:1 | fixed-non-text | 3.0 | PASS | The left marker on the dark field. |
+| status-pending-change as the row marker on status-pending-change-muted | `#c9812f` | `#2e2416` | 4.83:1 | fixed-non-text | 3.0 | PASS | The marker on the filled row. |
+| status-pending-change-line on status-pending-change-muted | `#9a6a2c` | `#2e2416` | 3.24:1 | decorative | — | n/a — decorative | Chip border. |
+
 ### Portal · dark, plan surfaces (LINA-92, must pass)
 
 | Check | Foreground → effective | Onto | Ratio | Kind | Min | Result | Where |
@@ -312,6 +335,7 @@ a blown-highlight pixel (`#ffffff`) and a mid-grey (`#808080`).
 - **4.20:1** (text, needs 4.5) — builder as body text on paper — _Builder-side type._
 - **3.44:1** (text, needs 4.5) — builder on builder-muted (party tag) — _.tag.counterparty._
 - **4.05:1** (text, needs 4.5) — success on plan-closed-muted (ok chip) — _The .badge.ok pairing, now that --success and --plan-closed are one value._
+- **1.15:1** (non-text, needs 3.0) — status-pending-change-muted row fill on paper — _A FILL, like plan-baseline-muted. Documented, not gated: it cannot carry the state alone, which is why the chip is mandatory._
 - **4.42:1** (text, needs 4.5) — white on the retired owner #2a78d6 (primary button) — _Fixed by LINA-86/92 — see the portal section above._
 - **3.20:1** (text, needs 4.5) — white on the retired builder #eb6834 — _Fixed by LINA-86/92._
 - **3.55:1** (text, needs 4.5) — the retired warning #b7791f as text on the retired paper — _Why --warning had to move, not just the primitives._

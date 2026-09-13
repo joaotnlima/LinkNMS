@@ -72,6 +72,7 @@ import {
   type PhaseDraft, type StatusCounts, type TaskDraft,
 } from '@/lib/plan-authoring';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
+import { PendingChangeChip } from '@/components/SignOffPanel';
 import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 
 // Pixels per day column, per time base (LINA-248 follow-up): the base the
@@ -177,6 +178,14 @@ export interface PlanGridProps {
   /** Stage keys the cycle check named — their rows are outlined. */
   litRows: Set<string>;
   disabled: boolean;
+  /**
+   * Stage keys with a change order in flight against them (LINA-282, ADR-0023
+   * §6). Their rows and bars take the clay/amber `--status-pending-change`
+   * treatment PLUS a "Change pending" chip — the locked grid is already
+   * `aria-disabled`, so colour on its own would be the only signal.
+   * Optional and empty by default: an unlocked plan has no such rows.
+   */
+  pendingChangeKeys?: Set<string>;
   /** Today as 'YYYY-MM-DD' — anchors the fallback window for undated plans. */
   todayIso: string;
   /** Open the detail drawer for a phase (ti undefined), task or sub-task. */
@@ -202,8 +211,12 @@ export interface PlanGridProps {
   onDemote: (pi: number, ti: number, si?: number) => void;
 }
 
+/** Module-level so the default never changes identity between renders. */
+const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
+
 export function PlanGrid(props: PlanGridProps) {
   const { phases, parties, litRows, disabled, todayIso } = props;
+  const pendingChange = props.pendingChangeKeys ?? EMPTY_KEYS;
   const dir = useMemo(() => partyIndex(parties), [parties]);
 
   const rows = useMemo<Row[]>(() => {
@@ -886,7 +899,7 @@ export function PlanGrid(props: PlanGridProps) {
             return (
               <div
                 key={r.key}
-                className={`pgd-row${sub ? ' pgd-row-sub' : ''}${litRows.has(r.key) ? ' is-cycle' : ''}${(isTaskDrag && dragTask?.ti === r.ti) || (isSubDrag && dragSub?.si === r.si) ? ' is-dragging' : ''}`}
+                className={`pgd-row${sub ? ' pgd-row-sub' : ''}${litRows.has(r.key) ? ' is-cycle' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}${(isTaskDrag && dragTask?.ti === r.ti) || (isSubDrag && dragSub?.si === r.si) ? ' is-dragging' : ''}`}
                 style={{ height: rowH(r) }}
                 onClick={(e) => onRowClick(e, r)}
                 onDragOver={(e) => { if (isTaskDrag || isSubDrag) e.preventDefault(); }}
@@ -917,6 +930,10 @@ export function PlanGrid(props: PlanGridProps) {
                 <span className="pgd-name">
                   {name(r, id)}
                   {counts ? meter(counts, `Task ${id}`) : null}
+                  {/* The clay/amber tint is never the only signal (ADR-0023 §6):
+                      the chip says it in words, for colour-blind readers and for
+                      the screen reader walking an aria-disabled grid. */}
+                  {pendingChange.has(r.key) ? <PendingChangeChip /> : null}
                   {r.node.description.trim() ? <span className="pgt-lbl-dot" aria-hidden /> : null}
                 </span>
                 {colOrder.map(cellFor)}
@@ -1008,7 +1025,7 @@ export function PlanGrid(props: PlanGridProps) {
                     ) : null}
                     {bar && box ? (
                       <div
-                        className={`pgt-bar${r.si != null ? ' is-sub' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}`}
+                        className={`pgt-bar${r.si != null ? ' is-sub' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}`}
                         style={{ left: box.x, width: box.width }}
                         role="button" tabIndex={-1}
                         aria-label={

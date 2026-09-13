@@ -32,6 +32,10 @@
   --state-danger-muted: #f6e2de;
   --state-danger-fg: #9b3b2f;
   --state-danger-line: #e2b4ae;
+  --status-pending-change: #a9601f;
+  --status-pending-change-fg: #8c4c14;
+  --status-pending-change-muted: #f9e8cd;
+  --status-pending-change-line: #e6c290;
   --plan-baseline: #3e5c8a;
   --plan-baseline-muted: #dce3ee;
   --plan-baseline-fg: #2e4a72;
@@ -121,6 +125,10 @@
     --state-danger-muted: #2e1c19;
     --state-danger-fg: #f49a8a;
     --state-danger-line: #b85848;
+    --status-pending-change: #c9812f;
+    --status-pending-change-fg: #f0b36a;
+    --status-pending-change-muted: #2e2416;
+    --status-pending-change-line: #9a6a2c;
     --plan-baseline: #6e85a7;
     --plan-baseline-muted: #23272b;
     --plan-baseline-fg: #a3bce5;
