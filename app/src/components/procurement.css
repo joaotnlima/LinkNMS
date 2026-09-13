@@ -1,0 +1,163 @@
+/* The procurement section — RFP composer + proposals inbox (LINA-283).
+   Tokens only (tokens.json is the single source, ADR-0009): no new palette, no
+   literal colours. The four recipient tones reuse the RAG chip triplets already
+   aliased in globals.css rather than minting a fifth family — "Invited" is not a
+   state worth a colour of its own, and a green for "Proposal in" that differed
+   from every other green on the record would read as a different KIND of good.
+
+   Nothing here paints the section's own frame: this is an accordion body
+   (LINA-281 owns the disclosure and the heading), so it starts at its content. */
+
+.prc { display: flex; flex-direction: column; gap: var(--s4); }
+
+.prc-h { margin: 0; font-size: var(--size-subheading); font-weight: 700; }
+.prc-quiet { margin: 0; color: var(--muted); font-size: var(--size-caption); line-height: 1.5; max-width: 64ch; }
+.prc-error { margin: 0; color: var(--bad-fg); font-size: var(--size-caption); font-weight: 600; }
+.prc-label { font-size: 13px; font-weight: 600; color: var(--fg); }
+.prc-count { color: var(--muted); font-size: var(--size-caption); }
+
+/* ── Fields ──────────────────────────────────────────────────────────────── */
+.prc-field { display: flex; flex-direction: column; gap: var(--s2); }
+.prc-field-hd { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.prc-row { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+
+.prc-input {
+  min-height: 120px; resize: vertical; font: inherit; line-height: 1.5; color: var(--fg);
+  border: 1px solid var(--outline); background: var(--paper);
+  border-radius: var(--r-ctrl); padding: 8px 10px; width: 100%; box-sizing: border-box;
+}
+.prc-emails { min-height: 64px; }
+.prc-input:focus { outline: none; border-color: var(--plan-baseline); }
+/* A frozen brief is READ-ONLY, not disabled: the words must stay selectable and
+   copyable — a contractor asking "what did you actually send me?" is answered by
+   reading it, not by a greyed-out box. */
+.prc-input[readonly] { background: var(--sunken); color: var(--muted); }
+
+.prc-line {
+  flex: 1 1 220px; min-width: 0; font: inherit; color: var(--fg);
+  border: 1px solid var(--outline); background: var(--paper);
+  border-radius: var(--r-ctrl); padding: 6px 10px;
+}
+.prc-line:focus { outline: none; border-color: var(--plan-baseline); }
+
+.prc-fileinput { display: none; }
+.prc-reject { margin: 0; color: var(--warn-fg); font-size: var(--size-caption); line-height: 1.5; }
+
+/* ── Badges (the four recipient states + the RFP's own) ──────────────────── */
+.prc-badge {
+  display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
+  font-size: 11px; font-weight: 650; line-height: 1; padding: 4px 8px;
+  border-radius: 999px; border: 1px solid var(--outline); background: var(--sunken);
+  color: var(--muted);
+}
+.prc-badge.quiet { color: var(--muted); background: var(--sunken); border-color: var(--outline); }
+.prc-badge.live { color: var(--owner-fg); background: var(--owner-muted); border-color: var(--plan-baseline-line); }
+.prc-badge.good { color: var(--ok-fg); background: var(--ok-bg); border-color: var(--ok-bd); }
+.prc-badge.off { color: var(--bad-fg); background: var(--bad-bg); border-color: var(--bad-bd); }
+
+/* ── Start / skip ────────────────────────────────────────────────────────── */
+.prc-start, .prc-composer, .prc-inbox {
+  display: flex; flex-direction: column; gap: var(--s3);
+}
+.prc-start { align-items: flex-start; }
+
+.prc-skip {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  flex-wrap: wrap;
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl);
+  background: var(--sunken); padding: var(--s3);
+}
+.prc-skip-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.prc-skip-t { margin: 0; font-size: 13px; font-weight: 650; }
+
+.prc-composer-hd { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+
+/* An irreversible action confirms in place rather than in a modal: the thing it
+   is about (the recipient list, the bid) stays on screen behind the sentence. */
+.prc-confirm {
+  display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
+  border: 1px solid var(--warn-bd); background: var(--warn-bg);
+  border-radius: var(--r-ctrl); padding: var(--s2) var(--s3);
+}
+.prc-confirm .prc-quiet { flex: 1 1 260px; color: var(--warn-fg); }
+
+.prc-actions { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+
+/* ── Tags ────────────────────────────────────────────────────────────────── */
+.prc-tags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.prc-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 999px;
+  border: 1px solid var(--plan-baseline-line); background: var(--plan-baseline-muted);
+  color: var(--plan-baseline-fg);
+}
+.prc-tag-x {
+  border: 0; background: none; cursor: pointer; padding: 0; line-height: 1;
+  font-size: 14px; color: inherit; opacity: .7;
+}
+.prc-tag-x:hover { opacity: 1; }
+
+/* ── Files ───────────────────────────────────────────────────────────────── */
+.prc-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.prc-file {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2);
+  border: 1px solid var(--outline); border-radius: 8px; background: var(--sunken); padding: 6px 10px;
+}
+.prc-filename { font-size: 13px; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+.prc-filemeta { color: var(--muted); font-size: 11px; flex: 0 0 auto; }
+
+/* ── Recipients ──────────────────────────────────────────────────────────── */
+.prc-recipients { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.prc-recipient {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: 6px 0; border-bottom: 1px solid var(--line);
+}
+.prc-recipient:last-child { border-bottom: 0; }
+.prc-email { flex: 1 1 auto; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.prc-remove {
+  flex: 0 0 auto; border: 0; background: none; cursor: pointer; padding: 0;
+  font: inherit; font-size: 12px; color: var(--muted); text-decoration: underline;
+}
+.prc-remove:hover:enabled { color: var(--bad-fg); }
+.prc-remove:disabled { cursor: default; opacity: .5; }
+
+/* ── Proposals ───────────────────────────────────────────────────────────── */
+.prc-proposals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+.prc-proposal {
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl);
+  background: var(--raised); padding: var(--s2) var(--s3);
+}
+/* The chosen bid carries the owner hue AND the word "Selected" — never colour
+   alone, and never a colour that means something else elsewhere. */
+.prc-proposal.is-selected { border-color: var(--plan-baseline-line); background: var(--plan-baseline-muted); }
+
+.prc-proposal-hd { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.prc-disclose {
+  flex: 1 1 200px; min-width: 0; display: flex; align-items: center; gap: 6px;
+  border: 0; background: none; cursor: pointer; padding: 0; font: inherit; text-align: left;
+  color: var(--fg);
+}
+.prc-caret { color: var(--muted); font-size: 11px; }
+.prc-company { font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+.prc-figure { flex: 0 0 auto; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.prc-figure.quiet { color: var(--muted); font-weight: 500; }
+
+.prc-proposal-body {
+  display: flex; flex-direction: column; gap: var(--s2);
+  margin-top: var(--s2); padding-top: var(--s2); border-top: 1px solid var(--line);
+}
+.prc-web a { font-size: 13px; color: var(--plan-baseline-fg); overflow-wrap: anywhere; }
+.prc-comment { margin: 0; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 64ch; }
+
+.prc-portfolio { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+.prc-portfolio img {
+  width: 132px; height: 96px; object-fit: cover; display: block;
+  border: 1px solid var(--outline); border-radius: 8px; background: var(--sunken);
+}
+
+/* ── Jobsite width ───────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .prc-skip { flex-direction: column; align-items: stretch; }
+  .prc-proposal-hd { gap: var(--s2); }
+  .prc-portfolio img { width: 100px; height: 74px; }
+}
