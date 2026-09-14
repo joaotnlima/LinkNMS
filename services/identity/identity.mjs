@@ -761,6 +761,62 @@ export function createIdentityService({
     return { membership: shapeMembership(membership) };
   }
 
+  // Constructor selection (LINA-280, ADR-0023 §3). Called by the phase service
+  // once a bid has been awarded but BEFORE the schedule write commits, so the
+  // constructor is a seated member when the award lands. The permission gate is
+  // ACTION.SELECT_CONSTRUCTOR (owner + counterparty); the onboarded party joins
+  // as `subcontractor` — the Band B read-only member that can only VIEW_PROJECT.
+  // The membership + member_joined append are one unit of work. Identity's
+  // UNIQUE(project,party) / UNIQUE(project,role) constraints make a double-award
+  // or an already-seated party a clean 409.
+  async function onboardProjectMember({ actorPartyId, projectId, partyId, role = 'subcontractor' }) {
+    if (!actorPartyId) throw unauthenticated();
+    if (typeof projectId !== 'string' || !projectId) throw badRequest('projectId is required');
+    if (typeof partyId !== 'string' || !partyId) throw badRequest('partyId is required');
+    if (role !== 'subcontractor') throw badRequest('only "subcontractor" membership may be onboarded');
+
+    authorize({ actorPartyId, projectId, action: ACTION.SELECT_CONSTRUCTOR });
+
+    const now = clock.now();
+    let membership;
+    await store.transaction(async (tx) => {
+      membership = {
+        id: ids.uuid(),
+        projectId,
+        partyId,
+        role,
+        joinedAt: now,
+      };
+      // insertMembership enforces UNIQUE(project,party): the party already on the
+      // record (e.g. re-award) is a clean 409, never a silent overwrite.
+      await tx.insertMembership(membership);
+      await tx.appendEvent({
+        projectId,
+        type: 'member_joined',
+        actorPartyId,
+        occurredAt: now,
+        payload: { partyId, role },
+      });
+    });
+
+    return { membership: shapeMembership(membership) };
+  }
+
+  // Resolvers the phase service (LINA-280) uses to map an award to a party id —
+  // id → party, and RFP recipient email → party. NULL means the party doesn't
+  // (yet) exist: for a proposal the caller then aborts with contractor_not_seated
+  // instead of fabricating a party row for someone who never signed in (Q3).
+  async function resolvePartyId(partyId) {
+    const party = await store.getParty(partyId);
+    return party?.id ?? null;
+  }
+
+  async function resolvePartyIdByEmail(email) {
+    if (!email || typeof email !== 'string') return null;
+    const party = await store.getPartyByEmail(email);
+    return party?.id ?? null;
+  }
+
   // GET /invitations/:token — the ONE unauthenticated read on the record
   // (LINA-182). It powers the Band B accept deep link (M6/D6): a signed-out
   // visitor holding only the token must learn which build they were invited to,
@@ -886,6 +942,9 @@ export function createIdentityService({
     setOperatingModel,
     inviteCounterparty,
     acceptInvitation,
+    onboardProjectMember,
+    resolvePartyId,
+    resolvePartyIdByEmail,
     previewInvitation,
     getMe,
     completeProfile,

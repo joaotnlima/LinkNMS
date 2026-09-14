@@ -210,6 +210,110 @@ const UPDATABLE = new Set([
   'planned_start_date', 'planned_end_date', 'planned_cost_cents', 'updated_at',
 ]);
 
+// A project_phase row (LINA-275; ADR-0023). responsible_party_ids comes back as
+// a pg uuid[] → JS array directly; dates/timestamps normalised like every other
+// shaper here so the API shape matches the in-memory store.
+const PHASE_STATUSES = new Set(['pending', 'active', 'signed_off', 'archived']);
+
+function mapPhase(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    project_id: r.project_id,
+    kind: r.kind,
+    name: r.name,
+    status: r.status,
+    sequence: toNum(r.sequence),
+    responsible_party_ids: r.responsible_party_ids ?? [],
+    created_at: toIso(r.created_at),
+    updated_at: toIso(r.updated_at),
+  };
+}
+
+// A plan_change_log row (ADR-0023 §2). old_value/new_value jsonb come back as
+// already-parsed JS values from pg.
+function mapPlanChangeLog(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    phase_id: r.phase_id,
+    entity_type: r.entity_type,
+    entity_id: r.entity_id,
+    field_name: r.field_name,
+    old_value: r.old_value ?? null,
+    new_value: r.new_value ?? null,
+    actor_party_id: r.actor_party_id ?? null,
+    occurred_at: toIso(r.occurred_at),
+  };
+}
+
+// An RFP proposal joined to its recipient email (constructor selection reads the
+// awarded recipient's address to find-or-create the onboarding party) + the
+// owning rfp/phase/project ids the wire view (ProcurementView) and the award
+// validation both need.
+function mapRfpProposal(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    rfp_id: r.rfp_id ?? null,
+    rfp_recipient_id: r.rfp_recipient_id,
+    recipient_email: r.recipient_email ?? null,
+    phase_id: r.phase_id ?? null,
+    project_id: r.project_id ?? null,
+    company_name: r.company_name,
+    website_url: r.website_url ?? null,
+    portfolio_images: r.portfolio_images ?? [],
+    budget_min_cents: r.budget_min_cents == null ? null : Number(r.budget_min_cents),
+    budget_max_cents: r.budget_max_cents == null ? null : Number(r.budget_max_cents),
+    timeline_days: r.timeline_days == null ? null : Number(r.timeline_days),
+    comment: r.comment ?? null,
+    submitted_at: toIso(r.submitted_at),
+  };
+}
+
+// A schedule.rfp row. attachments (R2 refs) come back as a parsed JS array;
+// specialties/selected_proposal_id come from migration 0013.
+function mapRfp(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    phase_id: r.phase_id,
+    description: r.description,
+    attachments: r.attachments ?? [],
+    specialties: r.specialties ?? [],
+    status: r.status,
+    selected_proposal_id: r.selected_proposal_id ?? null,
+    created_at: toIso(r.created_at),
+    updated_at: toIso(r.updated_at),
+  };
+}
+
+// A schedule.rfp_recipient row (the plain read — no token join).
+function mapRfpRecipient(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    rfp_id: r.rfp_id,
+    email: r.email,
+    status: r.status,
+  };
+}
+
+// An RFP recipient joined to its RFP's project phase — this IS the dynamic token
+// validity check (ADR-0023 §5 Option A): a token is valid iff the procurement
+// phase is still `active`. phase_id/phase_status come from the join.
+function mapRfpRecipientWithPhase(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    rfp_id: r.rfp_id,
+    email: r.email,
+    status: r.status,
+    phase_id: r.phase_id,
+    phase_status: r.phase_status,
+  };
+}
+
 export function createPgStore({ pool = getPool() } = {}) {
   function transaction(fn) {
     return withTransaction((client) => fn(client), pool);
@@ -771,6 +875,198 @@ export function createPgStore({ pool = getPool() } = {}) {
     return mapTemplate(rows[0]);
   }
 
+  // ── Project-phase primitives (LINA-275; ADR-0023) ─────────────────────────
+  // Shared by the phase lifecycle API (LINA-278) and the constructor-selection /
+  // plan_change_log work here; the service layer owns which statuses are allowed.
+
+  // All phases for a project, in `sequence` order (the 0-indexed lifecycle order).
+  async function listPhases(projectId) {
+    const { rows } = await pool.query(
+      `select * from schedule.project_phase where project_id = $1 order by sequence`,
+      [projectId]);
+    return rows.map(mapPhase);
+  }
+
+  // The execution phase (kind='execution') for a project, or null. This row's
+  // status gates plan mutability (change-order guard, ADR-0023 §8) and is the
+  // plan_change_log's phase_id while the plan is freely editable. Inside a
+  // mutation's transaction it takes a ROW LOCK (SELECT ... FOR UPDATE) on the
+  // execution phase so the guard and a concurrent select-constructor's status
+  // flip serialise instead of racing.
+  async function getExecutionPhase(projectId, tx) {
+    const client = tx ?? pool;
+    const { rows } = await client.query(
+      `select * from schedule.project_phase where project_id = $1 and kind = 'execution'${tx ? ' for update' : ''}`,
+      [projectId]);
+    return mapPhase(rows[0] ?? null);
+  }
+
+  // One phase by id. `tx` optional — the selected-phase validation runs inside
+  // the select-constructor transaction and takes a ROW LOCK (SELECT ... FOR
+  // UPDATE) so the status re-check and the flip serialise against any other
+  // writer (the signed_off trigger is the last line of defence).
+  async function getPhaseById(id, tx) {
+    const client = tx ?? pool;
+    const { rows } = await client.query(
+      `select * from schedule.project_phase where id = $1${tx ? ' for update' : ''}`, [id]);
+    return mapPhase(rows[0] ?? null);
+  }
+
+  // Set a phase status. The DB trigger (migration 0012) makes `signed_off`
+  // one-way; this is the only path that writes status, so the service and schema
+  // agree.
+  async function updatePhaseStatus(tx, phaseId, status) {
+    if (!PHASE_STATUSES.has(status)) {
+      throw new Error(`invalid phase status "${status}"`);
+    }
+    const { rows } = await tx.query(
+      `update schedule.project_phase set status = $2 where id = $1 returning *`,
+      [phaseId, status]);
+    return mapPhase(rows[0] ?? null);
+  }
+
+  // Lazy phase creation (ADR-0023 §3) — seeds the two default phases for a
+  // project that has none yet. The unique (project_id, kind) constraint rejects
+  // a concurrent double-seed.
+  async function insertPhase(tx, row) {
+    const { rows } = await tx.query(
+      `insert into schedule.project_phase
+         (id, project_id, kind, name, status, sequence, responsible_party_ids, created_at, updated_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       returning *`,
+      [
+        row.id, row.project_id, row.kind, row.name, row.status, row.sequence,
+        row.responsible_party_ids ?? [], row.created_at, row.updated_at,
+      ]);
+    return mapPhase(rows[0]);
+  }
+
+  // Append a plan_change_log row inside the SAME transaction as the mutation it
+  // records (the audit write and the projection change commit together — same
+  // rule as the ledger append in every other schedule write, ADR-0006 §1).
+  async function insertPlanChangeLog(tx, row) {
+    const { rows } = await tx.query(
+      `insert into schedule.plan_change_log
+         (id, phase_id, entity_type, entity_id, field_name, old_value, new_value, actor_party_id, occurred_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       returning *`,
+      [
+        row.id, row.phase_id, row.entity_type, row.entity_id, row.field_name,
+        row.old_value ?? null, row.new_value ?? null, row.actor_party_id ?? null,
+        row.occurred_at,
+      ]);
+    return mapPlanChangeLog(rows[0]);
+  }
+
+  // Read a phase's change log back (oldest → newest) — the audit surface for a
+  // signed-off plan's pre-lock history.
+  async function listPlanChangeLogs(phaseId) {
+    const { rows } = await pool.query(
+      `select * from schedule.plan_change_log where phase_id = $1 order by occurred_at, id`,
+      [phaseId]);
+    return rows.map(mapPlanChangeLog);
+  }
+
+  // An RFP proposal joined to its recipient's email + the owning rfp/procurement
+  // phase + project, so constructor selection can find-or-create the awarded
+  // contractor's party by email and validate the award maps to the caller's
+  // project (ADR-0023 §3).
+  async function getProposalById(proposalId) {
+    const { rows } = await pool.query(
+      `select p.*, r.email as recipient_email, rfp.id as rfp_id, rfp.phase_id, ph.project_id
+         from schedule.rfp_proposal p
+         join schedule.rfp_recipient r on r.id = p.rfp_recipient_id
+         join schedule.rfp rfp on rfp.id = r.rfp_id
+         join schedule.project_phase ph on ph.id = rfp.phase_id
+        where p.id = $1`,
+      [proposalId]);
+    return mapRfpProposal(rows[0] ?? null);
+  }
+
+  // The procurement phase (kind='procurement') for a project — the anchor every
+  // selection view reads. Null means the project has no phases yet (legacy).
+  async function getProcurementPhase(projectId) {
+    const { rows } = await pool.query(
+      `select * from schedule.project_phase where project_id = $1 and kind = 'procurement'`,
+      [projectId]);
+    return mapPhase(rows[0] ?? null);
+  }
+
+  // One rfp by id (draft/sent/closed alike — a closed rfp stays readable so the
+  // view keeps its winners and losers forever).
+  async function getRfpById(rfpId) {
+    if (rfpId == null) return null;
+    const { rows } = await pool.query(
+      `select * from schedule.rfp where id = $1`, [rfpId]);
+    return mapRfp(rows[0] ?? null);
+  }
+
+  // The rfp for a procurement phase — the latest one (v1 keeps one live rfp per
+  // phase; closed ones persist, so "latest" is the phase's current/winning rfp).
+  async function getRfpByPhase(phaseId) {
+    if (phaseId == null) return null;
+    const { rows } = await pool.query(
+      `select * from schedule.rfp where phase_id = $1 order by updated_at desc, id desc limit 1`,
+      [phaseId]);
+    return mapRfp(rows[0] ?? null);
+  }
+
+  // An rfp's recipients (sent order) — the view's invitee list.
+  async function listRecipientsByRfp(rfpId) {
+    if (rfpId == null) return [];
+    const { rows } = await pool.query(
+      `select * from schedule.rfp_recipient where rfp_id = $1 order by created_at, id`,
+      [rfpId]);
+    return rows.map(mapRfpRecipient);
+  }
+
+  // An rfp's proposals (submitted order) — the view's full inbox.
+  async function listProposalsByRfp(rfpId) {
+    if (rfpId == null) return [];
+    const { rows } = await pool.query(
+      `select p.*, rfp.id as rfp_id, rfp.phase_id, ph.project_id, r.email as recipient_email
+         from schedule.rfp_proposal p
+         join schedule.rfp_recipient r on r.id = p.rfp_recipient_id
+         join schedule.rfp rfp on rfp.id = r.rfp_id
+         join schedule.project_phase ph on ph.id = rfp.phase_id
+        where rfp.id = $1
+        order by p.submitted_at, p.id`,
+      [rfpId]);
+    return rows.map(mapRfpProposal);
+  }
+
+  // Close an rfp: status → 'closed' and, for an award, the winner marker. One
+  // guarded UPDATE inside the select-constructor transaction — an rfp is either
+  // the winning loop (selected_proposal_id set) or the skipped loop (NULL = the
+  // distinction the inbox renders), and it can never re-open.
+  async function closeRfp(tx, rfpId, selectedProposalId) {
+    const { rows } = await tx.query(
+      `update schedule.rfp
+          set status = 'closed',
+              selected_proposal_id = $2,
+              updated_at = now()
+        where id = $1
+        returning *`,
+      [rfpId, selectedProposalId ?? null]);
+    return mapRfp(rows[0] ?? null);
+  }
+
+  // The dynamic RFP token validity check (ADR-0023 §5 Option A). A token is
+  // valid iff its recipient's RFP belongs to a procurement phase that is STILL
+  // `active`. This single join is the whole expiry mechanism — when a constructor
+  // is selected the procurement phase flips to `signed_off` and every token for
+  // the project stops resolving. The service rejects when phase_status != 'active'.
+  async function getRecipientByTokenHash(tokenHash) {
+    const { rows } = await pool.query(
+      `select r.id, r.rfp_id, r.email, r.status, ph.id as phase_id, ph.status as phase_status
+         from schedule.rfp_recipient r
+         join schedule.rfp on rfp.id = r.rfp_id
+         join schedule.project_phase ph on ph.id = rfp.phase_id
+        where r.token_hash = $1`,
+      [tokenHash]);
+    return mapRfpRecipientWithPhase(rows[0] ?? null);
+  }
+
   return {
     transaction,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
@@ -790,5 +1086,10 @@ export function createPgStore({ pool = getPool() } = {}) {
     stageLiveByKey, insertStageComment, listStageCommentsByKey,
     insertStageAttachment, listStageAttachmentsByKey,
     getSystemDefaultTemplate, getUserDefaultTemplate, upsertUserDefaultTemplate,
+    listPhases, getExecutionPhase, getPhaseById, getProcurementPhase,
+    updatePhaseStatus, insertPhase,
+    insertPlanChangeLog, listPlanChangeLogs,
+    getProposalById, getRecipientByTokenHash,
+    getRfpById, getRfpByPhase, listRecipientsByRfp, listProposalsByRfp, closeRfp,
   };
 }

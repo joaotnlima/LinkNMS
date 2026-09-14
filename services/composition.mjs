@@ -33,6 +33,7 @@ import { createChangeOrderHttp } from './change_order/http.mjs';
 import { createScheduleService } from './schedule/schedule.mjs';
 import { createPlanImportService } from './schedule/plan-import.mjs';
 import { createPlanVersionService } from './schedule/plan-version.mjs';
+import { createPhaseService } from './schedule/phases.mjs';
 import { createMaterialsService } from './schedule/materials.mjs';
 import { createPlanTemplateService } from './schedule/plan-template.mjs';
 import { createTaskWorkspaceService } from './schedule/task-workspace.mjs';
@@ -223,6 +224,16 @@ export function createServices({
     ? createTaskWorkspaceService({ store: scheduleStore, identity, blob: blobStore })
     : null;
 
+  // Phase lifecycle (LINA-280, ADR-0023 §3): constructor selection + procurement
+  // skip over the same schedule store, with identity as the sole authorizer AND
+  // the member-writer (onboardProjectMember). No ledger seam — a phase
+  // transition IS its own record (project_phase.status), not a budget movement.
+  // Composed only when a schedule store is present — same loudness rule as the
+  // siblings.
+  const phases = scheduleStore && identity
+    ? createPhaseService({ store: scheduleStore, identity })
+    : null;
+
   // NOTE (LINA-189): there is no waitlist service here any more. The portal used
   // to compose one over `waitlist.signup` — a SECOND waitlist that captured an
   // address and did nothing else with it, while the marketing site's funnel
@@ -237,7 +248,7 @@ export function createServices({
     changeOrder,
     schedule,
     changeOrderHttp: createChangeOrderHttp({ service: changeOrder, identity }),
-    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials, planTemplate, taskWorkspace }) : null,
+    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials, planTemplate, taskWorkspace, phases }) : null,
   };
 }
 

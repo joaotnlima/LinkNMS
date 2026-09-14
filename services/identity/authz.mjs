@@ -48,6 +48,12 @@ export const ACTION = Object.freeze({
   // a post-baseline material movement (swap). A scope_change opens a change order
   // that carries its own two-sided approval.
   RECORD_MOVEMENT: 'record_movement',
+  // Project phases (LINA-275, ADR-0023): the owner/GC selects the awarded
+  // constructor — procurement → signed_off and execution → active. Both founding
+  // roles may act (the GC runs procurement, the owner decides the spend); the
+  // onboarded constructor joins as `subcontractor` — the Band B read-only member,
+  // never a writer on the locked plan.
+  SELECT_CONSTRUCTOR: 'select_constructor',
 });
 
 const ALL_ACTIONS = new Set(Object.values(ACTION));
@@ -65,6 +71,7 @@ const OWNER = new Set([
   ACTION.DECIDE_CHANGE_ORDER, // "owner may always decide" — still subject to ≠ proposer below
   ACTION.PROPOSE_PLAN,
   ACTION.REVIEW_PLAN,
+  ACTION.SELECT_CONSTRUCTOR,
 ]);
 
 const COUNTERPARTY = new Set([
@@ -81,6 +88,7 @@ const COUNTERPARTY = new Set([
   ACTION.PROPOSE_PLAN,
   ACTION.REVIEW_PLAN,
   ACTION.RECORD_MOVEMENT,
+  ACTION.SELECT_CONSTRUCTOR,
 ]);
 
 // Band B (ADR-0011) direct/hybrid builds invite a `subcontractor` who is on the

@@ -103,6 +103,13 @@ export function createPgStore({ pool = getPool(), ledger }) {
   async function getParty(id) {
     return mapParty(await one('select * from identity.party where id = $1', [id]));
   }
+  // Constructor selection (LINA-280, ADR-0023 §3): resolve the awarded RFP
+  // recipient's identity.party row by email. NULL when the contractor has not
+  // yet created an account — selection fails with contractor_not_seated instead
+  // of materialising a zombie party (Q3, still open with the founder).
+  async function getPartyByEmail(email) {
+    return mapParty(await one('select * from identity.party where lower(email) = lower($1)', [email]));
+  }
   // First-login account setup (POST /me/profile, LINA-189). A single
   // conditional UPDATE, and that is the whole concurrency story:
   //
@@ -314,6 +321,7 @@ export function createPgStore({ pool = getPool(), ledger }) {
     getInvitationByTokenHash,
     listPendingInvitations,
     getParty,
+   getPartyByEmail,
     completeProfile,
     transaction,
   };

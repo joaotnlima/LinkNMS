@@ -189,6 +189,13 @@ export function createMemoryStore({ ledger } = {}) {
   return {
     // reads
     getParty: (id) => copy(parties.get(id)),
+    getPartyByEmail: (email) => {
+      const wanted = String(email ?? '').toLowerCase();
+      for (const p of parties.values()) {
+        if (String(p.email ?? '').toLowerCase() === wanted) return copy(p);
+      }
+      return null;
+    },
     upsertParty({ id, displayName, email, role, language, setupComplete }) {
       const existing = parties.get(id);
       const row = {

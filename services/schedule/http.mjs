@@ -40,8 +40,9 @@ const actorOf = (session) => session?.partyId ?? null;
  * @param {import('./materials.mjs').createMaterialsService} [deps.materials]
  * @param {import('./plan-template.mjs').createPlanTemplateService} [deps.planTemplate]
  * @param {import('./task-workspace.mjs').createTaskWorkspaceService} [deps.taskWorkspace]
+ * @param {import('./phases.mjs').createPhaseService} [deps.phases]
  */
-export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null, planTemplate = null, taskWorkspace = null }) {
+export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null, planTemplate = null, taskWorkspace = null, phases = null }) {
   if (!service) throw new Error('createScheduleHttp requires { service }');
 
   // GET /projects/:projectId/plan — the plan-baseline D11–D13 view (B2 contract
@@ -266,6 +267,40 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
     } catch (err) { return errorBody(err); }
   }
 
+  // ── Constructor selection (LINA-280, ADR-0023 §3; slice-procurement-contract
+  // ── §1 routes 7-8). Both return the FULL ProcurementView — a selection changes
+  // more than it names (execution activates, procurement closes, every RFP token
+  // dies via the dynamic join), and a partial response would leave the accordion
+  // painting a state that no longer exists.
+
+  // POST /projects/:projectId/procurement/proposals/:proposalId:select — award
+  // the winning bid. The awardee is onboarded as a `subcontractor` member;
+  // procurement → signed_off, execution → active. Proposal id rides the PATH
+  // (the acting party is always the session, never a body field).
+  async function selectProposal({ session, params }) {
+    try {
+      const view = await phases.selectConstructor({
+        actorPartyId: actorOf(session),
+        projectId: params.projectId,
+        proposalId: params.proposalId,
+      });
+      return { status: 200, body: view };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /projects/:projectId/procurement:skip — Persona B's door: no RFP,
+  // straight to execution. Same status flips, no proposal, no onboarding (the
+  // contractor is already a project member).
+  async function skipProcurement({ session, params }) {
+    try {
+      const view = await phases.skipProcurement({
+        actorPartyId: actorOf(session),
+        projectId: params.projectId,
+      });
+      return { status: 200, body: view };
+    } catch (err) { return errorBody(err); }
+  }
+
   // POST /projects/:projectId/plan/stages/:stageKey/attachments — multipart
   // upload; the bytes ride the `file` seam (the same transport plan-import
   // uses). Server-side type sniff + 10 MB cap inside the service.
@@ -282,5 +317,6 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
     withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan, authorPlan, proposePlan,
     getRecord, getStageMaterials, authorMaterials, swapMaterial, getBudgetMovement,
     resolvePlanTemplate, savePlanTemplate,
-    getWorkspace, addStageComment, addStageAttachment };
+    getWorkspace, addStageComment, addStageAttachment,
+    selectProposal, skipProcurement };
 }
