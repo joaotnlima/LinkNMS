@@ -37,7 +37,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // (/projects/:id/record/:stageId) and reads /stages/:stageId/materials off it, so
 // a stale or hand-edited link is now a routine way for a non-UUID to reach the
 // `uuid` column — exactly the 500 this module exists to prevent.
-const UUID_PARAMS = new Set(['id', 'projectId', 'decisionId', 'changeOrderId', 'stageId']);
+const UUID_PARAMS = new Set(['id', 'projectId', 'decisionId', 'changeOrderId', 'stageId', 'phaseId', 'rfpId', 'recipientId']);
 
 export function isUuid(value) {
   return typeof value === 'string' && UUID_RE.test(value);

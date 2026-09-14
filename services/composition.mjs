@@ -36,6 +36,7 @@ import { createPlanVersionService } from './schedule/plan-version.mjs';
 import { createMaterialsService } from './schedule/materials.mjs';
 import { createPlanTemplateService } from './schedule/plan-template.mjs';
 import { createTaskWorkspaceService } from './schedule/task-workspace.mjs';
+import { createRfpService } from './schedule/rfp.mjs';
 import { PARSER } from './schedule/plan-import-parser.mjs';
 import { createScheduleHttp } from './schedule/http.mjs';
 
@@ -223,6 +224,19 @@ export function createServices({
     ? createTaskWorkspaceService({ store: scheduleStore, identity, blob: blobStore })
     : null;
 
+  // RFP procurement loop (LINA-279, ADR-0023): solicits competitive proposals
+  // from EXTERNAL, unauthenticated contractors over the SAME store and identity
+  // authorizer (MANAGE_RFP / VIEW_RFP). Its email seam is the shared transactional
+  // sender (services/email/sender.mjs) — the default port on createRfpService, so
+  // it FAILS CLOSED (503) when Resend is unconfigured rather than silently
+  // skipping the mail-out (ADR-0007 §5). The blob store is REQUIRED with a
+  // schedule store, exactly like task-workspace: procurement attachments and
+  // portfolio images share the same putRef seam. No ledger events: RFPs live and
+  // die in the schedule schema alone (ADR-0023 §1).
+  const rfp = scheduleStore
+    ? createRfpService({ store: scheduleStore, identity, blob: blobStore })
+    : null;
+
   // NOTE (LINA-189): there is no waitlist service here any more. The portal used
   // to compose one over `waitlist.signup` — a SECOND waitlist that captured an
   // address and did nothing else with it, while the marketing site's funnel
@@ -237,7 +251,7 @@ export function createServices({
     changeOrder,
     schedule,
     changeOrderHttp: createChangeOrderHttp({ service: changeOrder, identity }),
-    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials, planTemplate, taskWorkspace }) : null,
+    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials, planTemplate, taskWorkspace, rfp }) : null,
   };
 }
 

@@ -210,6 +210,71 @@ const UPDATABLE = new Set([
   'planned_start_date', 'planned_end_date', 'planned_cost_cents', 'updated_at',
 ]);
 
+// ── Project phases + RFP procurement loop (LINA-277/279, ADR-0023) mappers ──
+
+function mapPhase(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    project_id: r.project_id,
+    kind: r.kind,
+    status: r.status,
+    sequence: toNum(r.sequence),
+    name: r.name,
+    // jsonb identity array; null-safe so a legacy/partial row can't crash the map
+    responsible_party_ids: Array.isArray(r.responsible_party_ids) ? r.responsible_party_ids : [],
+    created_at: toIso(r.created_at),
+    updated_at: toIso(r.updated_at),
+  };
+}
+
+function mapRfp(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    phase_id: r.phase_id,
+    description: r.description,
+    // jsonb attachment array; null-safe like responsible_party_ids
+    attachments: Array.isArray(r.attachments) ? r.attachments : [],
+    specialties: Array.isArray(r.specialties) ? r.specialties : [],
+    selected_proposal_id: r.selected_proposal_id ?? null,
+    status: r.status,
+    created_at: toIso(r.created_at),
+    updated_at: toIso(r.updated_at),
+  };
+}
+
+function mapRfpRecipient(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    rfp_id: r.rfp_id,
+    email: r.email,
+    token_hash: r.token_hash,
+    status: r.status,
+    created_at: toIso(r.created_at),
+  };
+}
+
+// listRfpProposals join row: proposal + its recipient's public email face.
+function mapRfpProposalRow(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    rfp_id: r.rfp_id,
+    rfp_recipient_id: r.rfp_recipient_id,
+    recipient_email: r.recipient_email,
+    company_name: r.company_name,
+    website_url: r.website_url,
+    portfolio_images: Array.isArray(r.portfolio_images) ? r.portfolio_images : [],
+    budget_min_cents: r.budget_min_cents == null ? null : Number(r.budget_min_cents),
+    budget_max_cents: r.budget_max_cents == null ? null : Number(r.budget_max_cents),
+    timeline_days: r.timeline_days == null ? null : Number(r.timeline_days),
+    comment: r.comment,
+    submitted_at: toIso(r.submitted_at),
+  };
+}
+
 export function createPgStore({ pool = getPool() } = {}) {
   function transaction(fn) {
     return withTransaction((client) => fn(client), pool);
@@ -771,8 +836,193 @@ export function createPgStore({ pool = getPool() } = {}) {
     return mapTemplate(rows[0]);
   }
 
+  // ── Project phases + RFP procurement loop (LINA-277/279, ADR-0023) ────────
+
+  async function getPhase(id) {
+    if (id == null) return null;
+    const { rows } = await pool.query(
+      'select * from schedule.project_phase where id = $1', [id]);
+    return mapPhase(rows[0] ?? null);
+  }
+
+  async function getPhaseByProjectAndKind(projectId, kind) {
+    const { rows } = await pool.query(
+      'select * from schedule.project_phase where project_id = $1 and kind = $2',
+      [projectId, kind]);
+    return mapPhase(rows[0] ?? null);
+  }
+
+  async function insertRfp(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.rfp
+         (id, phase_id, description, attachments, specialties, status, created_at, updated_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8)
+       returning *`,
+      [row.id, row.phase_id, row.description,
+        JSON.stringify(row.attachments ?? []),
+        JSON.stringify(row.specialties ?? []), row.status ?? 'draft',
+        row.created_at, row.updated_at],
+    );
+    return mapRfp(rows[0]);
+  }
+
+  async function getRfp(id) {
+    if (id == null) return null;
+    const { rows } = await pool.query('select * from schedule.rfp where id = $1', [id]);
+    return mapRfp(rows[0] ?? null);
+  }
+
+  // The live (non-closed) RFP against a phase — the v1 one-per-phase constraint
+  // (the partial unique index rfp_one_live_per_phase enforces it in the DB).
+  async function getLiveRfpByPhase(phaseId) {
+    const { rows } = await pool.query(
+      "select * from schedule.rfp where phase_id = $1 and status <> 'closed' order by created_at desc limit 1",
+      [phaseId]);
+    return mapRfp(rows[0] ?? null);
+  }
+
+  // Column-scoped update for the draft→sent→closed lifecycle. Only
+  // description/attachments/specialties/status are writable by the service —
+  // never id, phase_id or timestamps. `now()` for updated_at keeps the client
+  // from fabricating a timestamp (the DB owns `now()`).
+  async function updateRfp(client, id, patch) {
+    const { rows } = await client.query(
+      `update schedule.rfp set
+         description    = coalesce($2, description),
+         attachments    = coalesce($3, attachments),
+         specialties    = coalesce($4, specialties),
+         status         = coalesce($5, status),
+         updated_at     = now()
+       where id = $1
+       returning *`,
+      [id, patch.description ?? null,
+        patch.attachments === undefined ? null : JSON.stringify(patch.attachments),
+        patch.specialties === undefined ? null : JSON.stringify(patch.specialties),
+        patch.status ?? null],
+    );
+    return mapRfp(rows[0] ?? null);
+  }
+
+  async function insertRfpRecipient(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.rfp_recipient
+         (id, rfp_id, email, token_hash, status, created_at)
+       values ($1,$2,$3,$4,$5,$6)
+       returning *`,
+      [row.id, row.rfp_id, row.email, row.token_hash,
+        row.status ?? 'invited', row.created_at],
+    );
+    return mapRfpRecipient(rows[0]);
+  }
+
+  // Draft-era recipient removal (migration 0013 delegates rfp_recipient DELETE
+  // to the schedule_app exactly for this); the service refuses it once the RFP
+  // is sent — the store just deletes.
+  async function deleteRfpRecipient(client, id) {
+    const { rows } = await client.query(
+      'delete from schedule.rfp_recipient where id = $1 returning *', [id]);
+    return mapRfpRecipient(rows[0] ?? null);
+  }
+
+  async function listRfpRecipients(rfpId) {
+    const { rows } = await pool.query(
+      'select * from schedule.rfp_recipient where rfp_id = $1 order by created_at',
+      [rfpId]);
+    return rows.map(mapRfpRecipient);
+  }
+
+  // Token validation (ADR-0023 §5): the join recipient → rfp → project_phase is
+  // the WHOLE check. There is no stored expiry — the phase_status IS the expiry:
+  // a token is valid iff its procurement phase is still 'active'. Returns the
+  // joined row so the service can REJECT an unknown hash, a non-active phase,
+  // or a spent (submitted) recipient from one query.
+  async function getRfpRecipientByTokenHash(tokenHash) {
+    const { rows } = await pool.query(
+      `select
+         rec.*,
+         rfp.phase_id as rfp_phase_id,
+         rfp.description as rfp_description,
+         rfp.attachments as rfp_attachments,
+         rfp.specialties as rfp_specialties,
+         rfp.status as rfp_status,
+         rfp.created_at as rfp_created_at,
+         rfp.updated_at as rfp_updated_at,
+         project_phase.project_id as phase_project_id,
+         project_phase.kind as phase_kind,
+         project_phase.status as phase_status
+       from schedule.rfp_recipient rec
+       join schedule.rfp on rfp.id = rec.rfp_id
+       join schedule.project_phase on project_phase.id = rfp.phase_id
+       where rec.token_hash = $1`,
+      [tokenHash]);
+    const r = rows[0];
+    if (!r) return null;
+    return {
+      recipient: mapRfpRecipient(r),
+      rfp: mapRfp({
+        id: r.rfp_id, phase_id: r.rfp_phase_id, description: r.rfp_description,
+        attachments: r.rfp_attachments, specialties: r.rfp_specialties,
+        status: r.rfp_status,
+        created_at: r.rfp_created_at, updated_at: r.rfp_updated_at,
+      }),
+      phase: mapPhase({
+        id: r.rfp_phase_id, project_id: r.phase_project_id, kind: r.phase_kind,
+        status: r.phase_status,
+      }),
+    };
+  }
+
+  async function updateRfpRecipientStatus(client, id, status) {
+    const { rows } = await client.query(
+      'update schedule.rfp_recipient set status = $2 where id = $1 returning *',
+      [id, status]);
+    return mapRfpRecipient(rows[0] ?? null);
+  }
+
+  // Rotate a recipient's token hash (send() mints a FRESH raw token per mail-out
+  // so the deliverable link exists only in the outgoing email; ADR-0023 §5).
+  async function rotateRfpRecipientToken(client, id, tokenHash) {
+    const { rows } = await client.query(
+      'update schedule.rfp_recipient set token_hash = $2 where id = $1 returning *',
+      [id, tokenHash]);
+    return mapRfpRecipient(rows[0] ?? null);
+  }
+
+  async function insertRfpProposal(client, row) {
+    const { rows } = await client.query(
+      `insert into schedule.rfp_proposal
+         (id, rfp_recipient_id, company_name, website_url, portfolio_images,
+          budget_min_cents, budget_max_cents, timeline_days, comment, submitted_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       returning *`,
+      [row.id, row.rfp_recipient_id, row.company_name, row.website_url ?? null,
+        JSON.stringify(row.portfolio_images ?? []),
+        row.budget_min_cents, row.budget_max_cents, row.timeline_days,
+        row.comment ?? null, row.submitted_at],
+    );
+    return mapRfpProposal(rows[0]);
+  }
+
+  // The homeowner comparison inbox: proposals joined to their recipient's email
+  // (the public face of the submitter), newest first.
+  async function listRfpProposals(rfpId) {
+    const { rows } = await pool.query(
+      `select p.*, r.rfp_id as rfp_id, r.email as recipient_email, r.status as recipient_status
+       from schedule.rfp_proposal p
+       join schedule.rfp_recipient r on r.id = p.rfp_recipient_id
+       where p.rfp_id = $1
+       order by p.submitted_at desc`,
+      [rfpId]);
+    return rows.map(mapRfpProposalRow);
+  }
+
   return {
     transaction,
+    getPhase, getPhaseByProjectAndKind,
+    insertRfp, getRfp, getLiveRfpByPhase, updateRfp,
+    insertRfpRecipient, deleteRfpRecipient, listRfpRecipients, getRfpRecipientByTokenHash,
+    updateRfpRecipientStatus, rotateRfpRecipientToken,
+    insertRfpProposal, listRfpProposals,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
     insertPlanImport, getPlanImportByIdempotencyKey, insertStageDependency,
     deleteStageDependenciesByPlanVersion, listStageDependenciesByPlanVersion,

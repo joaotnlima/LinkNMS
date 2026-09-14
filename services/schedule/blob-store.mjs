@@ -3,7 +3,9 @@
 //
 // Two adapters, same small surface:
 //
-//   put({ fileName, contentType, buffer }) → Promise<string>  the object's URL
+//   put({ fileName, contentType, buffer })    → Promise<string>  the object's URL
+//   putRef({ fileName, contentType, buffer }) → Promise<{key,url}> the object's URL
+//                                                  + R2 key (for FileRef shapes)
 //
 // - `createR2BlobStore()` — production (LINA-266). Cloudflare R2 via its
 //   S3-compatible API (`@aws-sdk/client-s3` `PutObjectCommand`; server-side
@@ -23,14 +25,19 @@ import { randomUUID } from 'node:crypto';
 export function createInMemoryBlobStore() {
   const objects = new Map();
 
-  async function put({ fileName, contentType, buffer }) {
+  async function putRef({ fileName, contentType, buffer }) {
     const id = randomUUID();
+    const key = `attachments/${id}-${fileName}`;
     const url = `blob://${id}/${encodeURIComponent(fileName)}`;
-    objects.set(url, { id, fileName, contentType, size: buffer.byteLength, buffer });
-    return url;
+    objects.set(url, { key, id, fileName, contentType, size: buffer.byteLength, buffer });
+    return { key, url };
   }
 
-  return { put, _objects: objects };
+  async function put(input) {
+    return (await putRef(input)).url;
+  }
+
+  return { put, putRef, _objects: objects };
 }
 
 // Strip a leading/trailing slash so join is unambiguous whatever the env holds.
@@ -80,7 +87,7 @@ export function createR2BlobStore({
     return clientPromise;
   }
 
-  async function put({ fileName, contentType, buffer }) {
+  async function putRef({ fileName, contentType, buffer }) {
     assertConfigured();
     // Random UUID prefix: two uploads of the same name never collide, and the
     // resulting public URL is unguessable.
@@ -96,8 +103,12 @@ export function createR2BlobStore({
     // The public CDN URL the FE renders. R2 objects are served from the bucket's
     // public base (r2.dev dev URL or a custom domain); we store the ready URL so
     // the read path stays a straight column read.
-    return `${trimSlashes(publicBaseUrl)}/${key}`;
+    return { key, url: `${trimSlashes(publicBaseUrl)}/${key}` };
   }
 
-  return { put };
+  async function put(input) {
+    return (await putRef(input)).url;
+  }
+
+  return { put, putRef };
 }

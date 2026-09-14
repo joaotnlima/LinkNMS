@@ -48,6 +48,13 @@ export const ACTION = Object.freeze({
   // a post-baseline material movement (swap). A scope_change opens a change order
   // that carries its own two-sided approval.
   RECORD_MOVEMENT: 'record_movement',
+  // Project phases & RFP procurement loop (LINA-277/279, ADR-0023): the parties
+  // who may build the procurement phase and solicit proposals (owner/GC) hold
+  // MANAGE_RFP (create/update/recipients/send) and VIEW_RFP (proposals inbox).
+  // Token-gated submission is NOT an action here — the token IS the credential;
+  // see services/schedule/rfp.mjs.
+  MANAGE_RFP: 'manage_rfp',
+  VIEW_RFP: 'view_rfp',
 });
 
 const ALL_ACTIONS = new Set(Object.values(ACTION));
@@ -65,6 +72,8 @@ const OWNER = new Set([
   ACTION.DECIDE_CHANGE_ORDER, // "owner may always decide" — still subject to ≠ proposer below
   ACTION.PROPOSE_PLAN,
   ACTION.REVIEW_PLAN,
+  ACTION.MANAGE_RFP,
+  ACTION.VIEW_RFP,
 ]);
 
 const COUNTERPARTY = new Set([
@@ -81,6 +90,8 @@ const COUNTERPARTY = new Set([
   ACTION.PROPOSE_PLAN,
   ACTION.REVIEW_PLAN,
   ACTION.RECORD_MOVEMENT,
+  ACTION.MANAGE_RFP,
+  ACTION.VIEW_RFP,
 ]);
 
 // Band B (ADR-0011) direct/hybrid builds invite a `subcontractor` who is on the

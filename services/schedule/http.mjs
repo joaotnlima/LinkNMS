@@ -15,6 +15,7 @@
 // structural {status,code} shape of an IdentityError, so a denial from the sole
 // authorizer maps correctly and can never silently regress to a 500.
 import { DomainError } from './ports.mjs';
+import { rfpOriginOf } from './rfp.mjs';
 
 function errorBody(err) {
   if (err instanceof DomainError
@@ -40,8 +41,9 @@ const actorOf = (session) => session?.partyId ?? null;
  * @param {import('./materials.mjs').createMaterialsService} [deps.materials]
  * @param {import('./plan-template.mjs').createPlanTemplateService} [deps.planTemplate]
  * @param {import('./task-workspace.mjs').createTaskWorkspaceService} [deps.taskWorkspace]
+ * @param {import('./rfp.mjs').createRfpService} [deps.rfp]
  */
-export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null, planTemplate = null, taskWorkspace = null }) {
+export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null, planTemplate = null, taskWorkspace = null, rfp = null }) {
   if (!service) throw new Error('createScheduleHttp requires { service }');
 
   // GET /projects/:projectId/plan — the plan-baseline D11–D13 view (B2 contract
@@ -277,10 +279,109 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
     } catch (err) { return errorBody(err); }
   }
 
+  // ── RFP procurement loop (LINA-279, ADR-0023) — the ratified surface ───────
+  // All authenticated handlers derive the actor from the session (ADR-0004) and
+  // gate on VIEW_RFP / MANAGE_RFP inside the service. The public token handlers
+  // never touch the session — the token IS the credential — and deliver
+  // `cache-control: no-store` (a token page is personal).
+
+  // GET /projects/:projectId/procurement — the whole procurement view
+  async function getProcurement({ session, params }) {
+    try {
+      const out = await rfp.getProcurement({
+        actorPartyId: actorOf(session), projectId: params.projectId,
+      });
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // PUT /projects/:projectId/procurement/rfp — upsert the live draft
+  async function saveRfpDraft({ session, params, body }) {
+    try {
+      const out = await rfp.saveRfpDraft({
+        actorPartyId: actorOf(session), projectId: params.projectId, body: body ?? {},
+      });
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /projects/:projectId/procurement/rfp/attachments — one-file multipart
+  async function addRfpAttachment({ session, params, file }) {
+    try {
+      const out = await rfp.addRfpAttachment({
+        actorPartyId: actorOf(session), projectId: params.projectId, file,
+      });
+      return { status: 201, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /projects/:projectId/procurement/rfp/recipients — add invitees (full list back)
+  async function addRfpRecipients({ session, params, body }) {
+    try {
+      const out = await rfp.addRecipients({
+        actorPartyId: actorOf(session), projectId: params.projectId,
+        emails: body?.emails,
+      });
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // DELETE /projects/:projectId/procurement/rfp/recipients/:recipientId → 204
+  async function removeRfpRecipient({ session, params }) {
+    try {
+      await rfp.removeRecipient({
+        actorPartyId: actorOf(session), projectId: params.projectId,
+        recipientId: params.recipientId,
+      });
+      return { status: 204 }; // no body: the gateway renders 204 from undefined
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /projects/:projectId/procurement/rfp:send — email the invites → view
+  async function sendProcurementRfp({ session, params, headers }) {
+    try {
+      const out = await rfp.sendRfp({
+        actorPartyId: actorOf(session), projectId: params.projectId,
+        baseUrl: rfpOriginOf(headers),
+      });
+      return { status: 200, body: out, headers: { 'cache-control': 'no-store' } };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // GET /api/rfp/token/:token — public preview (no session, token IS the credential)
+  async function previewRfpToken({ params }) {
+    const token = params?.token;
+    try {
+      const out = await rfp.previewToken({ token });
+      return { status: 200, body: out, headers: { 'cache-control': 'no-store' } };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /api/rfp/token/:token/portfolio-images — public upload (no session)
+  async function uploadPortfolioImage({ params, file }) {
+    const token = params?.token;
+    try {
+      const out = await rfp.uploadPortfolioImage({ token, file });
+      return { status: 201, body: out, headers: { 'cache-control': 'no-store' } };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /api/rfp/token/:token/proposal — public submit (no session)
+  async function submitRfpProposal({ params, body }) {
+    const token = params?.token;
+    try {
+      const out = await rfp.submitProposal({ token, body: body ?? {} });
+      return { status: 201, body: out, headers: { 'cache-control': 'no-store' } };
+    } catch (err) { return errorBody(err); }
+  }
+
   return { getPlan, addStage, getStage, updateStage, reportProgress,
     inspectPlanImport, columnsPlanImport, previewPlanImport, confirmPlanImport,
     withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan, authorPlan, proposePlan,
     getRecord, getStageMaterials, authorMaterials, swapMaterial, getBudgetMovement,
     resolvePlanTemplate, savePlanTemplate,
-    getWorkspace, addStageComment, addStageAttachment };
+    getWorkspace, addStageComment, addStageAttachment,
+    getProcurement, saveRfpDraft, addRfpAttachment, addRfpRecipients,
+    removeRfpRecipient, sendProcurementRfp,
+    previewRfpToken, uploadPortfolioImage, submitRfpProposal };
 }

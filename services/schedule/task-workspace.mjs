@@ -118,6 +118,12 @@ function validateUpload(file) {
   return { fileName, contentType, buffer: file.buffer };
 }
 
+// The upload idiom is shared with the RFP surface (procurement attachments feed
+// the same magic-byte sniffing + 10 MB cap; portfolio images override the
+// allowlist to images-only), so it is exported rather than re-derived in
+// rfp.mjs — one sniffer, one cap, one set of error prose.
+export { validateUpload, sniffContentType, sanitizeFileName, MAX_ATTACHMENT_BYTES };
+
 export function createTaskWorkspaceService({ store, identity, blob }) {
   if (!store || !identity || !blob) {
     throw new Error('createTaskWorkspaceService requires { store, identity, blob } ports');

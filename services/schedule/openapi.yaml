@@ -518,6 +518,298 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
+  # ── RFP procurement loop (LINA-279, ADR-0023, ratified LINA-294) ────────────
+  # The procurement phase lets the owner/GC broadcast a request for proposals to
+  # external, UNAUTHENTICATED contractors. Authenticated routes gate on
+  # MANAGE_RFP / VIEW_RFP (owner + counterparty; subcontractor is a typed 403).
+  # The token routes need NO session — the token IS the credential
+  # (ADR-0023 §5). The token ladder (ratified LINA-294) is:
+  #
+  #   GET preview:  unknown / declined → 404; submitted → 200-with-proposal;
+  #                 phase not active → 410; else 200 (invited→viewed).
+  #   POST submit:  404 → 409 already_submitted → 410 → 400 invalid_proposal
+  #                 → 400 too_many_images → 201 (proposal + recipient submitted).
+  #   POST upload:  404 → 409 → 410 → sniff/size → 201 FileRef.
+  #
+  # send() fails closed (503) before minting when email is unconfigured
+  # (ADR-0007 §5). Draft-era delete of a recipient (migration 0013) is
+  # delegated to the schedule_app.
+
+  /projects/{projectId}/procurement:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [schedule]
+      summary: The full procurement view for a project (LINA-279, ADR-0023)
+      description: >-
+        VIEW_RFP required. A fresh (never-saved) project returns the empty view.
+        A project the actor cannot reach is a typed 403 (never a probe).
+        phase.status is derived from the actual procurement-phase row.
+      responses:
+        '200':
+          description: The procurement view.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcurementView' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /projects/{projectId}/procurement/rfp:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    put:
+      tags: [schedule]
+      summary: Upsert the live RFP draft (LINA-279, ADR-0023)
+      description: >-
+        MANAGE_RFP required. One live (draft or sent) RFP per procurement
+        phase — PUT creates on the first call and overwrites on subsequent
+        calls. specialty tags are trimmed, deduplicated, and capped at 20 × 100
+        chars. A blank description (all whitespace) is rejected. Once sent the
+        draft is sealed: 409 rfp_already_sent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RfpSaveBody' }
+      responses:
+        '200':
+          description: The saved RFP.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rfp: { $ref: '#/components/schemas/RfpView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /projects/{projectId}/procurement/rfp/attachments:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [schedule]
+      summary: Append one attachment to the live RFP draft (LINA-279)
+      description: >-
+        MANAGE_RFP required. One-file multipart; the upload seam sniffs
+        the content type (JPEG, PNG, WebP, HEIC only) and enforces a 10 MB
+        cap. Auto-creates a draft if none exists. Appended, never replaced.
+        409 once the RFP has been sent.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: The stored FileRef.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachment: { $ref: '#/components/schemas/FileRef' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413':
+          description: The file exceeds the 10 MB cap.
+        '415':
+          description: The file content type is not a supported image.
+
+  /projects/{projectId}/procurement/rfp/recipients:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [schedule]
+      summary: Add invitee emails to the live RFP (LINA-279, ADR-0023)
+      description: >-
+        MANAGE_RFP required. Accepts a flat `emails` array; normalises (trim +
+        lowercase), deduplicates, and mints a SHA-256 token hash per new email.
+        The raw token is never returned — send() rotates the hash when it mints
+        the delivered link. Duplicate emails against the same RFP are a silent
+        no-op (no `duplicate_recipient` event; the DB UNIQUE (rfp_id, email) is
+        the backstop). Auto-creates a draft if none exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RfpRecipientsInput' }
+      responses:
+        '200':
+          description: The full, deduplicated recipient list (no raw tokens).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RfpRecipientsResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /projects/{projectId}/procurement/rfp/recipients/{recipientId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - name: recipientId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [schedule]
+      summary: Remove a draft-era invitee (LINA-279, ADR-0023)
+      description: >-
+        MANAGE_RFP required. Draft-only (migration 0013 delegated the
+        schedule.rfp_recipient DELETE grant to schedule_app exactly for this).
+        Once the RFP has been sent this is a 409 rfp_already_sent.
+      responses:
+        '204':
+          description: The recipient was removed.
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /projects/{projectId}/rfp:send:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [schedule]
+      summary: Email a unique proposal link to every invitee (LINA-279, ADR-0023)
+      description: >-
+        MANAGE_RFP required. draft → sent, once; re-send is allowed from `sent`
+        to re-mail pending invitees. Each mail-out mints a FRESH raw token per
+        recipient (rotating the stored hash) so the deliverable link exists only
+        in the outgoing email — never in a response, log, or the DB — and a
+        re-send defeats anyone replaying a captured link. The link is derived
+        from the request's forwarded origin (never the body). Fail-closed: if
+        email is unconfigured this is a 503 email_unconfigured and NOTHING is
+        minted (ADR-0007 §5). Returns the full procurement view.
+      responses:
+        '200':
+          description: The refreshed procurement view (draft→sent).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcurementView' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503':
+          description: Email delivery is not configured (fail-closed; nothing minted).
+
+  /rfp/token/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: >-
+          The raw base64url token from the emailed link. SHA-256'd and compared
+          to the stored hash — never treated as a record id. The token IS the
+          credential; no session is read.
+        schema: { type: string }
+    get:
+      tags: [schedule]
+      summary: Public RFP preview — the proposal form's initial load (LINA-294)
+      description: >-
+        NO session. The token ladder: unknown / declined → 404 not_found;
+        submitted → 200 WITH the proposal (checked BEFORE the phase gate so the
+        confirmation page can re-read post-close); phase not active → 410
+        rfp_closed; else 200 { proposal: null } and the recipient flips
+        invited→viewed. The raw token is never echoed.
+      responses:
+        '200':
+          description: The project, RFP, and (if spent) the proposal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPreview' }
+        '404':
+          description: Unknown token or declined recipient (uniform; never probes).
+        '410':
+          description: The procurement phase is no longer active.
+
+  /rfp/token/{token}/portfolio-images:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [schedule]
+      summary: Upload a portfolio image behind the proposal form (LINA-294)
+      description: >-
+        NO session. Token ladder: 404 → 409 already_submitted → 410 rfp_closed →
+        sniff/size validation → 201 FileRef. JPEG, PNG, WebP and HEIC (ISO-BMFF
+        ftyp brand check) accepted; GIF and others → 415; empty → 400; >10 MB →
+        413. Nothing lands on the draft — the FileRef is held by the FE until
+        submit().
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: The stored FileRef.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  image: { $ref: '#/components/schemas/FileRef' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410':
+          description: The procurement phase is no longer active.
+        '413':
+          description: The file exceeds the 10 MB cap.
+        '415':
+          description: The file content type is not a supported image.
+
+  /rfp/token/{token}/proposal:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [schedule]
+      summary: Submit a proposal as an external, unauthenticated contractor (LINA-294)
+      description: >-
+        NO session. Token ladder: 404 → 409 already_submitted → 410 rfp_closed →
+        400 invalid_proposal (companyName required ≤200; websiteUrl http(s) +
+        dotted hostname; budget int cents ≥0 with max≥min; timelineDays
+        positive int ≤3650; comment optional ≤4000) → 400 too_many_images (>8)
+        → 201 { proposal }. The proposal INSERT and the recipient submitted-stamp
+        commit in ONE transaction. Append-only: ONE proposal per recipient,
+        never edited or deleted. token ProposalView is id-less.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProposalSubmit' }
+      responses:
+        '201':
+          description: The submitted proposal (token view; no id).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proposal: { $ref: '#/components/schemas/Proposal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: Unknown token or declined recipient.
+        '409':
+          description: Token already spent (already_submitted).
+
 components:
   parameters:
     ProjectId:
@@ -538,6 +830,11 @@ components:
         The stable client-minted task key (schedule.stage.key, LINA-249). Not a
         UUID; ≤ 200 chars.
       schema: { type: string, minLength: 1, maxLength: 200 }
+    PhaseId:
+      name: phaseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
 
   responses:
     BadRequest:
@@ -551,6 +848,9 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     NotFound:
       description: The stage does not exist.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: The request conflicts with current state (no double-live RFP, duplicate recipient, spent token, immutable in-flight row).
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     AttachmentTooLarge:
       description: File exceeds the 10 MB cap (LINA-249).
@@ -1063,3 +1363,159 @@ components:
         attachments:
           type: array
           items: { $ref: '#/components/schemas/StageAttachment' }
+
+    # ── RFP procurement loop (LINA-279, ADR-0023) ────────────────────────────
+    R2Ref:
+      type: object
+      description: An R2/Vercel-Blob attachment reference, mirroring stage_attachment.
+      additionalProperties: false
+      required: [key, filename, size, content_type]
+      properties:
+        key: { type: string }
+        filename: { type: string, maxLength: 255 }
+        size: { type: integer, minimum: 0 }
+        content_type: { type: string }
+        url: { type: string, format: uri }
+
+    RfpSaveBody:
+      type: object
+      required: [description, specialties]
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+          maxLength: 6000
+        specialties:
+          type: array
+          maxItems: 20
+          description: Trimmed, deduplicated trade tags (each ≤ 100 chars).
+          items: { type: string, maxLength: 100 }
+    RfpView:
+      type: object
+      description: The RFP row shaped for the API boundary. status walks draft → sent → closed.
+      properties:
+        id: { type: string, format: uuid }
+        phaseId: { type: string, format: uuid }
+        description: { type: string, maxLength: 6000 }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/FileRef' }
+        specialties:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [draft, sent, closed] }
+        updatedAt: { type: string, format: date-time }
+
+    RfpRecipientsInput:
+      type: object
+      required: [emails]
+      additionalProperties: false
+      properties:
+        emails:
+          type: array
+          minItems: 1
+          description: Normalised (trim + lowercase) and deduplicated server-side.
+          items: { type: string, format: email }
+    Recipient:
+      type: object
+      description: >-
+        An external invitee. The raw token is NEVER in this shape or anywhere in
+        a response — the email link is the only delivery (ADR-0023 §5).
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        status: { type: string, enum: [invited, viewed, submitted, declined] }
+    RfpRecipientsResult:
+      type: object
+      properties:
+        recipients:
+          type: array
+          items: { $ref: '#/components/schemas/Recipient' }
+
+    ProcurementView:
+      type: object
+      description: What the procurement page renders (LINA-283).
+      properties:
+        phase:
+          type: object
+          description: The procurement phase as phase view (id, kind, name, status, sequence).
+        rfp:
+          type: [RfpView, 'null']
+          description: null until the first draft is saved.
+        recipients:
+          type: array
+          items: { $ref: '#/components/schemas/Recipient' }
+        proposals:
+          type: array
+          description: Owner's / GC's comparison inbox, newest first.
+          items: { $ref: '#/components/schemas/Proposal' }
+        selectedProposalId:
+          type: [string, 'null'] # selection is LINA-280; reserved here so the page does not shift shape.
+          format: uuid
+
+    ProposalSubmit:
+      type: object
+      required: [companyName, websiteUrl, budgetMinCents, budgetMaxCents, timelineDays]
+      additionalProperties: false
+      properties:
+        companyName: { type: string, minLength: 1, maxLength: 200 }
+        websiteUrl:
+          type: string
+          description: An http(s) URL with a dotted hostname.
+        portfolioImages:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/FileRef' }
+        budgetMinCents: { type: integer, minimum: 0 }
+        budgetMaxCents: { type: integer, minimum: 0, description: Must be >= budgetMinCents. }
+        timelineDays: { type: integer, minimum: 1, maximum: 3650 }
+        comment:
+          type: [string, 'null']
+          maxLength: 4000
+    Proposal:
+      type: object
+      description: >-
+        An append-only submission; never edited or deleted. recipientEmail is the
+        submitter's public face. The token route echoes id-less (ADR-0023 §5);
+        the procurement inbox adds id, rfpRecipientId.
+      properties:
+        id: { type: string, format: uuid }
+        rfpRecipientId: { type: string, format: uuid }
+        recipientEmail: { type: string, format: email }
+        companyName: { type: string, maxLength: 200 }
+        websiteUrl: { type: string }
+        portfolioImages:
+          type: array
+          items: { $ref: '#/components/schemas/FileRef' }
+        budgetMinCents: { type: integer }
+        budgetMaxCents: { type: integer }
+        timelineDays: { type: integer }
+        comment: { type: ['string', 'null'] }
+        submittedAt: { type: string, format: date-time }
+
+    TokenPreview:
+      type: object
+      description: What the proposal form renders behind /rfp/[token] (ADR-0023 §5).
+      properties:
+        project:
+          type: object
+          description: Dereferenced via identity.getProjectPreview (ADR-0006).
+          properties:
+            name: { type: string }
+            location:
+              type: [string, 'null']
+              description: Reserved-null until a locality column exists.
+        recipientEmail: { type: string, format: email }
+        rfp:
+          type: object
+          properties:
+            description: { type: string, maxLength: 6000 }
+            attachments:
+              type: array
+              items: { $ref: '#/components/schemas/FileRef' }
+            specialties:
+              type: array
+              items: { type: string }
+        proposal:
+          type: [Proposal, 'null']
+          description: null during the window; the submitted view once spent.

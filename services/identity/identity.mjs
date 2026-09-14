@@ -799,6 +799,33 @@ export function createIdentityService({
     };
   }
 
+  // GET /rfp/token/:token (via the schedule service) — the public RFP token page
+  // needs the project's PUBLIC face (name +, reserved, a locality line) for a
+  // contractor who holds a live RFP token. This is Identity's SECOND party-less
+  // read, after `previewInvitation`, and the disclosure rationale is the same:
+  // the RFP token is already a bearer credential scoped to exactly this project,
+  // so revealing its name is not new disclosure. It also exists because ADR-0006
+  // §1 forbids schedule reading identity.project directly — schedule derefs
+  // through this seam, exactly as it derefs project names on the send path.
+  //
+  // NOT AN ORACLE. This never answers for a forged projectId: the RFP service
+  // calls it only after its OWN store resolved the token hash to a real
+  // rfp_recipient row, so there is nothing here to probe for a project's
+  // existence. Unknown-vs-vanished stays in the schedule service's hands.
+  //
+  // `location` is reserved-null: identity.project has no locality column (the
+  // full site address is deliberately never public from a token page), so the FE
+  // renders the page without a location line until a product decision adds one.
+  async function getProjectPreview({ projectId }) {
+    const project = await store.getProject(projectId);
+    if (!project) return { id: null, name: null, location: null };
+    return {
+      id: project.id,
+      name: project.name,
+      location: null,
+    };
+  }
+
   // GET /me — the acting party's own profile. No authorization beyond being
   // authenticated: every signed-in party may read their own identity. Returns
   // the authoritative display_name, email, and role from identity.party — the
@@ -887,6 +914,7 @@ export function createIdentityService({
     inviteCounterparty,
     acceptInvitation,
     previewInvitation,
+    getProjectPreview,
     getMe,
     completeProfile,
   };
