@@ -26,6 +26,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { DomainError, ACTION } from './ports.mjs';
+import { assertExecutionEditable, capturePlanChangeLog } from './plan-change-log.mjs';
 
 const now = () => new Date().toISOString();
 
@@ -126,6 +127,10 @@ export function createScheduleService({ store, ledger, identity }) {
     };
 
     await store.transaction(async (tx) => {
+      // Change-order guard (ADR-0023 §8, LINA-280): re-read the execution phase
+      // under this tx; a signed_off phase throws 409 PLAN_LOCKED. Legacy
+      // projects without phase rows pass exactly as before.
+      const { phaseId } = await assertExecutionEditable(store, tx, projectId);
       await store.insertStage(tx, row);
       await ledger.append(tx, {
         projectId,
@@ -140,6 +145,18 @@ export function createScheduleService({ store, ledger, identity }) {
           plannedStartDate: row.planned_start_date,
           plannedEndDate: row.planned_end_date,
         },
+      });
+      await capturePlanChangeLog(store, tx, {
+        projectId,
+        phaseId,
+        actorPartyId,
+        changes: [{
+          entityType: 'stage',
+          entityId: id,
+          fieldName: 'created',
+          oldValue: null,
+          newValue: row,
+        }],
       });
     });
 
@@ -179,14 +196,31 @@ export function createScheduleService({ store, ledger, identity }) {
     set.updated_at = now();
 
     await store.transaction(async (tx) => {
+      // Change-order guard (ADR-0023 §8, LINA-280) — see addStage.
+      const { phaseId } = await assertExecutionEditable(store, tx, existing.project_id);
       const updated = await store.updateStage(tx, stageId, set);
       if (!updated) throw new DomainError(404, 'not_found', 'stage not found');
+      const changedFields = Object.keys(set).filter((k) => k !== 'updated_at');
       await ledger.append(tx, {
         projectId: existing.project_id,
         type: 'stage_updated',
         actorPartyId,
         occurredAt: set.updated_at,
-        payload: { stageId, changed: Object.keys(set).filter((k) => k !== 'updated_at') },
+        payload: { stageId, changed: changedFields },
+      });
+      // One plan_change_log row per changed field — the append-only pre-lock
+      // audit trail of who moved what (ADR-0023 §8).
+      await capturePlanChangeLog(store, tx, {
+        projectId: existing.project_id,
+        phaseId,
+        actorPartyId,
+        changes: changedFields.map((k) => ({
+          entityType: 'stage',
+          entityId: stageId,
+          fieldName: k,
+          oldValue: existing[k] ?? null,
+          newValue: set[k] ?? null,
+        })),
       });
     });
 

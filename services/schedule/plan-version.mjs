@@ -26,6 +26,7 @@
 //   - None of these events move the budget — B3 owns the money.
 import { randomUUID } from 'node:crypto';
 import { ACTION, DomainError } from './ports.mjs';
+import { assertExecutionEditable, capturePlanChangeLog } from './plan-change-log.mjs';
 
 const now = () => new Date().toISOString();
 
@@ -655,8 +656,18 @@ export function createPlanVersionService({ store, ledger, identity }) {
 
     const occurredAt = now();
     const versionId = existingDraft ? existingDraft.id : randomUUID();
+    // Re-save diff anchor: old draft rows by stage `key`, snapshotted inside the
+    // tx before the replacement DELETE (only saves with keys can be diffed; an
+    // import mid-flight re-save captures as an `added`-only audit).
+    const oldByKey = new Map();
 
     const write = async (tx) => {
+      // Change-order guard (ADR-0023 §8, LINA-280): a re-save of a locked
+      // (signed_off execution) project is refused here even though the stage
+      // DELETE is trigger-guarded — the phase check is the first line and the
+      // plan_change_log rows stop at the same point.
+      const { phaseId } = await assertExecutionEditable(store, tx, projectId);
+
       // The draft event, one per save (an honest "saved at T" on the ledger). It
       // carries no version_no — a draft is unnumbered until it is proposed.
       const drafted = await ledger.append(tx, {
@@ -677,10 +688,12 @@ export function createPlanVersionService({ store, ledger, identity }) {
         // the FK `stage_dependency.stage_id → stage.id`. Both deletes are
         // trigger-guarded: only a draft's rows are deletable; a frozen
         // baseline's rows (and stages) never are.
+        // The OLD rows are snapshotted first for the plan_change_log diff below.
+        const oldStages = await store.listStagesByPlanVersion(versionId);
+        for (const s of oldStages) if (s.key != null) oldByKey.set(s.key, s);
         await store.deleteStageDependenciesByPlanVersion(tx, versionId);
         await store.deleteStagesByPlanVersion(tx, versionId);
       } else {
-        // First save: the draft envelope — unnumbered, no import, no supersede.
         await store.insertPlanVersion(tx, {
           id: versionId,
           project_id: projectId,
@@ -705,6 +718,15 @@ export function createPlanVersionService({ store, ledger, identity }) {
           await store.insertStageDependency(tx, ids[i], ids[dep.pred], dep.type);
         }
       }
+
+      // plan_change_log capture (LINA-280, ADR-0023 §8): one row per (key, field)
+      // that changed in this re-save, computed against the pre-delete snapshot.
+      // entity_id is the NEW stage row's id — a draft re-save here re-mints stage
+      // uuids, so the surviving field mutation is anchored to the row that now
+      // exists; `added`/`removed` rows anchor to the row they belong to. Legacy
+      // projects with no execution phase are a no-op (phaseId null).
+      const changes = authoredStageChanges(order, ids, oldByKey);
+      await capturePlanChangeLog(store, tx, { projectId, phaseId, actorPartyId, changes });
 
       return {
         planVersionId: versionId,
@@ -1031,4 +1053,68 @@ export function createPlanVersionService({ store, ledger, identity }) {
   }
 
   return { getPlan, withdraw, accept, reject, requestChanges, authorPlan, proposePlan };
+}
+
+// ── plan_change_log diff (LINA-280, ADR-0023 §8) ─────────────────────────────
+// Pure field diff between the authored save and the pre-replacement draft
+// snapshot (oldByKey), keyed by each stage's stable `key`. New keys audit as
+// `added`, vanished keys as `removed`, surviving keys get one row per changed
+// field. Cost/date/trade changes compare the canonical shapes, so a null ↔ unset
+// flip is not a false "change".
+const AUTHORED_DIFF_FIELDS = [
+  ['name', (n) => n.name, (s) => s.name],
+  ['trade', (n) => n.trade, (s) => s.trade],
+  ['assigneePartyId', (n) => n.assigneePartyId, (s) => s.assignee_party_id],
+  ['description', (n) => n.description, (s) => s.description],
+  ['plannedStartDate', (n) => n.plannedStartDate, (s) => s.planned_start_date],
+  ['plannedEndDate', (n) => n.plannedEndDate, (s) => s.planned_end_date],
+  ['plannedCostCents', (n) => n.plannedCostCents, (s) => s.planned_cost_cents],
+];
+
+function authoredStageChanges(order, ids, oldByKey) {
+  const changes = [];
+  for (let i = 0; i < order.length; i += 1) {
+    const node = order[i];
+    const old = node.key != null ? oldByKey.get(node.key) : null;
+    if (!old) {
+      changes.push({
+        entityType: 'stage', entityId: ids[i], fieldName: 'added',
+        oldValue: null, newValue: authoredSnapshot(node, ids[i]),
+      });
+      continue;
+    }
+    for (const [fieldName, fromNode, fromStage] of AUTHORED_DIFF_FIELDS) {
+      const nv = fromNode(node);
+      const ov = fromStage(old);
+      if (!Object.is(nv, ov)) {
+        changes.push({
+          entityType: 'stage', entityId: ids[i], fieldName,
+          oldValue: ov ?? null, newValue: nv ?? null,
+        });
+      }
+    }
+  }
+  for (const [key, oldStage] of oldByKey) {
+    if (!order.some((n) => n.key === key)) {
+      changes.push({
+        entityType: 'stage', entityId: oldStage.id, fieldName: 'removed',
+        oldValue: oldStage, newValue: null,
+      });
+    }
+  }
+  return changes;
+}
+
+function authoredSnapshot(node, id) {
+  return {
+    id,
+    key: node.key,
+    name: node.name,
+    trade: node.trade,
+    assigneePartyId: node.assigneePartyId,
+    description: node.description,
+    plannedStartDate: node.plannedStartDate,
+    plannedEndDate: node.plannedEndDate,
+    plannedCostCents: node.plannedCostCents,
+  };
 }

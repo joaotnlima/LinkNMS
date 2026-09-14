@@ -47,6 +47,21 @@ export function createInMemoryIdentity({ memberships = [] } = {}) {
     if (!byProject.has(m.projectId)) byProject.set(m.projectId, new Map());
     byProject.get(m.projectId).set(m.partyId, m.role);
   }
+  // parties: [{ id, email, displayName }] — mirrors identity.party for the
+  // phase service's award resolution (LINA-280). Defaults to deriving from the
+  // memberships' ids so existing tests keep passing without explicit parties.
+  const parties = new Map();
+  const rows = []; // [{ projectId, partyId, role }] append-ordered for onboarding
+
+  function seedParties(seed) {
+    for (const p of seed ?? []) {
+      parties.set(p.id, { ...p });
+    }
+  }
+  for (const m of memberships) {
+    if (!parties.has(m.partyId)) parties.set(m.partyId, { id: m.partyId, email: null });
+    rows.push({ projectId: m.projectId, partyId: m.partyId, role: m.role });
+  }
 
   function roleOf(projectId, partyId) {
     return byProject.get(projectId)?.get(partyId) ?? null;
@@ -73,7 +88,36 @@ export function createInMemoryIdentity({ memberships = [] } = {}) {
     return { partyId, projectId, role };
   }
 
-  return { authorize, requireMember, roleOf };
+  // Constructor selection (LINA-280): writes the subcontractor membership.
+  // Mirrors the identity service's single member per (project, party).
+  function onboardProjectMember({ projectId, partyId, role = 'subcontractor' }) {
+    if (!parties.has(partyId)) throw new DomainError(404, 'party_not_found', 'party not found');
+    if (roleOf(projectId, partyId)) {
+      throw new DomainError(409, 'conflict', 'party is already a member of this project');
+    }
+    if (role !== 'subcontractor') {
+      throw new DomainError(400, 'invalid_role', 'only "subcontractor" membership may be onboarded');
+    }
+    if (!byProject.has(projectId)) byProject.set(projectId, new Map());
+    byProject.get(projectId).set(partyId, role);
+    rows.push({ projectId, partyId, role });
+    return { membership: { id: randomUUID(), projectId, partyId, role, joinedAt: now() } };
+  }
+
+  function resolvePartyId(partyId) {
+    return parties.has(partyId) ? partyId : null;
+  }
+
+  function resolvePartyIdByEmail(email) {
+    if (!email) return null;
+    const wanted = String(email).toLowerCase();
+    for (const p of parties.values()) {
+      if (String(p.email ?? '').toLowerCase() === wanted) return p.id;
+    }
+    return null;
+  }
+
+  return { authorize, requireMember, roleOf, onboardProjectMember, resolvePartyId, resolvePartyIdByEmail, _seedParties: seedParties, _parties: parties, _memberships: rows };
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +182,11 @@ export function createInMemoryStore() {
   const movements = [];        // schedule.material_movement rows (append-only)
   const comments = [];         // schedule.stage_comment rows (append-only, LINA-249)
   const attachments = [];      // schedule.stage_attachment rows (append-only, LINA-249)
+  const phases = [];           // schedule.project_phase rows (mutability is service-governed)
+  const planChangeLog = [];    // schedule.plan_change_log rows (append-only, ADR-0023)
+  const rfpProposals = [];     // schedule.rfp_proposal rows (append-only-ish: INSERT/SELECT)
+  const rfpRecipients = [];    // schedule.rfp_recipient rows (token_hash, rfp_id, email, status)
+  const rfpDefinitions = [];   // schedule.rfp rows (phase_id, description, status)
   // schedule.plan_template rows (mutable CRUD; NO audit weight — outside the
   // tamper-evident record, ADR-0018). Seeded with the single system default so
   // the resolve ladder (user → system) has the same source of truth the DB
@@ -635,6 +684,149 @@ export function createInMemoryStore() {
     return { ...row };
   }
 
+  // ── Project-phase primitives (LINA-275; ADR-0023) —────────────────────────
+  // Mirrors the pg-store surface; the service layer owns which statuses are
+  // allowed. The one-way `signed_off` rule is enforced here in code exactly like
+  // the project_phase_signed_off_immutable trigger enforces it in the DB.
+
+  function listPhases(projectId) {
+    return phases
+      .filter((p) => p.project_id === projectId)
+      .sort((a, b) => (a.sequence - b.sequence))
+      .map((p) => ({ ...p }));
+  }
+
+  function getExecutionPhase(projectId, _tx) {
+    const r = phases.find((p) => p.project_id === projectId && p.kind === 'execution');
+    return r ? { ...r } : null;
+  }
+
+  function getPhaseById(id, _tx) {
+    const r = phases.find((p) => p.id === id);
+    return r ? { ...r } : null;
+  }
+
+  function updatePhaseStatus(_tx, phaseId, status) {
+    const r = phases.find((p) => p.id === phaseId);
+    if (!r) return null;
+    if (r.status === 'signed_off' && status !== 'signed_off') {
+      const err = new Error('a signed_off phase is one-way — change orders only (ADR-0014)');
+      err.code = 'P0001';
+      throw err;
+    }
+    r.status = status;
+    r.updated_at = now();
+    return { ...r };
+  }
+
+  function insertPhase(_tx, row) {
+    const stored = { ...row };
+    phases.push(stored);
+    return { ...stored };
+  }
+
+  function insertPlanChangeLog(_tx, row) {
+    const stored = { ...row };
+    planChangeLog.push(stored);
+    return { ...stored };
+  }
+
+  function listPlanChangeLogs(phaseId) {
+    return planChangeLog
+      .filter((l) => l.phase_id === phaseId)
+      .sort((a, b) => (a.occurred_at < b.occurred_at ? -1 : 1))
+      .map((l) => ({ ...l }));
+  }
+
+  // An RFP proposal joined to its recipient's email + owning rfp/phase/project
+  // (constructor selection + the wire view).
+  function getProposalById(proposalId) {
+    const p = rfpProposals.find((x) => x.id === proposalId);
+    if (!p) return null;
+    const recipient = rfpRecipients.find((r) => r.id === p.rfp_recipient_id);
+    const rfp = recipient ? rfpDefinitions.find((f) => f.id === recipient.rfp_id) : null;
+    const phase = rfp ? phases.find((x) => x.id === rfp.phase_id) : null;
+    return {
+      ...p,
+      rfp_id: rfp?.id ?? null,
+      recipient_email: recipient?.email ?? null,
+      phase_id: rfp?.phase_id ?? null,
+      project_id: phase?.project_id ?? null,
+    };
+  }
+
+  // The dynamic token validity check (ADR-0023 §5 Option A): a token resolves
+  // only while its RFP's phase is still `active`.
+  function getRecipientByTokenHash(tokenHash) {
+    const r = rfpRecipients.find((x) => x.token_hash === tokenHash);
+    if (!r) return null;
+    const rfp = rfpDefinitions.find((f) => f.id === r.rfp_id);
+    const phase = rfp ? phases.find((p) => p.id === rfp.phase_id) : null;
+    return {
+      id: r.id,
+      rfp_id: r.rfp_id,
+      email: r.email,
+      status: r.status,
+      phase_id: phase?.id ?? null,
+      phase_status: phase?.status ?? null,
+    };
+  }
+
+  // The procurement phase (kind='procurement') for a project — the anchor the
+  // selection view reads.
+  function getProcurementPhase(projectId) {
+    const r = phases.find((p) => p.project_id === projectId && p.kind === 'procurement');
+    return r ? { ...r } : null;
+  }
+
+  // One rfp by id (draft/sent/closed alike — a closed rfp stays readable so the
+  // view keeps its winners and losers forever).
+  function getRfpById(rfpId) {
+    const r = rfpDefinitions.find((f) => f.id === rfpId);
+    return r ? { ...r } : null;
+  }
+
+  // The rfp for a procurement phase — the latest one (v1 keeps one live rfp per
+  // phase; closed ones persist, so "latest" is the phase's current/winning rfp).
+  function getRfpByPhase(phaseId) {
+    let found = null;
+    for (const f of rfpDefinitions) {
+      if (f.phase_id !== phaseId) continue;
+      if (!found || f.updated_at >= found.updated_at) found = f;
+    }
+    return found ? { ...found } : null;
+  }
+
+  // An rfp's recipients (sent order).
+  function listRecipientsByRfp(rfpId) {
+    return rfpRecipients
+      .filter((r) => r.rfp_id === rfpId)
+      .sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
+      .map((r) => ({ ...r }));
+  }
+
+  // An rfp's proposals (submitted order) — the view's full inbox.
+  function listProposalsByRfp(rfpId) {
+    return rfpProposals
+      .filter((p) => {
+        const recipient = rfpRecipients.find((r) => r.id === p.rfp_recipient_id);
+        return recipient?.rfp_id === rfpId;
+      })
+      .sort((a, b) => (a.submitted_at < b.submitted_at ? -1 : 1))
+      .map((p) => ({ ...p }));
+  }
+
+  // Close an rfp: status → 'closed' and (for an award) the winner marker. One
+  // guarded write inside the select-constructor transaction.
+  function closeRfp(_tx, rfpId, selectedProposalId) {
+    const r = rfpDefinitions.find((f) => f.id === rfpId);
+    if (!r) return null;
+    r.status = 'closed';
+    r.selected_proposal_id = selectedProposalId ?? null;
+    r.updated_at = now();
+    return { ...r };
+  }
+
   return {
     transaction,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
@@ -654,10 +846,17 @@ export function createInMemoryStore() {
     stageLiveByKey, insertStageComment, listStageCommentsByKey,
     insertStageAttachment, listStageAttachmentsByKey,
     getSystemDefaultTemplate, getUserDefaultTemplate, upsertUserDefaultTemplate,
+    listPhases, getExecutionPhase, getPhaseById, getProcurementPhase,
+    updatePhaseStatus, insertPhase,
+    insertPlanChangeLog, listPlanChangeLogs,
+    getProposalById, getRecipientByTokenHash,
+    getRfpById, getRfpByPhase, listRecipientsByRfp, listProposalsByRfp, closeRfp,
     _stages: stages, _progress: progress, _imports: imports, _dependencies: dependencies,
     _versions: versions, _acceptances: acceptances, _baselines: baselines,
     _lineMaterials: lineMaterials, _movements: movements, _planTemplates: planTemplates,
     _comments: comments, _attachments: attachments,
+    _phases: phases, _planChangeLog: planChangeLog,
+    _rfpProposals: rfpProposals, _rfpRecipients: rfpRecipients, _rfpDefinitions: rfpDefinitions,
   };
 }
 

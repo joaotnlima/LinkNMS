@@ -518,6 +518,74 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
+  # ── Constructor selection (LINA-280; ADR-0023 §3; slice-procurement-contract
+  # ── §1 routes 7-8). Both actions return the FULL ProcurementView — a selection
+  # changes more than it names (execution activates, procurement closes, every
+  # outstanding RFP token dies via the dynamic join, ADR-0023 §5 Option A), and a
+  # partial response would leave the accordion painting a state that no longer
+  # exists.
+
+  /projects/{projectId}/procurement/proposals/{proposalId}:select:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - name: proposalId
+        in: path
+        required: true
+        description: The RFP proposal being awarded. The `:select` suffix is part of the frozen segment (`{proposalId}:select`, colon-action style).
+        schema: { type: string, format: uuid }
+    post:
+      tags: [schedule]
+      summary: Choose the constructor (owner + counterparty)
+      description: >-
+        The actor is the session, never a body field (slice-procurement-contract
+        §0.1). In ONE schedule transaction: the awarded proposal becomes
+        `rfp.selected_proposal_id` and the rfp closes (`status → closed`),
+        procurement → signed_off, execution → active. The awarded bidder is
+        onboarded as a `subcontractor` member (Band B read-only) through
+        identity — before any phase flips. The dynamic RFP-token join stops
+        resolving the moment procurement is signed off — no stored expiry.
+        Errors: 404 proposal_not_found / not_found; 409 already_selected,
+        phase_not_active or rfp_already_sent; 422 contractor_not_seated when the
+        awarded bidder has no account on the platform yet.
+      responses:
+        '200':
+          description: The full procurement view after the award — rfp closed with a winner.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcurementView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /projects/{projectId}/procurement:skip:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [schedule]
+      summary: Persona B — no RFP, straight to execution (owner + counterparty)
+      description: >-
+        The actor is the session (slice-procurement-contract §0.1); no body. Same
+        status flips as a selection — procurement → signed_off, execution →
+        active, a stale `draft` rfp closes without a winner — but nothing is
+        onboarded (the contractor is already a project member) and no proposal is
+        selected. Refused (409) once selection already happened (already_selected)
+        or the RFP was already sent (rfp_already_sent — tokens are live and
+        skipping would kill them with no warning).
+      responses:
+        '200':
+          description: The full procurement view after the skip — procurement closed, no winner.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProcurementView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
 components:
   parameters:
     ProjectId:
@@ -557,6 +625,17 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     UnsupportedMediaType:
       description: File type is not on the allowlist (images + pdf + office docs, LINA-249).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: >-
+        A state conflict (409): the plan is locked (PLAN_LOCKED — execution signed
+        off, ADR-0023 §8), the procurement phase is already awarded or not active,
+        the proposal belongs elsewhere, or selection already happened.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    UnprocessableEntity:
+      description: >-
+        The request is well-formed but a business precondition fails (422) — e.g.
+        contractor_not_seated when the awarded bidder has no account yet.
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   schemas:
@@ -937,7 +1016,7 @@ components:
         priceCause: { type: [string, 'null'], enum: [index, supplier_quote, correction], description: Required iff price_movement. }
         newQuantity: { type: [number, 'null'], description: For a scope_change (qty changed); optional for price_movement. }
         newUnitPriceCents: { type: [integer, 'null'], description: For a price_movement, or a scope re-spec. }
-        source: { type: [string, 'null'], maxLength: 500, description: Provenance — 'ACME steel index 2026-09', 'quote #4471'. }
+        source: { type: [string, 'null'], maxLength: 500, description: "Provenance — 'ACME steel index 2026-09', 'quote #4471'." }
         changeOrder:
           type: [object, 'null']
           description: scope_change only — cost delta is DERIVED server-side = valueDelta; never client-supplied.
@@ -1063,3 +1142,82 @@ components:
         attachments:
           type: array
           items: { $ref: '#/components/schemas/StageAttachment' }
+
+    # ── Constructor selection (LINA-280; ADR-0023 §3; slice-procurement-contract
+    # ── §2). One view shared by every procurement surface + BOTH write actions:
+    # a selection changes more than it names, and the accordion is always
+    # repainted from the server's full answer.
+
+    ProcurementView:
+      type: object
+      required: [phase, rfp, recipients, proposals, selectedProposalId]
+      properties:
+        phase: { $ref: '#/components/schemas/PhaseView' }
+        rfp:
+          oneOf:
+            - { $ref: '#/components/schemas/RfpView' }
+            - { type: 'null', description: 'No RFP was ever created for this project (skip path preserves it).' }
+        recipients:
+          type: array
+          items: { $ref: '#/components/schemas/RecipientView' }
+        proposals:
+          type: array
+          items: { $ref: '#/components/schemas/ProposalView' }
+        selectedProposalId:
+          type: [string, 'null']
+          format: uuid
+          description: 'The awarded bid; persists as rfp.selected_proposal_id. Null means skipped/no award yet.'
+    PhaseView:
+      type: object
+      required: [id, kind, name, status, sequence]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [pre_design, procurement, execution, close_out] }
+        name: { type: string }
+        status:
+          type: string
+          enum: [pending, active, signed_off, archived]
+          description: '`signed_off` is one-way (DB trigger): a signed-off phase never unlocks.'
+        sequence:
+          type: integer
+          description: 0-indexed lifecycle order; gaps allowed.
+    RfpView:
+      type: object
+      required: [id, phaseId, description, attachments, specialties, status, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        phaseId: { type: string, format: uuid }
+        description: { type: string }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/FileRef' }
+        specialties:
+          type: array
+          items: { type: string }
+        status:
+          type: string
+          enum: [draft, sent, closed]
+        updatedAt: { type: string, format: date-time }
+    RecipientView:
+      type: object
+      required: [id, email, status]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        status: { type: string, enum: [sent, never] }
+    ProposalView:
+      type: object
+      required: [id, rfpRecipientId, companyName, budgetMinCents, budgetMaxCents, timelineDays, submittedAt]
+      properties:
+        id: { type: string, format: uuid }
+        rfpRecipientId: { type: string, format: uuid }
+        companyName: { type: string }
+        websiteUrl: { type: [string, 'null'] }
+        portfolioImages:
+          type: array
+          items: { $ref: '#/components/schemas/FileRef' }
+        budgetMinCents: { type: [integer, 'null'] }
+        budgetMaxCents: { type: [integer, 'null'] }
+        timelineDays: { type: [integer, 'null'] }
+        comment: { type: [string, 'null'] }
+        submittedAt: { type: string, format: date-time }
