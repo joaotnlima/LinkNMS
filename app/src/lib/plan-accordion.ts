@@ -41,24 +41,30 @@ export function procurementBadge(status: PhaseStatus): BadgeSpec {
 
 export type SectionKey = 'procurement' | 'execution';
 
+export type OpenSections = Record<SectionKey, boolean>;
+
 /**
- * Which section opens by default. The active phase is the one the party is
- * working in, so it opens; the other collapses to its badge. Only one phase is
- * active at a time by construction (selecting a constructor flips procurement
- * → archived and execution → active in one transaction), so this is a genuine
- * choice, not a guess.
+ * Which sections open by default. Both can open — this is not a single choice.
  *
- * Execution wins the tie-breaks: a signed-off or awaiting-sign-off plan is the
- * live surface even though its DB status is not literally `active`, and if
- * neither phase is active (a fully closed-out build) the plan is still what a
- * visitor came to read. Procurement opens by default only while it is genuinely
- * the active phase.
+ * Execution — the plan itself, with its Gantt — is the surface a visitor comes to
+ * /plan to read, so it opens by default in EVERY state (LINA-306: the founder
+ * landed on /plan while Procurement was active and saw only the Procurement
+ * "coming soon" placeholder, with the whole plan hidden behind a collapsed
+ * Execution header). The plan is never the thing we hide.
+ *
+ * Procurement ADDITIONALLY opens while it is the genuinely active phase, so its
+ * RFP loop is visible the moment it matters. Once a constructor is chosen
+ * (procurement → archived, execution → active in one transaction) it collapses
+ * to its badge as read-only history, and once execution is active or signed off
+ * the plan stands alone.
  */
-export function defaultOpenSection(
+export function defaultOpenSections(
   procurementStatus: PhaseStatus | null,
   executionStatus: PhaseStatus | null,
-): SectionKey {
-  if (executionStatus === 'active' || executionStatus === 'signed_off') return 'execution';
-  if (procurementStatus === 'active') return 'procurement';
-  return 'execution';
+): OpenSections {
+  const executionLive = executionStatus === 'active' || executionStatus === 'signed_off';
+  return {
+    execution: true,
+    procurement: procurementStatus === 'active' && !executionLive,
+  };
 }

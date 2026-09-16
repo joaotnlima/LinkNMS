@@ -18,7 +18,7 @@
 import { useState, type ReactNode } from 'react';
 
 import type { WirePhase } from '@/lib/api';
-import { procurementBadge, defaultOpenSection, type SectionKey } from '@/lib/plan-accordion';
+import { procurementBadge, defaultOpenSections, type SectionKey } from '@/lib/plan-accordion';
 import { PhaseBadge } from '@/components/SignOffPanel';
 import '@/components/plan-accordion.css';
 
@@ -42,15 +42,17 @@ export interface PlanAccordionProps {
 export function PlanAccordion({
   procurementStatus, executionPhase, procurementSlot, executionSlot, forceOpen = null,
 }: PlanAccordionProps) {
-  const preferred = forceOpen ?? defaultOpenSection(procurementStatus, executionPhase?.status ?? null);
+  // In an authoring mode (`?compose=build|import`) we force just that section
+  // open so the editor the visitor asked for is never hidden. Otherwise both
+  // sections decide independently: Execution (the plan + Gantt) always opens, and
+  // Procurement opens too while it is the active phase (LINA-281 / LINA-306).
+  const initialOpen: Record<SectionKey, boolean> = forceOpen
+    ? { procurement: forceOpen === 'procurement', execution: forceOpen === 'execution' }
+    : defaultOpenSections(procurementStatus, executionPhase?.status ?? null);
 
-  // Each section toggles independently — collapsing the active phase to read a
-  // closed one, or opening both, is the reader's call. The default-open phase
-  // starts expanded; the other starts collapsed to its badge.
-  const [open, setOpen] = useState<Record<SectionKey, boolean>>({
-    procurement: preferred === 'procurement',
-    execution: preferred === 'execution',
-  });
+  // Each section toggles independently — collapsing an open phase to read a
+  // closed one, or opening both, is the reader's call.
+  const [open, setOpen] = useState<Record<SectionKey, boolean>>(initialOpen);
 
   const toggle = (key: SectionKey) => setOpen((o) => ({ ...o, [key]: !o[key] }));
 
