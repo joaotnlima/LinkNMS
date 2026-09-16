@@ -28,6 +28,7 @@ import { createPgStore } from './pg-store.mjs';
 import { createScheduleService, HEADLINE } from './schedule.mjs';
 import { createPlanVersionService } from './plan-version.mjs';
 import { createPlanImportService } from './plan-import.mjs';
+import { createPhaseService } from './phases.mjs';
 import { PARSER } from './plan-import-parser.mjs';
 import { DomainError } from './ports.mjs';
 
@@ -92,7 +93,8 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
     // each file is a single idempotent unit — duplicate-object / already-applied
     // errors mean it exists and are safely ignored.
     for (const f of ['0003_plan_versioning.sql', '0005_plan_draft_status.sql',
-      '0006_stage_description.sql', '0007_stage_dependency_draft_delete.sql']) {
+      '0006_stage_description.sql', '0007_stage_dependency_draft_delete.sql',
+      '0012_project_phases_rfp_signoff.sql', '0013_phase_sign_off_grant_update.sql']) {
       try { await pool.query(await readFile(join(here, 'migrations', f), 'utf8')); }
       catch (err) {
         // 42704 = DROP CONSTRAINT on a constraint 0005 already dropped (re-run);
@@ -587,5 +589,57 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
     assert.equal((await store.listStageDependenciesByPlanVersion(draft.planVersionId)).length, 0);
     assert.equal((await store.listStagesByPlanVersion(draft.planVersionId)).length, 0);
   });
+  });
+
+  // ── Project phases + execution sign-off (LINA-278, ADR-0023) ────────────────
+  // Prove the phase lifecycle holds in the DATABASE: idempotent seeding, the
+  // one-pending partial index, in-place resolution, and the one-way signed_off
+  // trigger that no service bug can walk back.
+  describe('project phases + execution sign-off (LINA-278, ADR-0023)', () => {
+    async function seedPhase({ hasSignedContractor }) {
+      const { svc, projectId, gc, homeowner } = await seed();
+      // A plan task so a sign-off request is valid (≥1 task rule).
+      await svc.addStage(projectId, gc, { name: 'Foundation', position: 1 });
+      const identity = identityFor(new Map([[homeowner, 'owner'], [gc, 'counterparty']]));
+      const phases = createPhaseService({ store, identity });
+      await phases.ensurePhases(projectId, { hasSignedContractor });
+      return { phases, projectId, gc, homeowner };
+    }
+
+    test('ensurePhases seeds two phases in the DB and is idempotent', async () => {
+      const { phases, projectId } = await seedPhase({ hasSignedContractor: false });
+      await phases.ensurePhases(projectId, { hasSignedContractor: true }); // must not re-seed
+      const rows = await store.listPhasesByProject(projectId);
+      assert.deepEqual(rows.map((p) => [p.kind, p.sequence, p.status]), [
+        ['procurement', 0, 'active'],
+        ['execution', 1, 'pending'],
+      ]);
+    });
+
+    test('sign-off request → approve flips execution to signed_off (one-way in the DB)', async () => {
+      const { phases, projectId, gc, homeowner } = await seedPhase({ hasSignedContractor: true });
+      const execution = (await store.listPhasesByProject(projectId)).find((p) => p.kind === 'execution');
+      assert.equal(execution.status, 'active');
+
+      const { signOffRequest } = await phases.requestSignOff(projectId, execution.id, gc);
+      const out = await phases.approveSignOff(projectId, execution.id, signOffRequest.id, homeowner, { comment: 'ok' });
+      assert.equal(out.phase.status, 'signed_off');
+      assert.equal(out.signOffRequest.status, 'approved');
+      assert.ok(out.signOffRequest.resolvedAt);
+
+      // The DB trigger refuses to reopen a signed_off phase.
+      await assert.rejects(
+        () => store.updatePhaseStatus(pool, execution.id, 'active'),
+        (e) => e.code === 'P0001');
+    });
+
+    test('only one pending sign-off request per phase (partial unique index → 409)', async () => {
+      const { phases, projectId, gc } = await seedPhase({ hasSignedContractor: true });
+      const execution = (await store.listPhasesByProject(projectId)).find((p) => p.kind === 'execution');
+      await phases.requestSignOff(projectId, execution.id, gc);
+      await assert.rejects(
+        () => phases.requestSignOff(projectId, execution.id, gc),
+        (e) => e.status === 409 && e.code === 'sign_off_already_pending');
+    });
   });
 });

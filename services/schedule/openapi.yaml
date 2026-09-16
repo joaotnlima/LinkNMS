@@ -354,6 +354,132 @@ paths:
         '413': { $ref: '#/components/responses/AttachmentTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
 
+  # ── Project phases + execution sign-off (LINA-278, ADR-0023) ────────────────
+
+  /projects/{projectId}/phases:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [schedule]
+      summary: List the project's phases with their sign-off history (LINA-278)
+      description: >-
+        The phase-sequencing layer (procurement, execution) with each phase's
+        sign-off request history. Both parties read. A legacy project with no
+        phases is lazily seeded its two defaults on first read (procurement
+        active, execution pending). See ADR-0023 §Phase lifecycle.
+      responses:
+        '200':
+          description: The phase list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PhaseList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /projects/{projectId}/phases/{phaseId}/sign-off:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PhaseId'
+    post:
+      tags: [schedule]
+      summary: Open a sign-off request for a phase (LINA-278)
+      description: >-
+        Requests that the plan for this phase be signed off. Valid only when the
+        phase is `active` and the plan has ≥ 1 task; at most one pending request
+        per phase. The requester is the session party (ADR-0004).
+      responses:
+        '201':
+          description: The created sign-off request (status `pending`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [signOffRequest]
+                properties:
+                  signOffRequest: { $ref: '#/components/schemas/SignOffRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: >-
+            Phase is not `active` (`phase_not_active`), the plan has no tasks
+            (`no_plan_tasks`), or a request is already pending
+            (`sign_off_already_pending`).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /projects/{projectId}/phases/{phaseId}/sign-off/{requestId}/approve:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PhaseId'
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      tags: [schedule]
+      summary: Approve a sign-off request — locks the phase (LINA-278)
+      description: >-
+        Signs the plan off: resolves the request `approved` and flips the phase to
+        `signed_off` (a ONE-WAY transition — enforced by a DB trigger) in one
+        transaction. The party who requested sign-off may NOT approve it
+        (`cannot_self_approve`). After this, plan edits must be raised as change
+        orders (ADR-0014).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignOffResolution' }
+      responses:
+        '200':
+          description: The approved request and the now-signed_off phase.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [signOffRequest, phase]
+                properties:
+                  signOffRequest: { $ref: '#/components/schemas/SignOffRequest' }
+                  phase: { $ref: '#/components/schemas/Phase' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: A non-member, or the requester attempting to self-approve.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The request is already resolved (`sign_off_already_resolved`).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /projects/{projectId}/phases/{phaseId}/sign-off/{requestId}/reject:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/PhaseId'
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      tags: [schedule]
+      summary: Reject a sign-off request — phase stays active (LINA-278)
+      description: >-
+        Declines the request (`rejected`); the phase stays `active` and editable.
+        The optional `comment` is returned to the requester as the
+        `resolutionComment`. Rejecting frees the pending slot for a fresh request.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignOffResolution' }
+      responses:
+        '200':
+          description: The rejected request.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [signOffRequest]
+                properties:
+                  signOffRequest: { $ref: '#/components/schemas/SignOffRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The request is already resolved (`sign_off_already_resolved`).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
   # ── Slice B3 live record + materials + budget movement (LINA-217) ───────────
 
   /projects/{projectId}/record:
@@ -538,6 +664,16 @@ components:
         The stable client-minted task key (schedule.stage.key, LINA-249). Not a
         UUID; ≤ 200 chars.
       schema: { type: string, minLength: 1, maxLength: 200 }
+    PhaseId:
+      name: phaseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RequestId:
+      name: requestId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
 
   responses:
     BadRequest:
@@ -569,6 +705,54 @@ components:
         stages) — render "your GC hasn't added the plan yet", never "0%".
       type: [string, 'null']
       enum: [attention_needed, complete, in_progress, not_started, null]
+    Phase:
+      type: object
+      description: A project phase (LINA-278, ADR-0023). `signed_off` is one-way.
+      required: [id, projectId, kind, name, status, sequence, responsiblePartyIds, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        kind: { type: string, enum: [pre_design, procurement, execution, close_out] }
+        name: { type: string }
+        status: { type: string, enum: [pending, active, signed_off, archived] }
+        sequence: { type: integer, description: 0-indexed ordering; gaps allowed. }
+        responsiblePartyIds:
+          type: array
+          items: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SignOffRequest:
+      type: object
+      description: A phase sign-off request, resolved in place (LINA-278).
+      required: [id, phaseId, requestedBy, requestedAt, status, resolvedAt, resolutionComment]
+      properties:
+        id: { type: string, format: uuid }
+        phaseId: { type: string, format: uuid }
+        requestedBy: { type: string, format: uuid, description: identity.party.id (session-derived). }
+        requestedAt: { type: string, format: date-time }
+        status: { type: string, enum: [pending, approved, rejected] }
+        resolvedAt: { type: [string, 'null'], format: date-time }
+        resolutionComment: { type: [string, 'null'] }
+    SignOffResolution:
+      type: object
+      description: Optional resolution note carried on approve/reject.
+      properties:
+        comment: { type: [string, 'null'] }
+    PhaseList:
+      type: object
+      required: [phases]
+      properties:
+        phases:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Phase'
+              - type: object
+                required: [signOffRequests]
+                properties:
+                  signOffRequests:
+                    type: array
+                    items: { $ref: '#/components/schemas/SignOffRequest' }
     StageCreate:
       type: object
       required: [name, position]

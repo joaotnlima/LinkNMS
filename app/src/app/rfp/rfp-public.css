@@ -1,0 +1,195 @@
+/* The token-scoped RFP surface (LINA-284) — ADR-0023 §6.
+ *
+ * WHY A SHELL OF ITS OWN, AND NOT AuthShell.
+ * AuthShell is the DOOR: a split-screen with a photograph, three trust lines
+ * about having one login for every project, and a legal line that ends "Secured
+ * by Clerk". Every one of those sentences is false on this page. The visitor is
+ * a contractor who will never sign in, has no account to secure, and is here for
+ * one transaction. Borrowing the door would have saved a file and told them
+ * three untrue things on the only screen they will ever see.
+ *
+ * What it is instead: the ordinary portal chrome vocabulary (`.card`, `.field`,
+ * `.btn`, `.badge`, `.form-error` from globals.css) inside a single centred
+ * column with a masthead. Nearly all of the type, colour and control styling
+ * below therefore comes from globals — what is here is the layout that has no
+ * equivalent elsewhere, plus the two genuinely new pieces: the read-only spec
+ * panel and the portfolio image tray.
+ *
+ * Every colour is a token. No hex lives in this file (ADR-0009 / LINA-156).
+ */
+
+.rfp {
+  min-height: 100vh;
+  background: var(--sunken);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- masthead ----
+   Deliberately not `.topbar`: that one is sticky and carries a health dot and a
+   back link, and there is nowhere to go back to from here. */
+.rfp-mast {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: 14px var(--s4);
+  border-bottom: 1px solid var(--outline);
+  background: var(--raised);
+}
+.rfp-mast .rfp-brand { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 15px; }
+.rfp-mast .rfp-brand svg { width: 22px; height: 22px; color: var(--owner); }
+.rfp-mast .rfp-kicker {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.rfp-col {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: var(--s6) var(--s4) var(--s12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  flex: 1;
+}
+
+.rfp-head { display: flex; flex-direction: column; gap: 6px; }
+.rfp-head h1 { font-size: 26px; font-weight: 650; letter-spacing: -.4px; }
+.rfp-head .rfp-project { font-size: 15px; font-weight: 600; color: var(--fg); }
+.rfp-head .rfp-where { font-size: 13px; color: var(--muted); }
+
+/* ---- the section wrapper both panels use ---- */
+.rfp-sec { display: flex; flex-direction: column; gap: var(--s2); }
+.rfp-sec > h2 {
+  font-size: 12px; font-weight: 700; letter-spacing: .5px;
+  text-transform: uppercase; color: var(--muted);
+}
+.rfp-body { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+
+/* ---- spec panel (net-new) ----
+   `pre-wrap` on the scope text: the owner typed paragraphs and a bulleted list
+   into a textarea, and collapsing their line breaks turns a scope of works into
+   one unreadable block. It is the contractor's only description of the job. */
+.rfp-scope {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rfp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Attachments: a list of links, each naming its own size. Opened in a new tab
+   because losing a half-filled form to a PDF click is the worst small bug this
+   screen could have. */
+.rfp-files { display: flex; flex-direction: column; gap: 2px; }
+.rfp-file {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: var(--r-ctrl);
+  font-size: 13px; font-weight: 600; color: var(--owner);
+  border: 1px solid var(--outline);
+}
+.rfp-file:hover { background: var(--sunken); }
+.rfp-file svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; flex: none; }
+.rfp-file .rfp-file-size { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--muted); }
+
+/* ---- form ---- */
+.rfp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--s3); }
+.rfp-grid .field { min-width: 0; }
+@media (max-width: 600px) { .rfp-grid { grid-template-columns: 1fr; } }
+
+/* The timeline is one control made of two inputs, so it gets one label and one
+   focus ring rather than two fields that happen to sit side by side. */
+.rfp-timeline { display: flex; gap: var(--s2); }
+.rfp-timeline input { flex: 1 1 auto; }
+.rfp-timeline select { flex: 0 0 108px; width: auto; }
+
+/* A field-level error. Smaller and quieter than `.form-error`, which is the
+   whole-form banner — two weights, so the eye can tell "this box" from "this
+   submit". Carries a glyph in the markup, never colour alone (FR9). */
+.rfp-fieldnote {
+  display: flex; align-items: flex-start; gap: 5px;
+  font-size: 12px; font-weight: 600; color: var(--bad-fg);
+}
+.rfp-fieldnote svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 2.2; fill: none; flex: none; margin-top: 2px; }
+.field input[aria-invalid='true'],
+.field textarea[aria-invalid='true'] { border-color: var(--danger); }
+
+/* ---- portfolio tray (net-new) ---- */
+.rfp-tray { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.rfp-thumb {
+  position: relative; width: 92px; height: 92px;
+  border: 1px solid var(--outline-strong); border-radius: var(--r-ctrl);
+  overflow: hidden; background: var(--sunken);
+}
+.rfp-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.rfp-thumb button {
+  position: absolute; top: 4px; right: 4px;
+  width: 22px; height: 22px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--outline-strong); border-radius: 999px;
+  background: var(--raised); color: var(--fg); cursor: pointer;
+}
+.rfp-thumb button svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 2.4; fill: none; }
+.rfp-thumb button:hover { color: var(--danger); border-color: var(--danger); }
+
+/* The add tile is a <label> wrapping a visually-hidden file input: a real input
+   keeps the keyboard and the native picker, and the label keeps the tile look. */
+.rfp-add {
+  width: 92px; height: 92px;
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  border: 1px dashed var(--outline-strong); border-radius: var(--r-ctrl);
+  font-size: 11px; font-weight: 650; color: var(--muted);
+  background: var(--paper); cursor: pointer; text-align: center;
+}
+.rfp-add:hover { background: var(--sunken); color: var(--fg); }
+.rfp-add svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.8; fill: none; }
+.rfp-add input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.rfp-add[data-busy='true'], .rfp-add[data-full='true'] { opacity: .5; cursor: not-allowed; }
+
+/* ---- submit row ---- */
+.rfp-submit {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-top: 1px solid var(--outline); background: var(--sunken);
+}
+.rfp-submit .rfp-submit-note { font-size: 12px; color: var(--muted); }
+.rfp-submit .btn { margin-left: auto; }
+
+/* ---- whole-page states (loading / dead token / thank-you) ---- */
+.rfp-state {
+  margin: var(--s8) auto 0;
+  max-width: 520px;
+  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: var(--s3);
+  padding: var(--s8) var(--s4);
+}
+.rfp-state h1 { font-size: 20px; font-weight: 650; letter-spacing: -.2px; }
+.rfp-state p { font-size: 14px; color: var(--muted); }
+.rfp-state .rfp-state-mark { width: 44px; height: 44px; stroke-width: 1.5; fill: none; }
+.rfp-state.is-done .rfp-state-mark { stroke: var(--success); }
+.rfp-state.is-dead .rfp-state-mark { stroke: var(--muted); }
+
+/* ---- read-back list on the confirmation page ---- */
+.rfp-facts { display: flex; flex-direction: column; }
+.rfp-fact {
+  display: flex; align-items: baseline; gap: var(--s3);
+  padding: 11px var(--s4); border-bottom: 1px solid var(--outline);
+}
+.rfp-fact:last-child { border-bottom: 0; }
+.rfp-fact dt { flex: 0 0 150px; font-size: 12px; font-weight: 650; color: var(--muted); }
+.rfp-fact dd { font-size: 14px; overflow-wrap: anywhere; }
+.rfp-fact dd.rfp-multiline { white-space: pre-wrap; line-height: 1.6; }
+@media (max-width: 600px) {
+  .rfp-fact { flex-direction: column; gap: 3px; }
+  .rfp-fact dt { flex: none; }
+}
+
+.rfp-foot {
+  font-size: 12px; color: var(--muted); text-align: center;
+  padding: 0 var(--s4) var(--s6);
+}

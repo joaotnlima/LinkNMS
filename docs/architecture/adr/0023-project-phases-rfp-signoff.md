@@ -291,15 +291,32 @@ send()
      WHERE r.token_hash = $1
   → REJECT if phase_status != 'active'   ← dynamic expiry
       (procurement closed → constructor already chosen → RFP window over)
-  → REJECT if r.status = 'submitted'     ← single-use for submission
+  → include the proposal if r.status = 'submitted'   ← see LINA-294 amendment
   → set a short-lived signed cookie (httpOnly, sameSite=strict, 1-hour TTL)
     scoped to /rfp/[token]/* so multi-tab stays authenticated
-  → respond with the RFP detail + proposal form
+  → respond with the RFP detail + proposal form (+ proposal when submitted)
 
-POST /rfp/[token]/proposals
+POST /api/v1/rfp/token/[token]/proposal      ← path amended, see LINA-294
   → verify same cookie + re-check token_hash AND phase still active
+  → REJECT if r.status = 'submitted'   ← single-use lives HERE, on the write
   → INSERT rfp_proposal, UPDATE rfp_recipient.status = 'submitted'
 ```
+
+> **Amendment (LINA-294, Architect — ratifying the LINA-284 slice contract).**
+> Two changes to the flow above, both settled in
+> `docs/architecture/slice-rfp-token-contract.md`:
+>
+> 1. **The GET no longer rejects a submitted recipient — it returns their
+>    `proposal`.** Single-use moves to the POST (the write), where it belongs.
+>    The `/rfp/[token]/submitted` confirmation page re-reads the GET so the
+>    read-back is the server's record rather than a copy of a form post that
+>    dies on reload; a recipient reading their own bid leaks nothing they did
+>    not write, and the token still scopes it to exactly that recipient.
+> 2. **Paths are versioned and namespaced:**
+>    `GET /api/v1/rfp/token/:token`, `POST …/portfolio-images`,
+>    `POST …/proposal` (singular). Under `/api/v1/` like every other route; the
+>    `token/` segment kept so public token access never collides with a future
+>    authenticated `/api/v1/rfp/:id`. BE implements these on LINA-279.
 
 No Clerk session is created. The token is single-use for submission (the same
 cookie lets the `/rfp/[token]/submitted` confirmation page render). Selecting a
@@ -522,3 +539,59 @@ constraints.
 **Migration note:** the current migration head is `schedule/0011`; PRD v2 keeps
 everything in **one** migration `schedule/0012_project_phases_rfp_signoff.sql`
 (now including `plan_change_log` and *omitting* `rfp_recipient.token_expires_at`).
+
+---
+
+## Addendum A — LINA-277 / LINA-278 implementation decisions
+
+Shipped together (migration 0012 + phase lifecycle API) because the one-way
+`signed_off` transition and the immutable audit surfaces are one tightly-coupled
+slice over the `schedule` schema. Four decisions refine §2/§3/§8 as built:
+
+1. **Sign-off resolution is IN PLACE, not append-only — fixed forward in
+   migration 0013.** Migration 0012 (LINA-277, #129) shipped
+   `phase_sign_off_request` with an append-only grant (`SELECT+INSERT`) and an
+   "append-only ledger, rejection = new row" comment. But the table it created is
+   built for in-place resolution: the `resolved_at`/`resolution_comment` columns,
+   the `resolved_iff_not_pending` CHECK, and the partial
+   `UNIQUE (phase_id) WHERE status='pending'` index all describe resolving the
+   addressed request row — and the endpoint contract
+   (`/sign-off/:requestId/approve|reject`) is request-addressed. With INSERT-only,
+   a pending row can never be resolved and a second terminal row leaves it stuck
+   pending, permanently blocking the one-pending index. Because 0012 is already
+   applied (byte-frozen by the prod schema-gate), the fix is **forward-only:
+   migration 0013 `GRANT UPDATE ON phase_sign_off_request`**, enabling approve/
+   reject to stamp `status + resolved_at + resolution_comment` on the pending row.
+   **Tamper-evidence for the sign-off DECISION lives in the one-way
+   `project_phase` trigger + the immutable `plan_change_log` + the change-order
+   ledger — not in the workflow request row,** which is a mutable-lifecycle record
+   like `rfp`/`rfp_recipient` (both of which already grant UPDATE in 0012).
+
+2. **Sign-off authorization (interim, pending PRD Q1).** Q1 (owner-only vs GC
+   request) is unanswered, so v1 requires project **membership** to request, and
+   bars the **requester from approving their own request** (`cannot_self_approve`)
+   — a plan is signed off *by the other party*, never self-approved. This
+   integrity floor holds regardless of how Q1 lands; the finer GC-requests /
+   owner-approves rule narrows it later without schema change.
+
+3. **Phase seed-at-create is gateway-orchestrated, not Identity-owned.** Project
+   creation is Identity's (it owns the project row); the phase tables live in
+   `schedule`. Rather than have Identity write another service's schema (an
+   ADR-0006 §1 boundary break), the gateway container seeds phases *after*
+   `createProject` returns, reading `hasSignedContractor` from the create body.
+   Seeding is best-effort + idempotent (`ON CONFLICT (project_id,kind) DO
+   NOTHING`); a missed seed is recovered by lazy-init on the first `GET /phases`,
+   so a phase failure never fails the already-committed project creation.
+
+4. **Change-order guard + `plan_change_log` writes are a follow-up child.** This
+   slice ships the audit-critical primitive — the one-way `signed_off` transition
+   (DB trigger + service) and `assertPlanEditable(projectId)`, the guard the plan
+   mutation handlers call. Wiring that guard into `:author`/`:propose`/stage
+   PATCH/DELETE and writing pre-sign-off `plan_change_log` field diffs is a
+   separate BE child (the migration table + the guard primitive already exist, so
+   it is a wiring task, not new schema). Until it lands, the `signed_off` phase is
+   immutable but the plan-edit *lock* is not yet enforced at the mutation
+   handlers.
+
+**RFP recipient/proposal token APIs and email** remain separate downstream
+children (their tables ship in 0012; no endpoints in this slice).
