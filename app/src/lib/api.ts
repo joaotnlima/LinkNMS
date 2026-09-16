@@ -161,6 +161,10 @@ const ROUTES = {
     method: 'GET', path: (p) => `/projects/${enc(p.id)}/plan`,
     handler: (c) => c.http.schedule.getPlan,
   },
+  getPhases: {
+    method: 'GET', path: (p) => `/projects/${enc(p.id)}/phases`,
+    handler: (c) => c.http.schedule.listPhases,
+  },
   getRecord: {
     method: 'GET', path: (p) => `/projects/${enc(p.id)}/record`,
     handler: (c) => c.http.schedule.getRecord,
@@ -527,6 +531,45 @@ export async function getPlan(projectId: string): Promise<PlanBaselineView> {
 }
 
 /**
+ * The project's phase list — procurement (seq 0) and execution (seq 1) — each
+ * carrying its sign-off request history (LINA-278/281, ADR-0023 §Phase
+ * lifecycle). Both parties read; a legacy project is lazily seeded its two
+ * phases on first read, so this never returns an empty list for a real build.
+ *
+ * The `/plan` accordion reads this to badge each section and to pick which one
+ * opens by default; the Execution section hands its phase straight to
+ * SignOffPanel, whose `ExecutionPhase` this shape is a superset of.
+ */
+export interface WireSignOffRequest {
+  id: string;
+  phaseId: string;
+  requestedBy: string;
+  requestedAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+  resolvedAt: string | null;
+  resolutionComment: string | null;
+  requestedByName?: string | null;
+  resolvedByName?: string | null;
+}
+
+export interface WirePhase {
+  id: string;
+  projectId: string;
+  kind: 'pre_design' | 'procurement' | 'execution' | 'close_out';
+  name: string;
+  status: 'pending' | 'active' | 'signed_off' | 'archived';
+  sequence: number;
+  responsiblePartyIds: string[];
+  createdAt: string;
+  updatedAt: string;
+  signOffRequests: WireSignOffRequest[];
+}
+
+export async function getPhases(projectId: string): Promise<{ phases: WirePhase[] }> {
+  return call<{ phases: WirePhase[] }>('getPhases', { id: projectId });
+}
+
+/**
  * The Slice B3 reads (LINA-218; contract §3 routes 1, 2 and 5). All three are
  * members-only reads — any seated party sees the record, including a settled
  * line (§3a): the audit story is not a privilege, it is the product.
@@ -582,6 +625,13 @@ export async function createBuildDraft(input: {
   siteAddress?: string;
   buildType?: string;
   expectedStart?: string;
+  // Whether the creator already has a signed contractor (LINA-281, ADR-0023 §3).
+  // The gateway seeds the two phases after createProject returns, reading this
+  // from the body: true → procurement is skipped (pending) and execution starts
+  // active; false/omitted → procurement starts active (run an RFP first). It
+  // shapes only the seed-time phase state — never a permission — so an omitted
+  // value is the safe default the seeder already assumes.
+  hasSignedContractor?: boolean;
 }): Promise<{ id: string }> {
   return call<{ id: string }>('createProject', {}, { ...input, draft: true });
 }

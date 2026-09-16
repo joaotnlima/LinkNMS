@@ -109,10 +109,19 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
   const buildType = String(form.get('buildType') ?? '').trim() || undefined;
   const expectedStart = String(form.get('expectedStart') ?? '').trim() || undefined;
 
+  // "Do you already have a signed contractor?" (LINA-281, ADR-0023 §3). This
+  // shapes the seed-time phase state, nothing more: true → procurement is
+  // skipped and execution starts active; anything else → procurement starts
+  // active (run an RFP first), which is also the seeder's safe default. Only an
+  // explicit "yes" is forwarded as true; a blank radio stays false.
+  const hasSignedContractor = String(form.get('hasSignedContractor') ?? '') === 'yes';
+
   let id: string;
   try {
     // Draft baseline is 0; the plan establishes the authoritative figure.
-    ({ id } = await createBuildDraft({ name, baselineBudgetCents: 0, creatorRole, siteAddress, buildType, expectedStart }));
+    ({ id } = await createBuildDraft({
+      name, baselineBudgetCents: 0, creatorRole, siteAddress, buildType, expectedStart, hasSignedContractor,
+    }));
   } catch (err) {
     // The path that fires for real today: a founding seat runs one build, so the
     // owner's SECOND trip through the wizard lands here (ADR-0013).
