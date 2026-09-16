@@ -21,6 +21,7 @@
 import { randomUUID } from 'node:crypto';
 import { can, ACTION } from '../identity/authz.mjs';
 import { PLAN_SKELETON_BODY, SYSTEM_TEMPLATE_NAME } from './plan-skeleton.mjs';
+import { SYSTEM_SPECIALTIES } from './specialty-seed.mjs';
 
 export class DomainError extends Error {
   constructor(status, code, message, details) {
@@ -155,6 +156,15 @@ export function createInMemoryStore() {
     created_at: now(),
     updated_at: now(),
   }];
+  // schedule.specialty rows (suggest catalog; NO audit weight, LINA-306). Seeded
+  // with the same system set the migration seeds, from the one canonical source.
+  const specialties = SYSTEM_SPECIALTIES.map((label) => ({
+    id: randomUUID(),
+    owner_scope: 'system',
+    owner_id: null,
+    label,
+    created_at: now(),
+  }));
   let stageSeq = 0;
   let progressSeq = 0;
   let movementSeq = 0;
@@ -638,6 +648,37 @@ export function createInMemoryStore() {
     return { ...row };
   }
 
+  // ── Specialty catalog (LINA-306) — suggest list, no audit weight ────────────
+
+  function listSpecialties(ownerId) {
+    return specialties
+      .filter((s) => s.owner_scope === 'system' || s.owner_id === ownerId)
+      .map((s) => ({ ...s }));
+  }
+
+  // Create one owned by the caller. Mirrors the DB behaviour: a label that only
+  // exists as a system row is handed back rather than copied; a label the caller
+  // already owns (case-insensitively) returns the existing row (idempotent).
+  function createUserSpecialty({ ownerId, label }) {
+    const norm = label.trim().toLowerCase();
+    const sys = specialties.find(
+      (s) => s.owner_scope === 'system' && s.label.trim().toLowerCase() === norm);
+    if (sys) return { ...sys };
+    const own = specialties.find(
+      (s) => s.owner_scope === 'user' && s.owner_id === ownerId
+        && s.label.trim().toLowerCase() === norm);
+    if (own) return { ...own };
+    const row = {
+      id: randomUUID(),
+      owner_scope: 'user',
+      owner_id: ownerId,
+      label,
+      created_at: now(),
+    };
+    specialties.push(row);
+    return { ...row };
+  }
+
   // ── Project phases + sign-off (LINA-278, ADR-0023) ──────────────────────────
   // The in-memory reference enforces the same invariants the SQL migration does:
   //   - one row per (project_id, kind) and per (project_id, sequence);
@@ -780,6 +821,7 @@ export function createInMemoryStore() {
     stageLiveByKey, insertStageComment, listStageCommentsByKey,
     insertStageAttachment, listStageAttachmentsByKey,
     getSystemDefaultTemplate, getUserDefaultTemplate, upsertUserDefaultTemplate,
+    listSpecialties, createUserSpecialty,
     _stages: stages, _progress: progress, _imports: imports, _dependencies: dependencies,
     _versions: versions, _acceptances: acceptances, _baselines: baselines,
     _lineMaterials: lineMaterials, _movements: movements, _planTemplates: planTemplates,
