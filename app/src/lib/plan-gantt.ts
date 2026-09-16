@@ -386,6 +386,40 @@ export function connectorPath(
   };
 }
 
+/**
+ * The arc-length midpoint of a connector polyline (LINA-306) — where the "clear
+ * this link" control sits so it reads as sitting in the MIDDLE OF THE ARROW, not
+ * on either bar it joins. Walks the segments accumulating length and returns the
+ * point at half the total, so an elbow's midpoint lands on the run the eye reads
+ * as its middle (the vertical connector for a same-edge link, the lane for a
+ * backward route) rather than at the corner a naive index would pick. Pure, in
+ * the same canvas px the path is drawn in, so the control tracks the arrow live.
+ */
+export function connectorMidpoint(points: Point[]): Point {
+  if (points.length === 0) return { x: 0, y: 0 };
+  if (points.length === 1) return { x: points[0].x, y: points[0].y };
+  const seg: number[] = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const len = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    seg.push(len);
+    total += len;
+  }
+  if (total === 0) return { x: points[0].x, y: points[0].y };
+  let half = total / 2;
+  for (let i = 0; i < seg.length; i += 1) {
+    if (half <= seg[i] || i === seg.length - 1) {
+      const t = seg[i] === 0 ? 0 : half / seg[i];
+      return {
+        x: points[i].x + (points[i + 1].x - points[i].x) * t,
+        y: points[i].y + (points[i + 1].y - points[i].y) * t,
+      };
+    }
+    half -= seg[i];
+  }
+  return { x: points[points.length - 1].x, y: points[points.length - 1].y };
+}
+
 // ── Turning a drag into new dates ────────────────────────────────────────────
 
 /** How many whole day columns a pixel delta represents, snapped to the day. */

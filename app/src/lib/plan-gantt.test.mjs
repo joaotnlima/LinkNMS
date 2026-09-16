@@ -14,7 +14,7 @@ import {
   parseDay, formatDay, addDays, diffDays,
   ganttWindow, barGeom, daysFromPixels,
   moveBar, resizeStart, resizeEnd, applyDrag, scheduleWindow, clickDates,
-  baseWindow, clipBarGeom, barRect, connectorPath,
+  baseWindow, clipBarGeom, barRect, connectorPath, connectorMidpoint,
 } from './plan-gantt.ts';
 
 test('parseDay: UTC round-trip, rejects blanks and impossible days', () => {
@@ -337,4 +337,20 @@ test('connectorPath: the path tracks the bars — a dragged bar moves its anchor
   assert.deepEqual(after.points[after.points.length - 1], { x: 330, y: 60 });
   assert.deepEqual(after.points[0], before.points[0]);
   assert.notDeepEqual(after.d, before.d);
+});
+
+test('connectorMidpoint: the arc-length midpoint lands in the middle of the arrow', () => {
+  // A 3-segment elbow, each leg 10px long → total 30, half at 15px in: 10px down
+  // the first leg leaves 5px into the middle (vertical) leg — its own midpoint.
+  const elbow = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 10 }];
+  assert.deepEqual(connectorMidpoint(elbow), { x: 10, y: 5 });
+
+  // A straight run: the geometric middle.
+  assert.deepEqual(connectorMidpoint([{ x: 0, y: 0 }, { x: 10, y: 0 }]), { x: 5, y: 0 });
+
+  // Degenerate inputs never throw — an empty path is the origin, a single point
+  // is itself, a zero-length path is its start.
+  assert.deepEqual(connectorMidpoint([]), { x: 0, y: 0 });
+  assert.deepEqual(connectorMidpoint([{ x: 4, y: 7 }]), { x: 4, y: 7 });
+  assert.deepEqual(connectorMidpoint([{ x: 3, y: 3 }, { x: 3, y: 3 }]), { x: 3, y: 3 });
 });

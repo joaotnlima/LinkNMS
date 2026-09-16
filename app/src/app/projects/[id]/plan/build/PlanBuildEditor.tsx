@@ -51,7 +51,7 @@ import Link from 'next/link';
 
 import {
   DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
-  addPhase, addSubtask, addTask, authorPlan, demoteNode, dependencyChoices, dependsOnOf, detectCycle, nodeIndex,
+  addPhase, addSubtask, addTask, authorPlan, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, nodeIndex,
   promoteNode,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
   reorderPhase, reorderSubtask, reorderTask,
@@ -368,6 +368,15 @@ export function PlanBuildEditor({
     saveTimer.current = setTimeout(() => { flushRef.current(); }, 900);
   }, []);
 
+  // Edits that touch a DATE or a LINK go through here (LINA-306): after the pure
+  // op, enforceDependencies snaps every dependent's schedule back onto its
+  // predecessors so a "starts when that one ends" link is not just drawn but
+  // OBEYED — and re-obeyed when the predecessor moves. Pure and cycle-safe, so it
+  // is the same `apply` pipeline, only fed a graph that already honours its links.
+  const applyDeps = useCallback((next: PhaseDraft[]) => {
+    apply(enforceDependencies(next));
+  }, [apply]);
+
   // The debounced writer. Reads the LATEST tree from the ref (a stale closure
   // would save the plan as it was when the timer was armed, not as it settled).
   const flushRef = useRef<() => void>(() => {});
@@ -438,14 +447,23 @@ export function PlanBuildEditor({
   }, []);
 
   const toggleDep = useCallback((nodeKey: string, dep: string) => {
-    apply(toggleDependency(phases, nodeKey, dep));
-  }, [apply, phases]);
+    applyDeps(toggleDependency(phases, nodeKey, dep));
+  }, [applyDeps, phases]);
 
-  // Re-typing a link is a plan edit like any other: same `apply`, so a stale
-  // cycle error clears the moment the author touches the graph.
+  // Re-typing a link is a plan edit like any other — and now re-enforces the
+  // dependent's dates against its new rule (LINA-306): flip starts_after to
+  // ends_with and the bar re-snaps the moment the type changes.
   const retypeDep = useCallback((nodeKey: string, dep: string, type: DepType) => {
-    apply(setDependencyType(phases, nodeKey, dep, type));
-  }, [apply, phases]);
+    applyDeps(setDependencyType(phases, nodeKey, dep, type));
+  }, [applyDeps, phases]);
+
+  // Clear ONE link — the drawer chip's ✕ and now the unlink control that sits in
+  // the middle of the Gantt arrow (LINA-306). toggleDependency removes an existing
+  // edge; enforcement then leaves the freed stage where it is (a released
+  // dependent keeps its last dates — no constraint, no move).
+  const unlinkDep = useCallback((fromKey: string, toKey: string) => {
+    applyDeps(toggleDependency(phases, fromKey, toKey));
+  }, [applyDeps, phases]);
 
   // Draw-a-dependency on the Gantt (LINA-306): the author drags from one bar's
   // edge to another's, and the pair of edges names the type (start→end after,
@@ -457,9 +475,12 @@ export function PlanBuildEditor({
     if (fromKey === toKey) return;
     const exists = dependsOnOf(phases, fromKey).some((d) => d.on === toKey);
     const created = exists ? phases : toggleDependency(phases, fromKey, toKey);
-    apply(setDependencyType(created, fromKey, toKey, type));
+    // enforceDependencies is what makes "starts when that one ends" real: the
+    // link is created here AND the dependent's dates are snapped to obey it, so a
+    // fresh drag-to-link reschedules the bar in the same gesture (LINA-306).
+    applyDeps(setDependencyType(created, fromKey, toKey, type));
     setOpenDeps(null);
-  }, [apply, phases]);
+  }, [applyDeps, phases]);
 
   const assign = useCallback((nodeKey: string, partyId: string | null) => {
     apply(setAssignee(phases, nodeKey, partyId));
@@ -509,10 +530,10 @@ export function PlanBuildEditor({
   const setDate = useCallback((
     field: 'start' | 'end', value: string, pi: number, ti: number, si?: number,
   ) => {
-    apply(si == null
+    applyDeps(si == null
       ? setTaskDate(phases, pi, ti, field, value)
       : setSubtaskDate(phases, pi, ti, si, field, value));
-  }, [apply, phases]);
+  }, [applyDeps, phases]);
 
   // A Gantt drag or an empty-track click lands here: write the row's start and
   // finish in one op. Same draft, same tested vocabulary the table's date
@@ -520,10 +541,10 @@ export function PlanBuildEditor({
   const setDates = useCallback((
     pi: number, ti: number, start: string, end: string, si?: number,
   ) => {
-    apply(si == null
+    applyDeps(si == null
       ? setTaskDates(phases, pi, ti, start, end)
       : setSubtaskDates(phases, pi, ti, si, start, end));
-  }, [apply, phases]);
+  }, [applyDeps, phases]);
 
   const activeOwner = partyOf(dir, (openRow?.ti == null ? activePhase?.assigneePartyId : active?.assigneePartyId) ?? null);
 
@@ -619,6 +640,7 @@ export function PlanBuildEditor({
         onPromote={(pi, ti, si) => apply(promoteNode(phases, pi, ti, si))}
         onDemote={(pi, ti, si) => apply(demoteNode(phases, pi, ti, si))}
         onLinkDep={linkDep}
+        onUnlinkDep={unlinkDep}
       />
 
       <p className="pgd-hint">

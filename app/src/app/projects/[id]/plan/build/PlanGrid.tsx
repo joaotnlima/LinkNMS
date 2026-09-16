@@ -63,7 +63,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  addDays, applyDrag, barRect, baseWindow, clickDates, clipBarGeom, connectorPath,
+  addDays, applyDrag, barRect, baseWindow, clickDates, clipBarGeom, connectorMidpoint, connectorPath,
   formatDay, parseDay,
   type ConnectorEnd, type DragMode, type GanttWindow, type TimeBase,
 } from '@/lib/plan-gantt';
@@ -128,6 +128,16 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 function dayLabel(iso: string): string {
   const [, m, d] = iso.split('-').map(Number);
   return `${MONTHS[m - 1]} ${d}`;
+}
+
+/**
+ * 'YYYY-MM-DD' → "25 Sep 2026" — the founder's bar-edge date format (LINA-306),
+ * spelled out with the year so a bar reads its own window without the axis. Pure
+ * string split, no Date, so no timezone drift.
+ */
+function dayLabelFull(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${d} ${MONTHS[m - 1]} ${y}`;
 }
 
 /** 'YYYY-MM-DD' → weekday 0..6 (Mon=0) for the week-boundary axis ticks. */
@@ -203,6 +213,12 @@ export interface PlanGridProps {
    *   start→end = starts_after · start→start = starts_with · end→end = ends_with.
    */
   onLinkDep: (fromKey: string, toKey: string, type: DepType) => void;
+  /**
+   * Clear ONE dependency (LINA-306) — the unlink control sitting in the middle
+   * of the Gantt arrow. `fromKey` is the DEPENDENT (the stage that carries the
+   * link), `toKey` its predecessor, mirroring onLinkDep's direction.
+   */
+  onUnlinkDep: (fromKey: string, toKey: string) => void;
 }
 
 /** Module-level so the default never changes identity between renders. */
@@ -734,9 +750,16 @@ export function PlanGrid(props: PlanGridProps) {
     const to = anchors.get(l.to);
     if (!from || !to) return [];
     const geom = connectorPath(to, from, l.type); // predecessor → dependent
+    const mid = connectorMidpoint(geom.points); // where the unlink control sits
     return [{
       id: `${l.to}->${l.from}`,
+      // The link's endpoints, in onLinkDep's direction: `from` is the DEPENDENT
+      // (carries the link), `to` the predecessor — what onUnlinkDep clears.
+      from: l.from,
+      to: l.to,
       d: geom.d,
+      mx: mid.x,
+      my: mid.y,
       title: `${labels.get(l.from)?.label ?? 'This stage'} ${DEP_LABELS[l.type].toLowerCase()} ${labels.get(l.to)?.label ?? 'another stage'}`,
     }];
   }), [phases, anchors, labels]);
@@ -1245,12 +1268,12 @@ export function PlanGrid(props: PlanGridProps) {
                       <>
                         {r.node.start ? (
                           <span className="pgt-edgedate pgt-edgedate-l" aria-hidden style={{ left: box.x }}>
-                            {dayLabel(r.node.start)}
+                            {dayLabelFull(r.node.start)}
                           </span>
                         ) : null}
                         {r.node.end ? (
                           <span className="pgt-edgedate pgt-edgedate-r" aria-hidden style={{ left: box.x + box.width }}>
-                            {dayLabel(r.node.end)}
+                            {dayLabelFull(r.node.end)}
                           </span>
                         ) : null}
                         {!disabled ? (
@@ -1312,6 +1335,29 @@ export function PlanGrid(props: PlanGridProps) {
                     </path>
                   ))}
                 </svg>
+              ) : null}
+
+              {/* The unlink controls (LINA-306): one ⊘ button in the MIDDLE of each
+                  arrow, so the author can clear a starts-with / ends-with / after
+                  link straight off the timeline without opening the drawer. A real
+                  HTML button layer — not part of the inert connector SVG — so it
+                  owns its own pointer events; the arrows underneath stay
+                  pointer-events:none. Editor-only: a read-only plan draws the
+                  arrows but offers no clear. */}
+              {!disabled && connectors.length > 0 ? (
+                <div className="pgt-unlinks" aria-hidden={false}>
+                  {connectors.map((c) => (
+                    <button
+                      key={`x-${c.id}`}
+                      type="button"
+                      className="pgt-unlink"
+                      style={{ left: c.mx, top: c.my }}
+                      title={`Clear this link — ${c.title}`}
+                      aria-label={`Clear dependency: ${c.title}`}
+                      onClick={(e) => { e.stopPropagation(); props.onUnlinkDep(c.from, c.to); }}
+                    >⊘</button>
+                  ))}
+                </div>
               ) : null}
 
               {/* The live link-drag (LINA-306): a rubber-band from the source edge
