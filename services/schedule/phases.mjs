@@ -227,6 +227,39 @@ export function createPhaseService({ store, identity }) {
     }
   }
 
+  // The pre-sign-off audit writer (ADR-0023 §8). A plan mutation handler calls
+  // this INSIDE its own transaction, AFTER assertPlanEditable, passing the field
+  // diffs it just applied. One append-only plan_change_log row is written per
+  // changed field, anchored on the execution phase.
+  //
+  // The sign-off boundary is enforced here too: writes happen only while the
+  // execution phase exists and is NOT signed_off — which, because assertPlanEditable
+  // ran first, means every reachable call is a legitimate pre-lock edit. A project
+  // with no execution phase yet (legacy, lazy-init not run) logs nothing rather
+  // than throwing — the audit trail is best-effort over an absent phase, never a
+  // reason to fail the edit. `changes` is `[{ field, oldValue, newValue }]`; a
+  // `changes` entry with `oldValue === undefined` records a creation (no prior
+  // value → SQL NULL), distinct from a field explicitly cleared to `null`.
+  async function recordPlanChanges(tx, projectId, { entityType, entityId, changes, actorPartyId }) {
+    if (!Array.isArray(changes) || changes.length === 0) return;
+    const exec = await store.getPhaseByKind(projectId, 'execution');
+    if (!exec || exec.status === 'signed_off') return;
+    const occurredAt = now();
+    for (const c of changes) {
+      await store.insertPlanChangeLog(tx, {
+        id: randomUUID(),
+        phase_id: exec.id,
+        entity_type: entityType,
+        entity_id: entityId,
+        field_name: c.field,
+        old_value: c.oldValue,
+        new_value: c.newValue,
+        actor_party_id: actorPartyId ?? null,
+        occurred_at: occurredAt,
+      });
+    }
+  }
+
   return {
     ensurePhases,
     listPhases,
@@ -234,5 +267,6 @@ export function createPhaseService({ store, identity }) {
     approveSignOff,
     rejectSignOff,
     assertPlanEditable,
+    recordPlanChanges,
   };
 }

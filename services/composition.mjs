@@ -157,11 +157,24 @@ export function createServices({
   // and its OWN ledger binding so each plan/progress write ledgers in the same
   // transaction as its projection (spec §8.2). It takes no budget-move port: stage
   // planned cost can never move the budget (spec §2 Q2).
+  // Project phases + execution sign-off (LINA-278, ADR-0023): the phase-
+  // sequencing layer, the sign-off request/approve/reject loop, and the one-way
+  // signed_off transition that flips plan edits onto the change-order surface.
+  // Identity is the sole authorizer (both parties read; sign-off is never
+  // self-approved). No ledger seam here — the tamper-evident record for a
+  // sign-off DECISION is the one-way phase transition + the change-order ledger.
+  // Composed BEFORE schedule/planVersion so it can supply them the change-order
+  // guard + the pre-sign-off plan_change_log writer (LINA-280, ADR-0023 §8).
+  const phases = scheduleStore
+    ? createPhaseService({ store: scheduleStore, identity })
+    : null;
+
   const schedule = scheduleStore
     ? createScheduleService({
         store: scheduleStore,
         ledger: ledgers.schedule ?? ledger,
         identity,
+        phases,
       })
     : null;
 
@@ -187,6 +200,7 @@ export function createServices({
         store: scheduleStore,
         ledger: ledgers.schedule ?? ledger,
         identity,
+        phases,
       })
     : null;
 
@@ -222,16 +236,6 @@ export function createServices({
   // not memory).
   const taskWorkspace = scheduleStore
     ? createTaskWorkspaceService({ store: scheduleStore, identity, blob: blobStore })
-    : null;
-
-  // Project phases + execution sign-off (LINA-278, ADR-0023): the phase-
-  // sequencing layer, the sign-off request/approve/reject loop, and the one-way
-  // signed_off transition that flips plan edits onto the change-order surface.
-  // Identity is the sole authorizer (both parties read; sign-off is never
-  // self-approved). No ledger seam here — the tamper-evident record for a
-  // sign-off DECISION is the one-way phase transition + the change-order ledger.
-  const phases = scheduleStore
-    ? createPhaseService({ store: scheduleStore, identity })
     : null;
 
   // NOTE (LINA-189): there is no waitlist service here any more. The portal used
