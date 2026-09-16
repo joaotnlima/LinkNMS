@@ -71,7 +71,11 @@ function topoOrder(stages) {
   return order;
 }
 
-export function createPlanVersionService({ store, ledger, identity }) {
+// `phases` (the phase service, LINA-278) is OPTIONAL — same default-to-noop
+// contract as createScheduleService: omit it and the sign-off lock is not
+// applied (unit fixtures build this service directly). The deployed target
+// always injects it (services/composition.mjs), asserted by composition.test.mjs.
+export function createPlanVersionService({ store, ledger, identity, phases = null }) {
   if (!store || !ledger || !identity) {
     throw new Error('createPlanVersionService requires { store, ledger, identity } ports');
   }
@@ -636,6 +640,11 @@ export function createPlanVersionService({ store, ledger, identity }) {
     // §3); the review flow is self-protecting (REVIEW_PLAN denies the proposer).
     await identity.authorize({ actorPartyId, action: ACTION.PROPOSE_PLAN, projectId });
 
+    // Sign-off lock (LINA-297; ADR-0023 §8): once the execution plan is signed
+    // off it is immutable — authoring a new/revised plan is a change order
+    // (ADR-0014), not a fresh draft. 409 plan_locked before any write.
+    if (phases) await phases.assertPlanEditable(projectId);
+
     const order = validateAuthoredStages(stages);
     await assertAssigneesOnProject(projectId, order);
 
@@ -748,6 +757,9 @@ export function createPlanVersionService({ store, ledger, identity }) {
       throw new DomainError(409, 'not_draft',
         'only a draft may be sent for approval');
     }
+    // Sign-off lock (LINA-297): a signed_off execution plan cannot receive a new
+    // proposal — the edit must route through a change order (ADR-0014).
+    if (phases) await phases.assertPlanEditable(version.project_id);
 
     const occurredAt = now();
 

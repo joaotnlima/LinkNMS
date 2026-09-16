@@ -29,6 +29,7 @@ import { createAnalytics, createMemorySink, EVENTS } from './analytics/index.mjs
 import { createMemoryStore as createIdentityStore } from './identity/store.mjs';
 import { createMemoryLedger as createIdentityLedger } from './identity/ledger-port.mjs';
 import { createInMemoryStore as createChangeOrderStore } from './change_order/ports.mjs';
+import { createInMemoryStore as createScheduleStore } from './schedule/ports.mjs';
 
 const HOMEOWNER = 'party-homeowner';
 const GC = 'party-gc';
@@ -242,6 +243,50 @@ describe('composition root: analytics reaches every service', () => {
     });
     assert.equal(handed, services.identity);
     assert.ok(services.decision, 'a decision store must yield a decision service');
+  });
+
+  // The sign-off plan-lock (LINA-297) only holds if `phases` is actually injected
+  // into the plan mutation services HERE. This is the "looks wired, isn't" trap:
+  // drop the `phases` arg from createScheduleService and every schedule unit test
+  // still passes (they build the service directly) while production silently keeps
+  // a signed-off plan editable. This test fails loudly if that injection regresses.
+  test('the execution sign-off lock is wired into the schedule service at the root', async () => {
+    const ledger = createCompositionLedger();
+    const scheduleStore = createScheduleStore();
+    const services = createServices({
+      analytics: createAnalytics({ sink: createMemorySink() }),
+      ledger,
+      identityStore: createIdentityStore({ ledger }),
+      changeOrderStore: createChangeOrderStore(),
+      scheduleStore,
+      blobStore: { put: async () => 'https://blob.example/x' }, // required alongside scheduleStore
+    });
+    assert.ok(services.phases && services.schedule, 'a schedule store yields both services');
+
+    const project = await services.identity.createProject({
+      actorPartyId: HOMEOWNER, name: 'Maple Street', baselineBudgetCents: BASELINE,
+    });
+    const { token } = await services.identity.inviteCounterparty({
+      actorPartyId: HOMEOWNER, projectId: project.id,
+    });
+    await services.identity.acceptInvitation({ actorPartyId: GC, token });
+
+    // Execution active → a stage is freely addable, and the pre-sign-off audit
+    // logs it. Then sign off (the OTHER party approves) and the plan locks.
+    await services.phases.ensurePhases(project.id, { hasSignedContractor: true });
+    await services.schedule.addStage(project.id, GC, { name: 'Setup', position: 1, plannedCostCents: 1000 });
+    const exec = (await services.phases.listPhases(project.id, HOMEOWNER))
+      .phases.find((p) => p.kind === 'execution');
+    assert.ok(scheduleStore.listPlanChangeLogByPhase(exec.id).length > 0,
+      'pre-sign-off audit must be wired: an add while execution is active logs plan_change_log rows');
+
+    const { signOffRequest } = await services.phases.requestSignOff(project.id, exec.id, GC);
+    await services.phases.approveSignOff(project.id, exec.id, signOffRequest.id, HOMEOWNER);
+
+    await assert.rejects(
+      () => services.schedule.addStage(project.id, GC, { name: 'After lock', position: 2 }),
+      (e) => e.status === 409 && e.code === 'plan_locked',
+      'a signed-off execution plan must be immutable through the composed schedule service');
   });
 });
 

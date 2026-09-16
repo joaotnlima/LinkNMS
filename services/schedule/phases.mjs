@@ -225,6 +225,38 @@ export function createPhaseService({ store, identity }) {
       throw new DomainError(409, 'plan_locked',
         'the execution plan is signed off — changes must be raised as a change order (ADR-0014)');
     }
+    // Returned so the mutation handler can reuse it for the pre-sign-off audit
+    // (LINA-297) without a second read — the guard already resolved it.
+    return exec;
+  }
+
+  // The pre-sign-off audit sink (LINA-297; ADR-0023 §8). A plan mutation handler
+  // passes the execution `phase` it just guard-checked and the field-level diff
+  // it is about to write, inside its OWN transaction — the audit row lands iff
+  // the mutation does. Rows are written ONLY while the execution phase is
+  // `active`: an absent phase (legacy project, lazy-init not run) or a `pending`
+  // execution phase (procurement still running, plan not yet under execution)
+  // logs nothing; a `signed_off` phase never reaches here (the guard 409s first).
+  // Writes therefore STOP exactly at sign-off — from there the change-order
+  // ledger (ADR-0014) is the sole record, and the two surfaces never overlap.
+  //
+  // `changes` is a list of { entityType, entityId, fieldName, oldValue, newValue }.
+  // `actorPartyId` is stamped on every row (NULL would mean a system change).
+  async function recordPlanChanges(tx, phase, changes, actorPartyId) {
+    if (!phase || phase.status !== 'active' || !changes?.length) return;
+    for (const c of changes) {
+      await store.insertPlanChangeLog(tx, {
+        id: randomUUID(),
+        phase_id: phase.id,
+        entity_type: c.entityType,
+        entity_id: c.entityId,
+        field_name: c.fieldName,
+        old_value: c.oldValue ?? null,
+        new_value: c.newValue ?? null,
+        actor_party_id: actorPartyId ?? null,
+        occurred_at: now(),
+      });
+    }
   }
 
   return {
@@ -234,5 +266,6 @@ export function createPhaseService({ store, identity }) {
     approveSignOff,
     rejectSignOff,
     assertPlanEditable,
+    recordPlanChanges,
   };
 }

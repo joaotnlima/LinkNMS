@@ -140,6 +140,7 @@ export function createInMemoryStore() {
   const attachments = [];      // schedule.stage_attachment rows (append-only, LINA-249)
   const phases = [];           // schedule.project_phase rows (mutable status walk, LINA-278)
   const signOffs = [];         // schedule.phase_sign_off_request rows (in-place resolve, LINA-278)
+  const planChangeLog = [];    // schedule.plan_change_log rows (append-only pre-sign-off audit, LINA-297)
   // schedule.plan_template rows (mutable CRUD; NO audit weight — outside the
   // tamper-evident record, ADR-0018). Seeded with the single system default so
   // the resolve ladder (user → system) has the same source of truth the DB
@@ -731,11 +732,36 @@ export function createInMemoryStore() {
     return { ...r };
   }
 
+  // ── schedule.plan_change_log — append-only pre-sign-off audit (LINA-297) ─────
+  // One row per task/stage/dependency field change while the execution phase is
+  // still active. Append-only (mirrors the SELECT+INSERT grant): there is no
+  // update/delete. jsonb old/new are stored as-is here — the pg adapter is what
+  // serialises them.
+  function insertPlanChangeLog(_tx, row) {
+    const stored = {
+      old_value: null,
+      new_value: null,
+      actor_party_id: null,
+      occurred_at: now(),
+      ...row,
+    };
+    planChangeLog.push(stored);
+    return { ...stored };
+  }
+
+  function listPlanChangeLogByPhase(phaseId) {
+    return planChangeLog
+      .filter((r) => r.phase_id === phaseId)
+      .sort((a, b) => (a.occurred_at < b.occurred_at ? -1 : a.occurred_at > b.occurred_at ? 1 : 0))
+      .map((r) => ({ ...r }));
+  }
+
   return {
     transaction,
     insertPhase, listPhasesByProject, getPhaseById, getPhaseByKind,
     countPhasesByProject, updatePhaseStatus,
     insertSignOffRequest, getSignOffRequest, listSignOffRequestsByPhase, resolveSignOffRequest,
+    insertPlanChangeLog, listPlanChangeLogByPhase,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
     insertStageDependency, listStageDependencies, deleteStageDependenciesByPlanVersion,
     listStageDependenciesByPlanVersion,

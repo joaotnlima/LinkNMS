@@ -89,10 +89,23 @@ export function rollup(stagesInOrder, statusByStageId) {
   };
 }
 
-export function createScheduleService({ store, ledger, identity }) {
+// `phases` is the phase service (LINA-278). It is OPTIONAL: when omitted the
+// sign-off lock and pre-sign-off audit are simply not applied — the same
+// default-to-noop shape analytics uses in the composition root, so unit fixtures
+// that build the schedule service directly keep working. The deployed target
+// ALWAYS injects it (see services/composition.mjs), and composition.test.mjs
+// asserts the wiring, so prod never runs unguarded.
+export function createScheduleService({ store, ledger, identity, phases = null }) {
   if (!store || !ledger || !identity) {
     throw new Error('createScheduleService requires { store, ledger, identity } ports');
   }
+
+  // The stage columns the pre-sign-off audit tracks (LINA-297). Reported in this
+  // stable order so a creation trail and an edit trail read the same way.
+  const AUDITED_STAGE_FIELDS = [
+    'name', 'position', 'scope_note', 'description',
+    'planned_start_date', 'planned_end_date', 'planned_cost_cents',
+  ];
 
   // ---- add a stage — FR-P1 --------------------------------------------------
   // POST /projects/:projectId/stages
@@ -108,6 +121,12 @@ export function createScheduleService({ store, ledger, identity }) {
       throw new DomainError(400, 'invalid_position', 'position must be an integer');
     }
     const plannedCostCents = normalizeCents(input.plannedCostCents);
+
+    // Sign-off lock (LINA-297; ADR-0023 §8): a signed_off execution plan is
+    // immutable — 409 plan_locked, the edit must be raised as a change order
+    // (ADR-0014). The guard returns the execution phase so the audit below can
+    // reuse it without a second read.
+    const phase = phases ? await phases.assertPlanEditable(projectId) : null;
 
     const id = randomUUID();
     const createdAt = now();
@@ -141,6 +160,15 @@ export function createScheduleService({ store, ledger, identity }) {
           plannedEndDate: row.planned_end_date,
         },
       });
+      // Pre-sign-off audit (LINA-297): a creation is a diff from nothing — one
+      // row per non-null field, old_value null. No-op unless the execution phase
+      // is active (recordPlanChanges owns that gate).
+      if (phase) {
+        const changes = AUDITED_STAGE_FIELDS
+          .filter((f) => row[f] != null)
+          .map((f) => ({ entityType: 'stage', entityId: id, fieldName: f, oldValue: null, newValue: row[f] }));
+        await phases.recordPlanChanges(tx, phase, changes, actorPartyId);
+      }
     });
 
     void role; // role is available for a future analytics event (§6 follow-up)
@@ -153,6 +181,10 @@ export function createScheduleService({ store, ledger, identity }) {
     const existing = await store.getStage(stageId);
     if (!existing) throw new DomainError(404, 'not_found', 'stage not found');
     await identity.authorize({ actorPartyId, action: ACTION.UPDATE_STAGE, projectId: existing.project_id });
+
+    // Sign-off lock (LINA-297): a signed_off execution plan is immutable (409
+    // plan_locked). Returns the execution phase for the audit below.
+    const phase = phases ? await phases.assertPlanEditable(existing.project_id) : null;
 
     const set = {};
     if (patch?.name !== undefined) {
@@ -188,6 +220,21 @@ export function createScheduleService({ store, ledger, identity }) {
         occurredAt: set.updated_at,
         payload: { stageId, changed: Object.keys(set).filter((k) => k !== 'updated_at') },
       });
+      // Pre-sign-off audit (LINA-297): one row per changed field, old → new.
+      // updated_at is bookkeeping, never audited. No-op unless the execution
+      // phase is active.
+      if (phase) {
+        const changes = AUDITED_STAGE_FIELDS
+          .filter((f) => f in set)
+          .map((f) => ({
+            entityType: 'stage',
+            entityId: stageId,
+            fieldName: f,
+            oldValue: existing[f] ?? null,
+            newValue: set[f] ?? null,
+          }));
+        await phases.recordPlanChanges(tx, phase, changes, actorPartyId);
+      }
     });
 
     return stageView(stageId);

@@ -641,5 +641,37 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
         () => phases.requestSignOff(projectId, execution.id, gc),
         (e) => e.status === 409 && e.code === 'sign_off_already_pending');
     });
+
+    // plan_change_log (LINA-297): the ::jsonb serialisation must round-trip a
+    // number, a string, and a genuine NULL (not the string "null") in the DB, and
+    // the ordering/phase filter must hold. Proves the pg adapter agrees with the
+    // in-memory reference the service tests run against.
+    test('plan_change_log round-trips jsonb old/new values and filters by phase', async () => {
+      const { projectId, gc } = await seedPhase({ hasSignedContractor: true });
+      const execution = (await store.listPhasesByProject(projectId)).find((p) => p.kind === 'execution');
+      const stageId = randomUUID();
+
+      await store.insertPlanChangeLog(pool, {
+        id: randomUUID(), phase_id: execution.id, entity_type: 'stage', entity_id: stageId,
+        field_name: 'planned_cost_cents', old_value: null, new_value: 1_000_000,
+        actor_party_id: gc, occurred_at: new Date('2026-01-01T00:00:00Z').toISOString(),
+      });
+      await store.insertPlanChangeLog(pool, {
+        id: randomUUID(), phase_id: execution.id, entity_type: 'stage', entity_id: stageId,
+        field_name: 'name', old_value: 'Foundation', new_value: 'Foundation & Footings',
+        actor_party_id: null, occurred_at: new Date('2026-01-02T00:00:00Z').toISOString(),
+      });
+
+      const rows = await store.listPlanChangeLogByPhase(execution.id);
+      assert.equal(rows.length, 2);
+      assert.deepEqual(rows.map((r) => r.field_name), ['planned_cost_cents', 'name']); // occurred_at order
+      const [cost, name] = rows;
+      assert.strictEqual(cost.old_value, null);
+      assert.strictEqual(cost.new_value, 1_000_000); // jsonb number → JS number
+      assert.equal(cost.actor_party_id, gc);
+      assert.strictEqual(name.old_value, 'Foundation'); // jsonb string → JS string
+      assert.strictEqual(name.new_value, 'Foundation & Footings');
+      assert.strictEqual(name.actor_party_id, null); // system change
+    });
   });
 });
