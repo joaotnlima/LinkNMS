@@ -130,6 +130,23 @@ function mapSignOff(r) {
   };
 }
 
+// Pre-sign-off plan-edit audit row (LINA-280, ADR-0023 §8). old_value/new_value
+// are jsonb; pg returns them already parsed, so no JSON.parse here.
+function mapPlanChangeLog(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    phase_id: r.phase_id,
+    entity_type: r.entity_type,
+    entity_id: r.entity_id,
+    field_name: r.field_name,
+    old_value: r.old_value ?? null,
+    new_value: r.new_value ?? null,
+    actor_party_id: r.actor_party_id ?? null,
+    occurred_at: toIso(r.occurred_at),
+  };
+}
+
 // Slice B2 plan versioning (LINA-200, contract §3) shapers. plan_version /
 // plan_acceptance / project_baseline rows are snake_case in the DB; these map
 // them to the same camelCase-less snake_case shape the in-memory store returns,
@@ -900,11 +917,39 @@ export function createPgStore({ pool = getPool() } = {}) {
     return rows.length ? mapSignOff(rows[0]) : null;
   }
 
+  // ── plan_change_log — append-only pre-sign-off audit (LINA-280, ADR-0023 §8) ──
+  // old_value/new_value are jsonb; a JS scalar is serialised with ::jsonb, and an
+  // undefined value lands as SQL NULL (no prior value), distinct from a jsonb
+  // `null` (a field explicitly cleared). SELECT+INSERT grant only — never updated.
+  async function insertPlanChangeLog(client, row) {
+    const oldJson = row.old_value === undefined ? null : JSON.stringify(row.old_value);
+    const newJson = row.new_value === undefined ? null : JSON.stringify(row.new_value);
+    const { rows } = await client.query(
+      `insert into schedule.plan_change_log
+         (id, phase_id, entity_type, entity_id, field_name,
+          old_value, new_value, actor_party_id, occurred_at)
+       values ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9)
+       returning *`,
+      [row.id, row.phase_id, row.entity_type, row.entity_id, row.field_name,
+        oldJson, newJson, row.actor_party_id ?? null, row.occurred_at]);
+    return mapPlanChangeLog(rows[0]);
+  }
+
+  async function listPlanChangeLogByPhase(phaseId) {
+    const { rows } = await pool.query(
+      `select * from schedule.plan_change_log
+        where phase_id = $1
+        order by occurred_at, id`,
+      [phaseId]);
+    return rows.map(mapPlanChangeLog);
+  }
+
   return {
     transaction,
     insertPhase, listPhasesByProject, getPhaseById, getPhaseByKind,
     countPhasesByProject, updatePhaseStatus,
     insertSignOffRequest, getSignOffRequest, listSignOffRequestsByPhase, resolveSignOffRequest,
+    insertPlanChangeLog, listPlanChangeLogByPhase,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
     insertPlanImport, getPlanImportByIdempotencyKey, insertStageDependency,
     deleteStageDependenciesByPlanVersion, listStageDependenciesByPlanVersion,

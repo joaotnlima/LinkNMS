@@ -642,4 +642,51 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
         (e) => e.status === 409 && e.code === 'sign_off_already_pending');
     });
   });
+
+  // ── plan_change_log writes + change-order guard (LINA-280, ADR-0023 §8) ───────
+  // Proves the audit-critical wiring holds in the DATABASE: a stage field edit
+  // while execution is active appends jsonb-serialised plan_change_log rows (the
+  // append-only grant admits them), and once execution is signed_off the guard
+  // turns a direct edit into a 409 and the DB trigger keeps the phase terminal.
+  describe('plan_change_log + change-order guard (LINA-280, ADR-0023 §8)', () => {
+    async function seedActiveExecution() {
+      const { projectId, homeowner, gc } = await seed();
+      const identity = identityFor(new Map([[homeowner, 'owner'], [gc, 'counterparty']]));
+      const phases = createPhaseService({ store, identity });
+      const svc = createScheduleService({ store, ledger, identity, phases });
+      // hasSignedContractor → execution starts active (the freely-editable window).
+      await phases.ensurePhases(projectId, { hasSignedContractor: true });
+      const execution = (await store.listPhasesByProject(projectId)).find((p) => p.kind === 'execution');
+      return { svc, phases, projectId, gc, execution };
+    }
+
+    test('a stage field edit appends jsonb-typed plan_change_log rows while active', async () => {
+      const { svc, projectId, gc, execution } = await seedActiveExecution();
+      const s = await svc.addStage(projectId, gc, { name: 'Foundation', position: 1, plannedCostCents: 1_000_000 });
+      await svc.updateStage(s.id, gc, { name: 'Footings', plannedCostCents: 1_250_000 });
+
+      const rows = (await store.listPlanChangeLogByPhase(execution.id))
+        .filter((r) => r.entity_id === s.id && r.old_value !== null); // edits, not the creation
+      const byField = Object.fromEntries(rows.map((r) => [r.field_name, r]));
+      // jsonb round-trips the native types (string / number), not stringified text.
+      assert.equal(byField.name.old_value, 'Foundation');
+      assert.equal(byField.name.new_value, 'Footings');
+      assert.equal(byField.plannedCostCents.old_value, 1_000_000);
+      assert.equal(byField.plannedCostCents.new_value, 1_250_000);
+      assert.equal(byField.name.entity_type, 'stage');
+      assert.equal(byField.name.actor_party_id, gc);
+    });
+
+    test('once signed_off, a direct edit is 409 plan_locked and writes no audit row', async () => {
+      const { svc, projectId, gc, execution } = await seedActiveExecution();
+      const s = await svc.addStage(projectId, gc, { name: 'Foundation', position: 1 });
+      const before = (await store.listPlanChangeLogByPhase(execution.id)).length;
+      await store.updatePhaseStatus(pool, execution.id, 'signed_off');
+
+      await assert.rejects(
+        () => svc.updateStage(s.id, gc, { name: 'Too late' }),
+        (e) => e.status === 409 && e.code === 'plan_locked');
+      assert.equal((await store.listPlanChangeLogByPhase(execution.id)).length, before);
+    });
+  });
 });

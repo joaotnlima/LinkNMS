@@ -71,7 +71,13 @@ function topoOrder(stages) {
   return order;
 }
 
-export function createPlanVersionService({ store, ledger, identity }) {
+// `phases` is optional (see createScheduleService): when present it supplies the
+// change-order guard so re-authoring or re-proposing a signed_off execution plan
+// is rejected (ADR-0023 §8 — the guard applies to :author and :propose). No
+// plan_change_log rows are written on this path: authoring is a private draft
+// whole-tree replace, already recorded by the single plan_drafted ledger event;
+// the field-level plan_change_log lives at the stage-CRUD surface (updateStage).
+export function createPlanVersionService({ store, ledger, identity, phases = null }) {
   if (!store || !ledger || !identity) {
     throw new Error('createPlanVersionService requires { store, ledger, identity } ports');
   }
@@ -636,6 +642,10 @@ export function createPlanVersionService({ store, ledger, identity }) {
     // §3); the review flow is self-protecting (REVIEW_PLAN denies the proposer).
     await identity.authorize({ actorPartyId, action: ACTION.PROPOSE_PLAN, projectId });
 
+    // Change-order guard (ADR-0023 §8): no re-authoring a signed_off execution
+    // plan — the lock routes further edits through the change-order ledger.
+    if (phases) await phases.assertPlanEditable(projectId);
+
     const order = validateAuthoredStages(stages);
     await assertAssigneesOnProject(projectId, order);
 
@@ -748,6 +758,10 @@ export function createPlanVersionService({ store, ledger, identity }) {
       throw new DomainError(409, 'not_draft',
         'only a draft may be sent for approval');
     }
+
+    // Change-order guard (ADR-0023 §8): a signed_off execution plan cannot have a
+    // new plan proposed over it — changes go through change orders.
+    if (phases) await phases.assertPlanEditable(version.project_id);
 
     const occurredAt = now();
 
