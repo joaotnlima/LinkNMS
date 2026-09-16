@@ -683,21 +683,35 @@
    the RIGHT of the right edge, each with a gap, so the full "25 Sep 2026" reads
    without overlapping the bar or its label. `left` is anchored on the edge by the
    component; the transform + margin carry it outside. */
-.pgt-edgedate-l { transform: translate(-100%, -50%); margin-left: -10px; }
-.pgt-edgedate-r { transform: translateY(-50%); margin-left: 10px; }
+/* Pushed clear of the bar AND of the link handle that now sits just outside each
+   edge (see .pgt-linksrc below): the 22px handle occupies the first ~26px off the
+   edge, so the date pill starts beyond that. */
+.pgt-edgedate-l { transform: translate(-100%, -50%); margin-left: -34px; }
+.pgt-edgedate-r { transform: translateY(-50%); margin-left: 34px; }
 
+/* The dependency handle (LINA-306). It sits JUST OUTSIDE each bar edge — not on
+   top of it — so it no longer covers the edge resize grip: the author can drag
+   the bar's edge to change a date, and reach for this handle to draw a link,
+   without the two fighting for the same pixels (founder ask). Bigger target, and
+   a chain-link glyph (LinkGlyph) instead of the old ＋ that read as "add".
+   Horizontal placement is by margin so `transform` stays free for the hover pop;
+   `left` is anchored on the edge by the component. */
 .pgt-linksrc {
   position: absolute; top: 50%; z-index: 9;
-  width: 16px; height: 16px; transform: translate(-50%, -50%);
+  width: 22px; height: 22px; transform: translateY(-50%);
   display: none; align-items: center; justify-content: center;
-  padding: 0; line-height: 1; font-size: 12px; font-weight: 700;
+  padding: 0; line-height: 0;
   color: var(--paper); background: var(--plan-baseline);
   border: 1.5px solid var(--paper); border-radius: 999px;
   cursor: crosshair; touch-action: none;
-  box-shadow: 0 1px 4px color-mix(in srgb, var(--fg) 30%, transparent);
+  box-shadow: 0 1px 5px color-mix(in srgb, var(--fg) 32%, transparent);
 }
+/* left handle fully to the LEFT of the start edge, right handle fully to the
+   RIGHT of the finish edge, each with a small gap. */
+.pgt-linksrc-l { margin-left: -26px; }
+.pgt-linksrc-r { margin-left: 4px; }
 .pgt-track:hover .pgt-linksrc { display: inline-flex; }
-.pgt-linksrc:hover { transform: translate(-50%, -50%) scale(1.18); }
+.pgt-linksrc:hover { transform: translateY(-50%) scale(1.18); }
 .pgt-linksrc:active { cursor: grabbing; }
 /* While a link drag is live, keep every handle reachable as a drop cue — the
    whole canvas stays in "linking" mode via the body class the component sets. */

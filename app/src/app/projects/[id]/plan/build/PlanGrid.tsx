@@ -265,6 +265,22 @@ type LinkDrag = {
   target: { key: string; edge: 'start' | 'end' } | null;
 };
 
+/** The chain-link glyph on the dependency handles (LINA-306). Replaces the old
+ *  ＋, which read as "add a task" rather than "link to another task". Feather's
+ *  two-arc link mark; inherits the button's colour via currentColor. */
+function LinkGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24" width="12" height="12" fill="none"
+      stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden focusable="false"
+    >
+      <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
+      <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+    </svg>
+  );
+}
+
 export function PlanGrid(props: PlanGridProps) {
   const { phases, parties, litRows, disabled, todayIso } = props;
   const pendingChange = props.pendingChangeKeys ?? EMPTY_KEYS;
@@ -1358,7 +1374,7 @@ export function PlanGrid(props: PlanGridProps) {
                               title="Drag onto another bar's edge to link (start)"
                               onPointerDown={(e) => onLinkDown(e, r.key, 'start')}
                               onPointerMove={onLinkMove} onPointerUp={onLinkUp} onPointerCancel={onLinkUp}
-                            >＋</button>
+                            ><LinkGlyph /></button>
                             <button
                               type="button" className="pgt-linksrc pgt-linksrc-r"
                               style={{ left: box.x + box.width }}
@@ -1366,7 +1382,7 @@ export function PlanGrid(props: PlanGridProps) {
                               title="Drag onto another bar's edge to link (finish)"
                               onPointerDown={(e) => onLinkDown(e, r.key, 'end')}
                               onPointerMove={onLinkMove} onPointerUp={onLinkUp} onPointerCancel={onLinkUp}
-                            >＋</button>
+                            ><LinkGlyph /></button>
                           </>
                         ) : null}
                       </>
