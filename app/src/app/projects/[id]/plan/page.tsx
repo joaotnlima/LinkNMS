@@ -74,7 +74,7 @@ export default async function PlanPage({
   const hasPlan = plan.current !== null || plan.baseline !== null || plan.history.length > 0;
 
   const executionSlot = await buildExecutionSlot({
-    id, compose, plan, build, parties, directory, execution, session, hasPlan, isGC,
+    id, compose, plan, build, parties, execution, session, hasPlan, isGC,
   });
 
   return (
@@ -136,13 +136,12 @@ async function buildExecutionSlot(ctx: {
   plan: Awaited<ReturnType<typeof getPlan>>;
   build: Awaited<ReturnType<typeof getBuild>>;
   parties: PartyRef[];
-  directory: ReturnType<typeof directoryOf>;
   execution: WirePhase | null;
   session: Awaited<ReturnType<typeof currentSession>>;
   hasPlan: boolean;
   isGC: boolean;
 }) {
-  const { id, compose, plan, parties, directory, execution, session, hasPlan, isGC } = ctx;
+  const { id, compose, plan, parties, execution, session, hasPlan, isGC } = ctx;
 
   // ── Authoring, folded in from the retired sub-routes ──────────────────────
   if (compose === 'import') {
@@ -175,6 +174,12 @@ async function buildExecutionSlot(ctx: {
   // (edits route through change orders by then), so it correctly counts as zero.
   const taskCount = (plan.current?.stages ?? []).length;
   const pending = openRequest(execution);
+  // A plain party-id → name map for the sign-off panel. It must be a serializable
+  // object, not the `directory` Map or a resolver function — SignOffPanel is a
+  // Client Component and neither crosses the RSC boundary (LINA-306).
+  const partyNames: Record<string, string> = Object.fromEntries(
+    parties.map((p) => [p.partyId, p.name]),
+  );
   const viewer = {
     partyId: session?.partyId ?? null,
     // v1: any project member may request sign-off (ADR-0023 Addendum A §2). The
@@ -205,7 +210,7 @@ async function buildExecutionSlot(ctx: {
           phase={execution}
           viewer={viewer}
           taskCount={taskCount}
-          nameOf={(partyId) => directory.get(partyId)?.name}
+          partyNames={partyNames}
           changeOrderHref={`/projects/${id}/change-orders/new`}
         />
       ) : null}
