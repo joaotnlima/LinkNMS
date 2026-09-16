@@ -30,7 +30,6 @@ import { hydrateDraft, type PhaseDraft, type TemplatePhase } from '@/lib/plan-au
 import { stageKeysOf } from '@/lib/task-workspace';
 import { openRequest } from '@/lib/phase-signoff';
 import { SignOffPanel } from '@/components/SignOffPanel';
-import { PlanAccordion } from './PlanAccordion';
 import { PlanBaseline, type PartyRef } from './PlanBaseline';
 import { PlanBuildEditor } from './build/PlanBuildEditor';
 import { PlanImportWizard } from './import/PlanImportWizard';
@@ -64,7 +63,6 @@ export default async function PlanPage({
     role: m.role,
   }));
 
-  const procurement = phasesResult.phases.find((p) => p.kind === 'procurement') ?? null;
   const execution = phasesResult.phases.find((p) => p.kind === 'execution') ?? null;
 
   // "Is there a plan?" is `current || baseline || history`, not a stage count: a
@@ -113,13 +111,13 @@ export default async function PlanPage({
           </div>
         ) : null}
 
-        <PlanAccordion
-          procurementStatus={procurement?.status ?? null}
-          executionPhase={execution}
-          forceOpen={compose ? 'execution' : null}
-          procurementSlot={<ProcurementComingSoon />}
-          executionSlot={executionSlot}
-        />
+        {/* The plan surface renders directly — no Procurement/Execution
+            accordion wrapper (founder, LINA-306): the two page-level sections
+            added noise around the one thing this URL is for, the plan itself.
+            Procurement returns here as its own surface once its BE lands
+            (tracked under LINA-281); the per-phase collapse now lives INSIDE the
+            grid, on each phase row, where folding a phase actually reads. */}
+        {executionSlot}
       </main>
     </PortalShell>
   );
@@ -232,26 +230,6 @@ async function resolveTemplate(): Promise<TemplatePhase[] | undefined> {
     console.warn('[plan] could not resolve the default plan template', err);
     return undefined;
   }
-}
-
-/**
- * The Procurement section body — placeholder until its BE lands.
- *
- * The RFP composer + proposals inbox (`@/components/ProcurementSection`) are
- * built and were written to mount HERE, but the procurement read/write API
- * (`/api/v1/projects/:id/procurement*`) does not exist yet — mounting the live
- * section would ship a permanent "could not load" card on every plan page. So
- * this shell renders the section with its badge and a truthful placeholder; the
- * swap-in is one line (`<ProcurementSection projectId={id} />`) once the BE is
- * wired. Tracked as a follow-up child of LINA-281.
- */
-function ProcurementComingSoon() {
-  return (
-    <p className="cap">
-      Sending an RFP to contractors and collecting their bids is coming here soon. If you already
-      have a contractor, the build moves straight to the Execution plan below.
-    </p>
-  );
 }
 
 /**

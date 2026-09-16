@@ -510,11 +510,26 @@
 .pgd-track-add { border-bottom: 1px solid var(--outline); }
 .pgt-track.is-clickable { cursor: copy; }
 .pgt-track.is-clickable:hover { background: color-mix(in srgb, var(--plan-baseline) 5%, transparent); }
+/* The phase's derived summary bar (LINA-306): a THIN rail — half the height of a
+   task bar — centred in the phase band, spanning the phase's full child range in
+   the same direction as its tasks. It reads as the phase's envelope, not another
+   draggable bar (it stays inert). It renders even when the phase is folded, so a
+   collapsed phase still shows its schedule at a glance. */
 .pgd-envbar {
-  position: absolute; top: 12px; height: 12px; border-radius: 999px;
-  background: color-mix(in srgb, var(--plan-baseline) 45%, var(--paper));
+  position: absolute; top: 15px; height: 6px; border-radius: 999px;
+  background: color-mix(in srgb, var(--plan-baseline) 70%, transparent);
   pointer-events: none;
 }
+
+/* The phase accordion caret (LINA-306): folds the phase's tasks away. Sits at
+   the front of the phase name cell; rotates down when the phase is open. */
+.pgd-fold {
+  flex: 0 0 auto; width: 20px; height: 20px; font-size: 11px;
+  color: var(--muted); transition: transform 0.12s ease;
+}
+.pgd-fold.is-open { transform: rotate(90deg); }
+.pgd-fold:disabled { opacity: 0.3; }
+.pgd-row-phase:hover .pgd-fold { color: var(--fg); }
 .pgd-today {
   position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none;
   background: color-mix(in srgb, var(--warn-fg, #b45309) 55%, transparent);
