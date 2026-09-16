@@ -89,7 +89,12 @@ export function rollup(stagesInOrder, statusByStageId) {
   };
 }
 
-export function createScheduleService({ store, ledger, identity }) {
+// `phases` is optional so the in-memory unit harnesses that predate the phase
+// layer keep composing; when present it supplies the change-order guard
+// (assertPlanEditable) and the pre-sign-off audit writer (recordPlanChanges,
+// ADR-0023 §8). A null phase port simply means no lock is enforced and no
+// plan_change_log rows are written — the legacy behaviour.
+export function createScheduleService({ store, ledger, identity, phases = null }) {
   if (!store || !ledger || !identity) {
     throw new Error('createScheduleService requires { store, ledger, identity } ports');
   }
@@ -99,6 +104,10 @@ export function createScheduleService({ store, ledger, identity }) {
   async function addStage(projectId, actorPartyId, input) {
     // GC-only (spec §8.2). The homeowner is a member but lacks add_stage → 403.
     const { role } = await identity.authorize({ actorPartyId, action: ACTION.ADD_STAGE, projectId });
+
+    // Change-order guard (ADR-0023 §8): once execution is signed_off the plan is
+    // immutable and a new stage must be raised as a change order — 409 plan_locked.
+    if (phases) await phases.assertPlanEditable(projectId);
 
     const { name } = input ?? {};
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -141,6 +150,22 @@ export function createScheduleService({ store, ledger, identity }) {
           plannedEndDate: row.planned_end_date,
         },
       });
+      // Pre-sign-off audit (ADR-0023 §8): a creation is logged with no prior value
+      // (oldValue omitted → SQL NULL) for the fields that carry plan meaning.
+      if (phases) {
+        await phases.recordPlanChanges(tx, projectId, {
+          entityType: 'stage',
+          entityId: id,
+          actorPartyId,
+          changes: [
+            { field: 'name', newValue: row.name },
+            { field: 'position', newValue: row.position },
+            { field: 'plannedStartDate', newValue: row.planned_start_date },
+            { field: 'plannedEndDate', newValue: row.planned_end_date },
+            { field: 'plannedCostCents', newValue: row.planned_cost_cents },
+          ],
+        });
+      }
     });
 
     void role; // role is available for a future analytics event (§6 follow-up)
@@ -153,6 +178,10 @@ export function createScheduleService({ store, ledger, identity }) {
     const existing = await store.getStage(stageId);
     if (!existing) throw new DomainError(404, 'not_found', 'stage not found');
     await identity.authorize({ actorPartyId, action: ACTION.UPDATE_STAGE, projectId: existing.project_id });
+
+    // Change-order guard (ADR-0023 §8): a signed_off execution plan is immutable —
+    // a field edit must route through a change order (409 plan_locked).
+    if (phases) await phases.assertPlanEditable(existing.project_id);
 
     const set = {};
     if (patch?.name !== undefined) {
@@ -178,6 +207,27 @@ export function createScheduleService({ store, ledger, identity }) {
     }
     set.updated_at = now();
 
+    // Field-level diff for the pre-sign-off audit (ADR-0023 §8): the canonical
+    // "who moved a task date, renamed a stage" record. old_value comes from the
+    // row as it stood; new_value from the applied patch. Wire field_name in the
+    // camelCase the API/contract speaks, not the snake DB column.
+    const FIELD_COLUMNS = [
+      ['name', 'name'],
+      ['position', 'position'],
+      ['scopeNote', 'scope_note'],
+      ['description', 'description'],
+      ['plannedStartDate', 'planned_start_date'],
+      ['plannedEndDate', 'planned_end_date'],
+      ['plannedCostCents', 'planned_cost_cents'],
+    ];
+    const changes = FIELD_COLUMNS
+      .filter(([, col]) => col in set)
+      .map(([field, col]) => ({
+        field,
+        oldValue: existing[col] ?? null,
+        newValue: set[col] ?? null,
+      }));
+
     await store.transaction(async (tx) => {
       const updated = await store.updateStage(tx, stageId, set);
       if (!updated) throw new DomainError(404, 'not_found', 'stage not found');
@@ -188,6 +238,14 @@ export function createScheduleService({ store, ledger, identity }) {
         occurredAt: set.updated_at,
         payload: { stageId, changed: Object.keys(set).filter((k) => k !== 'updated_at') },
       });
+      if (phases) {
+        await phases.recordPlanChanges(tx, existing.project_id, {
+          entityType: 'stage',
+          entityId: stageId,
+          actorPartyId,
+          changes,
+        });
+      }
     });
 
     return stageView(stageId);

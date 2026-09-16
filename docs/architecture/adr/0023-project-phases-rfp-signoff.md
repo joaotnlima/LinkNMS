@@ -595,3 +595,51 @@ slice over the `schedule` schema. Four decisions refine §2/§3/§8 as built:
 
 **RFP recipient/proposal token APIs and email** remain separate downstream
 children (their tables ship in 0012; no endpoints in this slice).
+
+## Addendum B — LINA-280 implementation decisions
+
+LINA-280 was scoped as "constructor selection + `plan_change_log` writes." On
+build it split cleanly along its dependency line, and the split is worth
+recording because the two halves land in different PRs.
+
+1. **The audit half shipped first (this PR).** Addendum A #4 — wiring
+   `assertPlanEditable` into the plan-mutation handlers and writing the
+   pre-sign-off `plan_change_log` field diffs — depends only on migration 0012
+   (LINA-277) and the phase service (LINA-278), both already on `dev`. It ships
+   here:
+   - **Guard wired** into `addStage`, `updateStage` (stage PATCH), `authorPlan`
+     (`:author`) and `proposePlan` (`:propose`) — each throws `409 plan_locked`
+     once the execution phase is `signed_off`. The guard runs *before* the write
+     transaction opens.
+   - **`plan_change_log` writes live at the stage-CRUD surface**, not the
+     draft-authoring surface. `updateStage` is the canonical per-field diff point
+     ("who moved a task date, renamed a stage") and writes one append-only row
+     per changed field; `addStage` logs a creation (fields with no prior value).
+     `authorPlan` deliberately writes **no** `plan_change_log` rows: authoring is
+     a *private draft whole-tree replace* already recorded by its single
+     `plan_drafted` ledger event, and field-level diffing a whole-tree rewrite is
+     both impractical and low-value. It carries the guard only. A future
+     targeted dependency-edit endpoint is the natural home for `entity_type =
+     'dependency'` rows.
+   - **Boundary rule in the writer:** `recordPlanChanges` resolves the execution
+     phase and writes only while it exists and is not `signed_off`. A legacy
+     project with no execution phase logs nothing and the edit still succeeds —
+     the audit trail is best-effort over an absent phase, never a reason to fail
+     a plan edit. `signed_off` never reaches the writer because the guard throws
+     first.
+   - `phases` is an **optional** dependency of `createScheduleService` /
+     `createPlanVersionService`, so the pre-phase in-memory harnesses keep
+     composing; the composition root wires it (moved above `schedule`).
+
+2. **Constructor selection is a follow-up child, blocked on LINA-279.** The
+   `POST …/procurement/proposals/:proposalId:select` and `…/procurement:skip`
+   endpoints (the ratified FE contract in `slice-procurement-contract.md`, routes
+   7–8) each return a full `ProcurementView` and must read a proposal → recipient
+   to onboard the winner. That projection and the `rfp` / `rfp_recipient` /
+   `rfp_proposal` store methods land with **LINA-279** (the RFP surface), which is
+   not yet merged to `dev`. Selection also needs the §3 contract gap closed —
+   *where the winning proposal is recorded* (`rfp_proposal.selected_at` or
+   `rfp.selected_proposal_id`), a small migration that belongs with the
+   procurement surface, not the audit half. Building selection against LINA-279's
+   unmerged branch would tangle the shared tree, so it is a child issue blocked on
+   LINA-279 rather than part of this PR.

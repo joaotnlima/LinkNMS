@@ -140,6 +140,7 @@ export function createInMemoryStore() {
   const attachments = [];      // schedule.stage_attachment rows (append-only, LINA-249)
   const phases = [];           // schedule.project_phase rows (mutable status walk, LINA-278)
   const signOffs = [];         // schedule.phase_sign_off_request rows (in-place resolve, LINA-278)
+  const planChangeLog = [];    // schedule.plan_change_log rows (append-only, LINA-280)
   // schedule.plan_template rows (mutable CRUD; NO audit weight — outside the
   // tamper-evident record, ADR-0018). Seeded with the single system default so
   // the resolve ladder (user → system) has the same source of truth the DB
@@ -731,11 +732,37 @@ export function createInMemoryStore() {
     return { ...r };
   }
 
+  // ── plan_change_log — append-only pre-sign-off audit (LINA-280, ADR-0023 §8) ──
+  // The reference mirrors the SQL grant: SELECT+INSERT only, never updated. Values
+  // are stored as the raw JS scalar (the jsonb column round-trips the same shape).
+  function insertPlanChangeLog(_tx, row) {
+    // Coerce undefined → null so the reference matches how pg maps the jsonb
+    // columns back (an omitted oldValue on a creation reads as null, never
+    // undefined). `?? null` leaves a legitimate 0 / false / '' intact.
+    const stored = {
+      ...row,
+      old_value: row.old_value ?? null,
+      new_value: row.new_value ?? null,
+      actor_party_id: row.actor_party_id ?? null,
+    };
+    planChangeLog.push(stored);
+    return { ...stored };
+  }
+
+  function listPlanChangeLogByPhase(phaseId) {
+    return planChangeLog
+      .filter((r) => r.phase_id === phaseId)
+      .sort((a, b) => (a.occurred_at < b.occurred_at ? -1
+        : a.occurred_at > b.occurred_at ? 1 : 0))
+      .map((r) => ({ ...r }));
+  }
+
   return {
     transaction,
     insertPhase, listPhasesByProject, getPhaseById, getPhaseByKind,
     countPhasesByProject, updatePhaseStatus,
     insertSignOffRequest, getSignOffRequest, listSignOffRequestsByPhase, resolveSignOffRequest,
+    insertPlanChangeLog, listPlanChangeLogByPhase,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
     insertStageDependency, listStageDependencies, deleteStageDependenciesByPlanVersion,
     listStageDependenciesByPlanVersion,
