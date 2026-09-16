@@ -22,6 +22,8 @@ import {
   // Dependencies (LINA-233), typed by ADR-0020 / LINA-253.
   planNodes, dependencyChoices, dependsOnOf, setDependsOn, toggleDependency, detectCycle,
   setDependencyType, planLinks, DEP_TYPES, DEP_LABELS, DEFAULT_DEP_TYPE, isDepType,
+  // Dependency-date enforcement (LINA-306).
+  enforceDependencies,
   // The third level (LINA-243).
   addSubtask, renameSubtask, setSubtaskDate, setSubtaskDates, setSubtaskDescription, removeSubtask,
   moveSubtask, reorderSubtask, subtaskCount,
@@ -995,4 +997,116 @@ test('hydrateDraft: minting continues PAST the saved keys — no duplicate_key o
   const next = addTask(phases, 0);
   const keys = next[0].tasks.map((t) => t.key);
   assert.equal(new Set(keys).size, keys.length, 'every key in the phase is distinct');
+});
+
+// ── Dependency-date ENFORCEMENT (LINA-306) ──────────────────────────────────
+// The founder's ask: a link does not just draw an arrow, it MOVES the dependent
+// so its schedule obeys the rule — and keeps obeying it when the predecessor
+// shifts. Duration is preserved (a link reschedules, it does not restretch), and
+// a cyclic draft is left alone (you cannot order a cycle).
+
+const T = (key, start, end, dependsOn = []) =>
+  ({ key, name: key.toUpperCase(), start, end, description: '', trade: '', assigneePartyId: null, dependsOn, children: [] });
+const P = (key, tasks, dependsOn = []) =>
+  ({ key, name: key.toUpperCase(), trade: '', assigneePartyId: null, dependsOn, tasks });
+
+test('enforceDependencies: starts_after snaps the dependent to pred.end + 1 day, duration preserved', () => {
+  let phases = [P('p1', [
+    T('a', '2026-03-01', '2026-03-05'),          // 5-day predecessor
+    T('b', '2026-03-10', '2026-03-12'),          // 3-day dependent, elsewhere
+  ])];
+  phases = toggleDependency(phases, 'b', 'a');    // b starts_after a (default type)
+  const out = enforceDependencies(phases);
+  // a ends 03-05, so b starts the DAY AFTER, 03-06; its 3-day span is kept → 03-08.
+  assert.equal(out[0].tasks[1].start, '2026-03-06');
+  assert.equal(out[0].tasks[1].end, '2026-03-08');
+  // The predecessor is never touched.
+  assert.equal(out[0].tasks[0].start, '2026-03-01');
+  assert.equal(out[0].tasks[0].end, '2026-03-05');
+});
+
+test('enforceDependencies: starts_with aligns starts; ends_with aligns finishes; duration kept', () => {
+  let sw = [P('p1', [T('a', '2026-03-01', '2026-03-10'), T('b', '2026-04-01', '2026-04-05')])];
+  sw = toggleDependency(sw, 'b', 'a');
+  sw = setDependencyType(sw, 'b', 'a', 'starts_with');
+  const swOut = enforceDependencies(sw);
+  assert.equal(swOut[0].tasks[1].start, '2026-03-01');   // b.start := a.start
+  assert.equal(swOut[0].tasks[1].end, '2026-03-05');     // 5-day span kept
+
+  let ew = [P('p1', [T('a', '2026-03-01', '2026-03-10'), T('b', '2026-04-01', '2026-04-05')])];
+  ew = toggleDependency(ew, 'b', 'a');
+  ew = setDependencyType(ew, 'b', 'a', 'ends_with');
+  const ewOut = enforceDependencies(ew);
+  assert.equal(ewOut[0].tasks[1].end, '2026-03-10');     // b.end := a.end
+  assert.equal(ewOut[0].tasks[1].start, '2026-03-06');   // 5-day span kept (back from the end)
+});
+
+test('enforceDependencies: an undated predecessor constrains nothing; an undated dependent is left alone', () => {
+  let phases = [P('p1', [T('a', '', ''), T('b', '2026-03-10', '2026-03-12')])];
+  phases = toggleDependency(phases, 'b', 'a');
+  assert.equal(enforceDependencies(phases), phases, 'no dated boundary → identity (same ref)');
+
+  let p2 = [P('p1', [T('a', '2026-03-01', '2026-03-05'), T('b', '', '')])];
+  p2 = toggleDependency(p2, 'b', 'a');
+  const out = enforceDependencies(p2);
+  assert.equal(out[0].tasks[1].start, '');               // nothing to shift yet
+  assert.equal(out[0].tasks[1].end, '');
+});
+
+test('enforceDependencies: cascades down a chain in one pass', () => {
+  let phases = [P('p1', [
+    T('a', '2026-03-01', '2026-03-05'),
+    T('b', '2026-03-01', '2026-03-03'),   // 3-day
+    T('c', '2026-03-01', '2026-03-02'),   // 2-day
+  ])];
+  phases = toggleDependency(phases, 'b', 'a'); // b after a
+  phases = toggleDependency(phases, 'c', 'b'); // c after b
+  const out = enforceDependencies(phases);
+  // a ends 03-05 → b starts 03-06..03-08 → c starts 03-09..03-10, all in one pass.
+  assert.equal(out[0].tasks[1].start, '2026-03-06');
+  assert.equal(out[0].tasks[1].end, '2026-03-08');
+  assert.equal(out[0].tasks[2].start, '2026-03-09');
+  assert.equal(out[0].tasks[2].end, '2026-03-10');
+});
+
+test('enforceDependencies: several predecessors → the LATEST start wins', () => {
+  let phases = [P('p1', [
+    T('a', '2026-03-01', '2026-03-05'),   // ends 03-05
+    T('a2', '2026-03-01', '2026-03-20'),  // ends 03-20 (the binding one)
+    T('b', '2026-03-01', '2026-03-03'),   // 3-day
+  ])];
+  phases = toggleDependency(phases, 'b', 'a');
+  phases = toggleDependency(phases, 'b', 'a2');
+  const out = enforceDependencies(phases);
+  // Both are starts_after; b must clear the later one (a2 ends 03-20) → starts 03-21.
+  assert.equal(out[0].tasks[2].start, '2026-03-21');
+  assert.equal(out[0].tasks[2].end, '2026-03-23');
+});
+
+test('enforceDependencies: a cyclic draft is returned untouched (cannot order a cycle)', () => {
+  let phases = [P('p1', [T('a', '2026-03-01', '2026-03-05'), T('b', '2026-03-10', '2026-03-12')])];
+  phases = setDependsOn(phases, 'a', [{ on: 'b', type: 'starts_after' }]);
+  phases = setDependsOn(phases, 'b', [{ on: 'a', type: 'starts_after' }]);
+  assert.ok(detectCycle(phases), 'the fixture really is cyclic');
+  assert.equal(enforceDependencies(phases), phases, 'identity — enforcement waits for the loop to break');
+});
+
+test('enforceDependencies: a task may key off a whole phase envelope', () => {
+  let phases = [
+    P('p1', [T('a', '2026-03-01', '2026-03-05'), T('a2', '2026-03-03', '2026-03-20')]),
+    P('p2', [T('b', '2026-04-01', '2026-04-03')]), // 3-day
+  ];
+  phases = toggleDependency(phases, 'b', 'p1'); // b starts_after the whole phase p1
+  const out = enforceDependencies(phases);
+  // p1's envelope ends at its latest child finish (a2 → 03-20) → b starts 03-21.
+  assert.equal(out[1].tasks[0].start, '2026-03-21');
+  assert.equal(out[1].tasks[0].end, '2026-03-23');
+});
+
+test('enforceDependencies: pure — the input tree is never mutated', () => {
+  let phases = [P('p1', [T('a', '2026-03-01', '2026-03-05'), T('b', '2026-03-10', '2026-03-12')])];
+  phases = toggleDependency(phases, 'b', 'a');
+  const snapshot = JSON.parse(JSON.stringify(phases));
+  enforceDependencies(phases);
+  assert.deepEqual(phases, snapshot, 'original untouched');
 });

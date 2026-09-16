@@ -1,6 +1,11 @@
 // Direct plan authoring — the "build it here" route (LINA-228, ADR-0017).
 // Frozen contract: docs/architecture/slice-direct-plan-authoring-contract.md.
 //
+// The date arithmetic (parse/format/addDays) is the Gantt's, reused for the
+// dependency-date ENFORCEMENT below (LINA-306). plan-gantt imports nothing from
+// here, so this direction is a clean one-way dependency — no cycle.
+import { addDays, formatDay, parseDay } from './plan-gantt.ts';
+//
 // WHAT LIVES HERE AND WHY
 // The seeded skeleton, the client-side draft model, the pure tree operations the
 // editor makes its edits with, and the single write. Everything here is either a
@@ -879,6 +884,156 @@ export function planLinks(phases: PhaseDraft[]): PlanLink[] {
     for (const d of deps) out.push({ from, to: d.on, type: d.type });
   }
   return out;
+}
+
+// ── Dependency-date ENFORCEMENT (LINA-306) ───────────────────────────────────
+// The founder's ask: "whenever I add a dependency of the task starts when
+// another one ends, the dates of that task need to be enforced following that
+// logic." A link is no longer only a drawn arrow — it MOVES the dependent's dates
+// so its schedule actually obeys the rule, and keeps obeying it when the
+// predecessor is dragged. So this runs after every date edit and every link edit,
+// not once at creation, and cascades down a chain in one pass.
+//
+// The three types map to one constraint each, on the dependent, preserving its
+// duration (a link reschedules a task, it does not restretch it):
+//   • starts_after — dep.start := pred.end + 1 day  (starts the day the pred
+//     finishes releases — the connector's clean touch, no shared day)
+//   • starts_with  — dep.start := pred.start
+//   • ends_with    — dep.end   := pred.end
+// A dependent with several predecessors takes the LATEST (max) of its start
+// constraints so every "after" is satisfied at once. A predecessor with no dates
+// constrains nothing (there is no boundary to snap to); a dependent with no dates
+// is left undated (there is no bar to move — the author schedules it first, and
+// the next edit enforces it). Phases derive their span from their children, so a
+// task may key off a whole phase's envelope.
+
+/** A stage's [start, end] in ms from a live date map, or from a phase envelope. */
+function spanMs(
+  key: string,
+  dates: Map<string, { start: string; end: string }>,
+  phaseKeys: Set<string>,
+  phaseChildren: Map<string, string[]>,
+): { start: number; end: number } | null {
+  if (phaseKeys.has(key)) {
+    let lo: number | null = null;
+    let hi: number | null = null;
+    for (const child of phaseChildren.get(key) ?? []) {
+      const s = spanMs(child, dates, phaseKeys, phaseChildren);
+      if (!s) continue;
+      lo = lo === null || s.start < lo ? s.start : lo;
+      hi = hi === null || s.end > hi ? s.end : hi;
+    }
+    return lo === null || hi === null ? null : { start: lo, end: hi };
+  }
+  const d = dates.get(key);
+  if (!d) return null;
+  const s = parseDay(d.start);
+  const e = parseDay(d.end);
+  return s === null || e === null ? null : { start: s, end: e };
+}
+
+/**
+ * Snap every dependent's dates to obey its links, duration-preserving, in a
+ * single topological pass so a chain (A → B → C) settles at once. A cyclic draft
+ * is returned untouched — you cannot order a cycle, and the draft is free to hold
+ * one transiently (the save is what refuses it), so enforcement simply waits for
+ * the author to break it rather than looping.
+ */
+export function enforceDependencies(phases: PhaseDraft[]): PhaseDraft[] {
+  if (detectCycle(phases)) return phases;
+
+  const link = edges(phases);
+  const nodes = planNodes(phases);
+  const phaseKeys = new Set(phases.map((p) => p.key));
+  const phaseChildren = new Map<string, string[]>();
+  const dates = new Map<string, { start: string; end: string }>();
+  for (const p of phases) {
+    const kidKeys: string[] = [];
+    for (const t of p.tasks) {
+      kidKeys.push(t.key);
+      dates.set(t.key, { start: t.start, end: t.end });
+      for (const s of kids(t)) dates.set(s.key, { start: s.start, end: s.end });
+    }
+    phaseChildren.set(p.key, kidKeys);
+  }
+
+  // Kahn's algorithm on the predecessor → dependent graph, so a node is only
+  // processed once all its predecessors already carry their enforced dates.
+  const indeg = new Map<string, number>();
+  const adj = new Map<string, string[]>();
+  for (const n of nodes) { indeg.set(n.key, 0); adj.set(n.key, []); }
+  for (const n of nodes) {
+    for (const dep of link.get(n.key) ?? []) {
+      if (!indeg.has(dep.on)) continue; // an edge to a stage that no longer exists
+      adj.get(dep.on)!.push(n.key);
+      indeg.set(n.key, (indeg.get(n.key) ?? 0) + 1);
+    }
+  }
+  const queue = nodes.filter((n) => (indeg.get(n.key) ?? 0) === 0).map((n) => n.key);
+  const order: string[] = [];
+  while (queue.length > 0) {
+    const k = queue.shift()!;
+    order.push(k);
+    for (const child of adj.get(k) ?? []) {
+      const d = (indeg.get(child) ?? 0) - 1;
+      indeg.set(child, d);
+      if (d === 0) queue.push(child);
+    }
+  }
+
+  let changed = false;
+  for (const key of order) {
+    if (phaseKeys.has(key)) continue;            // a phase has no authored dates to move
+    const deps = link.get(key) ?? [];
+    if (deps.length === 0) continue;
+    const self = dates.get(key);
+    if (!self) continue;
+    const s = parseDay(self.start);
+    const e = parseDay(self.end);
+    if (s === null || e === null) continue;      // undated — nothing to shift yet
+    const dur = e - s;
+
+    let startTarget: number | null = null;
+    let endTarget: number | null = null;
+    for (const d of deps) {
+      const span = spanMs(d.on, dates, phaseKeys, phaseChildren);
+      if (!span) continue;
+      if (d.type === 'starts_after') {
+        const t = parseDay(addDays(formatDay(span.end), 1)) as number;
+        startTarget = startTarget === null ? t : Math.max(startTarget, t);
+      } else if (d.type === 'starts_with') {
+        startTarget = startTarget === null ? span.start : Math.max(startTarget, span.start);
+      } else if (d.type === 'ends_with') {
+        endTarget = endTarget === null ? span.end : Math.max(endTarget, span.end);
+      }
+    }
+
+    let ns = s;
+    let ne = e;
+    if (startTarget !== null) { ns = startTarget; ne = ns + dur; }
+    else if (endTarget !== null) { ne = endTarget; ns = ne - dur; }
+    if (ns !== s || ne !== e) {
+      dates.set(key, { start: formatDay(ns), end: formatDay(ne) });
+      changed = true;
+    }
+  }
+  if (!changed) return phases;
+
+  return phases.map((p) => ({
+    ...p,
+    tasks: p.tasks.map((t) => {
+      const td = dates.get(t.key)!;
+      return {
+        ...t,
+        start: td.start,
+        end: td.end,
+        children: kids(t).map((sub) => {
+          const sd = dates.get(sub.key)!;
+          return { ...sub, start: sd.start, end: sd.end };
+        }),
+      };
+    }),
+  }));
 }
 
 /**

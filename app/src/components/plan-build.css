@@ -36,6 +36,20 @@
   color: var(--ok-fg); background: var(--ok-bg); border: 1px solid var(--ok-bd);
 }
 
+/* The autosave indicator (LINA-306): the founder removed the Save button, so
+   this quiet status is the only save signal. It states; it never blocks. */
+.pbx-autosave {
+  font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--muted);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.pbx-autosave::before {
+  content: ''; width: 7px; height: 7px; border-radius: 999px;
+  background: currentColor; opacity: 0.6;
+}
+.pbx-autosave.is-saving { color: var(--muted); }
+.pbx-autosave.is-saved { color: var(--ok-fg); }
+.pbx-autosave.is-error { color: var(--err-fg, #b42318); }
+
 .pbx-phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s4); }
 .pbx-phase {
   border: 1px solid var(--outline); border-radius: var(--r-ctrl); overflow: hidden; background: var(--paper);
@@ -335,6 +349,13 @@
    unchanged — only the left pane grew from labels into the table. */
 .pbx--grid { max-width: none; }
 
+/* Full-width plan (founder, LINA-306): the plan surface reads best edge-to-edge —
+   the Gantt wants every pixel. The page wrapper `.pi` caps most screens at a
+   reading measure (780px); whenever it holds a plan GRID, drop that cap so the
+   grid fills the shell. Scoped to `:has(.pgd)`, so the narrow routes (import
+   stamp, "add your plan", the sign-off panel) keep their comfortable measure. */
+.pi:has(.pgd) { max-width: none; }
+
 .pgd {
   border: 1px solid var(--outline); border-radius: var(--r-ctrl); overflow: hidden; background: var(--paper);
 }
@@ -516,7 +537,7 @@
    draggable bar (it stays inert). It renders even when the phase is folded, so a
    collapsed phase still shows its schedule at a glance. */
 .pgd-envbar {
-  position: absolute; top: 15px; height: 6px; border-radius: 999px;
+  position: absolute; top: 14px; height: 6px; border-radius: 999px;
   background: color-mix(in srgb, var(--plan-baseline) 70%, transparent);
   pointer-events: none;
 }
@@ -530,6 +551,10 @@
 .pgd-fold.is-open { transform: rotate(90deg); }
 .pgd-fold:disabled { opacity: 0.3; }
 .pgd-row-phase:hover .pgd-fold { color: var(--fg); }
+.pgd-row:hover .pgd-fold { color: var(--fg); }
+/* A leaf task (or a sub-task) reserves the caret's width so names stay aligned
+   down the column whether or not the row can fold (LINA-306). */
+.pgd-fold-spacer { flex: 0 0 auto; width: 20px; }
 .pgd-today {
   position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none;
   background: color-mix(in srgb, var(--warn-fg, #b45309) 55%, transparent);
@@ -595,13 +620,15 @@
   position: absolute; top: 6px; left: 4px; white-space: nowrap;
   font-size: 10px; font-weight: 600; color: var(--muted);
 }
-.pgt-band { height: 30px; border-bottom: 1px solid var(--outline); background: var(--sunken); }
-.pgt-track { position: relative; height: 36px; border-bottom: 1px solid var(--outline); }
+/* Default heights track the JS `H` constants (LINA-306 compact rows); the
+   component still sets each row's exact height inline so the panes stay aligned. */
+.pgt-band { height: 34px; border-bottom: 1px solid var(--outline); background: var(--sunken); }
+.pgt-track { position: relative; height: 34px; border-bottom: 1px solid var(--outline); }
 .pgt-track.is-sub { height: 28px; }
 .pgt-gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--outline); opacity: 0.5; }
 
 .pgt-bar {
-  position: absolute; top: 6px; height: 24px; box-sizing: border-box;
+  position: absolute; top: 9px; height: 16px; box-sizing: border-box;
   display: flex; align-items: center; overflow: hidden;
   background: color-mix(in srgb, var(--plan-baseline) 20%, var(--paper));
   border: 1px solid var(--plan-baseline); border-radius: 6px;
@@ -619,7 +646,7 @@
 /* A sub-task bar is the third weight: thinner, paler fill, softer corners, so a
    glance down the column reads phase → task → sub-task (LINA-244). */
 .pgt-bar.is-sub {
-  top: 5px; height: 18px; border-radius: 4px;
+  top: 8px; height: 12px; border-radius: 4px;
   background: color-mix(in srgb, var(--plan-baseline) 10%, var(--paper));
   border-color: color-mix(in srgb, var(--plan-baseline) 55%, transparent);
 }
@@ -633,19 +660,61 @@
 .pgt-handle-r { border-left: 1px solid color-mix(in srgb, var(--plan-baseline) 50%, transparent); }
 .pgt-handle:hover { background: color-mix(in srgb, var(--plan-baseline) 35%, transparent); }
 
-/* Hover tooltip to the RIGHT of a bar (LINA-259 ask 1): a positioned label the
-   component sizes onto the track, revealed purely on bar hover so it never sits
-   in the drag path (pointer-events: none). Lives as a sibling right after the
-   bar, so `:hover +` reaches it. */
-.pgt-tip {
-  position: absolute; top: 50%; transform: translateY(-50%);
-  display: none; z-index: 7; pointer-events: none; white-space: nowrap;
-  padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 600;
+/* ── Bar edge dates + link handles (LINA-306) ───────────────────────────────
+   Each bar shows its start date to the LEFT of its left edge and its finish date
+   to the RIGHT of its right edge — ALWAYS on, spelled out "25 Sep 2026", pushed
+   clear of the bar so both read at a glance (founder ask). Just ON each edge, a
+   ＋ handle the author drags onto another bar to author a dependency, revealed on
+   TRACK hover so a mouse resting anywhere on the row surfaces it. All are siblings
+   of the bar (not children of its overflow-hidden box), positioned by the
+   component in canvas px. pointer-events stay off the date labels (never in the
+   drag path) but ON for the ＋ handles (they own the link drag). */
+.pgt-edgedate {
+  position: absolute; top: 50%;
+  z-index: 7; pointer-events: none; white-space: nowrap;
+  padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 700;
   color: var(--fg); background: var(--paper);
   border: 1px solid var(--outline);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--fg) 16%, transparent);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--fg) 14%, transparent);
 }
-.pgt-bar:hover + .pgt-tip { display: block; }
+/* Always visible now (founder, LINA-306: "the date … on both sides of the bar
+   but with enough distance for me to read it") and pushed clear of the bar — the
+   start label sits fully to the LEFT of the left edge, the finish label fully to
+   the RIGHT of the right edge, each with a gap, so the full "25 Sep 2026" reads
+   without overlapping the bar or its label. `left` is anchored on the edge by the
+   component; the transform + margin carry it outside. */
+.pgt-edgedate-l { transform: translate(-100%, -50%); margin-left: -10px; }
+.pgt-edgedate-r { transform: translateY(-50%); margin-left: 10px; }
+
+.pgt-linksrc {
+  position: absolute; top: 50%; z-index: 9;
+  width: 16px; height: 16px; transform: translate(-50%, -50%);
+  display: none; align-items: center; justify-content: center;
+  padding: 0; line-height: 1; font-size: 12px; font-weight: 700;
+  color: var(--paper); background: var(--plan-baseline);
+  border: 1.5px solid var(--paper); border-radius: 999px;
+  cursor: crosshair; touch-action: none;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--fg) 30%, transparent);
+}
+.pgt-track:hover .pgt-linksrc { display: inline-flex; }
+.pgt-linksrc:hover { transform: translate(-50%, -50%) scale(1.18); }
+.pgt-linksrc:active { cursor: grabbing; }
+/* While a link drag is live, keep every handle reachable as a drop cue — the
+   whole canvas stays in "linking" mode via the body class the component sets. */
+.pgt-canvas.is-linking .pgt-linksrc { display: inline-flex; }
+
+/* The live rubber-band while drawing a link (LINA-306). Inert overlay above the
+   bars; the ＋ handle owns the pointer, so this only ever draws. */
+.pgt-linkdraw { position: absolute; inset: 0; z-index: 8; pointer-events: none; overflow: visible; }
+.pgt-linkdraw-line {
+  stroke: var(--plan-baseline); stroke-width: 1.75; stroke-dasharray: 4 3; fill: none;
+}
+.pgt-linkdraw-line.is-snapped { stroke-dasharray: none; stroke-width: 2; }
+.pgt-linkdraw-src { fill: var(--plan-baseline); }
+.pgt-linkdraw-hit {
+  fill: color-mix(in srgb, var(--plan-baseline) 30%, transparent);
+  stroke: var(--plan-baseline); stroke-width: 2;
+}
 
 /* Dependency connectors (ADR-0020 §6, LINA-253): one SVG layer over the whole
    canvas, drawn ABOVE the bars but inert, so an arrow crossing a bar never
@@ -659,6 +728,29 @@
 @media (prefers-contrast: more) {
   .pgt-link { stroke: var(--plan-baseline); }
   .pgt-arrowhead { fill: var(--plan-baseline); }
+}
+
+/* The unlink controls (LINA-306): a ⊘ button parked at the MIDDLE of each arrow
+   so a link can be cleared straight off the timeline. The layer is a sibling of
+   the inert connector SVG and interactive; the component sets each button's
+   left/top to the arrow's arc-length midpoint. Quiet by default (small, muted,
+   half-opacity) so a plan full of links is not a wall of buttons, and it lifts to
+   full presence on hover/focus — a "clear this" affordance, not a decoration. */
+.pgt-unlinks { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+.pgt-unlink {
+  position: absolute; transform: translate(-50%, -50%);
+  width: 18px; height: 18px; padding: 0; pointer-events: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; line-height: 1; cursor: pointer; opacity: 0.5;
+  color: var(--muted); background: var(--paper);
+  border: 1px solid var(--outline); border-radius: 999px;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--fg) 18%, transparent);
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+.pgt-unlink:hover,
+.pgt-unlink:focus-visible {
+  opacity: 1; color: var(--danger); border-color: var(--danger);
+  transform: translate(-50%, -50%) scale(1.15); outline: none;
 }
 
 /* The row move-menu (LINA-259 ask 7): a small fixed popover of Promote / Demote
