@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { procurementBadge, defaultOpenSection } from './plan-accordion.ts';
+import { procurementBadge, defaultOpenSections } from './plan-accordion.ts';
 
 test('procurementBadge maps each status to a labelled, toned badge', () => {
   assert.deepEqual(procurementBadge('active'), { label: 'Active', tone: 'warn' });
@@ -14,19 +14,24 @@ test('procurementBadge maps each status to a labelled, toned badge', () => {
   assert.deepEqual(procurementBadge('signed_off'), { label: 'Closed', tone: 'ok' });
 });
 
-test('defaultOpenSection opens the phase the party is working in', () => {
-  // Persona A: procurement runs first, execution waits.
-  assert.equal(defaultOpenSection('active', 'pending'), 'procurement');
-  // Persona B: contractor already signed, execution is live from the start.
-  assert.equal(defaultOpenSection('pending', 'active'), 'execution');
-  // Constructor chosen: procurement archived, execution active.
-  assert.equal(defaultOpenSection('archived', 'active'), 'execution');
-  // A signed-off plan is the live surface even though its status is not `active`.
-  assert.equal(defaultOpenSection('archived', 'signed_off'), 'execution');
+test('defaultOpenSections always opens Execution — the plan is never hidden', () => {
+  // LINA-306: the founder landed with procurement active and saw no Gantt because
+  // Execution was collapsed. Execution now opens in every state.
+  assert.equal(defaultOpenSections('active', 'pending').execution, true);
+  assert.equal(defaultOpenSections('pending', 'active').execution, true);
+  assert.equal(defaultOpenSections('archived', 'archived').execution, true);
+  assert.equal(defaultOpenSections(null, null).execution, true);
 });
 
-test('defaultOpenSection falls back to execution when no phase is active', () => {
-  // A fully closed-out build: the plan is still what a visitor came to read.
-  assert.equal(defaultOpenSection('archived', 'archived'), 'execution');
-  assert.equal(defaultOpenSection(null, null), 'execution');
+test('defaultOpenSections opens Procurement only while it is the active phase', () => {
+  // Persona A: procurement runs first, execution waits — both open.
+  assert.equal(defaultOpenSections('active', 'pending').procurement, true);
+  // Persona B: contractor already signed, execution live — procurement collapses.
+  assert.equal(defaultOpenSections('pending', 'active').procurement, false);
+  // Constructor chosen: procurement archived, execution active — procurement collapsed.
+  assert.equal(defaultOpenSections('archived', 'active').procurement, false);
+  // A signed-off plan stands alone — procurement collapsed even if it were active.
+  assert.equal(defaultOpenSections('active', 'signed_off').procurement, false);
+  // A fully closed-out build: procurement is history, collapsed.
+  assert.equal(defaultOpenSections('archived', 'archived').procurement, false);
 });

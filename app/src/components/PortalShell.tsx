@@ -39,7 +39,9 @@ export type BuildSection = 'overview' | 'plan' | 'schedule' | 'money' | 'history
 
 // Section → the route it opens, relative to the build. `documents` has no
 // surface yet (kept dimmed, never a link — a tab that 404s is worse than one
-// that visibly is not ready). Sub-items live under Plan in the rail.
+// that visibly is not ready). Schedule / Money / History are no longer shown in
+// the rail (LINA-306) but keep their entries here so breadcrumbs on those pages
+// still resolve a label and route.
 function sectionHref(buildId: string, s: BuildSection): string | null {
   switch (s) {
     case 'overview':
@@ -149,11 +151,7 @@ export function PortalShell({
               <span className="psh-nav-item is-dim">
                 <CalendarIcon />
                 Plan
-                <ChevronRight className="psh-nav-caret" />
               </span>
-              <span className="psh-nav-item is-dim is-sub">Schedule</span>
-              <span className="psh-nav-item is-dim is-sub">Money</span>
-              <span className="psh-nav-item is-dim is-sub">History</span>
               <span className="psh-nav-item is-dim">
                 <FolderIcon />
                 Documents
@@ -290,14 +288,16 @@ function BuildSwitcher({ active, builds }: { active: BuildRef; builds: BuildRef[
   );
 }
 
-/* The live "THIS BUILD" nav (BUILD mode). Overview + Plan (with its Schedule /
-   Money / History sub-items) + Documents. `section` highlights the current one;
-   Documents stays dimmed until a documents surface exists. */
+/* The live "THIS BUILD" nav (BUILD mode). Overview + Plan + Documents. The
+   Schedule / Money / History sub-items were pulled from the rail (LINA-306) —
+   their pages still exist and their breadcrumbs still work, they are just no
+   longer linked here. `section` highlights the current one; Documents stays
+   dimmed until a documents surface exists. */
 function BuildNav({ buildId, section }: { buildId: string; section?: BuildSection }) {
-  const item = (s: BuildSection, icon: React.ReactNode, opts?: { sub?: boolean; caret?: boolean }) => {
+  const item = (s: BuildSection, icon: React.ReactNode) => {
     const href = sectionHref(buildId, s);
     const active = section === s;
-    const cls = `psh-nav-item${opts?.sub ? ' is-sub' : ''}${active ? ' is-active' : ''}`;
+    const cls = `psh-nav-item${active ? ' is-active' : ''}`;
     if (href == null) {
       // Documents — no surface yet.
       return (
@@ -311,7 +311,6 @@ function BuildNav({ buildId, section }: { buildId: string; section?: BuildSectio
       <Link className={cls} href={href} aria-current={active ? 'page' : undefined}>
         {icon}
         {SECTION_LABEL[s]}
-        {opts?.caret ? <ChevronRight className="psh-nav-caret" /> : null}
       </Link>
     );
   };
@@ -319,10 +318,7 @@ function BuildNav({ buildId, section }: { buildId: string; section?: BuildSectio
   return (
     <>
       {item('overview', <HouseIcon />)}
-      {item('plan', <CalendarIcon />, { caret: true })}
-      {item('schedule', null, { sub: true })}
-      {item('money', null, { sub: true })}
-      {item('history', null, { sub: true })}
+      {item('plan', <CalendarIcon />)}
       {item('documents', <FolderIcon />)}
     </>
   );
