@@ -30,6 +30,11 @@ import { Check, StatusIcon } from './icons';
 type Busy = null | 'requesting' | 'approving' | 'rejecting';
 
 export interface SignOffPanelProps {
+  /**
+   * Required: the sign-off routes are project-nested (LINA-278 as built), so a
+   * phase id alone cannot address them. See `signOffPath` below.
+   */
+  projectId: string;
   phase: ExecutionPhase | null;
   viewer: SignOffViewerContext;
   /** Tasks + sub-tasks currently in the plan — the "anything to sign off" test. */
@@ -40,7 +45,24 @@ export interface SignOffPanelProps {
   changeOrderHref?: string;
 }
 
-export function SignOffPanel({ phase, viewer, taskCount, nameOf, changeOrderHref }: SignOffPanelProps) {
+/**
+ * The one place the sign-off URL shape lives (LINA-290).
+ *
+ * LINA-282 built this panel ahead of the API against flat guesses
+ * (`/api/v1/phases/:phaseId/sign-off`, `/api/v1/sign-off/:requestId/approve`).
+ * LINA-278 shipped every route nested under the project instead, so all three
+ * guesses returned 404 — which the guard above correctly surfaced as "nothing
+ * was recorded", but only after the user had asked for a commitment. Verified
+ * against the as-built route files under
+ * `app/src/app/api/v1/projects/[id]/phases/[phaseId]/sign-off/`.
+ */
+function signOffPath(projectId: string, phaseId: string, suffix = '') {
+  return `/api/v1/projects/${projectId}/phases/${phaseId}/sign-off${suffix}`;
+}
+
+export function SignOffPanel({
+  projectId, phase, viewer, taskCount, nameOf, changeOrderHref,
+}: SignOffPanelProps) {
   const router = useRouter();
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +155,9 @@ export function SignOffPanel({ phase, viewer, taskCount, nameOf, changeOrderHref
                 type="button"
                 className="btn approve"
                 disabled={busy !== null}
-                onClick={() => void post(`/api/v1/sign-off/${c.pendingRequest!.id}/approve`, {}, 'approving')}
+                onClick={() => void post(
+                  signOffPath(projectId, phase!.id, `/${c.pendingRequest!.id}/approve`), {}, 'approving',
+                )}
               >
                 <Check className="ok-stroke" /> Approve and lock the plan
               </button>
@@ -216,7 +240,7 @@ export function SignOffPanel({ phase, viewer, taskCount, nameOf, changeOrderHref
           onClose={() => setConfirming(false)}
           busy={busy !== null}
           confirmLabel="Request sign-off"
-          onConfirm={() => void post(`/api/v1/phases/${phase.id}/sign-off`, {}, 'requesting')}
+          onConfirm={() => void post(signOffPath(projectId, phase.id), {}, 'requesting')}
         >
           <p>You are asking the other party to sign off on this plan as it stands.</p>
           <p className="cap">
@@ -235,7 +259,11 @@ export function SignOffPanel({ phase, viewer, taskCount, nameOf, changeOrderHref
           confirmLabel="Send back for changes"
           confirmDisabled={comment.trim().length === 0}
           onConfirm={() =>
-            void post(`/api/v1/sign-off/${c.pendingRequest!.id}/reject`, { comment: comment.trim() }, 'rejecting')
+            void post(
+              signOffPath(projectId, phase!.id, `/${c.pendingRequest!.id}/reject`),
+              { comment: comment.trim() },
+              'rejecting',
+            )
           }
         >
           <label className="so-label" htmlFor="so-comment">What needs to change?</label>
