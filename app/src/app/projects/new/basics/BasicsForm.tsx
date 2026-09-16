@@ -98,6 +98,25 @@ export function BasicsForm({
             </select>
           </label>
         </div>
+
+        {/* "Do you already have a signed contractor?" (LINA-281, ADR-0023 §3).
+            The answer is seed-time only: it decides which phase the build opens
+            in — "No" runs an RFP first (procurement active); "Yes" skips the
+            tender and starts the Execution plan. Two native radios so selection
+            reads by the mark and the focus ring, never colour alone; "No" is
+            pre-checked because it is the common case and the seeder's own safe
+            default, and an unchecked radiogroup is a keyboard trap. */}
+        <fieldset className="field bwx-yesno">
+          <legend className="metric-lbl">Do you already have a signed contractor?</legend>
+          <label className="bwx-radio">
+            <input type="radio" name="hasSignedContractor" value="no" defaultChecked />
+            <span>No — I&rsquo;ll run a tender first</span>
+          </label>
+          <label className="bwx-radio">
+            <input type="radio" name="hasSignedContractor" value="yes" />
+            <span>Yes — skip straight to the build plan</span>
+          </label>
+        </fieldset>
       </section>
     </ActionForm>
   );

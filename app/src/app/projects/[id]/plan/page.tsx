@@ -1,49 +1,60 @@
-// The plan surface: D7 "no plan yet" (LINA-207) and D11–D13, the proposal →
-// review → baseline v1 record (LINA-212).
+// The plan surface — now a single-page accordion of the two phases
+// (LINA-281, ADR-0023 §4/§6). Procurement and Execution stack as collapsible
+// sections on this one URL; the per-phase route split is gone. `/plan/build` and
+// `/plan/import` 307-redirect here (?compose=), so authoring is an in-page action
+// on the Execution section rather than a route of its own.
 //
-// Pen: "Desktop — Bootstrap flow (lg)" › Band C › D7, and D11/D12/D12a/D13.
-// Contracts: slice-b1-plan-import-contract §7, slice-b2-plan-baseline-contract §7.
-//
-// ── ONE URL, THREE STATES ────────────────────────────────────────────────────
-// `/projects/:id/plan` is the plan, whatever the plan currently is:
-//   - nothing imported yet          → D7, the routes in
-//   - a version open for review     → D11 / D12 / D12a, per who is looking
-//   - a version accepted and frozen → D13, the baseline banner
-// A separate URL per state would go stale the moment the state changed and would
-// leave every redirect (the import's, the acceptance's) pointing at a screen
-// about a moment that has passed.
+// ── ONE URL, EVERY STATE ─────────────────────────────────────────────────────
+// `/projects/:id/plan` is the plan whatever the plan currently is: nothing
+// imported yet (D7), a version open for review (D11/D12/D12a), a frozen baseline
+// (D13), and now — above all of that — which phase the build is in. A separate
+// URL per phase or per state would go stale the moment the state changed and
+// would leave every redirect (the import's, the acceptance's, a phase
+// transition's) pointing at a screen about a moment that has passed.
 //
 // ── WHY THE ACTING PARTY IS READ HERE ────────────────────────────────────────
 // The screen needs it to decide which affordances exist (proposer → withdraw,
-// reviewer → accept/request-changes/reject). It is read from the VERIFIED
-// session server-side and passed down, never sent back up: every transition
-// derives its actor from the session again on the server (contract §6), so this
-// value shapes buttons and authorises nothing.
+// reviewer → accept/request-changes/reject, and — new — approver → sign off vs.
+// requester → wait). It is read from the VERIFIED session server-side and passed
+// down, never sent back up: every transition derives its actor from the session
+// again on the server, so this value shapes buttons and authorises nothing.
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 
-import { getBuild, getPlan, isSignedIn } from '@/lib/api';
+import { getBuild, getPhases, getPlan, getPlanTemplate, isSignedIn, type WirePhase } from '@/lib/api';
 import { currentSession } from '@/server/session';
 import { directoryOf } from '@/lib/view';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContext } from '@/server/portal-shell';
+import { hydrateDraft, type PhaseDraft, type TemplatePhase } from '@/lib/plan-authoring';
+import { stageKeysOf } from '@/lib/task-workspace';
+import { openRequest } from '@/lib/phase-signoff';
+import { SignOffPanel } from '@/components/SignOffPanel';
+import { PlanAccordion } from './PlanAccordion';
 import { PlanBaseline, type PartyRef } from './PlanBaseline';
+import { PlanBuildEditor } from './build/PlanBuildEditor';
+import { PlanImportWizard } from './import/PlanImportWizard';
 import '@/components/plan-import.css';
 
 export const dynamic = 'force-dynamic';
+
+type Compose = 'build' | 'import' | null;
 
 export default async function PlanPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ imported?: string; drafted?: string }>;
+  searchParams: Promise<{ imported?: string; drafted?: string; compose?: string }>;
 }) {
   const { id } = await params;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan`);
 
-  const [build, plan, session] = await Promise.all([getBuild(id), getPlan(id), currentSession()]);
+  const [build, plan, phasesResult, session] = await Promise.all([
+    getBuild(id), getPlan(id), getPhases(id), currentSession(),
+  ]);
   const shell = await buildShellContext(id, build.name);
-  const { imported, drafted } = await searchParams;
+  const { imported, drafted, compose: composeRaw } = await searchParams;
+  const compose: Compose = composeRaw === 'build' || composeRaw === 'import' ? composeRaw : null;
   const isGC = build.actingRole === 'counterparty';
 
   const directory = directoryOf(build);
@@ -53,11 +64,18 @@ export default async function PlanPage({
     role: m.role,
   }));
 
-  // "Is there a plan?" is `current || baseline || history`, not a stage count:
-  // a withdrawn v1 leaves a build with no open version and a real history, and
-  // showing "add your plan" over the top of a negotiation that happened would be
-  // the record forgetting it.
+  const procurement = phasesResult.phases.find((p) => p.kind === 'procurement') ?? null;
+  const execution = phasesResult.phases.find((p) => p.kind === 'execution') ?? null;
+
+  // "Is there a plan?" is `current || baseline || history`, not a stage count: a
+  // withdrawn v1 leaves a build with no open version and a real history, and
+  // showing "add your plan" over a negotiation that happened would be the record
+  // forgetting it.
   const hasPlan = plan.current !== null || plan.baseline !== null || plan.history.length > 0;
+
+  const executionSlot = await buildExecutionSlot({
+    id, compose, plan, build, parties, directory, execution, session, hasPlan, isGC,
+  });
 
   return (
     <PortalShell
@@ -67,9 +85,9 @@ export default async function PlanPage({
       section="plan"
     >
       <main className="pi">
-        {/* The stamp the import returned (B1 contract §7). It is shown once, on
-            the redirect that carried it — the durable copy is the ledger event,
-            which is why this links there rather than pretending to be it. */}
+        {/* The stamp the import returned (B1 contract §7). Shown once, on the
+            redirect that carried it — the durable copy is the ledger event, which
+            is why this links there rather than pretending to be it. */}
         {imported ? (
           <div className="pi-stamp" role="status">
             <p className="pi-stamp-t">Plan imported</p>
@@ -81,9 +99,8 @@ export default async function PlanPage({
           </div>
         ) : null}
 
-        {/* The stamp the :author write returned (LINA-228/LINA-230). Saving is
-            PRIVATE drafting — the copy says so plainly: nothing is sent yet. Shown
-            once on the redirect; the durable copy is the plan_drafted ledger event. */}
+        {/* The stamp the :author write returned (LINA-228/230). Saving is PRIVATE
+            drafting — the copy says so plainly: nothing is sent yet. */}
         {drafted ? (
           <div className="pi-stamp" role="status">
             <p className="pi-stamp-t">Draft saved</p>
@@ -96,31 +113,146 @@ export default async function PlanPage({
           </div>
         ) : null}
 
-        {hasPlan ? (
-          <PlanBaseline
-            projectId={id}
-            view={plan}
-            actorPartyId={session?.partyId ?? null}
-            parties={parties}
-          />
-        ) : (
-          <NoPlanYet projectId={id} isGC={isGC} />
-        )}
+        <PlanAccordion
+          procurementStatus={procurement?.status ?? null}
+          executionPhase={execution}
+          forceOpen={compose ? 'execution' : null}
+          procurementSlot={<ProcurementComingSoon />}
+          executionSlot={executionSlot}
+        />
       </main>
     </PortalShell>
   );
 }
 
 /**
- * The three routes in (pen D7).
+ * The Execution section body. It carries the whole plan lifecycle: the authoring
+ * editors (folded in from the retired `/plan/build` and `/plan/import` routes via
+ * `?compose=`), the proposal/baseline surface, and the sign-off controls.
+ */
+async function buildExecutionSlot(ctx: {
+  id: string;
+  compose: Compose;
+  plan: Awaited<ReturnType<typeof getPlan>>;
+  build: Awaited<ReturnType<typeof getBuild>>;
+  parties: PartyRef[];
+  directory: ReturnType<typeof directoryOf>;
+  execution: WirePhase | null;
+  session: Awaited<ReturnType<typeof currentSession>>;
+  hasPlan: boolean;
+  isGC: boolean;
+}) {
+  const { id, compose, plan, parties, directory, execution, session, hasPlan, isGC } = ctx;
+
+  // ── Authoring, folded in from the retired sub-routes ──────────────────────
+  if (compose === 'import') {
+    return <PlanImportWizard projectId={id} projectName={ctx.build.name} />;
+  }
+  if (compose === 'build') {
+    const template = await resolveTemplate();
+    // "Keep editing" resumes the saved draft. getPlan surfaces a draft to its
+    // author ONLY (LINA-230), so a `draft` current is this party's to resume;
+    // otherwise the editor scaffolds from `template`. Order matters: a saved
+    // draft always wins, or scaffolding would silently discard saved work.
+    const draft: PhaseDraft[] | undefined =
+      plan.current?.status === 'draft' ? hydrateDraft(plan.current.stages) : undefined;
+    const savedStageKeys = [...stageKeysOf(plan.current?.stages)];
+    return (
+      <PlanBuildEditor
+        projectId={id}
+        initialPhases={draft}
+        templateBody={template}
+        parties={parties}
+        savedStageKeys={savedStageKeys}
+      />
+    );
+  }
+
+  // ── The plan itself, plus the sign-off controls once a plan exists ────────
+  // The "is there anything to sign off" count comes from the OPEN version: a
+  // sign-off is requested on the active plan, which is `current`. A frozen
+  // baseline with no open version is not a plan you can request sign-off on
+  // (edits route through change orders by then), so it correctly counts as zero.
+  const taskCount = (plan.current?.stages ?? []).length;
+  const pending = openRequest(execution);
+  const viewer = {
+    partyId: session?.partyId ?? null,
+    // v1: any project member may request sign-off (ADR-0023 Addendum A §2). The
+    // page only loads for a member, so this is true here.
+    canRequest: true,
+    // The approver is anyone who did NOT open the pending request — a plan is
+    // signed off BY THE OTHER PARTY, never self-approved. The server enforces
+    // `cannot_self_approve` regardless; this only decides which control shows.
+    canDecide: pending !== null && pending.requestedBy !== (session?.partyId ?? null),
+  };
+
+  return (
+    <>
+      {hasPlan ? (
+        <PlanBaseline
+          projectId={id}
+          view={plan}
+          actorPartyId={session?.partyId ?? null}
+          parties={parties}
+        />
+      ) : (
+        <NoPlanYet projectId={id} isGC={isGC} />
+      )}
+
+      {execution ? (
+        <SignOffPanel
+          phase={execution}
+          viewer={viewer}
+          taskCount={taskCount}
+          nameOf={(partyId) => directory.get(partyId)?.name}
+          changeOrderHref={`/projects/${id}/change-orders/new`}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The resolved default scaffold (LINA-242), or undefined if it could not be read.
+ * A template is a convenience, not a permission: a failure degrades to the
+ * editor's built-in PLAN_SKELETON rather than an error page. Swallowed and
+ * logged, never rethrown.
+ */
+async function resolveTemplate(): Promise<TemplatePhase[] | undefined> {
+  try {
+    const resolved = await getPlanTemplate();
+    return resolved.body?.length ? resolved.body : undefined;
+  } catch (err) {
+    console.warn('[plan] could not resolve the default plan template', err);
+    return undefined;
+  }
+}
+
+/**
+ * The Procurement section body — placeholder until its BE lands.
  *
- * Route 1 is live. Route 2 ("build it here") is not, and it is drawn as what it
- * is rather than as a button that goes nowhere: there is no hand-authoring flow
- * yet. Route 3 in the pen ("the owner drafted one for you") appears "only when a
- * draft is actually waiting" — with B2 shipped, an owner-authored version DOES
- * exist as a shape (a request-changes fork is authored by the reviewer), but
- * nothing lets an owner start one from empty, so the route stays described
- * rather than mocked.
+ * The RFP composer + proposals inbox (`@/components/ProcurementSection`) are
+ * built and were written to mount HERE, but the procurement read/write API
+ * (`/api/v1/projects/:id/procurement*`) does not exist yet — mounting the live
+ * section would ship a permanent "could not load" card on every plan page. So
+ * this shell renders the section with its badge and a truthful placeholder; the
+ * swap-in is one line (`<ProcurementSection projectId={id} />`) once the BE is
+ * wired. Tracked as a follow-up child of LINA-281.
+ */
+function ProcurementComingSoon() {
+  return (
+    <p className="cap">
+      Sending an RFP to contractors and collecting their bids is coming here soon. If you already
+      have a contractor, the build moves straight to the Execution plan below.
+    </p>
+  );
+}
+
+/**
+ * The two routes into a plan that does not exist yet (pen D7). They are folded
+ * onto this page: "Build the plan" and "Upload plan" open the authoring editor
+ * inline via `?compose=`, on this same URL — the standalone `/plan/build` and
+ * `/plan/import` routes now redirect here, so a link to them would loop.
  */
 function NoPlanYet({ projectId, isGC }: { projectId: string; isGC: boolean }) {
   return (
@@ -143,11 +275,10 @@ function NoPlanYet({ projectId, isGC }: { projectId: string; isGC: boolean }) {
           </p>
           <p className="pi-route-meta">.xlsx · multi-sheet · you pick the tab</p>
           {isGC ? (
-            <Link className="btn primary" href={`/projects/${projectId}/plan/import`}>Upload plan</Link>
+            <Link className="btn primary" href={`/projects/${projectId}/plan?compose=import`}>Upload plan</Link>
           ) : (
             // B1 contract §5: importing is the GC's, not the owner's. An owner
-            // sees the route and why it is not theirs rather than a button that
-            // 403s.
+            // sees the route and why it is not theirs rather than a button that 403s.
             <p className="cap">The plan is the contractor&apos;s to bring in.</p>
           )}
         </section>
@@ -162,7 +293,7 @@ function NoPlanYet({ projectId, isGC }: { projectId: string; isGC: boolean }) {
           <p className="pi-route-meta">seeded skeleton · phases &amp; tasks · optional dates</p>
           {/* Either party may author (ADR-0017 §3): it is proposed to the other to
               agree, so there is no role gate here. */}
-          <Link className="btn primary" href={`/projects/${projectId}/plan/build`}>Build the plan</Link>
+          <Link className="btn primary" href={`/projects/${projectId}/plan?compose=build`}>Build the plan</Link>
         </section>
       </div>
 

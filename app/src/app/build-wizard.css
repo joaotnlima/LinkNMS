@@ -647,3 +647,34 @@
     font-size: 24px;
   }
 }
+
+/* "Do you already have a signed contractor?" — the seed-time Yes/No on Basics
+   (LINA-281). A fieldset of two native radios; the native focus ring is kept
+   (never colour alone). Reuses the card's field spacing so it lines up with the
+   fields above it. */
+.bwx-card .field.bwx-yesno {
+  border: none;
+  padding: 0;
+  margin-bottom: 0;
+}
+
+.bwx-yesno legend {
+  padding: 0;
+}
+
+.bwx-radio {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: var(--s2);
+  font-size: 14px;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.bwx-radio input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--owner);
+  flex: 0 0 auto;
+}
