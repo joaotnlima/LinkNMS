@@ -682,7 +682,14 @@ export function PlanGrid(props: PlanGridProps) {
       ? Math.round(((parseDay(todayIso) as number) - (parseDay(win.startDay) as number)) / 86_400_000)
       : null);
 
-  const rowH = (r: Row) => (r.kind === 'phase' ? H.phase : r.kind === 'add' ? H.add : r.si != null ? H.sub : H.task);
+  // A function declaration, NOT a `const` arrow: it is called from `linkTargets`
+  // (LINA-306) whose useMemo factory runs DURING render, ABOVE this line — a
+  // `const` there would be in its temporal dead zone and throw "Cannot access
+  // 'rowH' before initialization" (the LINA-306 dev crash). Declarations hoist to
+  // the top of the component scope, so every caller — early or late — sees it.
+  function rowH(r: Row) {
+    return r.kind === 'phase' ? H.phase : r.kind === 'add' ? H.add : r.si != null ? H.sub : H.task;
+  }
 
   // ── Dependency connectors (ADR-0020 §6, LINA-253) ──────────────────────────
   // Every typed link the author declared, drawn as an elbow arrow between the
