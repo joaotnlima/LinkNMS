@@ -102,28 +102,37 @@ export function ganttWindow(
  * The window the ALWAYS-VISIBLE timeline spans (LINA-248). The Gantt is no
  * longer a toggled view, so it needs a canvas even when nothing is dated yet —
  * otherwise there is nowhere to click a first bar into being. Dated plans get
- * the usual envelope (ganttWindow); an undated plan gets `minDays` columns
- * anchored a `pad` before today. A dated window narrower than `minDays` is
- * extended to the right so early one-task plans still leave room to schedule
- * the rest by pointer.
+ * the usual envelope (ganttWindow) EXTENDED by a trailing `trail` runway of empty
+ * future days, so there is always somewhere to scroll right and plant a bar past
+ * the last scheduled one (the founder's LINA-306 ask: "even if all bars are
+ * visible I need horizontal scroll, because I may add a bar outside the current
+ * dates"). An undated plan gets `minDays` columns anchored a `pad` before today.
+ * A window still narrower than `minDays` is extended to the right so early
+ * one-task plans still leave room to schedule the rest by pointer.
  */
 export function scheduleWindow(
   tasks: ReadonlyArray<{ start: string; end: string }>,
   todayIso: string,
   pad = 3,
   minDays = 42,
+  trail = 21,
 ): GanttWindow | null {
   const dated = ganttWindow(tasks, pad);
-  const base = dated ?? (() => {
-    const t = parseDay(todayIso);
-    if (t === null) return null;
-    const start = t - pad * MS_PER_DAY;
-    return {
-      startDay: formatDay(start),
-      endDay: formatDay(start + (minDays - 1) * MS_PER_DAY),
-      days: minDays,
-    };
-  })();
+  // A dated envelope carries a trailing runway of empty future so the canvas
+  // always overflows its viewport — future work can be scheduled by scrolling
+  // right. An undated plan already gets a whole today-anchored canvas below.
+  const base = dated
+    ? { startDay: dated.startDay, endDay: addDays(dated.endDay, trail), days: dated.days + trail }
+    : (() => {
+      const t = parseDay(todayIso);
+      if (t === null) return null;
+      const start = t - pad * MS_PER_DAY;
+      return {
+        startDay: formatDay(start),
+        endDay: formatDay(start + (minDays - 1) * MS_PER_DAY),
+        days: minDays,
+      };
+    })();
   if (base === null) return null;
   if (base.days >= minDays) return base;
   return {

@@ -158,13 +158,17 @@ test('scheduleWindow: undated plan gets a today-anchored canvas', () => {
 });
 
 test('scheduleWindow: dated plan keeps its envelope, extended to minDays', () => {
-  // One short task → envelope is 1 + 2·3 pad = 7 days, extended right to 42.
+  // One short task → envelope 1 + 2·3 pad = 7, + 21 trail = 28, still < 42 so
+  // extended right to the 42-day floor; the left edge stays on the padded start.
   const win = scheduleWindow([{ start: '2026-03-10', end: '2026-03-10' }], '2026-09-11');
   assert.equal(win.startDay, '2026-03-07');
   assert.equal(win.days, 42);
-  // A wide plan is left alone.
+  // A wide plan keeps its envelope plus the trailing runway (pad both sides +
+  // 21 empty future days to scroll into and schedule new work — LINA-306).
   const wide = scheduleWindow([{ start: '2026-01-01', end: '2026-06-30' }], '2026-09-11');
-  assert.equal(wide.days, diffDays('2026-01-01', '2026-06-30') + 1 + 6);
+  assert.equal(wide.days, diffDays('2026-01-01', '2026-06-30') + 1 + 6 + 21);
+  assert.equal(wide.startDay, '2025-12-29'); // 2026-01-01 − 3 pad, unchanged
+  assert.equal(wide.endDay, addDays('2026-06-30', 3 + 21)); // + pad + trailing runway
 });
 
 test('scheduleWindow: garbage today with no dates → null (no canvas to draw)', () => {
