@@ -249,6 +249,19 @@ function mapTemplate(r) {
   };
 }
 
+// A specialty row (LINA-306). snake_case matches the in-memory store; the domain
+// layer shapes the API view.
+function mapSpecialty(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    owner_scope: r.owner_scope,
+    owner_id: r.owner_id,
+    label: r.label,
+    created_at: toIso(r.created_at),
+  };
+}
+
 // Whitelisted updatable columns (edit / reorder — FR-P1). `set` keys already come
 // from the service's own whitelist; this second gate means a stray key can never
 // reach the SQL string.
@@ -818,6 +831,41 @@ export function createPgStore({ pool = getPool() } = {}) {
     return mapTemplate(rows[0]);
   }
 
+  // ── Specialty catalog (LINA-306) — suggest list, no ledger seam ─────────────
+  // Single-statement reads/writes (no audit append), so none takes a tx.
+
+  // system rows ∪ this party's own. Ordering is applied in the service (it also
+  // de-dupes), so this returns the raw union.
+  async function listSpecialties(ownerId) {
+    const { rows } = await pool.query(
+      `select * from schedule.specialty
+        where owner_scope = 'system' or (owner_scope = 'user' and owner_id = $1)`,
+      [ownerId]);
+    return rows.map(mapSpecialty);
+  }
+
+  // Create one owned by the caller. Idempotent by specialty_unique_label_per_owner
+  // (the case-insensitive partial index): re-creating a label the caller already
+  // owns returns the existing row rather than raising. If the label collides only
+  // with a SYSTEM row, ON CONFLICT does not fire (different owner_scope) — so we
+  // check for that first and hand the system row back instead of storing a copy.
+  async function createUserSpecialty({ ownerId, label }) {
+    const existingSystem = await pool.query(
+      `select * from schedule.specialty
+        where owner_scope = 'system' and lower(btrim(label)) = lower(btrim($1))
+        limit 1`, [label]);
+    if (existingSystem.rows[0]) return mapSpecialty(existingSystem.rows[0]);
+
+    const { rows } = await pool.query(
+      `insert into schedule.specialty (owner_scope, owner_id, label)
+       values ('user', $1, $2)
+       on conflict (owner_scope, owner_id, lower(btrim(label)))
+         do update set label = schedule.specialty.label
+       returning *`,
+      [ownerId, label]);
+    return mapSpecialty(rows[0]);
+  }
+
   // ── Project phases + sign-off (LINA-278, ADR-0023) ──────────────────────────
 
   // Idempotent seed insert. ON CONFLICT (project_id, kind) DO NOTHING makes a
@@ -967,5 +1015,6 @@ export function createPgStore({ pool = getPool() } = {}) {
     stageLiveByKey, insertStageComment, listStageCommentsByKey,
     insertStageAttachment, listStageAttachmentsByKey,
     getSystemDefaultTemplate, getUserDefaultTemplate, upsertUserDefaultTemplate,
+    listSpecialties, createUserSpecialty,
   };
 }

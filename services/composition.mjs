@@ -35,6 +35,7 @@ import { createPlanImportService } from './schedule/plan-import.mjs';
 import { createPlanVersionService } from './schedule/plan-version.mjs';
 import { createMaterialsService } from './schedule/materials.mjs';
 import { createPlanTemplateService } from './schedule/plan-template.mjs';
+import { createSpecialtyService } from './schedule/specialty.mjs';
 import { createTaskWorkspaceService } from './schedule/task-workspace.mjs';
 import { createPhaseService } from './schedule/phases.mjs';
 import { PARSER } from './schedule/plan-import-parser.mjs';
@@ -227,6 +228,13 @@ export function createServices({
     ? createPlanTemplateService({ store: scheduleStore })
     : null;
 
+  // Specialty catalog (LINA-306 item 6): the pickable trade list behind the plan
+  // grid's Specialty chip. Per-USER and project-independent, NO ledger seam — it
+  // composes over the schedule store alone, exactly like plan templates.
+  const specialty = scheduleStore
+    ? createSpecialtyService({ store: scheduleStore })
+    : null;
+
   // Task workspace (LINA-249): per-stage comments & attachments over the SAME
   // store and identity authorizer. Collaboration chatter — NO ledger seam, NO
   // party scoping (every member reads and writes both boxes). The blob store is
@@ -253,7 +261,7 @@ export function createServices({
     schedule,
     phases,
     changeOrderHttp: createChangeOrderHttp({ service: changeOrder, identity }),
-    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials, planTemplate, taskWorkspace, phases }) : null,
+    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials, planTemplate, specialty, taskWorkspace, phases }) : null,
   };
 }
 

@@ -261,6 +261,45 @@ export function PlanGrid(props: PlanGridProps) {
   const pendingChange = props.pendingChangeKeys ?? EMPTY_KEYS;
   const dir = useMemo(() => partyIndex(parties), [parties]);
 
+  // ── Specialty catalog (LINA-306 item 6) ────────────────────────────────────
+  // The "Specialty" chip stays a free-form label, but it is now backed by a
+  // picker: a datalist of the caller's known trades — the seeded system set ∪ any
+  // they have typed before, across every project (GET /api/v1/specialties).
+  // Typing a brand-new label and committing it (blur) remembers it (POST) so it
+  // is offered next time and on their other builds. Progressive enhancement: the
+  // input behaves exactly as before while the list loads or if the fetch fails —
+  // the picker only ADDS suggestions, it never gates what can be typed, and the
+  // chosen string is still what lands on the stage (no plan-contract change).
+  const [specialties, setSpecialties] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    fetch('/api/v1/specialties', { headers: { accept: 'application/json' } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { specialties?: Array<{ label: string }> } | null) => {
+        if (live && d?.specialties) setSpecialties(d.specialties.map((s) => s.label));
+      })
+      .catch(() => { /* picker is enhancement-only; the free-form input stands */ });
+    return () => { live = false; };
+  }, []);
+
+  // Commit of a typed specialty: if it is non-empty and not already known
+  // (case-insensitively), remember it. Fire-and-forget — the create is idempotent
+  // server-side, and a failure just means it is not offered later, never that the
+  // typed label is lost (onTrade already stored it on the stage).
+  const rememberSpecialty = useCallback((raw: string) => {
+    const label = raw.trim();
+    if (!label) return;
+    setSpecialties((prev) => {
+      if (prev.some((s) => s.toLowerCase() === label.toLowerCase())) return prev;
+      return [...prev, label].sort((a, b) => a.localeCompare(b));
+    });
+    fetch('/api/v1/specialties', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ label }),
+    }).catch(() => { /* enhancement-only */ });
+  }, []);
+
   // ── Accordion fold, phases AND tasks (LINA-306) ────────────────────────────
   // Any row that HAS children folds: a phase folds its tasks (and the "+ Add
   // task" row); a task that has grown a 3rd-level sub-task becomes an accordion
@@ -939,6 +978,11 @@ export function PlanGrid(props: PlanGridProps) {
         '--pgdw-dates': colW.dates ? `${colW.dates}px` : undefined,
       } as React.CSSProperties}
     >
+      {/* Specialty picker options (LINA-306 item 6) — shared by every trade
+          input's `list`. Native datalist: a suggestion source, never a gate. */}
+      <datalist id="pgd-specialties">
+        {specialties.map((s) => <option key={s} value={s} />)}
+      </datalist>
       {/* ── The time-base toolbar: pick the reading scale, or type the exact
           window. View state only — it never touches the plan. ── */}
       <div className="pgd-toolbar">
@@ -1003,9 +1047,11 @@ export function PlanGrid(props: PlanGridProps) {
                     <span key="trade" className="pgd-trade">
                       <input
                         className="pgd-tradeinput" value={r.phase.trade} placeholder="Specialty"
+                        list="pgd-specialties"
                         maxLength={120} aria-label={`Specialty for phase ${r.pi + 1}`}
                         disabled={disabled}
                         onChange={(e) => props.onTrade(r.key, e.target.value)}
+                        onBlur={(e) => rememberSpecialty(e.target.value)}
                       />
                     </span>
                   );
@@ -1073,9 +1119,11 @@ export function PlanGrid(props: PlanGridProps) {
                   <span key="trade" className="pgd-trade">
                     <input
                       className="pgd-tradeinput" value={r.node.trade} placeholder="Specialty"
+                      list="pgd-specialties"
                       maxLength={120} aria-label={`Specialty for ${what} ${id}`}
                       disabled={disabled}
                       onChange={(e) => props.onTrade(r.key, e.target.value)}
+                      onBlur={(e) => rememberSpecialty(e.target.value)}
                     />
                   </span>
                 );
