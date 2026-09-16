@@ -36,6 +36,7 @@ import { createPlanVersionService } from './schedule/plan-version.mjs';
 import { createMaterialsService } from './schedule/materials.mjs';
 import { createPlanTemplateService } from './schedule/plan-template.mjs';
 import { createTaskWorkspaceService } from './schedule/task-workspace.mjs';
+import { createPhaseService } from './schedule/phases.mjs';
 import { PARSER } from './schedule/plan-import-parser.mjs';
 import { createScheduleHttp } from './schedule/http.mjs';
 
@@ -223,6 +224,16 @@ export function createServices({
     ? createTaskWorkspaceService({ store: scheduleStore, identity, blob: blobStore })
     : null;
 
+  // Project phases + execution sign-off (LINA-278, ADR-0023): the phase-
+  // sequencing layer, the sign-off request/approve/reject loop, and the one-way
+  // signed_off transition that flips plan edits onto the change-order surface.
+  // Identity is the sole authorizer (both parties read; sign-off is never
+  // self-approved). No ledger seam here — the tamper-evident record for a
+  // sign-off DECISION is the one-way phase transition + the change-order ledger.
+  const phases = scheduleStore
+    ? createPhaseService({ store: scheduleStore, identity })
+    : null;
+
   // NOTE (LINA-189): there is no waitlist service here any more. The portal used
   // to compose one over `waitlist.signup` — a SECOND waitlist that captured an
   // address and did nothing else with it, while the marketing site's funnel
@@ -236,8 +247,9 @@ export function createServices({
     decision,
     changeOrder,
     schedule,
+    phases,
     changeOrderHttp: createChangeOrderHttp({ service: changeOrder, identity }),
-    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials, planTemplate, taskWorkspace }) : null,
+    scheduleHttp: schedule ? createScheduleHttp({ service: schedule, planImport, planVersion, materials, planTemplate, taskWorkspace, phases }) : null,
   };
 }
 

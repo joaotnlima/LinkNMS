@@ -138,6 +138,8 @@ export function createInMemoryStore() {
   const movements = [];        // schedule.material_movement rows (append-only)
   const comments = [];         // schedule.stage_comment rows (append-only, LINA-249)
   const attachments = [];      // schedule.stage_attachment rows (append-only, LINA-249)
+  const phases = [];           // schedule.project_phase rows (mutable status walk, LINA-278)
+  const signOffs = [];         // schedule.phase_sign_off_request rows (in-place resolve, LINA-278)
   // schedule.plan_template rows (mutable CRUD; NO audit weight — outside the
   // tamper-evident record, ADR-0018). Seeded with the single system default so
   // the resolve ladder (user → system) has the same source of truth the DB
@@ -635,8 +637,105 @@ export function createInMemoryStore() {
     return { ...row };
   }
 
+  // ── Project phases + sign-off (LINA-278, ADR-0023) ──────────────────────────
+  // The in-memory reference enforces the same invariants the SQL migration does:
+  //   - one row per (project_id, kind) and per (project_id, sequence);
+  //   - signed_off is a one-way terminal state (mirrors the DB trigger);
+  //   - at most one pending sign-off request per phase (mirrors the partial index);
+  //   - a sign-off request is resolved IN PLACE (status + resolved_at + comment).
+
+  // Idempotent INSERT (mirrors `ON CONFLICT (project_id, kind) DO NOTHING`):
+  // returns the stored row, or null when a phase of that kind already exists.
+  // The no-throw contract matters for ensurePhases' seed loop — a concurrent
+  // seed must not poison a shared transaction (as a raised unique violation
+  // would on postgres).
+  function insertPhase(_tx, row) {
+    if (phases.some((p) => p.project_id === row.project_id && p.kind === row.kind)) {
+      return null;
+    }
+    const stored = { responsible_party_ids: [], ...row };
+    phases.push(stored);
+    return { ...stored };
+  }
+
+  function listPhasesByProject(projectId) {
+    return phases
+      .filter((p) => p.project_id === projectId)
+      .sort((a, b) => a.sequence - b.sequence)
+      .map((p) => ({ ...p }));
+  }
+
+  function getPhaseById(id) {
+    const r = phases.find((p) => p.id === id);
+    return r ? { ...r } : null;
+  }
+
+  function getPhaseByKind(projectId, kind) {
+    const r = phases.find((p) => p.project_id === projectId && p.kind === kind);
+    return r ? { ...r } : null;
+  }
+
+  function countPhasesByProject(projectId) {
+    return phases.filter((p) => p.project_id === projectId).length;
+  }
+
+  // In-place status walk. Mirrors schedule.reject_phase_signed_off_reopen: a
+  // signed_off phase can never be walked back out (one-way terminal state).
+  function updatePhaseStatus(_tx, id, status) {
+    const r = phases.find((p) => p.id === id);
+    if (!r) return null;
+    if (r.status === 'signed_off' && status !== 'signed_off') {
+      const err = new Error(
+        `project_phase ${id} is signed_off — a one-way terminal state; edits route through change orders (ADR-0014)`);
+      err.code = 'P0001';
+      err.trigger = 'project_phase_signed_off_one_way';
+      throw err;
+    }
+    r.status = status;
+    r.updated_at = now();
+    return { ...r };
+  }
+
+  function insertSignOffRequest(_tx, row) {
+    if (signOffs.some((s) => s.phase_id === row.phase_id && s.status === 'pending')) {
+      const err = new Error(`a sign-off request is already pending for phase ${row.phase_id}`);
+      err.code = '23505'; // unique_violation — mirror the partial pending index
+      err.constraint = 'phase_sign_off_one_pending_per_phase';
+      throw err;
+    }
+    const stored = { resolved_at: null, resolution_comment: null, ...row };
+    signOffs.push(stored);
+    return { ...stored };
+  }
+
+  function getSignOffRequest(id) {
+    const r = signOffs.find((s) => s.id === id);
+    return r ? { ...r } : null;
+  }
+
+  function listSignOffRequestsByPhase(phaseId) {
+    return signOffs
+      .filter((s) => s.phase_id === phaseId)
+      .sort((a, b) => (a.requested_at < b.requested_at ? -1 : a.requested_at > b.requested_at ? 1 : 0))
+      .map((s) => ({ ...s }));
+  }
+
+  // Resolve a pending request in place (approve/reject). Returns the resolved row
+  // or null when the id is unknown / already resolved (a no-op, not a crash).
+  function resolveSignOffRequest(_tx, id, { status, resolvedAt, resolutionComment }) {
+    const r = signOffs.find((s) => s.id === id && s.status === 'pending');
+    if (!r) return null;
+    r.status = status;
+    r.resolved_at = resolvedAt;
+    r.resolution_comment = resolutionComment ?? null;
+    return { ...r };
+  }
+
   return {
     transaction,
+    insertPhase, listPhasesByProject, getPhaseById, getPhaseByKind,
+    countPhasesByProject, updatePhaseStatus,
+    insertSignOffRequest, getSignOffRequest, listSignOffRequestsByPhase, resolveSignOffRequest,
     insertStage, getStage, updateStage, listStages, maxStagePosition,
     insertStageDependency, listStageDependencies, deleteStageDependenciesByPlanVersion,
     listStageDependenciesByPlanVersion,
@@ -658,6 +757,7 @@ export function createInMemoryStore() {
     _versions: versions, _acceptances: acceptances, _baselines: baselines,
     _lineMaterials: lineMaterials, _movements: movements, _planTemplates: planTemplates,
     _comments: comments, _attachments: attachments,
+    _phases: phases, _signOffs: signOffs,
   };
 }
 

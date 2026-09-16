@@ -40,8 +40,9 @@ const actorOf = (session) => session?.partyId ?? null;
  * @param {import('./materials.mjs').createMaterialsService} [deps.materials]
  * @param {import('./plan-template.mjs').createPlanTemplateService} [deps.planTemplate]
  * @param {import('./task-workspace.mjs').createTaskWorkspaceService} [deps.taskWorkspace]
+ * @param {ReturnType<import('./phases.mjs').createPhaseService>} [deps.phases]
  */
-export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null, planTemplate = null, taskWorkspace = null }) {
+export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null, planTemplate = null, taskWorkspace = null, phases = null }) {
   if (!service) throw new Error('createScheduleHttp requires { service }');
 
   // GET /projects/:projectId/plan — the plan-baseline D11–D13 view (B2 contract
@@ -277,7 +278,51 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
     } catch (err) { return errorBody(err); }
   }
 
+  // ── Project phases + execution sign-off (LINA-278, ADR-0023) ───────────────
+  // Both parties read; the acting party for every write is the session
+  // (ADR-0004) — the client never names the requester/approver.
+
+  // GET /projects/:projectId/phases — the phase list + each phase's sign-off
+  // history. Lazy-inits the two default phases for legacy projects on first read.
+  async function listPhases({ session, params }) {
+    try {
+      const out = await phases.listPhases(params.projectId, actorOf(session));
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /projects/:projectId/phases/:phaseId/sign-off — open a sign-off request
+  // (phase must be active + ≥1 plan task; one pending request per phase).
+  async function requestSignOff({ session, params }) {
+    try {
+      const out = await phases.requestSignOff(
+        params.projectId, params.phaseId, actorOf(session));
+      return { status: 201, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /projects/:projectId/phases/:phaseId/sign-off/:requestId/approve —
+  // sign the plan off (phase → signed_off, one-way). Optional { comment }.
+  async function approveSignOff({ session, params, body }) {
+    try {
+      const out = await phases.approveSignOff(
+        params.projectId, params.phaseId, params.requestId, actorOf(session), body ?? {});
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /projects/:projectId/phases/:phaseId/sign-off/:requestId/reject —
+  // decline (phase stays active). Optional { comment } returned to the requester.
+  async function rejectSignOff({ session, params, body }) {
+    try {
+      const out = await phases.rejectSignOff(
+        params.projectId, params.phaseId, params.requestId, actorOf(session), body ?? {});
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
   return { getPlan, addStage, getStage, updateStage, reportProgress,
+    listPhases, requestSignOff, approveSignOff, rejectSignOff,
     inspectPlanImport, columnsPlanImport, previewPlanImport, confirmPlanImport,
     withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan, authorPlan, proposePlan,
     getRecord, getStageMaterials, authorMaterials, swapMaterial, getBudgetMovement,
