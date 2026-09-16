@@ -42,7 +42,7 @@ const actorOf = (session) => session?.partyId ?? null;
  * @param {import('./task-workspace.mjs').createTaskWorkspaceService} [deps.taskWorkspace]
  * @param {ReturnType<import('./phases.mjs').createPhaseService>} [deps.phases]
  */
-export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null, planTemplate = null, taskWorkspace = null, phases = null }) {
+export function createScheduleHttp({ service, planImport = null, planVersion = null, materials = null, planTemplate = null, specialty = null, taskWorkspace = null, phases = null }) {
   if (!service) throw new Error('createScheduleHttp requires { service }');
 
   // GET /projects/:projectId/plan — the plan-baseline D11–D13 view (B2 contract
@@ -241,6 +241,27 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
     } catch (err) { return errorBody(err); }
   }
 
+  // ── Specialty catalog (LINA-306 item 6) — per-user picker, not project-scoped ─
+
+  // GET /specialties — the caller's pickable list (system ∪ own). Pure read; the
+  // acting party is the session, never the query.
+  async function listSpecialties({ session }) {
+    try {
+      const out = await specialty.list(actorOf(session));
+      return { status: 200, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
+  // POST /specialties — create one on the fly, owned by the session party. A
+  // forged owner in the body is inert (owner_id is stamped from the session).
+  // Idempotent: re-creating a label the caller has returns the existing row.
+  async function createSpecialty({ session, body }) {
+    try {
+      const out = await specialty.create(actorOf(session), body ?? {});
+      return { status: 201, body: out };
+    } catch (err) { return errorBody(err); }
+  }
+
   // ── Task workspace (LINA-249) — per-stage comments & attachments ──────────
   // Members only, both directions shared build context (NOT party-scoped like a
   // private draft). The actor is the session party — the client never names the
@@ -327,5 +348,6 @@ export function createScheduleHttp({ service, planImport = null, planVersion = n
     withdrawPlan, acceptPlan, rejectPlan, requestChangesPlan, authorPlan, proposePlan,
     getRecord, getStageMaterials, authorMaterials, swapMaterial, getBudgetMovement,
     resolvePlanTemplate, savePlanTemplate,
+    listSpecialties, createSpecialty,
     getWorkspace, addStageComment, addStageAttachment };
 }

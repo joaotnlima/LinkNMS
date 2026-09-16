@@ -644,6 +644,62 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
+  /specialties:
+    get:
+      tags: [schedule]
+      summary: The caller's pickable specialty (trade) list (LINA-306)
+      description: >-
+        The suggest catalog behind the plan grid's "Specialty" chip: the seeded
+        `system` trade set ∪ any the caller has created, de-duped
+        case-insensitively and sorted by label. A specialty carries NO audit
+        weight — the chosen label is still stored free-form on the stage; this
+        only powers the picker. Per-user and project-independent (a caller's
+        creations follow them across every project), so it lives at the top level,
+        not under `/projects/{id}`. The acting party is the session.
+      responses:
+        '200':
+          description: The caller's pickable specialties.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [specialties]
+                properties:
+                  specialties:
+                    type: array
+                    items: { $ref: '#/components/schemas/Specialty' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      tags: [schedule]
+      summary: Create a specialty on the fly, owned by the caller
+      description: >-
+        Remember a typed trade label so it is offered on the caller's next build.
+        `owner_id` is stamped from the session (a forged owner in the body is
+        inert, ADR-0004). Idempotent: re-creating a label the caller already owns
+        returns the existing row; a label that only exists as a `system` row is
+        handed back rather than copied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label: { type: string, minLength: 1, maxLength: 120 }
+      responses:
+        '201':
+          description: The created (or already-known) specialty.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [specialty]
+                properties:
+                  specialty: { $ref: '#/components/schemas/Specialty' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
 components:
   parameters:
     ProjectId:
@@ -1206,6 +1262,22 @@ components:
             name: { type: string }
             isDefault: { type: boolean }
             updatedAt: { type: string, format: date-time }
+
+    Specialty:
+      type: object
+      required: [id, label, ownerScope, mine]
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string, maxLength: 120 }
+        ownerScope:
+          type: string
+          enum: [system, user]
+          description: >-
+            `system` = a seeded, everyone-sees-it trade; `user` = one this party
+            created. Used only for a small "yours" hint in the picker, never to gate.
+        mine:
+          type: boolean
+          description: True when ownerScope is `user` (this party created it).
 
     StageCommentCreate:
       type: object
