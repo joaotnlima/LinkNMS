@@ -39,8 +39,14 @@ export interface SignOffPanelProps {
   viewer: SignOffViewerContext;
   /** Tasks + sub-tasks currently in the plan — the "anything to sign off" test. */
   taskCount: number;
-  /** Resolves a party id to a name; the panel never invents one. */
-  nameOf?: (partyId: string) => string | undefined;
+  /**
+   * Party id → display name, as a plain serializable map. It is a map, not a
+   * `(id) => name` function, on purpose: this is a Client Component, and a
+   * function prop cannot cross the RSC boundary ("Functions cannot be passed
+   * directly to Client Components" — LINA-306). The panel never invents a name;
+   * a miss falls back to "the other party".
+   */
+  partyNames?: Record<string, string>;
   /** Where "Raise a change order" goes once the plan is locked. */
   changeOrderHref?: string;
 }
@@ -61,7 +67,7 @@ function signOffPath(projectId: string, phaseId: string, suffix = '') {
 }
 
 export function SignOffPanel({
-  projectId, phase, viewer, taskCount, nameOf, changeOrderHref,
+  projectId, phase, viewer, taskCount, partyNames, changeOrderHref,
 }: SignOffPanelProps) {
   const router = useRouter();
   const [busy, setBusy] = useState<Busy>(null);
@@ -71,7 +77,7 @@ export function SignOffPanel({
   const [comment, setComment] = useState('');
 
   const c = signOffControls(phase, viewer, taskCount);
-  const who = (r: SignOffRequest) => r.requestedByName ?? nameOf?.(r.requestedBy) ?? 'the other party';
+  const who = (r: SignOffRequest) => r.requestedByName ?? partyNames?.[r.requestedBy] ?? 'the other party';
 
   async function post(url: string, body: unknown, mode: Exclude<Busy, null>) {
     setBusy(mode);
