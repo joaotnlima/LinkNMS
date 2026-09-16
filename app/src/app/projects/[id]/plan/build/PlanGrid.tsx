@@ -86,17 +86,20 @@ const BASE_LABELS: Array<[TimeBase, string]> = [
   ['auto', 'Fit plan'], ['week', 'Week'], ['month', 'Month'], ['quarter', 'Quarter'],
   ['half', '6 months'], ['year', 'Year'], ['custom', 'Custom range'],
 ];
-/** Row heights, shared by the table cell and its track so the panes align. */
-const H = { phase: 36, task: 42, sub: 36, add: 34 } as const;
+/** Row heights, shared by the table cell and its track so the panes align.
+ *  Compact rows with thin bars (founder, LINA-306): a task row is 34px, a
+ *  sub-task row 28px — tighter than before so more of the plan reads at once. */
+const H = { phase: 34, task: 34, sub: 28, add: 32 } as const;
 const AXIS_H = 28;
 /**
  * Each bar's vertical middle WITHIN its track, in px — where a dependency
- * connector attaches (LINA-253). These mirror plan-build.css exactly: a task bar
- * is `top: 6px; height: 24px`, a sub-task bar `top: 5px; height: 18px`, a phase
- * envelope `top: 12px; height: 12px`. Kept here rather than measured because the
- * whole point of the pure geometry is that it needs no layout pass to be right.
+ * connector attaches (LINA-253). These mirror plan-build.css EXACTLY (change one
+ * and the other, or the arrows detach): a task bar is `top: 9px; height: 16px`,
+ * a sub-task bar `top: 8px; height: 12px`, a phase envelope `top: 14px;
+ * height: 6px`. Kept here rather than measured because the whole point of the
+ * pure geometry is that it needs no layout pass to be right.
  */
-const BAR_MID = { phase: 18, task: 18, sub: 14 } as const;
+const BAR_MID = { phase: 17, task: 17, sub: 14 } as const;
 /** Resizable columns' minimum widths — below these the cell content breaks. */
 const COL_MIN = { name: 120, trade: 56, dates: 150 } as const;
 /** Largest a column may grow to (drag or auto-fit). */
@@ -268,7 +271,20 @@ export function PlanGrid(props: PlanGridProps) {
   // only; it never touches the draft. One `collapsed` set keyed by node key
   // serves both levels, and filtering the row list here keeps the table and the
   // canvas aligned for free — both panes map the same `rows`.
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(EMPTY_KEYS);
+  // First-preview default (founder, LINA-306): only the 1st and 2nd levels are
+  // "opened" — phases (L1) show their tasks (L2), but every task that has grown
+  // 3rd-level sub-tasks starts FOLDED, so a plan opens as a readable one- or
+  // two-level outline rather than every leaf at once. Phases are never seeded
+  // here, so they stay open; the author expands a task to see its sub-tasks.
+  // Lazy init: it seeds the initial view once, and every later fold/expand is
+  // the author's own (adding a sub-task auto-expands its parent via `expand`).
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => {
+    const seed = new Set<string>();
+    phases.forEach((p) => p.tasks.forEach((t) => {
+      if ((t.children ?? []).length > 0) seed.add(t.key);
+    }));
+    return seed;
+  });
   const toggleFold = useCallback((key: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);

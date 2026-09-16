@@ -219,8 +219,16 @@ function rowOfKey(
 
 export function PlanBuildEditor({
   projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
+  importHref = null,
 }: {
   projectId: string;
+  /**
+   * Where the "import a spreadsheet instead" link points, or null to hide it.
+   * The plan page passes it only for the GC (importing is theirs, B1 §5) — the
+   * editor is now the plan's landing surface, so this is the door to the import
+   * route the old empty-plan chooser used to hold.
+   */
+  importHref?: string | null;
   /** An existing saved draft to resume editing; absent → scaffold from the template. */
   initialPhases?: PhaseDraft[];
   /**
@@ -585,6 +593,13 @@ export function PlanBuildEditor({
               nothing at all to this plan. */}
           {defaultSaved ? (
             <span role="status" className="pbx-saved">Saved as your default — your next build starts here.</span>
+          ) : null}
+          {importHref ? (
+            <Link className="pbx-icon" href={importHref}
+              title="Bring the plan in from a spreadsheet instead"
+              style={{ width: 'auto', padding: '0 10px', display: 'inline-flex', alignItems: 'center' }}>
+              Import a spreadsheet
+            </Link>
           ) : null}
           <button type="button" className="pbx-icon" onClick={reset}
             disabled={savingDefault}

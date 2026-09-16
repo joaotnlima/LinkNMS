@@ -139,13 +139,24 @@ async function buildExecutionSlot(ctx: {
   hasPlan: boolean;
   isGC: boolean;
 }) {
-  const { id, compose, plan, parties, execution, session, hasPlan, isGC } = ctx;
+  const { id, compose, plan, parties, execution, session, isGC } = ctx;
 
   // ── Authoring, folded in from the retired sub-routes ──────────────────────
   if (compose === 'import') {
     return <PlanImportWizard projectId={id} projectName={ctx.build.name} />;
   }
-  if (compose === 'build') {
+
+  // The plan surface IS the interactive Gantt editor whenever the plan is still
+  // the author's to shape — no plan yet, or an unsent draft (founder, LINA-306:
+  // "/plan should land on /plan/build — exact same view"). `/plan/build` still
+  // 307s here, but the editor no longer waits on `?compose=build`: landing on
+  // /plan with nothing proposed shows the grid directly rather than a chooser or
+  // a static preview. A PROPOSED or FROZEN plan drops through to the review /
+  // baseline surface below, where a change routes through request-changes /
+  // change orders, never free authoring.
+  const authoring = compose === 'build'
+    || (plan.baseline === null && (plan.current === null || plan.current.status === 'draft'));
+  if (authoring) {
     const template = await resolveTemplate();
     // "Keep editing" resumes the saved draft. getPlan surfaces a draft to its
     // author ONLY (LINA-230), so a `draft` current is this party's to resume;
@@ -161,6 +172,10 @@ async function buildExecutionSlot(ctx: {
         templateBody={template}
         parties={parties}
         savedStageKeys={savedStageKeys}
+        // Importing is the GC's route (B1 §5). Landing straight in the editor
+        // used to hide the "upload a spreadsheet" door the old chooser offered —
+        // this keeps it one click away, only for the party it belongs to.
+        importHref={isGC ? `/projects/${id}/plan?compose=import` : null}
       />
     );
   }
@@ -191,16 +206,15 @@ async function buildExecutionSlot(ctx: {
 
   return (
     <>
-      {hasPlan ? (
-        <PlanBaseline
-          projectId={id}
-          view={plan}
-          actorPartyId={session?.partyId ?? null}
-          parties={parties}
-        />
-      ) : (
-        <NoPlanYet projectId={id} isGC={isGC} />
-      )}
+      {/* Not authoring → the plan is proposed or frozen, so `hasPlan` is always
+          true here: the review / baseline surface, never the empty-plan chooser
+          (that case now opens the editor above). */}
+      <PlanBaseline
+        projectId={id}
+        view={plan}
+        actorPartyId={session?.partyId ?? null}
+        parties={parties}
+      />
 
       {execution ? (
         <SignOffPanel
@@ -232,59 +246,3 @@ async function resolveTemplate(): Promise<TemplatePhase[] | undefined> {
   }
 }
 
-/**
- * The two routes into a plan that does not exist yet (pen D7). They are folded
- * onto this page: "Build the plan" and "Upload plan" open the authoring editor
- * inline via `?compose=`, on this same URL — the standalone `/plan/build` and
- * `/plan/import` routes now redirect here, so a link to them would loop.
- */
-function NoPlanYet({ projectId, isGC }: { projectId: string; isGC: boolean }) {
-  return (
-    <>
-      <div className="pi-head">
-        <h1 className="pi-title">Add your plan</h1>
-        <p className="pi-lede">
-          Actions, sub-actions and the dates they run. However it gets in, the plan is the
-          contractor&apos;s — nothing here is binding until both parties agree it.
-        </p>
-      </div>
-
-      <div className="pi-routes">
-        <section className="pi-route">
-          <p className="pi-route-n">Route 1</p>
-          <h2 className="pi-route-t">Import a spreadsheet</h2>
-          <p className="pi-route-b">
-            You already have the plan in Excel. Choose the file, tell us what each column means,
-            confirm what will be stored.
-          </p>
-          <p className="pi-route-meta">.xlsx · multi-sheet · you pick the tab</p>
-          {isGC ? (
-            <Link className="btn primary" href={`/projects/${projectId}/plan?compose=import`}>Upload plan</Link>
-          ) : (
-            // B1 contract §5: importing is the GC's, not the owner's. An owner
-            // sees the route and why it is not theirs rather than a button that 403s.
-            <p className="cap">The plan is the contractor&apos;s to bring in.</p>
-          )}
-        </section>
-
-        <section className="pi-route">
-          <p className="pi-route-n">Route 2</p>
-          <h2 className="pi-route-t">Build it here</h2>
-          <p className="pi-route-b">
-            No spreadsheet — start from a standard skeleton, then add phases and tasks directly and
-            date them where you know them.
-          </p>
-          <p className="pi-route-meta">seeded skeleton · phases &amp; tasks · optional dates</p>
-          {/* Either party may author (ADR-0017 §3): it is proposed to the other to
-              agree, so there is no role gate here. */}
-          <Link className="btn primary" href={`/projects/${projectId}/plan?compose=build`}>Build the plan</Link>
-        </section>
-      </div>
-
-      <p className="cap">
-        Whichever route you take, the plan is the contractor&apos;s: they own it and only they can
-        revise it. The owner can propose a change, never overwrite one.
-      </p>
-    </>
-  );
-}
