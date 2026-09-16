@@ -537,7 +537,7 @@
    draggable bar (it stays inert). It renders even when the phase is folded, so a
    collapsed phase still shows its schedule at a glance. */
 .pgd-envbar {
-  position: absolute; top: 15px; height: 6px; border-radius: 999px;
+  position: absolute; top: 14px; height: 6px; border-radius: 999px;
   background: color-mix(in srgb, var(--plan-baseline) 70%, transparent);
   pointer-events: none;
 }
@@ -620,13 +620,15 @@
   position: absolute; top: 6px; left: 4px; white-space: nowrap;
   font-size: 10px; font-weight: 600; color: var(--muted);
 }
-.pgt-band { height: 30px; border-bottom: 1px solid var(--outline); background: var(--sunken); }
-.pgt-track { position: relative; height: 36px; border-bottom: 1px solid var(--outline); }
+/* Default heights track the JS `H` constants (LINA-306 compact rows); the
+   component still sets each row's exact height inline so the panes stay aligned. */
+.pgt-band { height: 34px; border-bottom: 1px solid var(--outline); background: var(--sunken); }
+.pgt-track { position: relative; height: 34px; border-bottom: 1px solid var(--outline); }
 .pgt-track.is-sub { height: 28px; }
 .pgt-gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--outline); opacity: 0.5; }
 
 .pgt-bar {
-  position: absolute; top: 6px; height: 24px; box-sizing: border-box;
+  position: absolute; top: 9px; height: 16px; box-sizing: border-box;
   display: flex; align-items: center; overflow: hidden;
   background: color-mix(in srgb, var(--plan-baseline) 20%, var(--paper));
   border: 1px solid var(--plan-baseline); border-radius: 6px;
@@ -644,7 +646,7 @@
 /* A sub-task bar is the third weight: thinner, paler fill, softer corners, so a
    glance down the column reads phase → task → sub-task (LINA-244). */
 .pgt-bar.is-sub {
-  top: 5px; height: 18px; border-radius: 4px;
+  top: 8px; height: 12px; border-radius: 4px;
   background: color-mix(in srgb, var(--plan-baseline) 10%, var(--paper));
   border-color: color-mix(in srgb, var(--plan-baseline) 55%, transparent);
 }
