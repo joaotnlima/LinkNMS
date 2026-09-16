@@ -212,8 +212,9 @@ export interface PlanGridProps {
   /**
    * Author a dependency by dragging one bar's edge onto another's (LINA-306).
    * `fromKey` is the DEPENDENT (it carries the link); `toKey` the predecessor.
-   * The type is derived from which edges the drag joined:
-   *   start→end = starts_after · start→start = starts_with · end→end = ends_with.
+   * The caller resolves type AND direction from the edges joined (depFromEdges),
+   * so a finish-to-start link can be drawn either way — end→start (drag a task's
+   * finish onto the next task's start) as well as start→end.
    */
   onLinkDep: (fromKey: string, toKey: string, type: DepType) => void;
   /**
@@ -231,19 +232,27 @@ const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
 const LINK_SNAP = 14;
 
 /**
- * The dependency type a link drag declares, from the two edges it joined
- * (LINA-306). The SOURCE edge is on the dependent (the bar the drag started on);
- * the TARGET edge is on the predecessor:
- *   • start → end   — this starts once that one finishes  (starts_after)
- *   • start → start — this starts when that one starts     (starts_with)
- *   • end   → end   — this finishes when that one finishes (ends_with)
- * end → start has no meaning in the vocabulary — the founder's "it's impossible
- * to link to both ends" — so it returns null and the drag is dropped.
+ * The dependency a link drag declares, from the two edges it joined (LINA-306).
+ * The gesture is SYMMETRIC — the author may draw a finish-to-start link either
+ * way round, and the direction (which side carries the link) is resolved from
+ * the edges, not from which bar the drag happened to start on:
+ *   • start → end   — this starts once that one finishes   (starts_after; dep = source)
+ *   • end   → start — that finishes, then this one starts   (starts_after; dep = target)
+ *   • start → start — both start together                  (starts_with)
+ *   • end   → end   — both finish together                 (ends_with)
+ * The `end → start` case is the founder's ask: drag a task's END onto the next
+ * task's START to say "this one, then that one". `from` is the edge the drag left
+ * (on `fromKey`); `to` the edge it landed on (on `toKey`). Every edge pairing now
+ * names a link, so a drop on any bar edge lands. Returns the DEPENDENT (carries
+ * the `dependsOn`) and its PREDECESSOR, in onLinkDep's argument order.
  */
-function depTypeForEdges(from: 'start' | 'end', to: 'start' | 'end'): DepType | null {
-  if (from === 'start' && to === 'end') return 'starts_after';
-  if (from === 'start' && to === 'start') return 'starts_with';
-  if (from === 'end' && to === 'end') return 'ends_with';
+function depFromEdges(
+  fromKey: string, from: 'start' | 'end', toKey: string, to: 'start' | 'end',
+): { dependent: string; predecessor: string; type: DepType } | null {
+  if (from === 'start' && to === 'end') return { dependent: fromKey, predecessor: toKey, type: 'starts_after' };
+  if (from === 'end' && to === 'start') return { dependent: toKey, predecessor: fromKey, type: 'starts_after' };
+  if (from === 'start' && to === 'start') return { dependent: fromKey, predecessor: toKey, type: 'starts_with' };
+  if (from === 'end' && to === 'end') return { dependent: fromKey, predecessor: toKey, type: 'ends_with' };
   return null;
 }
 
@@ -633,7 +642,7 @@ export function PlanGrid(props: PlanGridProps) {
 
   // ── Draw-a-dependency on the Gantt (LINA-306) ──────────────────────────────
   // The author drags the ＋ handle off one bar's edge onto another bar's edge;
-  // the pair of edges names the type (depTypeForEdges). All geometry is in
+  // the pair of edges names the type AND direction (depFromEdges). All geometry is in
   // canvas px — the same space the bars and connectors live in — so a preview
   // line and the snap ring line up with the bars with no second coordinate
   // system. `linkTargets` is every DATED bar's edge band, rebuilt from the same
@@ -701,10 +710,10 @@ export function PlanGrid(props: PlanGridProps) {
       if (y < t.yTop - 4 || y > t.yBot + 4) continue; // must be over that row's band
       const dl = Math.abs(x - t.xL);
       const dr = Math.abs(x - t.xR);
-      // The nearer edge wins; a valid combo is preferred over an invalid one at
-      // equal distance so the author can always reach the link they mean.
-      if (dl <= best && depTypeForEdges(d.fromEdge, 'start')) { best = dl; target = { key: t.key, edge: 'start' }; }
-      if (dr <= best && depTypeForEdges(d.fromEdge, 'end')) { best = dr; target = { key: t.key, edge: 'end' }; }
+      // Every edge pairing now names a link (depFromEdges), so both edges are
+      // reachable from either source; the nearer edge simply wins.
+      if (dl <= best) { best = dl; target = { key: t.key, edge: 'start' }; }
+      if (dr <= best) { best = dr; target = { key: t.key, edge: 'end' }; }
     }
     const next = { ...d, x, y, target };
     linkingRef.current = next;
@@ -718,9 +727,9 @@ export function PlanGrid(props: PlanGridProps) {
     if (!d) return;
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* released */ }
     if (!d.target) return;
-    const type = depTypeForEdges(d.fromEdge, d.target.edge);
-    if (!type) return; // end→start etc. — no such link
-    props.onLinkDep(d.fromKey, d.target.key, type);
+    const link = depFromEdges(d.fromKey, d.fromEdge, d.target.key, d.target.edge);
+    if (!link) return;
+    props.onLinkDep(link.dependent, link.predecessor, link.type);
   }, [props]);
 
   // Row click opens the drawer — unless the click landed on a control.
