@@ -219,10 +219,29 @@ export function PlanGrid(props: PlanGridProps) {
   const pendingChange = props.pendingChangeKeys ?? EMPTY_KEYS;
   const dir = useMemo(() => partyIndex(parties), [parties]);
 
+  // ── Per-phase fold (LINA-306) ─────────────────────────────────────────────
+  // Each phase row is an accordion: its caret folds the phase's tasks (and their
+  // sub-tasks and the "+ Add task" row) away, so the plan reads phase-by-phase
+  // like the founder's screenshot asked — "main task with children tasks inside".
+  // A collapsed phase keeps its own row AND its timeline summary bar (the derived
+  // envelope spans the full child range regardless of fold), so folding hides the
+  // detail without hiding the phase's schedule. Session-view state only; it never
+  // touches the draft. Filtering the row list here keeps the table and the canvas
+  // aligned for free — both panes map the same `rows`.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(EMPTY_KEYS);
+  const togglePhase = useCallback((key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
     phases.forEach((p, pi) => {
       out.push({ kind: 'phase', pi, key: p.key, phase: p });
+      if (collapsed.has(p.key)) return; // folded: tasks + add row hidden
       p.tasks.forEach((t, ti) => {
         out.push({ kind: 'task', pi, ti, key: t.key, node: t });
         (t.children ?? []).forEach((s, si) =>
@@ -231,7 +250,7 @@ export function PlanGrid(props: PlanGridProps) {
       out.push({ kind: 'add', pi });
     });
     return out;
-  }, [phases]);
+  }, [phases, collapsed]);
 
   // ── The time base (founder follow-up, 2026-09-11): the author picks the
   // reading scale — fit / week / month / quarter / 6 months / year — or types
@@ -803,6 +822,8 @@ export function PlanGrid(props: PlanGridProps) {
             if (r.kind === 'phase') {
               const id = `P${r.pi + 1}`;
               const counts = childStatusCounts(r.phase);
+              const isFolded = collapsed.has(r.key);
+              const hasChildren = r.phase.tasks.length > 0;
               const cellFor = (c: ColKey) => {
                 if (c === 'trade') {
                   return (
@@ -844,6 +865,17 @@ export function PlanGrid(props: PlanGridProps) {
                   >⠿</span>
                   <span className="pgd-id">{id}</span>
                   <span className="pgd-name">
+                    {/* The accordion caret (LINA-306): folds this phase's tasks
+                        away. Disabled on an empty phase — nothing to fold. */}
+                    <button
+                      type="button"
+                      className={`pbx-icon pgd-fold${isFolded ? '' : ' is-open'}`}
+                      aria-expanded={!isFolded}
+                      aria-label={`${isFolded ? 'Expand' : 'Collapse'} phase ${r.pi + 1}`}
+                      title={isFolded ? 'Expand phase' : 'Collapse phase'}
+                      disabled={!hasChildren}
+                      onClick={(e) => { e.stopPropagation(); togglePhase(r.key); }}
+                    >▸</button>
                     {name(r, id)}
                     {meter(counts, `Phase ${r.pi + 1}`)}
                   </span>
