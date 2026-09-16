@@ -201,6 +201,7 @@ async function buildExecutionSlot(ctx: {
 
       {execution ? (
         <SignOffPanel
+          projectId={id}
           phase={execution}
           viewer={viewer}
           taskCount={taskCount}
