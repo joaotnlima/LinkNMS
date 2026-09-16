@@ -63,13 +63,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  addDays, applyDrag, barRect, baseWindow, clickDates, clipBarGeom, connectorPath, diffDays,
+  addDays, applyDrag, barRect, baseWindow, clickDates, clipBarGeom, connectorPath,
   formatDay, parseDay,
   type ConnectorEnd, type DragMode, type GanttWindow, type TimeBase,
 } from '@/lib/plan-gantt';
 import {
   DEP_LABELS, childStatusCounts, nodeIndex, planLinks,
-  type PhaseDraft, type StatusCounts, type TaskDraft,
+  type DepType, type PhaseDraft, type StatusCounts, type TaskDraft,
 } from '@/lib/plan-authoring';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { PendingChangeChip } from '@/components/SignOffPanel';
@@ -128,19 +128,6 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 function dayLabel(iso: string): string {
   const [, m, d] = iso.split('-').map(Number);
   return `${MONTHS[m - 1]} ${d}`;
-}
-
-/**
- * The hover-tooltip text for a bar (LINA-259 ask 1): "Mar 3 – Mar 10 · 8 days"
- * for a dated bar, the single day for a half-dated (open) one. All day math goes
- * through parseDay/diffDays/formatDay — never a raw Date — so the count is exact
- * regardless of timezone, the same discipline the drag math keeps.
- */
-function barTip(start: string, end: string): string {
-  if (!start && !end) return '';
-  if (!start || !end) return dayLabel(start || end);
-  const n = (diffDays(start, end) ?? 0) + 1; // inclusive span
-  return `${dayLabel(start)} – ${dayLabel(end)} · ${n} ${n === 1 ? 'day' : 'days'}`;
 }
 
 /** 'YYYY-MM-DD' → weekday 0..6 (Mon=0) for the week-boundary axis ticks. */
@@ -209,30 +196,77 @@ export interface PlanGridProps {
   /** Promote / demote a row in the WBS (LINA-259 ask 7). No-op when disallowed. */
   onPromote: (pi: number, ti: number, si?: number) => void;
   onDemote: (pi: number, ti: number, si?: number) => void;
+  /**
+   * Author a dependency by dragging one bar's edge onto another's (LINA-306).
+   * `fromKey` is the DEPENDENT (it carries the link); `toKey` the predecessor.
+   * The type is derived from which edges the drag joined:
+   *   start→end = starts_after · start→start = starts_with · end→end = ends_with.
+   */
+  onLinkDep: (fromKey: string, toKey: string, type: DepType) => void;
 }
 
 /** Module-level so the default never changes identity between renders. */
 const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
+
+/** How near (px) a link drag must come to a bar edge to snap onto it. */
+const LINK_SNAP = 14;
+
+/**
+ * The dependency type a link drag declares, from the two edges it joined
+ * (LINA-306). The SOURCE edge is on the dependent (the bar the drag started on);
+ * the TARGET edge is on the predecessor:
+ *   • start → end   — this starts once that one finishes  (starts_after)
+ *   • start → start — this starts when that one starts     (starts_with)
+ *   • end   → end   — this finishes when that one finishes (ends_with)
+ * end → start has no meaning in the vocabulary — the founder's "it's impossible
+ * to link to both ends" — so it returns null and the drag is dropped.
+ */
+function depTypeForEdges(from: 'start' | 'end', to: 'start' | 'end'): DepType | null {
+  if (from === 'start' && to === 'end') return 'starts_after';
+  if (from === 'start' && to === 'start') return 'starts_with';
+  if (from === 'end' && to === 'end') return 'ends_with';
+  return null;
+}
+
+/** A live link-drag: the source edge it left, and the target edge it is over. */
+type LinkDrag = {
+  fromKey: string;
+  fromEdge: 'start' | 'end';
+  x0: number; y0: number;   // the source edge anchor, in canvas px
+  x: number; y: number;     // the pointer, in canvas px
+  target: { key: string; edge: 'start' | 'end' } | null;
+};
 
 export function PlanGrid(props: PlanGridProps) {
   const { phases, parties, litRows, disabled, todayIso } = props;
   const pendingChange = props.pendingChangeKeys ?? EMPTY_KEYS;
   const dir = useMemo(() => partyIndex(parties), [parties]);
 
-  // ── Per-phase fold (LINA-306) ─────────────────────────────────────────────
-  // Each phase row is an accordion: its caret folds the phase's tasks (and their
-  // sub-tasks and the "+ Add task" row) away, so the plan reads phase-by-phase
-  // like the founder's screenshot asked — "main task with children tasks inside".
-  // A collapsed phase keeps its own row AND its timeline summary bar (the derived
-  // envelope spans the full child range regardless of fold), so folding hides the
-  // detail without hiding the phase's schedule. Session-view state only; it never
-  // touches the draft. Filtering the row list here keeps the table and the canvas
-  // aligned for free — both panes map the same `rows`.
+  // ── Accordion fold, phases AND tasks (LINA-306) ────────────────────────────
+  // Any row that HAS children folds: a phase folds its tasks (and the "+ Add
+  // task" row); a task that has grown a 3rd-level sub-task becomes an accordion
+  // too — the founder's ask, "the new 3rd level child should trigger the 2nd
+  // level to become also an accordion". A folded row keeps its own row AND its
+  // timeline bar (a phase its derived envelope, a task its own bar), so folding
+  // hides the children without hiding the parent's schedule. Session-view state
+  // only; it never touches the draft. One `collapsed` set keyed by node key
+  // serves both levels, and filtering the row list here keeps the table and the
+  // canvas aligned for free — both panes map the same `rows`.
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(EMPTY_KEYS);
-  const togglePhase = useCallback((key: string) => {
+  const toggleFold = useCallback((key: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+  // Adding a sub-task must reveal it: a task the author had folded expands so the
+  // new child is not hidden the instant it is created.
+  const expand = useCallback((key: string) => {
+    setCollapsed((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
       return next;
     });
   }, []);
@@ -241,9 +275,10 @@ export function PlanGrid(props: PlanGridProps) {
     const out: Row[] = [];
     phases.forEach((p, pi) => {
       out.push({ kind: 'phase', pi, key: p.key, phase: p });
-      if (collapsed.has(p.key)) return; // folded: tasks + add row hidden
+      if (collapsed.has(p.key)) return; // phase folded: tasks + add row hidden
       p.tasks.forEach((t, ti) => {
         out.push({ kind: 'task', pi, ti, key: t.key, node: t });
+        if (collapsed.has(t.key)) return; // task folded: its sub-tasks hidden
         (t.children ?? []).forEach((s, si) =>
           out.push({ kind: 'task', pi, ti, si, key: s.key, node: s }));
       });
@@ -524,6 +559,98 @@ export function PlanGrid(props: PlanGridProps) {
     const d = clickDates(w, x / col);
     props.onDates(r.pi, r.ti, d.start, d.end, r.si);
   }, [disabled, props, col]);
+
+  // ── Draw-a-dependency on the Gantt (LINA-306) ──────────────────────────────
+  // The author drags the ＋ handle off one bar's edge onto another bar's edge;
+  // the pair of edges names the type (depTypeForEdges). All geometry is in
+  // canvas px — the same space the bars and connectors live in — so a preview
+  // line and the snap ring line up with the bars with no second coordinate
+  // system. `linkTargets` is every DATED bar's edge band, rebuilt from the same
+  // clip geometry the bars render with, so a drop can only land on a real edge.
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [linking, setLinking] = useState<LinkDrag | null>(null);
+  const linkingRef = useRef<LinkDrag | null>(null);
+
+  const linkTargets = useMemo(() => {
+    const out: Array<{ key: string; xL: number; xR: number; yTop: number; yBot: number }> = [];
+    if (!win) return out;
+    let top = AXIS_H;
+    for (const r of rows) {
+      const h = rowH(r);
+      let box: { x: number; width: number } | null = null;
+      if (r.kind === 'phase') {
+        const env = phaseEnvelope(r.phase);
+        const bar = env ? clipBarGeom(win, env.start, env.end) : null;
+        box = bar ? barRect(bar.offsetDays, bar.spanDays, col) : null;
+      } else if (r.kind === 'task') {
+        const bar = clipBarGeom(win, r.node.start, r.node.end);
+        box = bar ? barRect(bar.offsetDays, bar.spanDays, col) : null;
+      }
+      if (box && r.kind !== 'add') {
+        out.push({ key: r.key, xL: box.x, xR: box.x + box.width, yTop: top, yBot: top + h });
+      }
+      top += h;
+    }
+    return out;
+  }, [rows, win, col]);
+  // Read by the pointer handlers, which must see the LATEST targets (a stale
+  // closure would hit-test against the geometry as it was at pointer-down).
+  const linkTargetsRef = useRef(linkTargets);
+  linkTargetsRef.current = linkTargets;
+
+  const toCanvas = useCallback((e: React.PointerEvent) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    return rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : { x: 0, y: 0 };
+  }, []);
+
+  const onLinkDown = useCallback((
+    e: React.PointerEvent, key: string, edge: 'start' | 'end',
+  ) => {
+    if (disabled || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation(); // never let this start a bar move
+    const src = linkTargetsRef.current.find((t) => t.key === key);
+    if (!src) return;
+    const x0 = edge === 'start' ? src.xL : src.xR;
+    const y0 = (src.yTop + src.yBot) / 2;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const start: LinkDrag = { fromKey: key, fromEdge: edge, x0, y0, x: x0, y: y0, target: null };
+    linkingRef.current = start;
+    setLinking(start);
+  }, [disabled]);
+
+  const onLinkMove = useCallback((e: React.PointerEvent) => {
+    const d = linkingRef.current;
+    if (!d) return;
+    const { x, y } = toCanvas(e);
+    let target: { key: string; edge: 'start' | 'end' } | null = null;
+    let best = LINK_SNAP;
+    for (const t of linkTargetsRef.current) {
+      if (t.key === d.fromKey) continue;            // never link a bar to itself
+      if (y < t.yTop - 4 || y > t.yBot + 4) continue; // must be over that row's band
+      const dl = Math.abs(x - t.xL);
+      const dr = Math.abs(x - t.xR);
+      // The nearer edge wins; a valid combo is preferred over an invalid one at
+      // equal distance so the author can always reach the link they mean.
+      if (dl <= best && depTypeForEdges(d.fromEdge, 'start')) { best = dl; target = { key: t.key, edge: 'start' }; }
+      if (dr <= best && depTypeForEdges(d.fromEdge, 'end')) { best = dr; target = { key: t.key, edge: 'end' }; }
+    }
+    const next = { ...d, x, y, target };
+    linkingRef.current = next;
+    setLinking(next);
+  }, [toCanvas]);
+
+  const onLinkUp = useCallback((e: React.PointerEvent) => {
+    const d = linkingRef.current;
+    linkingRef.current = null;
+    setLinking(null);
+    if (!d) return;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* released */ }
+    if (!d.target) return;
+    const type = depTypeForEdges(d.fromEdge, d.target.edge);
+    if (!type) return; // end→start etc. — no such link
+    props.onLinkDep(d.fromKey, d.target.key, type);
+  }, [props]);
 
   // Row click opens the drawer — unless the click landed on a control.
   const onRowClick = useCallback((e: React.MouseEvent, r: Row) => {
@@ -874,7 +1001,7 @@ export function PlanGrid(props: PlanGridProps) {
                       aria-label={`${isFolded ? 'Expand' : 'Collapse'} phase ${r.pi + 1}`}
                       title={isFolded ? 'Expand phase' : 'Collapse phase'}
                       disabled={!hasChildren}
-                      onClick={(e) => { e.stopPropagation(); togglePhase(r.key); }}
+                      onClick={(e) => { e.stopPropagation(); toggleFold(r.key); }}
                     >▸</button>
                     {name(r, id)}
                     {meter(counts, `Phase ${r.pi + 1}`)}
@@ -960,6 +1087,20 @@ export function PlanGrid(props: PlanGridProps) {
                 >⠿</span>
                 <span className="pgd-id">{id}</span>
                 <span className="pgd-name">
+                  {/* A task that has grown sub-tasks becomes an accordion too
+                      (LINA-306). A leaf task (or any sub-task) gets a spacer of
+                      the caret's width instead, so names stay aligned down the
+                      column whether or not a row folds. */}
+                  {!sub && (r.node.children ?? []).length > 0 ? (
+                    <button
+                      type="button"
+                      className={`pbx-icon pgd-fold${collapsed.has(r.key) ? '' : ' is-open'}`}
+                      aria-expanded={!collapsed.has(r.key)}
+                      aria-label={`${collapsed.has(r.key) ? 'Expand' : 'Collapse'} ${what} ${id}`}
+                      title={collapsed.has(r.key) ? 'Expand task' : 'Collapse task'}
+                      onClick={(e) => { e.stopPropagation(); toggleFold(r.key); }}
+                    >▸</button>
+                  ) : <span className="pgd-fold-spacer" aria-hidden />}
                   {name(r, id)}
                   {counts ? meter(counts, `Task ${id}`) : null}
                   {/* The clay/amber tint is never the only signal (ADR-0023 §6):
@@ -973,7 +1114,7 @@ export function PlanGrid(props: PlanGridProps) {
                   {!sub ? (
                     <button type="button" className="pbx-icon" title="Add sub-task"
                       aria-label={`Add a sub-task under ${what} ${id}`} disabled={disabled}
-                      onClick={() => setEditing(props.onAddSubtask(r.pi, r.ti))}>＋</button>
+                      onClick={() => { expand(r.key); setEditing(props.onAddSubtask(r.pi, r.ti)); }}>＋</button>
                   ) : null}
                   <button type="button" className="pbx-icon" title="Move in outline (promote / demote)"
                     aria-label={`Move ${what} ${id} in the outline`} aria-haspopup="menu"
@@ -1012,7 +1153,7 @@ export function PlanGrid(props: PlanGridProps) {
         {/* ── Right: the always-visible timeline canvas. ── */}
         <div className="pgt-scroll" ref={scrollRef}>
           {win ? (
-            <div className="pgt-canvas" style={{ width: canvasWidth }}>
+            <div className={`pgt-canvas${linking ? ' is-linking' : ''}`} style={{ width: canvasWidth }} ref={canvasRef}>
               <div className="pgt-axis" style={{ height: AXIS_H }}>
                 {axis.map((c) => (
                   <div key={c.i} className={`pgt-axis-cell${c.tick ? ' is-tick' : ''}`}
@@ -1086,13 +1227,46 @@ export function PlanGrid(props: PlanGridProps) {
                         ) : null}
                       </div>
                     ) : null}
-                    {/* The hover tooltip, a sibling right after the bar so a pure
-                        CSS `:hover +` reveal keeps it out of the drag path (ask 1). */}
+                    {/* On hover: the dates on BOTH edges (founder, LINA-306) and,
+                        just outside each edge, a ＋ handle the author drags onto
+                        another bar to link them. Siblings of the bar (not children
+                        of its overflow-hidden box) so the ＋ can sit outside the
+                        bar and never be clipped; revealed on track hover in CSS.
+                        The old single right-side duration tip is replaced by these
+                        two edge labels. */}
                     {box ? (
-                      <span
-                        className="pgt-tip" aria-hidden
-                        style={{ left: box.x + box.width + 6 }}
-                      >{barTip(r.node.start, r.node.end)}</span>
+                      <>
+                        {r.node.start ? (
+                          <span className="pgt-edgedate pgt-edgedate-l" aria-hidden style={{ left: box.x }}>
+                            {dayLabel(r.node.start)}
+                          </span>
+                        ) : null}
+                        {r.node.end ? (
+                          <span className="pgt-edgedate pgt-edgedate-r" aria-hidden style={{ left: box.x + box.width }}>
+                            {dayLabel(r.node.end)}
+                          </span>
+                        ) : null}
+                        {!disabled ? (
+                          <>
+                            <button
+                              type="button" className="pgt-linksrc pgt-linksrc-l"
+                              style={{ left: box.x }}
+                              aria-label={`Link the start of ${r.node.name.trim() || 'this task'} to another task — drag onto its edge`}
+                              title="Drag onto another bar's edge to link (start)"
+                              onPointerDown={(e) => onLinkDown(e, r.key, 'start')}
+                              onPointerMove={onLinkMove} onPointerUp={onLinkUp} onPointerCancel={onLinkUp}
+                            >＋</button>
+                            <button
+                              type="button" className="pgt-linksrc pgt-linksrc-r"
+                              style={{ left: box.x + box.width }}
+                              aria-label={`Link the finish of ${r.node.name.trim() || 'this task'} to another task — drag onto its edge`}
+                              title="Drag onto another bar's edge to link (finish)"
+                              onPointerDown={(e) => onLinkDown(e, r.key, 'end')}
+                              onPointerMove={onLinkMove} onPointerUp={onLinkUp} onPointerCancel={onLinkUp}
+                            >＋</button>
+                          </>
+                        ) : null}
+                      </>
                     ) : null}
                   </div>
                 );
@@ -1132,6 +1306,31 @@ export function PlanGrid(props: PlanGridProps) {
                   ))}
                 </svg>
               ) : null}
+
+              {/* The live link-drag (LINA-306): a rubber-band from the source edge
+                  to the pointer, snapping to a target edge with a ring when it is
+                  over one. Inert overlay — the ＋ handle owns the pointer via
+                  capture, so this only ever draws. */}
+              {linking ? (() => {
+                const t = linking.target
+                  ? linkTargets.find((z) => z.key === linking.target!.key)
+                  : null;
+                const endX = t ? (linking.target!.edge === 'start' ? t.xL : t.xR) : linking.x;
+                const endY = t ? (t.yTop + t.yBot) / 2 : linking.y;
+                return (
+                  <svg
+                    className="pgt-linkdraw" width={canvasWidth} height={canvasHeight}
+                    viewBox={`0 0 ${canvasWidth} ${canvasHeight}`} aria-hidden focusable="false"
+                  >
+                    <line
+                      className={`pgt-linkdraw-line${t ? ' is-snapped' : ''}`}
+                      x1={linking.x0} y1={linking.y0} x2={endX} y2={endY}
+                    />
+                    <circle className="pgt-linkdraw-src" cx={linking.x0} cy={linking.y0} r={3.5} />
+                    {t ? <circle className="pgt-linkdraw-hit" cx={endX} cy={endY} r={5.5} /> : null}
+                  </svg>
+                );
+              })() : null}
             </div>
           ) : null}
         </div>

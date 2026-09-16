@@ -45,7 +45,7 @@
 // no approval is requested. Sending for approval is a separate, deliberate act on
 // the plan page ("Send for approval"). On save we hand the returned audit id to
 // /plan, which shows the "draft saved" stamp once and links to the audit trail.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -256,7 +256,22 @@ export function PlanBuildEditor({
   // fresh React keys, so this must run in a lazy initialiser, not every render.
   const [phases, setPhases] = useState<PhaseDraft[]>(() => initialPhases ?? seed());
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+
+  // ── Autosave (LINA-306) ─────────────────────────────────────────────────────
+  // The founder asked for no Save button: "any change we make a post request".
+  // Taken literally — one POST per keystroke or per pointermove of a drag — that
+  // would append one `plan_drafted` ledger event PER micro-edit and drown the
+  // audit trail, whose integrity is the product's whole reason to exist. So a
+  // change schedules a DEBOUNCED write: a burst of typing or a whole drag settles
+  // into ONE authorPlan() call (~900ms after the last edit), which is exactly one
+  // honest "draft saved at T" on the ledger. Saving is still PRIVATE drafting
+  // (LINA-230) — the other party sees nothing; "Send for approval" stays a
+  // separate, deliberate act on the plan page.
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);   // a write is in flight
+  const pendingRef = useRef(false);  // an edit landed mid-write — save again after
+  const phasesRef = useRef(phases);  // the latest tree, read by the debounced flush
 
   // "Save as my default" — a private preference write, tracked apart from the
   // plan save so its confirmation can never be mistaken for "the plan was sent".
@@ -294,7 +309,11 @@ export function PlanBuildEditor({
   // push and not router.replace: a Next navigation would re-render the page and
   // throw away the unsaved draft in this editor, and stacking a history entry
   // per row would turn Back into an undo of clicks nobody made.
-  const saved = useMemo(() => new Set(savedStageKeys), [savedStageKeys]);
+  // Stage keys the SERVER holds. State, not a memo: a successful autosave adds
+  // the tree's keys here, so a row the author just added lights up its workspace
+  // (comments/files) without a reload once its draft write lands.
+  const [savedKeys, setSavedKeys] = useState<Set<string>>(() => new Set(savedStageKeys));
+  const saved = savedKeys;
   const workspaceKey = activeKey && saved.has(activeKey) ? activeKey : null;
   const [copied, setCopied] = useState(false);
 
@@ -339,9 +358,83 @@ export function PlanBuildEditor({
   // has since changed and would otherwise read as though the edit was saved too.
   const apply = useCallback((next: PhaseDraft[]) => {
     setPhases(next);
+    phasesRef.current = next;
     setError(null);
     setDefaultSaved(false);
     setServerCycle([]);
+    // Debounce the write: a whole drag or a burst of typing collapses to one
+    // draft save once the author pauses (see the autosave note above).
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { flushRef.current(); }, 900);
+  }, []);
+
+  // The debounced writer. Reads the LATEST tree from the ref (a stale closure
+  // would save the plan as it was when the timer was armed, not as it settled).
+  const flushRef = useRef<() => void>(() => {});
+  const flush = useCallback(async () => {
+    const current = phasesRef.current;
+    // Never fire a write the server is certain to 409: a cycle is already spelled
+    // out in the alert, and "Save" used to sit disabled on it — autosave simply
+    // holds until the author breaks the loop, when the next edit re-arms it.
+    if (detectCycle(current)) return;
+    let stages;
+    try {
+      stages = toWire(current);
+    } catch (e) {
+      setError(e instanceof PlanAuthorError ? e.message : 'Something is off with the plan.');
+      return;
+    }
+    // Coalesce concurrent writes: if one is in flight, mark that another edit is
+    // pending and let the in-flight one re-run flush when it settles.
+    if (savingRef.current) { pendingRef.current = true; return; }
+    savingRef.current = true;
+    setSaveState('saving');
+    try {
+      await authorPlan(projectId, stages);
+      // Light up every current row's workspace: after this write the server holds
+      // them all, so a freshly-added task can collect comments/files immediately.
+      setSavedKeys((prev) => {
+        const nextKeys = new Set(prev);
+        const eat = (k: string) => nextKeys.add(k);
+        current.forEach((p) => {
+          eat(p.key);
+          p.tasks.forEach((t) => { eat(t.key); (t.children ?? []).forEach((s) => eat(s.key)); });
+        });
+        return nextKeys;
+      });
+      setSaveState('saved');
+    } catch (e) {
+      if (e instanceof PlanAuthorError && (e.code === 'open_plan_exists' || e.code === 'draft_exists')) {
+        // The draft is not this screen's to write anymore — send the author to
+        // the live plan rather than autosave into a wall.
+        router.push(`/projects/${projectId}/plan`);
+        return;
+      }
+      if (e instanceof PlanAuthorError && e.code === 'dependency_cycle') {
+        const stagesOnCycle = e.details?.stages ?? [];
+        setServerCycle(stagesOnCycle);
+        setError(stagesOnCycle.length
+          ? `These stages depend on each other in a loop: ${stagesOnCycle.map((s) => s.name).join(' → ')} → ${stagesOnCycle[0].name}. Remove one of the links to save.`
+          : e.message);
+      } else if (e instanceof PlanAuthorError
+        && (e.code === 'unknown_assignee' || e.code === 'invalid_assignee')) {
+        setError('One of the owners on this plan is no longer on this build. Reload the page and pick again.');
+      } else {
+        setError(e instanceof PlanAuthorError ? e.message : 'That did not save. Your edits are still here — they will retry on the next change.');
+      }
+      setSaveState('error');
+    } finally {
+      savingRef.current = false;
+      // An edit that landed mid-write is now unsaved — flush again for it.
+      if (pendingRef.current) { pendingRef.current = false; void flushRef.current(); }
+    }
+  }, [projectId, router]);
+
+  useEffect(() => { flushRef.current = flush; }, [flush]);
+  // Flush a still-pending debounce on unmount so the last edit is never lost when
+  // the author navigates away right after typing.
+  useEffect(() => () => {
+    if (saveTimer.current) { clearTimeout(saveTimer.current); void flushRef.current(); }
   }, []);
 
   const toggleDep = useCallback((nodeKey: string, dep: string) => {
@@ -352,6 +445,20 @@ export function PlanBuildEditor({
   // cycle error clears the moment the author touches the graph.
   const retypeDep = useCallback((nodeKey: string, dep: string, type: DepType) => {
     apply(setDependencyType(phases, nodeKey, dep, type));
+  }, [apply, phases]);
+
+  // Draw-a-dependency on the Gantt (LINA-306): the author drags from one bar's
+  // edge to another's, and the pair of edges names the type (start→end after,
+  // start→start with, end→end ends-with). `fromKey` is the DEPENDENT — it carries
+  // the link, exactly as the drawer's picker does. Upsert, not toggle: dragging
+  // onto a stage this one already waits on RE-TYPES the link rather than removing
+  // it, so re-dragging to correct the edge never silently deletes the link.
+  const linkDep = useCallback((fromKey: string, toKey: string, type: DepType) => {
+    if (fromKey === toKey) return;
+    const exists = dependsOnOf(phases, fromKey).some((d) => d.on === toKey);
+    const created = exists ? phases : toggleDependency(phases, fromKey, toKey);
+    apply(setDependencyType(created, fromKey, toKey, type));
+    setOpenDeps(null);
   }, [apply, phases]);
 
   const assign = useCallback((nodeKey: string, partyId: string | null) => {
@@ -418,64 +525,6 @@ export function PlanBuildEditor({
       : setSubtaskDates(phases, pi, ti, si, start, end));
   }, [apply, phases]);
 
-  const submit = useCallback(async () => {
-    setError(null);
-    setServerCycle([]);
-    let stages;
-    try {
-      stages = toWire(phases); // client-side validation → pointed message, no round-trip
-    } catch (e) {
-      setError(e instanceof PlanAuthorError ? e.message : 'Something is off with the plan.');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const result = await authorPlan(projectId, stages);
-      // /plan reads the saved draft and shows the "draft saved" stamp once, then
-      // links to the audit trail — the durable copy of what just happened. The
-      // plan is NOT sent for approval here; that is a separate act on /plan.
-      router.push(`/projects/${projectId}/plan?drafted=${encodeURIComponent(result.auditEventId)}`);
-    } catch (e) {
-      // THE SERVER IS THE AUTHORITY ON THE GRAPH (contract §3). It revalidates
-      // the whole thing on every save and names the offending stages, so a
-      // refusal is surfaced as ITS answer — the chain lights up on the rows and
-      // is spelled out in the alert, rather than being restated in our words.
-      if (e instanceof PlanAuthorError && e.code === 'dependency_cycle') {
-        const stagesOnCycle = e.details?.stages ?? [];
-        setServerCycle(stagesOnCycle);
-        setError(stagesOnCycle.length
-          ? `These stages depend on each other in a loop: ${stagesOnCycle.map((s) => s.name).join(' → ')} → ${stagesOnCycle[0].name}. Remove one of the links to save.`
-          : e.message);
-        setSubmitting(false);
-        return;
-      }
-      if (e instanceof PlanAuthorError && e.code === 'unknown_dependency') {
-        setError(`“${e.details?.stage ?? 'A stage'}” depends on something that is no longer in this plan. Remove that link and save again.`);
-        setSubmitting(false);
-        return;
-      }
-      // The project's member list is the picker's whole universe, so this should
-      // not be reachable — but a member removed from the build between the page
-      // load and the save makes it reachable, and the honest answer is to name
-      // the cause rather than restate the server's field-level wording.
-      if (e instanceof PlanAuthorError
-        && (e.code === 'unknown_assignee' || e.code === 'invalid_assignee')) {
-        setError('One of the owners on this plan is no longer on this build. Reload the page and pick again.');
-        setSubmitting(false);
-        return;
-      }
-      if (e instanceof PlanAuthorError && (e.code === 'open_plan_exists' || e.code === 'draft_exists')) {
-        // A plan is already open/being drafted on this build — the write is not
-        // this screen's to make. Send the author to the live plan rather than
-        // leave them re-clicking a button that will keep 409-ing.
-        router.push(`/projects/${projectId}/plan`);
-        return;
-      }
-      setError(e instanceof PlanAuthorError ? e.message : 'That did not go through. Try again.');
-      setSubmitting(false);
-    }
-  }, [phases, projectId, router]);
-
   const activeOwner = partyOf(dir, (openRow?.ti == null ? activePhase?.assigneePartyId : active?.assigneePartyId) ?? null);
 
   return (
@@ -501,6 +550,15 @@ export function PlanBuildEditor({
           {subs > 0 ? ` · ${subs} ${subs === 1 ? 'sub-task' : 'sub-tasks'}` : ''}
         </p>
         <div className="pbx-tools">
+          {/* The autosave indicator — the founder removed the Save button, so this
+              is the only signal a write happened. Quiet by design: it states, it
+              never blocks. */}
+          <span role="status" className={`pbx-autosave is-${saveState}`}>
+            {saveState === 'saving' ? 'Saving…'
+              : saveState === 'saved' ? 'All changes saved · draft only you can see'
+                : saveState === 'error' ? 'Not saved — will retry on your next edit'
+                  : 'Changes save automatically'}
+          </span>
           {/* The light confirmation. Worded so it cannot be read as "sent": this
               saved a private starting point for the author's NEXT build, and did
               nothing at all to this plan. */}
@@ -508,12 +566,12 @@ export function PlanBuildEditor({
             <span role="status" className="pbx-saved">Saved as your default — your next build starts here.</span>
           ) : null}
           <button type="button" className="pbx-icon" onClick={reset}
-            disabled={submitting || savingDefault}
+            disabled={savingDefault}
             title="Start over from your default plan" style={{ width: 'auto', padding: '0 10px' }}>
             Reset to skeleton
           </button>
           <button type="button" className="pbx-icon" onClick={saveAsDefault}
-            disabled={submitting || savingDefault}
+            disabled={savingDefault}
             title="Reuse this structure — phase and task names only — on your next build"
             style={{ width: 'auto', padding: '0 10px' }}>
             {savingDefault ? 'Saving…' : 'Save as my default'}
@@ -528,7 +586,7 @@ export function PlanBuildEditor({
         phases={phases}
         parties={parties}
         litRows={litRows}
-        disabled={submitting}
+        disabled={false}
         todayIso={todayIso}
         onOpenRow={(pi, ti, si) => setOpenRow({ pi, ti, si })}
         onRename={rename}
@@ -560,12 +618,14 @@ export function PlanBuildEditor({
         onReorderSubtask={(pi, ti, from, to) => apply(reorderSubtask(phases, pi, ti, from, to))}
         onPromote={(pi, ti, si) => apply(promoteNode(phases, pi, ti, si))}
         onDemote={(pi, ti, si) => apply(demoteNode(phases, pi, ti, si))}
+        onLinkDep={linkDep}
       />
 
       <p className="pgd-hint">
-        ↔ Drag a bar to move a task; drag its edges to change start or finish — the Start and
-        Finish columns update automatically. Click an undated row’s timeline to schedule it: the
-        bar starts on the clicked day and runs one week. Click a row to open its details.
+        ↔ Drag a bar to move a task; drag its edges to change start or finish. Hover a bar to see its
+        dates on each edge and the <strong>＋</strong> handles — drag a handle onto another bar’s edge
+        to link them (left→right = starts after it finishes, left→left = starts together, right→right =
+        finishes together). Click an undated row’s timeline to schedule it. Click a row to open its details.
       </p>
 
       {cycle ? (
@@ -577,17 +637,17 @@ export function PlanBuildEditor({
 
       {error ? <p role="alert" className="pbx-open">{error}</p> : null}
 
+      {/* No Save, no Cancel (founder, LINA-306): every edit autosaves as your
+          private draft. "Send for approval" stays a separate act on the plan. */}
       <div className="pbx-actions">
-        <Link className="btn" href={`/projects/${projectId}/plan`}>Cancel</Link>
-        <button type="button" className="btn primary" onClick={submit} disabled={submitting || cycle !== null}>
-          {submitting ? 'Saving…' : 'Save plan'}
-        </button>
+        <Link className="btn" href={`/projects/${projectId}/plan`}>View plan &amp; send for approval →</Link>
       </div>
 
       <p className="pbx-foot">
-        Saving records your work as a private draft — only you can see it, and it records one event
-        on the shared record that the draft was saved. It is not sent to the other party and no
-        approval is requested until you choose <strong>Send for approval</strong> on the plan page.
+        Your changes save automatically as a private draft — only you can see them, and each save
+        records one event on the shared record that the draft was saved. Nothing is sent to the other
+        party and no approval is requested until you choose <strong>Send for approval</strong> on the
+        plan page.
       </p>
 
       {openRow && activePhase && (openRow.ti == null || active) ? (
@@ -660,7 +720,7 @@ export function PlanBuildEditor({
                   className="pbx-ownersel"
                   value={(openRow.ti == null ? activePhase.assigneePartyId : active!.assigneePartyId) ?? ''}
                   aria-label="Owner"
-                  disabled={submitting || parties.length === 0}
+                  disabled={parties.length === 0}
                   onChange={(e) => activeKey && assign(activeKey, e.target.value || null)}
                 >
                   <option value="">Unassigned</option>
@@ -677,7 +737,7 @@ export function PlanBuildEditor({
                 placeholder="e.g. Electrical"
                 maxLength={120}
                 aria-label="Specialty (trade)"
-                disabled={submitting}
+                disabled={false}
                 onChange={(e) => activeKey && retrade(activeKey, e.target.value)}
               />
 
@@ -686,13 +746,13 @@ export function PlanBuildEditor({
                   <span className="pbx-drawer-label">Start</span>
                   <input
                     type="date" className="pbx-date" value={active.start}
-                    aria-label="Start date" disabled={submitting}
+                    aria-label="Start date" disabled={false}
                     onChange={(e) => setDate('start', e.target.value, openRow.pi, openRow.ti!, openRow.si)}
                   />
                   <span className="pbx-drawer-label">Finish</span>
                   <input
                     type="date" className="pbx-date" value={active.end}
-                    aria-label="Finish date" disabled={submitting}
+                    aria-label="Finish date" disabled={false}
                     onChange={(e) => setDate('end', e.target.value, openRow.pi, openRow.ti!, openRow.si)}
                   />
                 </>
@@ -706,7 +766,7 @@ export function PlanBuildEditor({
                   phases={phases}
                   index={index}
                   open={openDeps === activeKey}
-                  disabled={submitting}
+                  disabled={false}
                   onOpen={(next) => setOpenDeps(next ? activeKey : null)}
                   onToggle={(dep) => toggleDep(activeKey, dep)}
                   onRetype={(dep, type) => retypeDep(activeKey, dep, type)}
@@ -723,7 +783,7 @@ export function PlanBuildEditor({
                   value={active.description}
                   placeholder="What is this task? Add scope, context, anything the other party should know."
                   maxLength={4000}
-                  disabled={submitting}
+                  disabled={false}
                   onChange={(e) => apply(openRow.si != null
                     ? setSubtaskDescription(phases, openRow.pi, openRow.ti!, openRow.si, e.target.value)
                     : setTaskDescription(phases, openRow.pi, openRow.ti!, e.target.value))}
