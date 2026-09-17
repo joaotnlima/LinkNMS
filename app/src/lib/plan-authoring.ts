@@ -932,18 +932,12 @@ function spanMs(
   return s === null || e === null ? null : { start: s, end: e };
 }
 
-/**
- * Snap every dependent's dates to obey its links, duration-preserving, in a
- * single topological pass so a chain (A → B → C) settles at once. A cyclic draft
- * is returned untouched — you cannot order a cycle, and the draft is free to hold
- * one transiently (the save is what refuses it), so enforcement simply waits for
- * the author to break it rather than looping.
- */
-export function enforceDependencies(phases: PhaseDraft[]): PhaseDraft[] {
-  if (detectCycle(phases)) return phases;
-
-  const link = edges(phases);
-  const nodes = planNodes(phases);
+/** The live date + phase-envelope maps enforcement reads and writes. */
+function dateMaps(phases: PhaseDraft[]): {
+  phaseKeys: Set<string>;
+  phaseChildren: Map<string, string[]>;
+  dates: Map<string, { start: string; end: string }>;
+} {
   const phaseKeys = new Set(phases.map((p) => p.key));
   const phaseChildren = new Map<string, string[]>();
   const dates = new Map<string, { start: string; end: string }>();
@@ -956,6 +950,87 @@ export function enforceDependencies(phases: PhaseDraft[]): PhaseDraft[] {
     }
     phaseChildren.set(p.key, kidKeys);
   }
+  return { phaseKeys, phaseChildren, dates };
+}
+
+/**
+ * New dates for ONE dependent so it obeys its links, duration-preserving, or
+ * null when nothing moves (undated, no dated predecessor, or already snapped).
+ * Predecessor spans are read from the live `dates` map — a phase key resolves to
+ * its children's envelope. Several predecessors take the LATEST (max) constraint
+ * so every "after" is satisfied at once.
+ */
+function snapToLinks(
+  key: string,
+  deps: DepEdge[],
+  dates: Map<string, { start: string; end: string }>,
+  phaseKeys: Set<string>,
+  phaseChildren: Map<string, string[]>,
+): { start: string; end: string } | null {
+  const self = dates.get(key);
+  if (!self) return null;
+  const s = parseDay(self.start);
+  const e = parseDay(self.end);
+  if (s === null || e === null) return null;     // undated — nothing to shift yet
+  const dur = e - s;
+
+  let startTarget: number | null = null;
+  let endTarget: number | null = null;
+  for (const d of deps) {
+    const span = spanMs(d.on, dates, phaseKeys, phaseChildren);
+    if (!span) continue;
+    if (d.type === 'starts_after') {
+      const t = parseDay(addDays(formatDay(span.end), 1)) as number;
+      startTarget = startTarget === null ? t : Math.max(startTarget, t);
+    } else if (d.type === 'starts_with') {
+      startTarget = startTarget === null ? span.start : Math.max(startTarget, span.start);
+    } else if (d.type === 'ends_with') {
+      endTarget = endTarget === null ? span.end : Math.max(endTarget, span.end);
+    }
+  }
+
+  let ns = s;
+  let ne = e;
+  if (startTarget !== null) { ns = startTarget; ne = ns + dur; }
+  else if (endTarget !== null) { ne = endTarget; ns = ne - dur; }
+  if (ns === s && ne === e) return null;
+  return { start: formatDay(ns), end: formatDay(ne) };
+}
+
+/** Rebuild the tree from a mutated `dates` map — every task/sub-task by key. */
+function withDates(
+  phases: PhaseDraft[], dates: Map<string, { start: string; end: string }>,
+): PhaseDraft[] {
+  return phases.map((p) => ({
+    ...p,
+    tasks: p.tasks.map((t) => {
+      const td = dates.get(t.key)!;
+      return {
+        ...t,
+        start: td.start,
+        end: td.end,
+        children: kids(t).map((sub) => {
+          const sd = dates.get(sub.key)!;
+          return { ...sub, start: sd.start, end: sd.end };
+        }),
+      };
+    }),
+  }));
+}
+
+/**
+ * Snap every dependent's dates to obey its links, duration-preserving, in a
+ * single topological pass so a chain (A → B → C) settles at once. A cyclic draft
+ * is returned untouched — you cannot order a cycle, and the draft is free to hold
+ * one transiently (the save is what refuses it), so enforcement simply waits for
+ * the author to break it rather than looping.
+ */
+export function enforceDependencies(phases: PhaseDraft[]): PhaseDraft[] {
+  if (detectCycle(phases)) return phases;
+
+  const link = edges(phases);
+  const nodes = planNodes(phases);
+  const { phaseKeys, phaseChildren, dates } = dateMaps(phases);
 
   // Kahn's algorithm on the predecessor → dependent graph, so a node is only
   // processed once all its predecessors already carry their enforced dates.
@@ -986,54 +1061,31 @@ export function enforceDependencies(phases: PhaseDraft[]): PhaseDraft[] {
     if (phaseKeys.has(key)) continue;            // a phase has no authored dates to move
     const deps = link.get(key) ?? [];
     if (deps.length === 0) continue;
-    const self = dates.get(key);
-    if (!self) continue;
-    const s = parseDay(self.start);
-    const e = parseDay(self.end);
-    if (s === null || e === null) continue;      // undated — nothing to shift yet
-    const dur = e - s;
-
-    let startTarget: number | null = null;
-    let endTarget: number | null = null;
-    for (const d of deps) {
-      const span = spanMs(d.on, dates, phaseKeys, phaseChildren);
-      if (!span) continue;
-      if (d.type === 'starts_after') {
-        const t = parseDay(addDays(formatDay(span.end), 1)) as number;
-        startTarget = startTarget === null ? t : Math.max(startTarget, t);
-      } else if (d.type === 'starts_with') {
-        startTarget = startTarget === null ? span.start : Math.max(startTarget, span.start);
-      } else if (d.type === 'ends_with') {
-        endTarget = endTarget === null ? span.end : Math.max(endTarget, span.end);
-      }
-    }
-
-    let ns = s;
-    let ne = e;
-    if (startTarget !== null) { ns = startTarget; ne = ns + dur; }
-    else if (endTarget !== null) { ne = endTarget; ns = ne - dur; }
-    if (ns !== s || ne !== e) {
-      dates.set(key, { start: formatDay(ns), end: formatDay(ne) });
-      changed = true;
-    }
+    const snap = snapToLinks(key, deps, dates, phaseKeys, phaseChildren);
+    if (snap) { dates.set(key, snap); changed = true; }
   }
   if (!changed) return phases;
 
-  return phases.map((p) => ({
-    ...p,
-    tasks: p.tasks.map((t) => {
-      const td = dates.get(t.key)!;
-      return {
-        ...t,
-        start: td.start,
-        end: td.end,
-        children: kids(t).map((sub) => {
-          const sd = dates.get(sub.key)!;
-          return { ...sub, start: sd.start, end: sd.end };
-        }),
-      };
-    }),
-  }));
+  return withDates(phases, dates);
+}
+
+/**
+ * Enforce ONLY the link just applied: move `dependent` to obey its own links and
+ * touch NOTHING else (LINA-306, founder's ask). Unlike enforceDependencies this
+ * does not re-flow the dependent's downstream chain — applying a link changes the
+ * dates of the two tasks it joins, not every task that transitively follows them.
+ * A cyclic draft, an undated pair, or a dependent that is already snapped all
+ * return the tree untouched.
+ */
+export function enforceLink(phases: PhaseDraft[], dependent: string): PhaseDraft[] {
+  if (detectCycle(phases)) return phases;
+  const deps = edges(phases).get(dependent) ?? [];
+  if (deps.length === 0) return phases;
+  const { phaseKeys, phaseChildren, dates } = dateMaps(phases);
+  const snap = snapToLinks(dependent, deps, dates, phaseKeys, phaseChildren);
+  if (!snap) return phases;
+  dates.set(dependent, snap);
+  return withDates(phases, dates);
 }
 
 /**
