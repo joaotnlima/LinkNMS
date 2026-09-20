@@ -1230,19 +1230,26 @@ export function subtaskCount(phases: PhaseDraft[]): number {
 // of its children by status. Status is DERIVED, never authored (ADR-0019), so on
 // a fresh draft every child reads 'not_started' and the meter is honestly all
 // grey — nothing here fabricates progress. When a LIVE plan is hydrated the
-// optional `status` feeds the same counts. 'blocked' is folded into inProgress:
-// a blocked stage is work under way that is stuck, not work not begun, and the
-// three-segment meter has no fourth bucket to spend on it.
+// optional `status` feeds the same counts. 'blocked' is its OWN bucket
+// (LINA-306): the pen's STATUS column paints a blocked child red, distinct from
+// the blue of work that is merely under way, so the meter now spends a fourth
+// segment on it rather than folding it into inProgress.
 
 export interface StatusCounts {
   done: number;
   inProgress: number;
+  blocked: number;
   notStarted: number;
   total: number;
 }
 
-/** A child's derived status, defaulting to 'not_started' when unreported. */
-function statusOf(node: TaskDraft): StageStatus {
+/**
+ * A stage's derived status, defaulting to 'not_started' when unreported. Exported
+ * (LINA-306) so the grid can paint a LEAF row's own status pill from the same
+ * rule the parent meter counts by — one source of truth for "what colour is this
+ * stage".
+ */
+export function nodeStatus(node: TaskDraft): StageStatus {
   return node.status ?? 'not_started';
 }
 
@@ -1253,11 +1260,12 @@ function statusOf(node: TaskDraft): StageStatus {
  */
 export function childStatusCounts(node: PhaseDraft | TaskDraft): StatusCounts {
   const children: TaskDraft[] = 'tasks' in node ? node.tasks : kids(node);
-  const counts: StatusCounts = { done: 0, inProgress: 0, notStarted: 0, total: children.length };
+  const counts: StatusCounts = { done: 0, inProgress: 0, blocked: 0, notStarted: 0, total: children.length };
   for (const c of children) {
-    const s = statusOf(c);
+    const s = nodeStatus(c);
     if (s === 'done') counts.done += 1;
-    else if (s === 'in_progress' || s === 'blocked') counts.inProgress += 1;
+    else if (s === 'blocked') counts.blocked += 1;
+    else if (s === 'in_progress') counts.inProgress += 1;
     else counts.notStarted += 1;
   }
   return counts;

@@ -68,8 +68,8 @@ import {
   type ConnectorEnd, type DragMode, type GanttWindow, type TimeBase,
 } from '@/lib/plan-gantt';
 import {
-  DEP_LABELS, childStatusCounts, nodeIndex, planLinks,
-  type DepType, type PhaseDraft, type StatusCounts, type TaskDraft,
+  DEP_LABELS, childStatusCounts, nodeIndex, nodeStatus, planLinks,
+  type DepType, type PhaseDraft, type StageStatus, type StatusCounts, type TaskDraft,
 } from '@/lib/plan-authoring';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { PendingChangeChip } from '@/components/SignOffPanel';
@@ -82,10 +82,33 @@ import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-displa
 const BASE_PX: Record<Exclude<TimeBase, 'custom'>, number> = {
   auto: 30, week: 64, month: 30, quarter: 12, half: 6, year: 3,
 };
-const BASE_LABELS: Array<[TimeBase, string]> = [
-  ['auto', 'Fit plan'], ['week', 'Week'], ['month', 'Month'], ['quarter', 'Quarter'],
-  ['half', '6 months'], ['year', 'Year'], ['custom', 'Custom range'],
+/**
+ * The floating timeline nav (LINA-306, pen "Timeline nav"): a compact segmented
+ * pill pinned bottom-right of the canvas. It exposes the reading scales the pen
+ * shows — Fit / Weeks / Months / Quarters — with a "Today" jump beside them. The
+ * old full timeline <select> (6 months / year / custom range) is retired from
+ * the chrome; those bases stay in the type but the nav keeps to the pen's four.
+ */
+const NAV_BASES: Array<[Exclude<TimeBase, 'custom' | 'half' | 'year'>, string]> = [
+  ['auto', 'Fit'], ['week', 'Weeks'], ['month', 'Months'], ['quarter', 'Quarters'],
 ];
+
+/**
+ * The status palette (LINA-306, pen "Status legend"): every derived StageStatus
+ * → its swatch class and its word. ONE source of truth shared by the STATUS
+ * column's leaf pills, the parent meter's segments, the filter's status select
+ * and the legend, so a colour can never drift between them. The classes resolve
+ * to tokens in plan-build.css (done → --success, in progress → --plan-baseline,
+ * blocked → --state-danger, not started → the muted grey).
+ */
+const STATUS_META: Record<StageStatus, { cls: string; label: string }> = {
+  done: { cls: 'is-done', label: 'Done' },
+  in_progress: { cls: 'is-doing', label: 'In progress' },
+  blocked: { cls: 'is-blocked', label: 'Blocked' },
+  not_started: { cls: 'is-todo', label: 'Not started' },
+};
+/** Legend / status-select order: closed → active → stuck → not begun. */
+const STATUS_ORDER: StageStatus[] = ['not_started', 'in_progress', 'blocked', 'done'];
 /** Row heights, shared by the table cell and its track so the panes align.
  *  Compact rows with thin bars (founder, LINA-306): a task row is 34px, a
  *  sub-task row 28px — tighter than before so more of the plan reads at once. */
@@ -367,21 +390,74 @@ export function PlanGrid(props: PlanGridProps) {
     });
   }, []);
 
+  // ── Filters (LINA-306, pen "Filter bar") ───────────────────────────────────
+  // Owner, status, overdue and blocked narrow the visible rows; a search box
+  // narrows by name/ID. All presentational — they hide rows, never touch the
+  // draft. A stage is OVERDUE when its finish is before today and it is not done
+  // (meaningful only on a hydrated live plan; a fresh draft has no dates past due
+  // and no reported status, so these filters honestly show nothing there).
+  const [search, setSearch] = useState('');
+  const [ownerFilter, setOwnerFilter] = useState('');            // '' = any owner
+  const [statusFilter, setStatusFilter] = useState<'' | StageStatus>('');
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [blockedOnly, setBlockedOnly] = useState(false);
+  const filterActive = !!(search.trim() || ownerFilter || statusFilter || overdueOnly || blockedOnly);
+  const clearFilters = useCallback(() => {
+    setSearch(''); setOwnerFilter(''); setStatusFilter(''); setOverdueOnly(false); setBlockedOnly(false);
+  }, []);
+
+  const isOverdue = useCallback((n: TaskDraft): boolean => {
+    if (!n.end) return false;
+    const e = parseDay(n.end);
+    const t = parseDay(todayIso);
+    return e !== null && t !== null && e < t && nodeStatus(n) !== 'done';
+  }, [todayIso]);
+
+  // Does one stage clear every ACTIVE filter? (An inactive filter never rejects.)
+  const nodePasses = useCallback((n: TaskDraft, id: string): boolean => {
+    const q = search.trim().toLowerCase();
+    if (q && !`${id} ${n.name}`.toLowerCase().includes(q)) return false;
+    if (ownerFilter && n.assigneePartyId !== ownerFilter) return false;
+    if (statusFilter && nodeStatus(n) !== statusFilter) return false;
+    if (overdueOnly && !isOverdue(n)) return false;
+    if (blockedOnly && nodeStatus(n) !== 'blocked') return false;
+    return true;
+  }, [search, ownerFilter, statusFilter, overdueOnly, blockedOnly, isOverdue]);
+
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
     phases.forEach((p, pi) => {
-      out.push({ kind: 'phase', pi, key: p.key, phase: p });
-      if (collapsed.has(p.key)) return; // phase folded: tasks + add row hidden
+      // Gather the phase's visible tasks first, so a phase with no surviving task
+      // drops out entirely under a filter (its own row would be an empty header).
+      type Vis = { t: TaskDraft; ti: number; subs: Array<{ s: TaskDraft; si: number }> };
+      const visTasks: Vis[] = [];
       p.tasks.forEach((t, ti) => {
-        out.push({ kind: 'task', pi, ti, key: t.key, node: t });
-        if (collapsed.has(t.key)) return; // task folded: its sub-tasks hidden
-        (t.children ?? []).forEach((s, si) =>
-          out.push({ kind: 'task', pi, ti, si, key: s.key, node: s }));
+        const tid = `${pi + 1}.${ti + 1}`;
+        const subs = (t.children ?? []).map((s, si) => ({ s, si }))
+          .filter(({ s, si }) => !filterActive || nodePasses(s, `${tid}.${si + 1}`));
+        const selfPass = !filterActive || nodePasses(t, tid);
+        // Keep the task if it matches OR carries a matching sub-task (as context).
+        if (selfPass || subs.length > 0) visTasks.push({ t, ti, subs });
       });
-      out.push({ kind: 'add', pi });
+      if (filterActive && visTasks.length === 0) return; // whole phase filtered out
+
+      out.push({ kind: 'phase', pi, key: p.key, phase: p });
+      // Folding is a reading preference; a live filter overrides it so every match
+      // is shown, then folding returns when the filters clear.
+      if (!filterActive && collapsed.has(p.key)) return;
+      visTasks.forEach(({ t, ti, subs }) => {
+        out.push({ kind: 'task', pi, ti, key: t.key, node: t });
+        if (filterActive) {
+          subs.forEach(({ s, si }) => out.push({ kind: 'task', pi, ti, si, key: s.key, node: s }));
+        } else if (!collapsed.has(t.key)) {
+          (t.children ?? []).forEach((s, si) =>
+            out.push({ kind: 'task', pi, ti, si, key: s.key, node: s }));
+        }
+      });
+      if (!filterActive) out.push({ kind: 'add', pi }); // no "+ add" while filtering
     });
     return out;
-  }, [phases, collapsed]);
+  }, [phases, collapsed, filterActive, nodePasses]);
 
   // ── The time base (founder follow-up, 2026-09-11): the author picks the
   // reading scale — fit / week / month / quarter / 6 months / year — or types
@@ -514,9 +590,10 @@ export function PlanGrid(props: PlanGridProps) {
     });
   }, []);
 
-  // The grid template, name pinned, the three middle columns in the chosen
-  // order — set as a CSS var the header and every row read.
-  const colsTemplate = `20px 34px minmax(120px, var(--pgdw-name, 1fr)) ${colOrder.map((c) => COL_TEMPLATE[c]).join(' ')} 92px`;
+  // The grid template, name pinned, then the fixed STATUS column (LINA-306),
+  // then the three middle columns in the chosen order — one CSS var the header
+  // and every row read. STATUS sits right after the name, as the pen lays it out.
+  const colsTemplate = `20px 34px minmax(120px, var(--pgdw-name, 1fr)) 120px ${colOrder.map((c) => COL_TEMPLATE[c]).join(' ')} 92px`;
 
   // ── The table / Gantt split divider (LINA-259 ask 2): a draggable seam that
   // resizes the two panes, persisted for the session. Seeded from the rendered
@@ -905,6 +982,7 @@ export function PlanGrid(props: PlanGridProps) {
     const segs: Array<[string, number, string]> = [
       ['is-done', counts.done, 'done'],
       ['is-doing', counts.inProgress, 'in progress'],
+      ['is-blocked', counts.blocked, 'blocked'],
       ['is-todo', counts.notStarted, 'not started'],
     ];
     const title = segs.map(([, n, w]) => `${n} ${w}`).join(' · ');
@@ -921,6 +999,35 @@ export function PlanGrid(props: PlanGridProps) {
       </span>
     );
   }, []);
+
+  // The STATUS column cell (LINA-306, pen STATUS column). A PARENT row (a phase,
+  // or a task with sub-tasks) shows the segmented child meter plus its count; a
+  // LEAF row shows a single bar of ITS OWN derived status, tinted red-outlined
+  // when overdue. `counts` is the parent's child counts (null on a leaf); `node`
+  // is the leaf's own node (null on a phase, whose status is only its children's).
+  const statusCell = useCallback((counts: StatusCounts | null, node: TaskDraft | null, what: string) => {
+    if (counts && counts.total > 0) {
+      return (
+        <span className="pgd-statuscell">
+          {meter(counts, what)}
+          <span className="pgd-statuscount" aria-hidden>{counts.total}</span>
+        </span>
+      );
+    }
+    if (!node) return null; // a childless phase: nothing to colour
+    const s = nodeStatus(node);
+    const over = isOverdue(node);
+    const meta = STATUS_META[s];
+    const word = over ? `${meta.label} · overdue` : meta.label;
+    return (
+      <span
+        className={`pgd-statusbar${over ? ' is-overdue' : ''}`}
+        role="img" title={`${what}: ${word}`} aria-label={`${what}: ${word}`}
+      >
+        <span className={`pgd-statusbar-fill ${meta.cls}`} />
+      </span>
+    );
+  }, [meter, isOverdue]);
 
   const owner = useCallback((nodeKey: string, assigneePartyId: string | null, label: string) => {
     const p = partyOf(dir, assigneePartyId);
@@ -1008,33 +1115,78 @@ export function PlanGrid(props: PlanGridProps) {
       <datalist id="pgd-specialties">
         {specialties.map((s) => <option key={s} value={s} />)}
       </datalist>
-      {/* ── The time-base toolbar: pick the reading scale, or type the exact
-          window. View state only — it never touches the plan. ── */}
-      <div className="pgd-toolbar">
-        <label className="pgd-tb-lbl">
-          Timeline
-          <select
-            className="pgd-tb-sel" value={base} aria-label="Timeline scale"
-            onChange={(e) => onPickBase(e.target.value as TimeBase)}
+      {/* ── The filter bar (LINA-306, pen "Filter bar"): search + owner + status
+          + overdue/blocked toggles narrow the visible rows; the legend on the
+          right reads the STATUS column's colours. All view state — it hides rows,
+          never touches the plan. The timeline reading scale moved to the floating
+          nav pinned bottom-right of the canvas. ── */}
+      <div className="pgd-filters">
+        <div className="pgd-filters-left">
+          <label className="pgd-fsearch">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+              strokeWidth={2} strokeLinecap="round" aria-hidden focusable="false">
+              <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
+            </svg>
+            <input
+              type="search" className="pgd-fsearch-in" value={search} placeholder="Search tasks"
+              aria-label="Search tasks by name or ID"
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+          <label className="pgd-fsel">
+            <span className="pgd-fsel-lbl">Owner</span>
+            <select
+              className="pgd-fsel-in" value={ownerFilter} aria-label="Filter by owner"
+              onChange={(e) => setOwnerFilter(e.target.value)}
+            >
+              <option value="">All</option>
+              {parties.map((m) => (
+                <option key={m.partyId} value={m.partyId}>{m.name} · {roleWord(m.role)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="pgd-fsel">
+            <span className="pgd-fsel-lbl">Status</span>
+            <select
+              className="pgd-fsel-in" value={statusFilter} aria-label="Filter by status"
+              onChange={(e) => setStatusFilter(e.target.value as '' | StageStatus)}
+            >
+              <option value="">All</option>
+              {STATUS_ORDER.map((s) => (
+                <option key={s} value={s}>{STATUS_META[s].label}</option>
+              ))}
+            </select>
+          </label>
+          <span className="pgd-fdiv" aria-hidden />
+          <button
+            type="button"
+            className={`pgd-ftoggle is-warning${overdueOnly ? ' is-on' : ''}`}
+            aria-pressed={overdueOnly}
+            onClick={() => setOverdueOnly((v) => !v)}
           >
-            {BASE_LABELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-        </label>
-        {base === 'custom' ? (
-          <span className="pgd-tb-range">
-            <input
-              type="date" className="pgd-tb-date" value={customRange.from}
-              aria-label="Timeline start"
-              onChange={(e) => setCustomRange((p) => ({ ...p, from: e.target.value }))}
-            />
-            <span aria-hidden>–</span>
-            <input
-              type="date" className="pgd-tb-date" value={customRange.to}
-              aria-label="Timeline end"
-              onChange={(e) => setCustomRange((p) => ({ ...p, to: e.target.value }))}
-            />
-          </span>
-        ) : null}
+            <span className="pgd-ftoggle-dot" aria-hidden />Overdue
+          </button>
+          <button
+            type="button"
+            className={`pgd-ftoggle is-danger${blockedOnly ? ' is-on' : ''}`}
+            aria-pressed={blockedOnly}
+            onClick={() => setBlockedOnly((v) => !v)}
+          >
+            <span className="pgd-ftoggle-dot" aria-hidden />Blocked
+          </button>
+          {filterActive ? (
+            <button type="button" className="pgd-fclear" onClick={clearFilters}>Clear</button>
+          ) : null}
+        </div>
+        <div className="pgd-legend" aria-hidden>
+          <span className="pgd-legend-lbl">Status</span>
+          {STATUS_ORDER.map((s) => (
+            <span key={s} className="pgd-legend-item">
+              <span className={`pgd-legend-sw ${STATUS_META[s].cls}`} />
+              {STATUS_META[s].label}
+            </span>
+          ))}
+        </div>
       </div>
 
       <div
@@ -1047,6 +1199,7 @@ export function PlanGrid(props: PlanGridProps) {
           <div className="pgd-hdr" style={{ height: AXIS_H }}>
             <span /><span aria-hidden>ID</span>
             <span className="pgd-hcell"><span aria-hidden>Task</span>{resizer('name', 'task name')}</span>
+            <span className="pgd-hcell pgd-hcell-status" aria-hidden>Status</span>
             {colOrder.map(headerCell)}
             <span />
           </div>
@@ -1121,8 +1274,8 @@ export function PlanGrid(props: PlanGridProps) {
                       onClick={(e) => { e.stopPropagation(); toggleFold(r.key); }}
                     >▸</button>
                     {name(r, id)}
-                    {meter(counts, `Phase ${r.pi + 1}`)}
                   </span>
+                  <span className="pgd-statuscol">{statusCell(counts, null, `Phase ${r.pi + 1}`)}</span>
                   {colOrder.map(cellFor)}
                   <span className="pgd-ctl">
                     <button type="button" className="pbx-icon pbx-del" title="Remove phase"
@@ -1221,13 +1374,16 @@ export function PlanGrid(props: PlanGridProps) {
                     >▸</button>
                   ) : <span className="pgd-fold-spacer" aria-hidden />}
                   {name(r, id)}
-                  {counts ? meter(counts, `Task ${id}`) : null}
                   {/* The clay/amber tint is never the only signal (ADR-0023 §6):
                       the chip says it in words, for colour-blind readers and for
                       the screen reader walking an aria-disabled grid. */}
                   {pendingChange.has(r.key) ? <PendingChangeChip /> : null}
                   {r.node.description.trim() ? <span className="pgt-lbl-dot" aria-hidden /> : null}
                 </span>
+                {/* A parent task (counts.total > 0) shows its child meter; a leaf
+                    (counts null on a sub, or total 0 on a childless task) shows
+                    its own derived status. statusCell picks between them. */}
+                <span className="pgd-statuscol">{statusCell(counts, r.node, `${what[0].toUpperCase()}${what.slice(1)} ${id}`)}</span>
                 {colOrder.map(cellFor)}
                 <span className="pgd-ctl">
                   {!sub ? (
@@ -1476,6 +1632,42 @@ export function PlanGrid(props: PlanGridProps) {
             </div>
           ) : null}
         </div>
+
+        {/* ── The floating timeline nav (LINA-306, pen "Timeline nav"): a compact
+            segmented pill pinned to the bottom-right of the canvas. "Today"
+            scrolls the timeline to today; the scales pick the reading base. It
+            floats over the grid (not inside the scroller) so it stays put while
+            the timeline pans. Hidden until there is a window to navigate. ── */}
+        {win ? (
+          <div className="pgd-timenav" role="group" aria-label="Timeline">
+            <button
+              type="button"
+              className="pgd-timenav-today"
+              title="Scroll the timeline to today"
+              onClick={() => {
+                const sc = scrollRef.current;
+                if (!sc) return;
+                const ts = parseDay(todayIso);
+                const st = parseDay(win.startDay);
+                if (ts === null || st === null) return;
+                const off = Math.round((ts - st) / 86_400_000) * col;
+                sc.scrollTo({ left: Math.max(0, off - sc.clientWidth / 2), behavior: 'smooth' });
+              }}
+            >Today</button>
+            <span className="pgd-timenav-div" aria-hidden />
+            <span className="pgd-timenav-scales">
+              {NAV_BASES.map(([v, l]) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`pgd-timenav-scale${base === v ? ' is-active' : ''}`}
+                  aria-pressed={base === v}
+                  onClick={() => onPickBase(v)}
+                >{l}</button>
+              ))}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {/* The row move-menu popover (ask 7). Click-away closes; each item is a
