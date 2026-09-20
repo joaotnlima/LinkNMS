@@ -39,10 +39,10 @@ import { barGeometry, dateRange, ganttScale, preorder, type GanttScale } from '@
 import {
   PlanActionError, StageEditError,
   acceptVersion, awaitedPartyId, canReview, canWithdraw, describeEdit, diffEdits, draftOf,
-  proposeVersion, rejectVersion,
+  proposeVersion, rejectVersion, reportProgress,
   requestChanges, stageCounts, stamps, toRows, totalAfter, totalCents, withdrawVersion,
   type PlanBaselineView, type PlanVersionSummary, type PlanVersionView, type StageDraft,
-  type StageEdit, type StageRow,
+  type StageEdit, type StageRow, type StageStatus,
 } from '@/lib/plan-baseline';
 import { formatDateTime, moneyPrecise } from '@/lib/format';
 import { PartyAvatar, TradeChip } from '@/components/PartyAvatar';
@@ -147,6 +147,10 @@ export function PlanBaseline({ projectId, view, actorPartyId, parties }: Props) 
             parties={parties}
             caption={editing ? `Version ${current.versionNo}, as proposed — unchanged` : undefined}
             dimmed={editing}
+            // Status is settable once the plan is real and stable — never on a
+            // draft (ADR-0019: draft stage ids re-mint on save, so a progress row
+            // would detach) and never while a change is being drafted underneath.
+            editable={!isDraft && !editing}
           />
 
           {editing ? (
@@ -356,10 +360,77 @@ function DraftPanel() {
   );
 }
 
+// ── Per-task status (LINA-306) ───────────────────────────────────────────────
+// The plan grid is where a task's status is set — not a separate progress
+// screen. Picking a status appends to the append-only stage_progress history via
+// reportProgress; the row that carries it is attributable and never edited in
+// place (ADR-0019). Read-only until the plan is live (PlanTable `editable`), and
+// the server is the authority on WHO may report (GC-only, spec §8.2) — a refusal
+// comes back as a typed 403 and is shown inline, never pre-guessed here.
+
+const STATUS_LABEL: Record<StageStatus, string> = {
+  not_started: 'Not started',
+  in_progress: 'In progress',
+  blocked: 'Blocked',
+  done: 'Done',
+};
+const STATUS_ORDER: StageStatus[] = ['not_started', 'in_progress', 'blocked', 'done'];
+
+function StatusControl({
+  stageId, value, editable,
+}: {
+  stageId: string;
+  value: StageStatus;
+  editable: boolean;
+}) {
+  const router = useRouter();
+  const [val, setVal] = useState<StageStatus>(value);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!editable) {
+    return <span className={`pb-status is-${value}`}>{STATUS_LABEL[value]}</span>;
+  }
+
+  return (
+    <span className="pb-status-edit">
+      <select
+        className={`pb-status-sel is-${val}`}
+        value={val}
+        disabled={busy}
+        aria-label="Task status"
+        aria-busy={busy}
+        onChange={async (e) => {
+          const next = e.target.value as StageStatus;
+          setVal(next);
+          setBusy(true);
+          setErr(null);
+          try {
+            await reportProgress(stageId, next);
+            // The server is the authority on what the record now says — re-read
+            // so parent roll-ups and the whole grid reflect it, never a local copy.
+            router.refresh();
+          } catch (e2) {
+            setVal(value); // roll the picker back to the last recorded value
+            setErr(e2 instanceof PlanActionError ? e2.message : 'Could not update the status.');
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {STATUS_ORDER.map((s) => (
+          <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+        ))}
+      </select>
+      {err ? <span className="pb-status-err cap" role="alert">{err}</span> : null}
+    </span>
+  );
+}
+
 // ── The plan table — the B1 preview components, reused ───────────────────────
 
 function PlanTable({
-  rows, scale, caption, dimmed, parties,
+  rows, scale, caption, dimmed, parties, editable,
 }: {
   rows: StageRow[];
   scale: GanttScale | null;
@@ -367,6 +438,8 @@ function PlanTable({
   dimmed?: boolean;
   /** The project's members — the directory owner avatars resolve against. */
   parties: PartyRef[];
+  /** Whether the per-task status control is interactive (LINA-306). */
+  editable?: boolean;
 }) {
   const flat = preorder(rows);
   const dir = partyIndex(parties);
@@ -384,6 +457,7 @@ function PlanTable({
         <span className="grp pi-cell-name">Action / sub-action</span>
         <span className="grp pi-cell-dates">Dates</span>
         <span className="grp pb-cell-value">Value</span>
+        <span className="grp pb-cell-status">Status</span>
         <span className="grp pi-cell-gantt" aria-hidden="true">
           {scale ? scale.months.map((m) => <span key={m.key} className="pi-month">{m.label}</span>) : null}
         </span>
@@ -416,6 +490,16 @@ function PlanTable({
             <span className="pi-cell-dates num">{dateRange(node)}</span>
             <span className="pb-cell-value num">
               {node.costCents == null ? <span className="pi-dash">—</span> : moneyPrecise(node.costCents)}
+            </span>
+            <span className="pb-cell-status">
+              {/* Remount on the server's value (via key) after a refresh so the
+                  control never drifts from the record it reports to. */}
+              <StatusControl
+                key={`${node.id}:${node.status}`}
+                stageId={node.id}
+                value={node.status}
+                editable={!!editable}
+              />
             </span>
             <span className="pi-cell-gantt">
               {/* Decoration for a fact the Dates column already states in words —
