@@ -683,7 +683,10 @@
    track grows to canvasWidth, `.pgd`'s `overflow: hidden` clips the timeline, and
    the horizontal scrollbar never appears. `overscroll-behavior-x: contain` keeps
    a horizontal swipe on the timeline from also navigating the browser back. */
-.pgt-scroll { overflow-x: auto; min-width: 0; overscroll-behavior-x: contain; }
+.pgt-scroll { overflow-x: auto; min-width: 0; overscroll-behavior-x: contain; cursor: grab; }
+/* While a grab-drag pan is in flight (LINA-306, founder): closed hand, and no
+   text selection so dragging across labels stays a pan, never a highlight. */
+.pgt-scroll.is-panning { cursor: grabbing; user-select: none; }
 .pgt-canvas { position: relative; }
 .pgt-axis { position: relative; border-bottom: 1px solid var(--outline); background: var(--sunken); }
 .pgt-axis-cell { position: absolute; top: 0; bottom: 0; }
