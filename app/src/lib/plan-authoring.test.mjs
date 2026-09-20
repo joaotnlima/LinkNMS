@@ -855,10 +855,10 @@ test('childStatusCounts: a fresh draft is honestly all not-started (no fabricate
   assert.equal(c.notStarted, c.total);
 
   // A leaf task (no sub-tasks) has an all-zero meter — the caller draws none.
-  assert.deepEqual(childStatusCounts(phases[0].tasks[0]), { done: 0, inProgress: 0, notStarted: 0, total: 0 });
+  assert.deepEqual(childStatusCounts(phases[0].tasks[0]), { done: 0, inProgress: 0, blocked: 0, notStarted: 0, total: 0 });
 });
 
-test('childStatusCounts: derives from an optional status, folding blocked into in-progress', () => {
+test('childStatusCounts: derives from an optional status, counting blocked as its own bucket', () => {
   // Statuses only ever arrive via hydration (never authored); simulate a live plan.
   const phases = hydrateDraft([
     {
@@ -872,7 +872,7 @@ test('childStatusCounts: derives from an optional status, folding blocked into i
     },
   ]);
   const c = childStatusCounts(phases[0]);
-  assert.deepEqual(c, { done: 1, inProgress: 2, notStarted: 1, total: 4 });
+  assert.deepEqual(c, { done: 1, inProgress: 1, blocked: 1, notStarted: 1, total: 4 });
   // The optional status survives hydration but authoring never sets it.
   assert.equal(phases[0].tasks[0].status, 'done');
   assert.equal(phases[0].tasks[3].status, undefined);
