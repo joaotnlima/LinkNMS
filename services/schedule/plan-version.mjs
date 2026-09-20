@@ -146,9 +146,18 @@ export function createPlanVersionService({ store, ledger, identity, phases = nul
     // History is the shared record only — a draft is never tidied into it.
     const others = numbered.filter((v) => v !== currentSource);
 
+    // Each stage's CURRENT status, derived from its latest append-only
+    // stage_progress row (LINA-306): the plan grid renders a per-task status and
+    // lets a member set it via POST /stages/:id/progress. Status is NEVER a stage
+    // column (ADR-0019) — it is read off the progress history, so it stays
+    // attributable and tamper-evident. Fetched once here and threaded into the
+    // tree; absent rows fall through to 'not_started'. Only `current` gets a
+    // stage tree, so this one read covers the whole surface.
+    const latestByStage = await store.latestProgressByProject(projectId);
+
     const view = async (v) => ({
       ...(await versionView(projectId, v)),
-      stages: await stageTree(v.id),
+      stages: await stageTree(v.id, latestByStage),
       acceptances: await acceptanceViews(projectId, await store.listPlanAcceptances(v.id)),
     });
 
@@ -200,7 +209,7 @@ export function createPlanVersionService({ store, ledger, identity, phases = nul
   // `dependsOn: string[]` is DUAL-EMITTED next to `dependencies: [{ on, type }]`
   // until the FE consumes the typed shape in prod — never break the read shape
   // between the BE and FE merges.
-  async function stageTree(versionId) {
+  async function stageTree(versionId, latestByStage = new Map()) {
     const stages = await store.listStagesByPlanVersion(versionId);
     const roots = stages.filter((s) => s.parent_id == null).sort((a, b) => a.position - b.position);
     const childrenOf = new Map();
@@ -229,6 +238,9 @@ export function createPlanVersionService({ store, ledger, identity, phases = nul
       plannedStartDate: s.planned_start_date ?? null,
       plannedEndDate: s.planned_end_date ?? null,
       plannedCostCents: s.planned_cost_cents ?? null,
+      // Derived current status (LINA-306), never a stored stage column — the
+      // latest progress row's status, or 'not_started' when the stage has none.
+      currentStatus: latestByStage.get(s.id)?.status ?? 'not_started',
       dependsOn: (depsByStage.get(s.id) ?? []).map((d) => d.depends_on_stage_id),
       dependencies: (depsByStage.get(s.id) ?? []).map((d) => ({
         on: d.depends_on_stage_id,

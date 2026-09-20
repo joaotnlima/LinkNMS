@@ -39,12 +39,25 @@ import type { GanttScale } from './plan-import';
 // the schedule service's projection shows up as a type error here rather than
 // as `undefined` on the acceptance banner.
 
+/**
+ * A task's execution status (LINA-306). DERIVED from the append-only
+ * stage_progress history (ADR-0019), never a stored stage column — which is why
+ * it stays attributable and tamper-evident. Set via POST /stages/:id/progress.
+ */
+export type StageStatus = 'not_started' | 'in_progress' | 'blocked' | 'done';
+
 /** One stage of a version's WBS tree. Dates are plain calendar dates. */
 export interface PlanStageNode {
   id: string;
   name: string;
   position: number;
   trade: string | null;
+  /**
+   * The stage's CURRENT execution status (LINA-306), derived server-side from
+   * the latest progress row. `not_started` when the stage has no progress yet.
+   * Optional only because older fixtures predate it; the service always sends it.
+   */
+  currentStatus?: StageStatus;
   /**
    * The stage's STABLE address (LINA-249, migration 0011) — client-minted at
    * author time, persisted on the row, re-sent on every save. `null` for
@@ -151,6 +164,8 @@ export interface StageRow {
   start: string | null;
   end: string | null;
   costCents: number | null;
+  /** Current execution status (LINA-306), derived from progress history. */
+  status: StageStatus;
   children: StageRow[];
 }
 
@@ -163,6 +178,7 @@ export function toRows(nodes: PlanStageNode[]): StageRow[] {
     start: n.plannedStartDate,
     end: n.plannedEndDate,
     costCents: n.plannedCostCents,
+    status: n.currentStatus ?? 'not_started',
     children: toRows(n.children),
   }));
 }
@@ -450,6 +466,24 @@ async function post<T>(url: string, body?: unknown): Promise<T> {
 
 export function withdrawVersion(projectId: string, versionId: string): Promise<{ status: 'withdrawn' }> {
   return post(actionUrl(projectId, versionId, 'withdraw'));
+}
+
+/**
+ * Set a task's execution status (LINA-306). Appends a row to the append-only
+ * stage_progress history via POST /api/v1/stages/:stageId/progress — status is
+ * never edited in place, so the record stays attributable and tamper-evident.
+ *
+ * Walking a task BACK to `not_started` requires a note server-side (§8.1); we
+ * send a default one so a plain status pick from the grid always goes through.
+ * The server is the authority on WHO may report (GC-only, spec §8.2) — a refusal
+ * comes back as a typed 403 and is surfaced inline, never pre-guessed here.
+ */
+export function reportProgress(
+  stageId: string, status: StageStatus,
+): Promise<unknown> {
+  const body: { status: StageStatus; note?: string } = { status };
+  if (status === 'not_started') body.note = 'Reset to not started';
+  return post(`/api/v1/stages/${encodeURIComponent(stageId)}/progress`, body);
 }
 
 export function acceptVersion(
