@@ -662,6 +662,71 @@ export function PlanGrid(props: PlanGridProps) {
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
+  // ── Grab-and-drag panning (LINA-306, founder): grab the timeline and drag it
+  // left/right to travel through time — the ask that a switch to Weeks/Quarters
+  // pushes the bars off-screen and there was no way to reach them but the thin
+  // scrollbar. Pointer-down anywhere on the canvas that ISN'T an interactive mark
+  // (a bar, a resize/link handle, or an undated track waiting for a plant-click)
+  // starts a pan; those keep their own gestures untouched. A pan that actually
+  // moved swallows the trailing click so it never plants a date or selects a row.
+  // Native + non-passive so preventDefault sticks and the drag never text-selects.
+  useEffect(() => {
+    const sc = scrollRef.current;
+    if (!sc) return undefined;
+    const INTERACTIVE = '.pgt-bar, .pgt-handle, .pgt-linksrc, .pgt-linktgt, .pgt-track.is-clickable';
+    let startX = 0;
+    let startLeft = 0;
+    let pointerId = -1;
+    let panning = false;
+    let moved = false;
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const t = e.target as Element | null;
+      if (t && t.closest && t.closest(INTERACTIVE)) return; // leave marks their gestures
+      panning = true;
+      moved = false;
+      startX = e.clientX;
+      startLeft = sc.scrollLeft;
+      pointerId = e.pointerId;
+      try { sc.setPointerCapture(e.pointerId); } catch { /* capture unsupported */ }
+      sc.classList.add('is-panning');
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!panning) return;
+      const dx = e.clientX - startX;
+      if (Math.abs(dx) > 3) moved = true;
+      sc.scrollLeft = startLeft - dx;
+      e.preventDefault();
+    };
+    const onUp = () => {
+      if (!panning) return;
+      panning = false;
+      try { sc.releasePointerCapture(pointerId); } catch { /* already released */ }
+      sc.classList.remove('is-panning');
+      if (moved) {
+        // A real drag ends on a click the browser still fires — swallow that one
+        // so a pan across an empty track never plants a date or opens a row.
+        const swallow = (ev: Event) => {
+          ev.stopPropagation();
+          ev.preventDefault();
+          sc.removeEventListener('click', swallow, true);
+        };
+        sc.addEventListener('click', swallow, true);
+        window.setTimeout(() => sc.removeEventListener('click', swallow, true), 0);
+      }
+    };
+    sc.addEventListener('pointerdown', onDown);
+    sc.addEventListener('pointermove', onMove);
+    sc.addEventListener('pointerup', onUp);
+    sc.addEventListener('pointercancel', onUp);
+    return () => {
+      sc.removeEventListener('pointerdown', onDown);
+      sc.removeEventListener('pointermove', onMove);
+      sc.removeEventListener('pointerup', onUp);
+      sc.removeEventListener('pointercancel', onUp);
+    };
+  }, []);
+
   // ── The row move-menu (LINA-259 ask 7): a small popover anchored to a row's
   // ⋯ button offering Promote / Demote, each enabled only when the pure op
   // would actually move the row (the same guards demoteNode/promoteNode keep).
