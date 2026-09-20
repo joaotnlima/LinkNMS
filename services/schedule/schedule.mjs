@@ -269,7 +269,11 @@ export function createScheduleService({ store, ledger, identity, phases = null }
     // conditional is a correction back to not_started FROM a status that is not
     // already not_started — that requires a note. Reporting not_started when the
     // stage is already not_started is a re-report (●) and needs no note.
-    const currentLatest = await latestFor(stageId);
+    //
+    // The "current" status is read against the stage's KEY history when it has a
+    // key (LINA-307): a draft re-save re-mints the stage row id, so an id-only
+    // read would lose "current" and wrongly wave through a walk-back with no note.
+    const currentLatest = await latestFor(stage);
     const currentStatus = currentStatusOf(currentLatest);
     const noteProvided = input?.note != null && String(input.note).trim() !== '';
     if (status === 'not_started' && currentStatus !== 'not_started' && !noteProvided) {
@@ -293,6 +297,10 @@ export function createScheduleService({ store, ledger, identity, phases = null }
     const row = {
       id,
       stage_id: stageId,
+      // Anchor the row on the stable client-minted key (LINA-307) so the status
+      // survives a draft re-save that re-mints the stage row id. Null for legacy
+      // stages that never carried a key (import-seeded / pre-LINA-249).
+      stage_key: stage.key ?? null,
       project_id: stage.project_id,
       status,
       percent,
@@ -375,8 +383,17 @@ export function createScheduleService({ store, ledger, identity, phases = null }
 
   // ── internals ─────────────────────────────────────────────────────────────
 
-  async function latestFor(stageId) {
-    const history = await store.listProgressByStage(stageId);
+  // The full attributed history for a stage, read against its KEY when it has one
+  // (LINA-307) so a draft re-save that re-mints the row id never loses the
+  // progression; legacy keyless stages fall back to the by-id history.
+  async function historyFor(stage) {
+    return stage.key
+      ? store.listProgressByKey(stage.project_id, stage.key)
+      : store.listProgressByStage(stage.id);
+  }
+
+  async function latestFor(stage) {
+    const history = await historyFor(stage);
     return history.length ? history[history.length - 1] : null;
   }
 
@@ -385,7 +402,7 @@ export function createScheduleService({ store, ledger, identity, phases = null }
   async function stageView(stageId) {
     const stage = await store.getStage(stageId);
     if (!stage) throw new DomainError(404, 'not_found', 'stage not found');
-    const history = await store.listProgressByStage(stageId);
+    const history = await historyFor(stage);
     const latest = history.length ? history[history.length - 1] : null;
     return {
       ...shapeStage(stage, latest),

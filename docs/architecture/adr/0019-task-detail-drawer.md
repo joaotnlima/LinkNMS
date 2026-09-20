@@ -94,3 +94,50 @@ narrow fields with clear jobs beats one overloaded one.
   guarantee.
 - **Reuse `scope_note` as the description.** Rejected: silently repurposes an
   existing field with a different meaning and no clean migration story.
+
+## Amendment — LINA-307: status is settable on a draft, still not a stage column
+
+- **Date:** 2026-09-20
+- **Issue:** LINA-307 (founder ask on LINA-306: *"I should always be able to move
+  the status of a task"* — from the **build/draft** grid, not only on an agreed
+  baseline).
+
+The invariant above is **unchanged**: status is NEVER a `schedule.stage` column;
+it is the latest row of the append-only, attributable `schedule.stage_progress`
+history, and the stage row and that history can never disagree. What LINA-307
+changes is *where the history anchors*, so it can be **set on a draft** and
+survive the draft's re-save.
+
+The blocker was mechanical, not conceptual. A `:author` re-save rebuilds a
+draft's stage rows (delete + reinsert), re-minting each `stage.id`. Progress was
+keyed on `stage_id` (FK, NOT NULL), so a row written against a draft stage would
+(a) detach on the next save and (b) *break* that save — the stage DELETE would
+violate the FK, and the app role holds no DELETE on the audit table. Hence the
+draft grid showed status read-only.
+
+The fix re-uses the **exact precedent of migration 0011** (task-workspace
+comments/attachments): anchor the history on the **stable, client-minted
+`stage.key`**, not the churning row id (migration 0015):
+
+- `stage_progress.stage_key` records the key on every new row; `stage_id` becomes
+  nullable and its FK is re-declared **`ON DELETE SET NULL`**, so a re-save's
+  stage DELETE nulls the dangling id while the row + its `stage_key` survive. The
+  SET NULL is a **system referential action** (runs as the constraint owner), so
+  the append-only INSERT+SELECT grant is untouched — no UPDATE/DELETE grant is
+  added (proven by a pg test that deletes the stage *as `schedule_app`*).
+- Current status is derived per stage as `latestByKey(key) ?? latestById(id) ??
+  'not_started'` — the by-id fallback covers legacy rows written before 0015.
+- The note-required state-machine check (a walk-back to `not_started`) reads the
+  **by-key** history too, so a re-mint never loses "current".
+
+Status remains **one source of truth, append-only, attributable, tamper-evident**
+— setting it on a draft is still a new `progress_reported` row in the same
+transaction as its ledger event, never a mutation of the stage. The literal
+"mutable `stage.status` column" is still rejected for the same reason.
+
+**Rejected alternative (LINA-307):** *report progress by a NEW key-addressed
+route while the draft editor holds a cached `stage.id`.* The `:author` response
+now returns a `key → id` map that the editor refreshes on every autosave, so the
+single existing `POST /stages/:id/progress` route serves both the frozen baseline
+(stable ids) and the draft grid (fresh ids) — no route fork, and the baseline
+picker (LINA-306) is untouched.

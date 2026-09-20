@@ -19,6 +19,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createPlanVersionService } from './plan-version.mjs';
+import { createScheduleService } from './schedule.mjs';
 import { createInMemoryStore, createInMemoryLedger, createInMemoryIdentity } from './ports.mjs';
 import { computeAppend, verifyChain, GENESIS_HASH } from '../ledger/hash-chain.mjs';
 
@@ -1167,4 +1168,73 @@ test('LINA-249: the client-minted `key` is PERSISTED on the stage row and read b
   assert.equal(after.name, '1.1 Planning & Feasibility (edited)');
   assert.ok(before.id !== after.id, 'row id churns per save');
   assert.equal(before.key, after.key, 'the key survives a re-save');
+});
+
+// ── Settable draft status anchored on stage_key (LINA-307) ────────────────────
+// The founder ask: status must be movable on the DRAFT grid, not just an agreed
+// baseline. Status stays an append-only progress row (ADR-0019) — it is simply
+// anchored on the stable stage_key so it survives the re-save that re-mints the
+// stage row id. These run against the in-memory ports (no DB), which now mirror
+// the migration-0015 FK ON DELETE SET NULL.
+
+test('authorPlan returns a key→id map so the editor can target a live stage id', async () => {
+  const { service } = build();
+  const out = await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'Foundation', key: 'f' }, { name: 'Framing', key: 'fr' }],
+  });
+  assert.ok(out.stageIds, 'the author response carries a stageIds map');
+  assert.equal(Object.keys(out.stageIds).length, 2);
+  const view = await service.getPlan(PROJECT, GC);
+  for (const node of view.current.stages) {
+    assert.equal(out.stageIds[node.key], node.id, `stageIds[${node.key}] is the live stage id`);
+  }
+});
+
+test('a draft status survives a re-save, derived by key — and the re-save does not FK-fail', async () => {
+  const { service, store, ledger, identity } = build();
+  const sched = createScheduleService({ store, ledger, identity });
+
+  await service.authorPlan(PROJECT, GC, { stages: [{ name: 'Foundation', key: 'f' }] });
+  const f1 = (await service.getPlan(PROJECT, GC)).current.stages[0];
+  assert.equal(f1.currentStatus, 'not_started');
+
+  // Set status on the DRAFT stage — recorded against stage_key 'f'.
+  await sched.reportProgress(f1.id, GC, { status: 'in_progress', percent: 40 });
+  assert.equal((await service.getPlan(PROJECT, GC)).current.stages[0].currentStatus, 'in_progress');
+
+  // Re-save the draft — delete + reinsert re-mints the stage row id.
+  await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'Foundation', key: 'f', plannedStartDate: '2026-10-01' }],
+  });
+  const f2 = (await service.getPlan(PROJECT, GC)).current.stages[0];
+  assert.notEqual(f2.id, f1.id, 'the stage id was re-minted');
+  assert.equal(f2.currentStatus, 'in_progress', 'status survived the re-save, derived by key');
+
+  // The append-only row is intact: its stale stage_id nulled (mirrors SET NULL),
+  // its stage_key anchor and status preserved.
+  const rows = store._progress.filter((p) => p.stage_key === 'f');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].stage_id, null, 'the dangling id was nulled, not deleted');
+  assert.equal(rows[0].status, 'in_progress');
+});
+
+test('the not_started note-required check reads KEY history across a re-mint', async () => {
+  const { service, store, ledger, identity } = build();
+  const sched = createScheduleService({ store, ledger, identity });
+
+  await service.authorPlan(PROJECT, GC, { stages: [{ name: 'Foundation', key: 'f' }] });
+  const f1 = (await service.getPlan(PROJECT, GC)).current.stages[0];
+  await sched.reportProgress(f1.id, GC, { status: 'in_progress' });
+
+  await service.authorPlan(PROJECT, GC, { stages: [{ name: 'Foundation', key: 'f' }] });
+  const f2 = (await service.getPlan(PROJECT, GC)).current.stages[0];
+  assert.notEqual(f2.id, f1.id);
+
+  // The by-KEY current is in_progress, so a note-less walk-back is refused — not
+  // waved through on an empty by-id history.
+  await assert.rejects(
+    () => sched.reportProgress(f2.id, GC, { status: 'not_started' }),
+    (e) => e.code === 'note_required');
+  const back = await sched.reportProgress(f2.id, GC, { status: 'not_started', note: 'reset' });
+  assert.equal(back.currentStatus, 'not_started');
 });
