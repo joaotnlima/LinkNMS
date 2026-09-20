@@ -384,7 +384,7 @@
 .pgd-hdr, .pgd-row {
   display: grid; align-items: center; gap: var(--s2);
   grid-template-columns: var(--pgd-cols,
-    20px 34px minmax(120px, var(--pgdw-name, 1fr)) var(--pgdw-trade, 96px)
+    20px 34px minmax(120px, var(--pgdw-name, 1fr)) 120px var(--pgdw-trade, 96px)
     30px var(--pgdw-dates, 176px) 92px);
   padding: 0 var(--s2);
 }
@@ -413,22 +413,67 @@
 }
 .pgd-hrs:hover::after, .pgd-hrs:active::after { background: var(--outline-strong); width: 2px; }
 
-/* The time-base toolbar (founder follow-up): reading scale + custom window. */
-.pgd-toolbar {
-  display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
-  padding: var(--s2) var(--s2); border-bottom: 1px solid var(--outline); background: var(--sunken);
+/* ── The filter bar (LINA-306, pen "Filter bar") ────────────────────────────
+   Search + owner/status pickers + overdue/blocked toggles on the left, the
+   status colour legend on the right. Wraps on narrow shells so nothing clips. */
+.pgd-filters {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  flex-wrap: wrap;
+  padding: var(--s2) var(--s3); border-bottom: 1px solid var(--outline); background: var(--sunken);
 }
-.pgd-tb-lbl {
-  display: inline-flex; align-items: center; gap: var(--s2);
-  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
-  color: var(--muted);
+.pgd-filters-left { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.pgd-fsearch {
+  display: inline-flex; align-items: center; gap: 6px; width: 190px; max-width: 40vw;
+  padding: 4px 8px; border: 1px solid var(--outline); border-radius: 8px;
+  background: var(--paper); color: var(--muted);
 }
-.pgd-tb-sel, .pgd-tb-date {
-  font: inherit; font-size: 12px; color: var(--fg); background: var(--paper);
-  border: 1px solid var(--outline); border-radius: 6px; padding: 3px 6px;
+.pgd-fsearch:focus-within { border-color: var(--plan-baseline); }
+.pgd-fsearch-in {
+  flex: 1 1 auto; min-width: 0; font: inherit; font-size: 12px; color: var(--fg);
+  border: none; background: transparent; outline: none;
 }
-.pgd-tb-sel:focus-visible, .pgd-tb-date:focus-visible { outline: 2px solid var(--owner); outline-offset: 0; }
-.pgd-tb-range { display: inline-flex; align-items: center; gap: var(--s2); color: var(--muted); font-size: 12px; }
+.pgd-fsel {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border: 1px solid var(--outline); border-radius: 8px; background: var(--paper);
+}
+.pgd-fsel-lbl { font-size: 12px; font-weight: 600; color: var(--fg); }
+.pgd-fsel-in {
+  font: inherit; font-size: 12px; color: var(--muted); background: transparent;
+  border: none; outline: none; cursor: pointer; max-width: 130px;
+}
+.pgd-fsel:focus-within { border-color: var(--plan-baseline); }
+.pgd-fdiv { width: 1px; height: 22px; background: var(--outline); }
+.pgd-ftoggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border: 1px solid var(--outline); border-radius: 999px;
+  background: var(--paper); color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.pgd-ftoggle-dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+.pgd-ftoggle:hover { border-color: var(--outline-strong); }
+.pgd-ftoggle.is-warning.is-on {
+  color: var(--state-warning); background: var(--state-warning-muted); border-color: var(--state-warning-line);
+}
+.pgd-ftoggle.is-danger.is-on {
+  color: var(--state-danger); background: var(--state-danger-muted); border-color: var(--state-danger-line);
+}
+.pgd-fclear {
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--muted);
+  background: transparent; border: none; cursor: pointer; padding: 4px 6px;
+}
+.pgd-fclear:hover { color: var(--fg); text-decoration: underline; }
+
+/* The status colour legend — the key to the STATUS column's tints. */
+.pgd-legend {
+  display: inline-flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
+  font-size: 11px; color: var(--muted);
+}
+.pgd-legend-lbl { font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.pgd-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.pgd-legend-sw { width: 10px; height: 10px; border-radius: 3px; }
+.pgd-legend-sw.is-done { background: var(--success); }
+.pgd-legend-sw.is-doing { background: var(--plan-baseline); }
+.pgd-legend-sw.is-blocked { background: var(--state-danger); }
+.pgd-legend-sw.is-todo { background: color-mix(in srgb, var(--muted) 45%, var(--paper)); }
 
 .pgd-row { border-bottom: 1px solid var(--outline); cursor: pointer; }
 .pgd-row:hover { background: var(--sunken); }
@@ -478,8 +523,31 @@
 }
 .pgd-meter-seg { min-width: 2px; }
 .pgd-meter-seg.is-done { background: var(--success); }
-.pgd-meter-seg.is-doing { background: var(--owner); }
+.pgd-meter-seg.is-doing { background: var(--plan-baseline); }
+.pgd-meter-seg.is-blocked { background: var(--state-danger); }
 .pgd-meter-seg.is-todo { background: color-mix(in srgb, var(--muted) 45%, transparent); }
+
+/* ── The STATUS column (LINA-306, pen STATUS column) ────────────────────────
+   A PARENT row shows the segmented child meter + count; a LEAF row shows one
+   bar of its own derived status. The colours are the legend's, one source. */
+.pgd-statuscol { display: flex; align-items: center; min-width: 0; }
+.pgd-statuscell { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.pgd-statuscell .pgd-meter { width: 88px; }
+.pgd-statuscount { font-size: 11px; font-weight: 600; color: var(--muted); }
+/* The leaf status bar: a muted track filled by one status colour. */
+.pgd-statusbar {
+  display: inline-flex; width: 88px; height: 8px; border-radius: 999px; overflow: hidden;
+  background: color-mix(in srgb, var(--muted) 22%, var(--paper));
+}
+.pgd-statusbar-fill { width: 100%; height: 100%; }
+.pgd-statusbar-fill.is-done { background: var(--success); }
+.pgd-statusbar-fill.is-doing { background: var(--plan-baseline); }
+.pgd-statusbar-fill.is-blocked { background: var(--state-danger); }
+.pgd-statusbar-fill.is-todo { background: color-mix(in srgb, var(--muted) 45%, var(--paper)); }
+/* Overdue reads as a warning ring around whatever the status colour is. */
+.pgd-statusbar.is-overdue {
+  box-shadow: 0 0 0 1.5px var(--state-warning); background: var(--state-warning-muted);
+}
 
 .pgd-trade { min-width: 0; }
 .pgd-tradeinput {
@@ -818,3 +886,34 @@
   background: var(--status-pending-change-muted);
   border-color: var(--status-pending-change);
 }
+
+/* ── The floating timeline nav (LINA-306, pen "Timeline nav") ────────────────
+   A compact segmented pill pinned to the bottom-right of the grid, over the
+   canvas. It sits above the timeline and stays put while the timeline pans (it
+   is a child of .pgd-grid, not of the horizontal scroller). "Today" jumps the
+   scroll to today; the scales pick the reading base. A raised, slightly
+   translucent chip with a soft shadow so it floats clear of the bars. */
+.pgd-timenav {
+  position: absolute; right: 16px; bottom: 16px; z-index: 7;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px; border: 1px solid var(--outline); border-radius: 999px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 6px 20px -6px rgba(0, 0, 0, 0.28), 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.pgd-timenav-today,
+.pgd-timenav-scale {
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--muted);
+  border: none; background: transparent; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  white-space: nowrap;
+}
+.pgd-timenav-today { color: var(--fg); }
+.pgd-timenav-today:hover,
+.pgd-timenav-scale:hover { background: var(--sunken); color: var(--fg); }
+.pgd-timenav-div { width: 1px; height: 18px; background: var(--outline); margin: 0 2px; }
+.pgd-timenav-scales { display: inline-flex; align-items: center; gap: 2px; }
+.pgd-timenav-scale.is-active {
+  color: var(--plan-baseline-fg); background: var(--plan-baseline-muted); font-weight: 700;
+}
+.pgd-timenav-today:focus-visible,
+.pgd-timenav-scale:focus-visible { outline: 2px solid var(--plan-baseline); outline-offset: 1px; }
