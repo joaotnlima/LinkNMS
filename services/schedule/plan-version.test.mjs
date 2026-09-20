@@ -497,6 +497,31 @@ test('authorPlan: a task description is stored, validated (≤4000), and read ba
   );
 });
 
+test('getPlan: each stage carries its DERIVED currentStatus from the latest progress row (LINA-306)', async () => {
+  const { service, store } = build();
+  await service.authorPlan(PROJECT, GC, {
+    stages: [{ name: 'Phase A', children: [{ name: 'Task 1' }, { name: 'Task 2' }] }],
+  });
+
+  // With no progress reported, every stage derives to not_started (ADR-0019).
+  const before = await service.getPlan(PROJECT, GC);
+  const [t1, t2] = before.current.stages[0].children;
+  assert.equal(before.current.stages[0].currentStatus, 'not_started');
+  assert.equal(t1.currentStatus, 'not_started');
+  assert.equal(t2.currentStatus, 'not_started');
+
+  // A progress row against a stage id surfaces as that stage's current status —
+  // read off the append-only history, never a stored stage column.
+  store.insertProgress(null, {
+    id: randomUUID(), stage_id: t1.id, project_id: PROJECT,
+    status: 'in_progress', percent: 40, note: null,
+    reported_by_party_id: GC, reported_at: new Date().toISOString(),
+  });
+  const after = await service.getPlan(PROJECT, GC);
+  assert.equal(after.current.stages[0].children[0].currentStatus, 'in_progress');
+  assert.equal(after.current.stages[0].children[1].currentStatus, 'not_started');
+});
+
 test('authorPlan: the draft is INVISIBLE to the other party — no current, no history', async () => {
   const { service } = build();
   await service.authorPlan(PROJECT, GC, { stages: SKELETON });
