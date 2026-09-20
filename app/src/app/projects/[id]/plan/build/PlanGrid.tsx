@@ -109,6 +109,68 @@ const STATUS_META: Record<StageStatus, { cls: string; label: string }> = {
 };
 /** Legend / status-select order: closed → active → stuck → not begun. */
 const STATUS_ORDER: StageStatus[] = ['not_started', 'in_progress', 'blocked', 'done'];
+
+/**
+ * The SETTABLE leaf-status control (LINA-307, founder ask "I should always be
+ * able to move the status of a task"). The draft grid's read-only status bar
+ * becomes this picker for any leaf the server already holds a stage id for. It
+ * mirrors `PlanBaseline.StatusControl`: the SAME four statuses and palette, an
+ * optimistic pick that rolls back and shows the reason inline on a typed refusal
+ * (e.g. the GC-only 403). On success the caller's `router.refresh()` re-reads the
+ * server-derived status and this instance remounts on it (keyed on the value),
+ * so the control can never drift from the record it reports to. Status is NEVER
+ * authored into the draft (ADR-0019) — this POSTs an append-only progress report.
+ */
+function StatusPicker({
+  nodeKey, value, over, what, onSet,
+}: {
+  nodeKey: string;
+  value: StageStatus;
+  over: boolean;
+  what: string;
+  onSet: (nodeKey: string, status: StageStatus) => Promise<void> | void;
+}) {
+  const [val, setVal] = useState<StageStatus>(value);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const meta = STATUS_META[val];
+  const word = over ? `${meta.label} · overdue` : meta.label;
+  return (
+    <span className={`pgd-statusedit${over ? ' is-overdue' : ''}`}>
+      <select
+        className={`pgd-statussel ${meta.cls}`}
+        value={val}
+        disabled={busy}
+        aria-label={`${what} status`}
+        aria-busy={busy}
+        title={`${what}: ${word}`}
+        onChange={async (e) => {
+          const next = e.target.value as StageStatus;
+          if (next === val) return;
+          const prev = val;
+          setVal(next);
+          setBusy(true);
+          setErr(null);
+          try {
+            await onSet(nodeKey, next);
+          } catch (e2) {
+            // Roll the picker back to the last recorded value and surface why —
+            // the record is unchanged, so the control must not claim otherwise.
+            setVal(prev);
+            setErr(e2 instanceof Error ? e2.message : 'Could not update the status.');
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {STATUS_ORDER.map((s) => (
+          <option key={s} value={s}>{STATUS_META[s].label}</option>
+        ))}
+      </select>
+      {err ? <span className="pgd-status-err" role="alert">{err}</span> : null}
+    </span>
+  );
+}
 /** Row heights, shared by the table cell and its track so the panes align.
  *  Compact rows with thin bars (founder, LINA-306): a task row is 34px, a
  *  sub-task row 28px — tighter than before so more of the plan reads at once. */
@@ -246,6 +308,19 @@ export interface PlanGridProps {
    * link), `toKey` its predecessor, mirroring onLinkDep's direction.
    */
   onUnlinkDep: (fromKey: string, toKey: string) => void;
+  /**
+   * Set a LEAF task's status straight from the grid (LINA-307). `nodeKey` is the
+   * stable stage key; the caller resolves it to the live stage id and POSTs an
+   * append-only progress report. Rejects (typed) so the picker rolls back and
+   * shows the reason inline. Absent → the whole status column stays read-only.
+   */
+  onSetStatus?: (nodeKey: string, status: StageStatus) => Promise<void> | void;
+  /**
+   * The leaf keys whose status is settable — the ones the server holds a live
+   * stage id for (LINA-307). A brand-new, never-saved row is absent, so its
+   * status shows as a read-only bar until the draft lands.
+   */
+  statusSettableKeys?: Set<string>;
 }
 
 /** Module-level so the default never changes identity between renders. */
@@ -1082,6 +1157,26 @@ export function PlanGrid(props: PlanGridProps) {
     if (!node) return null; // a childless phase: nothing to colour
     const s = nodeStatus(node);
     const over = isOverdue(node);
+    // Settable when the server holds a live stage id for this leaf (LINA-307) and
+    // the grid is not locked: a never-saved row (no id yet) and a locked/frozen
+    // grid both fall through to the read-only bar. Keyed on the value so a
+    // successful set (which refreshes the page) remounts the picker on the
+    // server's word rather than leaving a stale local pick.
+    const settable = !disabled
+      && !!props.onSetStatus
+      && (props.statusSettableKeys?.has(node.key) ?? false);
+    if (settable && props.onSetStatus) {
+      return (
+        <StatusPicker
+          key={`${node.key}:${s}`}
+          nodeKey={node.key}
+          value={s}
+          over={over}
+          what={what}
+          onSet={props.onSetStatus}
+        />
+      );
+    }
     const meta = STATUS_META[s];
     const word = over ? `${meta.label} · overdue` : meta.label;
     return (
@@ -1092,7 +1187,7 @@ export function PlanGrid(props: PlanGridProps) {
         <span className={`pgd-statusbar-fill ${meta.cls}`} />
       </span>
     );
-  }, [meter, isOverdue]);
+  }, [meter, isOverdue, disabled, props.onSetStatus, props.statusSettableKeys]);
 
   const owner = useCallback((nodeKey: string, assigneePartyId: string | null, label: string) => {
     const p = partyOf(dir, assigneePartyId);

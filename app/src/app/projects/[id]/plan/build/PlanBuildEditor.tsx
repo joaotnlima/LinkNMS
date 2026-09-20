@@ -59,8 +59,9 @@ import {
   setAssignee, setDependencyType, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
   setTaskDate, setTaskDates, setTaskDescription, setTrade,
   subtaskCount, taskCount, toggleDependency, toTemplateBody, toWire,
-  type DepType, type PhaseDraft, type PlanNodeRef, type TemplatePhase,
+  type DepType, type PhaseDraft, type PlanNodeRef, type StageStatus, type TemplatePhase,
 } from '@/lib/plan-authoring';
+import { PlanActionError, reportProgress } from '@/lib/plan-baseline';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 import { TaskWorkspace } from '@/components/TaskWorkspace';
@@ -219,7 +220,7 @@ function rowOfKey(
 
 export function PlanBuildEditor({
   projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
-  importHref = null,
+  importHref = null, initialStageIds = {},
 }: {
   projectId: string;
   /**
@@ -246,6 +247,13 @@ export function PlanBuildEditor({
    * the plan first" rather than opening a thread every write would 404 on.
    */
   savedStageKeys?: string[];
+  /**
+   * The live key→id map for the saved draft's stages (LINA-307). Seeds the
+   * editor's lookup so a status can be set the moment a saved draft is resumed;
+   * each autosave replaces it with the ids that save minted. Empty for a fresh
+   * scaffold, so every row is "save first" (read-only status) until it lands.
+   */
+  initialStageIds?: Record<string, string>;
   /** The task a permalink asked for, opened in the drawer on mount. */
   openStageKey?: string | null;
 }) {
@@ -322,6 +330,12 @@ export function PlanBuildEditor({
   // (comments/files) without a reload once its draft write lands.
   const [savedKeys, setSavedKeys] = useState<Set<string>>(() => new Set(savedStageKeys));
   const saved = savedKeys;
+  // The live key→id lookup for setting a task's status (LINA-307). Seeded from the
+  // page's last read, replaced on every autosave (which re-mints ids). A leaf's
+  // status is settable exactly when this holds an id for its key.
+  const [stageIdByKey, setStageIdByKey] = useState<Map<string, string>>(
+    () => new Map(Object.entries(initialStageIds)),
+  );
   const workspaceKey = activeKey && saved.has(activeKey) ? activeKey : null;
   const [copied, setCopied] = useState(false);
 
@@ -415,7 +429,7 @@ export function PlanBuildEditor({
     savingRef.current = true;
     setSaveState('saving');
     try {
-      await authorPlan(projectId, stages);
+      const result = await authorPlan(projectId, stages);
       // Light up every current row's workspace: after this write the server holds
       // them all, so a freshly-added task can collect comments/files immediately.
       setSavedKeys((prev) => {
@@ -427,6 +441,11 @@ export function PlanBuildEditor({
         });
         return nextKeys;
       });
+      // Refresh the key→id lookup from THIS save (LINA-307): the re-save re-minted
+      // every stage id, so a status POST must target the ids this response names,
+      // not the ones the page loaded with. Replace wholesale — a key dropped from
+      // the plan should drop from the map too.
+      if (result.stageIds) setStageIdByKey(new Map(Object.entries(result.stageIds)));
       setSaveState('saved');
     } catch (e) {
       if (e instanceof PlanAuthorError && (e.code === 'open_plan_exists' || e.code === 'draft_exists')) {
@@ -511,6 +530,34 @@ export function PlanBuildEditor({
   const retrade = useCallback((nodeKey: string, trade: string) => {
     apply(setTrade(phases, nodeKey, trade));
   }, [apply, phases]);
+
+  // Set a leaf task's status straight from the draft grid (LINA-307, founder ask
+  // "I should always be able to move the status of a task"). Status is NOT part of
+  // the authored draft — it is an append-only, attributed progress report — so
+  // this does NOT go through the debounced authorPlan write. It resolves the
+  // node's LIVE stage id (re-minted on each save, kept fresh in stageIdByKey) and
+  // POSTs a progress report, then refreshes so the server's derived status (and
+  // every parent meter that rolls it up) re-reads. A node with no live id yet
+  // (never saved) is read-only in the grid and never reaches here.
+  const setStatus = useCallback(async (nodeKey: string, status: StageStatus) => {
+    const stageId = stageIdByKey.get(nodeKey);
+    if (!stageId) return;
+    setError(null);
+    try {
+      await reportProgress(stageId, status);
+      router.refresh();
+    } catch (e) {
+      // Re-throw a typed refusal so the grid's picker can roll itself back and
+      // show the reason inline; anything else becomes a page-level message.
+      if (e instanceof PlanActionError) throw e;
+      setError('That status did not save. Try again.');
+      throw e;
+    }
+  }, [stageIdByKey, router]);
+
+  // Which leaf rows are settable: those the server holds a live id for. A Set so
+  // the grid can test membership per row without re-deriving it.
+  const statusSettableKeys = useMemo(() => new Set(stageIdByKey.keys()), [stageIdByKey]);
 
   // Back to the scaffold this editor opened on — the caller's resolved default,
   // not the hard-coded skeleton. Purely client-side: it discards unsaved edits in
@@ -670,6 +717,8 @@ export function PlanBuildEditor({
         onDemote={(pi, ti, si) => apply(demoteNode(phases, pi, ti, si))}
         onLinkDep={linkDep}
         onUnlinkDep={unlinkDep}
+        onSetStatus={setStatus}
+        statusSettableKeys={statusSettableKeys}
       />
 
       <p className="pgd-hint">

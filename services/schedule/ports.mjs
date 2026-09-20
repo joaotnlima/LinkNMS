@@ -202,10 +202,23 @@ export function createInMemoryStore() {
   // frozen/terminal version can never be deleted; a draft's (or open proposal's)
   // stages may. Same terminal set as assertStageMutable.
   function deleteStagesByPlanVersion(_tx, planVersionId) {
+    const removed = [];
     for (const s of [...stages.values()]) {
       if (s.plan_version_id !== planVersionId) continue;
       assertStageMutable(s.plan_version_id);
       stages.delete(s.id);
+      removed.push(s.id);
+    }
+    // Mirror the DB FK `stage_progress.stage_id → stage.id ON DELETE SET NULL`
+    // (migration 0015, LINA-307): a draft re-save deletes the stage rows, so any
+    // progress row that referenced them keeps its `stage_key` but loses its
+    // `stage_id`. The append-only history survives; only the (now-dangling) id is
+    // nulled — the exact behaviour the key-anchored derivation relies on.
+    if (removed.length) {
+      const gone = new Set(removed);
+      for (const p of progress) {
+        if (p.stage_id != null && gone.has(p.stage_id)) p.stage_id = null;
+      }
     }
   }
 
@@ -364,6 +377,36 @@ export function createInMemoryStore() {
     const out = new Map();
     for (const [k, v] of latest) out.set(k, { ...v });
     return out;
+  }
+
+  // The single latest progress row per STAGE KEY in a project (LINA-307) — the
+  // key-anchored twin of latestProgressByProject. Survives a draft re-save that
+  // re-mints stage ids. NULL-key rows (legacy) are absent and fall through to the
+  // by-id map in the service's derivation.
+  function latestProgressByProjectKey(projectId) {
+    const latest = new Map(); // stage_key -> row
+    for (const p of progress) {
+      if (p.project_id !== projectId || p.stage_key == null) continue;
+      const cur = latest.get(p.stage_key);
+      if (!cur
+        || p.reported_at > cur.reported_at
+        || (p.reported_at === cur.reported_at && p.seq > cur.seq)) {
+        latest.set(p.stage_key, p);
+      }
+    }
+    const out = new Map();
+    for (const [k, v] of latest) out.set(k, { ...v });
+    return out;
+  }
+
+  // Full attributed history for one stage KEY in a project, oldest→newest
+  // (LINA-307) — the key-anchored twin of listProgressByStage.
+  function listProgressByKey(projectId, stageKey) {
+    return progress
+      .filter((p) => p.project_id === projectId && p.stage_key === stageKey)
+      .sort((a, b) => (a.reported_at < b.reported_at ? -1
+        : a.reported_at > b.reported_at ? 1 : a.seq - b.seq))
+      .map((p) => ({ ...p }));
   }
 
   // ── Slice B2 plan versioning (LINA-200, contract §3) ──────────────────────
@@ -809,6 +852,7 @@ export function createInMemoryStore() {
     listStageDependenciesByPlanVersion,
     insertPlanImport, getPlanImportByIdempotencyKey, importStageCounts,
     insertProgress, listProgressByStage, latestProgressByProject,
+    latestProgressByProjectKey, listProgressByKey,
     insertPlanVersion, getPlanVersion, getOpenPlanVersion, getDraftPlanVersion,
     deleteStagesByPlanVersion, nextPlanVersionNo,
     updatePlanVersionStatus, listPlanVersions,

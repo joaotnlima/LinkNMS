@@ -88,6 +88,28 @@ export function stageKeysOf(stages: PlanStageNode[] | null | undefined): Set<str
   return keys;
 }
 
+/**
+ * Each keyed stage's CURRENT id, by its stable client key (LINA-307). The build
+ * editor needs a live stage id to POST a status against — status is set on
+ * `POST /stages/:id/progress`, but a draft re-save re-mints these ids, so the
+ * editor seeds its key→id lookup from this (the last saved read) and refreshes
+ * it from each autosave's response. Keyless stages are absent — their status
+ * stays read-only until the plan is saved with a key.
+ */
+export function stageIdsByKey(
+  stages: PlanStageNode[] | null | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (nodes: PlanStageNode[]) => {
+    for (const n of nodes) {
+      if (typeof n.key === 'string' && n.key.length > 0) out[n.key] = n.id;
+      if (n.children?.length) walk(n.children);
+    }
+  };
+  walk(stages ?? []);
+  return out;
+}
+
 /** A stage found by key, with the names above it — the permalink's heading. */
 export interface StageHit {
   node: PlanStageNode;
