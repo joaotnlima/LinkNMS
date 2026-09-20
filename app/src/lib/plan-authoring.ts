@@ -1493,6 +1493,13 @@ export interface AuthorResult {
   stageCount: number;
   rootCount: number;
   auditEventId: string;
+  /**
+   * Each keyed stage's FRESHLY-MINTED id, by its stable client key (LINA-307). A
+   * draft re-save re-mints these ids, so the editor refreshes its key→id lookup
+   * from this map on every save — a status POST always targets the LIVE stage id
+   * without waiting for a page reload. Keyless nodes are absent.
+   */
+  stageIds?: Record<string, string>;
 }
 
 /**

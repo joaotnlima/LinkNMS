@@ -27,7 +27,7 @@ import { directoryOf } from '@/lib/view';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContext } from '@/server/portal-shell';
 import { hydrateDraft, type PhaseDraft, type TemplatePhase } from '@/lib/plan-authoring';
-import { stageKeysOf } from '@/lib/task-workspace';
+import { stageIdsByKey, stageKeysOf } from '@/lib/task-workspace';
 import { openRequest } from '@/lib/phase-signoff';
 import { SignOffPanel } from '@/components/SignOffPanel';
 import { PlanBaseline, type PartyRef } from './PlanBaseline';
@@ -165,6 +165,9 @@ async function buildExecutionSlot(ctx: {
     const draft: PhaseDraft[] | undefined =
       plan.current?.status === 'draft' ? hydrateDraft(plan.current.stages) : undefined;
     const savedStageKeys = [...stageKeysOf(plan.current?.stages)];
+    // The live key→id map for this draft's saved stages (LINA-307) — the editor's
+    // seed for turning a status change into a POST against the right stage id.
+    const initialStageIds = stageIdsByKey(plan.current?.stages);
     return (
       <PlanBuildEditor
         projectId={id}
@@ -172,6 +175,7 @@ async function buildExecutionSlot(ctx: {
         templateBody={template}
         parties={parties}
         savedStageKeys={savedStageKeys}
+        initialStageIds={initialStageIds}
         // Importing is the GC's route (B1 §5). Landing straight in the editor
         // used to hide the "upload a spreadsheet" door the old chooser offered —
         // this keeps it one click away, only for the party it belongs to.

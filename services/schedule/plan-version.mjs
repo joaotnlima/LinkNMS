@@ -153,11 +153,17 @@ export function createPlanVersionService({ store, ledger, identity, phases = nul
     // attributable and tamper-evident. Fetched once here and threaded into the
     // tree; absent rows fall through to 'not_started'. Only `current` gets a
     // stage tree, so this one read covers the whole surface.
+    //
+    // Two maps (LINA-307): status is anchored on the stable stage KEY so it
+    // survives a draft re-save that re-mints the stage row id. The by-key map is
+    // authoritative; the by-id map is the fallback for legacy rows written before
+    // LINA-307 (stage_key NULL) — so `latestByKey.get(key) ?? latestById.get(id)`.
     const latestByStage = await store.latestProgressByProject(projectId);
+    const latestByKey = await store.latestProgressByProjectKey(projectId);
 
     const view = async (v) => ({
       ...(await versionView(projectId, v)),
-      stages: await stageTree(v.id, latestByStage),
+      stages: await stageTree(v.id, latestByStage, latestByKey),
       acceptances: await acceptanceViews(projectId, await store.listPlanAcceptances(v.id)),
     });
 
@@ -209,7 +215,7 @@ export function createPlanVersionService({ store, ledger, identity, phases = nul
   // `dependsOn: string[]` is DUAL-EMITTED next to `dependencies: [{ on, type }]`
   // until the FE consumes the typed shape in prod — never break the read shape
   // between the BE and FE merges.
-  async function stageTree(versionId, latestByStage = new Map()) {
+  async function stageTree(versionId, latestByStage = new Map(), latestByKey = new Map()) {
     const stages = await store.listStagesByPlanVersion(versionId);
     const roots = stages.filter((s) => s.parent_id == null).sort((a, b) => a.position - b.position);
     const childrenOf = new Map();
@@ -240,7 +246,12 @@ export function createPlanVersionService({ store, ledger, identity, phases = nul
       plannedCostCents: s.planned_cost_cents ?? null,
       // Derived current status (LINA-306), never a stored stage column — the
       // latest progress row's status, or 'not_started' when the stage has none.
-      currentStatus: latestByStage.get(s.id)?.status ?? 'not_started',
+      // Anchored on the stable stage KEY (LINA-307) so it survives a draft
+      // re-save that re-mints this row's id; the by-id map is the legacy fallback.
+      currentStatus:
+        (s.key != null ? latestByKey.get(s.key)?.status : undefined)
+        ?? latestByStage.get(s.id)?.status
+        ?? 'not_started',
       dependsOn: (depsByStage.get(s.id) ?? []).map((d) => d.depends_on_stage_id),
       dependencies: (depsByStage.get(s.id) ?? []).map((d) => ({
         on: d.depends_on_stage_id,
@@ -728,6 +739,16 @@ export function createPlanVersionService({ store, ledger, identity, phases = nul
         }
       }
 
+      // Key → freshly-minted stage id, for every keyed node (LINA-307). A draft
+      // re-save re-mints these ids, so the editor needs the LIVE id to POST a
+      // status against — this map lets it refresh its key→id lookup on each save
+      // without a page reload. Keyless nodes (import-seeded / pre-LINA-249) are
+      // omitted; their rows stay read-only status until saved with a key.
+      const stageIds = {};
+      for (let i = 0; i < order.length; i += 1) {
+        if (order[i].key != null) stageIds[order[i].key] = ids[i];
+      }
+
       return {
         planVersionId: versionId,
         versionNo: null,
@@ -735,6 +756,7 @@ export function createPlanVersionService({ store, ledger, identity, phases = nul
         stageCount: order.length,
         rootCount,
         auditEventId: drafted.id,
+        stageIds,
       };
     };
 

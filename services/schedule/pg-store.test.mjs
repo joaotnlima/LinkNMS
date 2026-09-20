@@ -94,7 +94,8 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
     // errors mean it exists and are safely ignored.
     for (const f of ['0003_plan_versioning.sql', '0005_plan_draft_status.sql',
       '0006_stage_description.sql', '0007_stage_dependency_draft_delete.sql',
-      '0012_project_phases_rfp_signoff.sql', '0013_phase_sign_off_grant_update.sql']) {
+      '0012_project_phases_rfp_signoff.sql', '0013_phase_sign_off_grant_update.sql',
+      '0015_stage_progress_stage_key.sql']) {
       try { await pool.query(await readFile(join(here, 'migrations', f), 'utf8')); }
       catch (err) {
         // 42704 = DROP CONSTRAINT on a constraint 0005 already dropped (re-run);
@@ -589,6 +590,135 @@ describe('Postgres Schedule & Progress store + ledger wiring', { skip: DB ? fals
     assert.equal((await store.listStageDependenciesByPlanVersion(draft.planVersionId)).length, 0);
     assert.equal((await store.listStagesByPlanVersion(draft.planVersionId)).length, 0);
   });
+  });
+
+  // ── Settable draft status anchored on stage_key (LINA-307) ──────────────────
+  // Prove, in the DATABASE, that a status set on a DRAFT stage survives the
+  // draft re-save that re-mints the stage row id — because the append-only
+  // progress row anchors on the stable stage_key and the FK re-declared
+  // ON DELETE SET NULL lets the stage DELETE succeed without a DELETE/UPDATE on
+  // the audit table. This is the whole point of migration 0015.
+  describe('settable draft status anchored on stage_key (LINA-307)', () => {
+    function seedVersionProject() {
+      const projectId = randomUUID();
+      const homeowner = randomUUID();
+      const gc = randomUUID();
+      const identity = identityFor(new Map([[homeowner, 'owner'], [gc, 'counterparty']]));
+      return { projectId, homeowner, gc, identity };
+    }
+
+    async function seedDraft() {
+      const { projectId, homeowner, gc, identity } = seedVersionProject();
+      await ledger.appendEvent({
+        projectId, type: 'project_created', actorPartyId: homeowner,
+        occurredAt: '2026-09-19T09:00:00.000Z',
+        payload: { name: 'Draft status build', baselineBudgetCents: 5_000_000, ownerPartyId: homeowner },
+      });
+      const planSvc = createPlanVersionService({ store, ledger, identity });
+      const schedSvc = createScheduleService({ store, ledger, identity });
+      return { projectId, gc, planSvc, schedSvc };
+    }
+
+    test('a status set on a draft stage SURVIVES a re-save by key, and the re-save does not FK-fail', async () => {
+      const { projectId, gc, planSvc, schedSvc } = await seedDraft();
+
+      await planSvc.authorPlan(projectId, gc, {
+        stages: [{ name: 'Foundation', key: 'f' }, { name: 'Framing', key: 'fr' }],
+      });
+      const v1 = await planSvc.getPlan(projectId, gc);
+      const f1 = v1.current.stages.find((s) => s.key === 'f');
+      assert.equal(f1.currentStatus, 'not_started');
+
+      // Set status on the DRAFT stage — the row anchors on stage_key 'f'.
+      await schedSvc.reportProgress(f1.id, gc, { status: 'in_progress', percent: 40 });
+      const v2 = await planSvc.getPlan(projectId, gc);
+      assert.equal(v2.current.stages.find((s) => s.key === 'f').currentStatus, 'in_progress',
+        'the draft grid reads the status straight back');
+
+      // Re-save the draft (this delete+reinserts EVERY stage row → new ids). Before
+      // migration 0015 the stage DELETE would violate stage_progress.stage_id.
+      await planSvc.authorPlan(projectId, gc, {
+        stages: [
+          { name: 'Foundation', key: 'f', plannedStartDate: '2026-10-01' },
+          { name: 'Framing', key: 'fr' },
+        ],
+      });
+      const v3 = await planSvc.getPlan(projectId, gc);
+      const f3 = v3.current.stages.find((s) => s.key === 'f');
+      assert.notEqual(f3.id, f1.id, 'the stage row id was re-minted by the re-save');
+      assert.equal(f3.currentStatus, 'in_progress', 'status survived the re-save, derived by key');
+
+      // The append-only row is intact: same status + key, stage_id nulled by the
+      // ON DELETE SET NULL cascade (never deleted — the history is untouched).
+      const row = await pool.query(
+        `select stage_id, stage_key, status from schedule.stage_progress
+          where project_id = $1 and stage_key = $2 order by seq`,
+        [projectId, 'f']);
+      assert.equal(row.rows.length, 1, 'exactly one progress row, preserved');
+      assert.equal(row.rows[0].stage_id, null, 'its stale stage_id was SET NULL by the cascade');
+      assert.equal(row.rows[0].stage_key, 'f');
+      assert.equal(row.rows[0].status, 'in_progress');
+    });
+
+    test('the not_started note-required check reads KEY history, so a re-mint keeps "current"', async () => {
+      const { projectId, gc, planSvc, schedSvc } = await seedDraft();
+      await planSvc.authorPlan(projectId, gc, { stages: [{ name: 'Foundation', key: 'f' }] });
+      const f1 = (await planSvc.getPlan(projectId, gc)).current.stages[0];
+      await schedSvc.reportProgress(f1.id, gc, { status: 'in_progress' });
+
+      // Re-save → new stage id, but the KEY history still says in_progress.
+      await planSvc.authorPlan(projectId, gc, { stages: [{ name: 'Foundation', key: 'f' }] });
+      const f2 = (await planSvc.getPlan(projectId, gc)).current.stages[0];
+      assert.notEqual(f2.id, f1.id);
+
+      // Walking back to not_started with no note is refused — the state machine
+      // saw the by-KEY current (in_progress), not an empty by-id history.
+      await assert.rejects(
+        () => schedSvc.reportProgress(f2.id, gc, { status: 'not_started' }),
+        (e) => e.code === 'note_required' && e.status === 400);
+      // With a note it goes through, and the derived status walks back.
+      const back = await schedSvc.reportProgress(f2.id, gc, { status: 'not_started', note: 'reset' });
+      assert.equal(back.currentStatus, 'not_started');
+    });
+
+    test('the SET NULL cascade needs NO UPDATE grant on the append-only table', async () => {
+      const { projectId, gc, planSvc, schedSvc } = await seedDraft();
+      await planSvc.authorPlan(projectId, gc, { stages: [{ name: 'Foundation', key: 'f' }] });
+      const f = (await planSvc.getPlan(projectId, gc)).current.stages[0];
+      await schedSvc.reportProgress(f.id, gc, { status: 'in_progress', percent: 40 });
+
+      // schedule_app is INSERT + SELECT only on the audit table — NO UPDATE/DELETE.
+      const grant = await pool.query(
+        `select has_table_privilege('schedule_app','schedule.stage_progress','UPDATE') as upd,
+                has_table_privilege('schedule_app','schedule.stage_progress','INSERT') as ins,
+                has_table_privilege('schedule_app','schedule.stage_progress','SELECT') as sel`);
+      assert.equal(grant.rows[0].upd, false, 'schedule_app has NO UPDATE on stage_progress');
+      assert.equal(grant.rows[0].ins, true);
+      assert.equal(grant.rows[0].sel, true);
+
+      // When the connection may SET ROLE to it, prove the strongest form: AS
+      // schedule_app (no UPDATE grant), deleting the draft stage still succeeds and
+      // the FK's SET NULL — a SYSTEM referential action — nulls the progress row's
+      // id. (A branch that forbids SET ROLE still gets the grant-absence proof.)
+      const canSet = (await pool.query(
+        `select pg_has_role(current_user, 'schedule_app', 'USAGE') as ok`)).rows[0].ok;
+      if (canSet) {
+        const client = await pool.connect();
+        try {
+          await client.query('set role schedule_app');
+          await client.query('delete from schedule.stage where id = $1', [f.id]);
+        } finally {
+          await client.query('reset role').catch(() => {});
+          client.release();
+        }
+        const row = await pool.query(
+          `select stage_id, stage_key, status from schedule.stage_progress
+            where project_id = $1 and stage_key = $2`, [projectId, 'f']);
+        assert.equal(row.rows.length, 1, 'the append-only row survived the app-role delete');
+        assert.equal(row.rows[0].stage_id, null, 'SET NULL ran without an UPDATE grant');
+        assert.equal(row.rows[0].status, 'in_progress');
+      }
+    });
   });
 
   // ── Project phases + execution sign-off (LINA-278, ADR-0023) ────────────────

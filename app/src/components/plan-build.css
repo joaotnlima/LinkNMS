@@ -549,6 +549,44 @@
   box-shadow: 0 0 0 1.5px var(--state-warning); background: var(--state-warning-muted);
 }
 
+/* The settable leaf-status picker (LINA-307): the read-only bar becomes a small
+   pill <select> for any leaf the server holds a stage id for. Same four status
+   colours as the bar/meter/legend, so a status never changes hue when it turns
+   settable. Tokens only — holds in light and dark. */
+.pgd-statusedit { display: inline-flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pgd-statussel {
+  font-size: 11px; font-weight: 650; border-radius: 999px;
+  padding: 1px 7px; border: 1px solid var(--outline); max-width: 100%;
+  cursor: pointer; background: var(--raised); color: var(--fg);
+}
+.pgd-statussel:disabled { cursor: progress; opacity: .7; }
+.pgd-statussel:focus-visible { outline: 2px solid var(--owner); outline-offset: 1px; }
+.pgd-statussel.is-todo {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 12%, var(--paper));
+  border-color: var(--outline);
+}
+.pgd-statussel.is-doing {
+  color: var(--plan-baseline);
+  background: color-mix(in srgb, var(--plan-baseline) 12%, var(--paper));
+  border-color: color-mix(in srgb, var(--plan-baseline) 55%, transparent);
+}
+.pgd-statussel.is-done {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, var(--paper));
+  border-color: color-mix(in srgb, var(--success) 55%, transparent);
+}
+.pgd-statussel.is-blocked {
+  color: var(--state-danger);
+  background: color-mix(in srgb, var(--state-danger) 12%, var(--paper));
+  border-color: var(--state-danger);
+}
+/* Overdue rings the picker the same way it rings the read-only bar. */
+.pgd-statusedit.is-overdue .pgd-statussel {
+  box-shadow: 0 0 0 1.5px var(--state-warning);
+}
+.pgd-status-err { font-size: 11px; color: var(--state-danger); max-width: 160px; }
+
 .pgd-trade { min-width: 0; }
 .pgd-tradeinput {
   width: 100%; min-width: 0; font: inherit; font-size: 12px;

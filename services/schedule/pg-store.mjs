@@ -60,6 +60,7 @@ function mapProgress(r) {
     id: r.id,
     seq: toNum(r.seq),
     stage_id: r.stage_id,
+    stage_key: r.stage_key ?? null,
     project_id: r.project_id,
     status: r.status,
     percent: r.percent == null ? null : Number(r.percent),
@@ -338,12 +339,12 @@ export function createPgStore({ pool = getPool() } = {}) {
   async function insertProgress(client, row) {
     const { rows } = await client.query(
       `insert into schedule.stage_progress
-         (id, stage_id, project_id, status, percent, note, reported_by_party_id, reported_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8)
+         (id, stage_id, stage_key, project_id, status, percent, note, reported_by_party_id, reported_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        returning *`,
       [
-        row.id, row.stage_id, row.project_id, row.status, row.percent,
-        row.note, row.reported_by_party_id, row.reported_at,
+        row.id, row.stage_id, row.stage_key ?? null, row.project_id, row.status,
+        row.percent, row.note, row.reported_by_party_id, row.reported_at,
       ],
     );
     return mapProgress(rows[0]);
@@ -375,6 +376,38 @@ export function createPgStore({ pool = getPool() } = {}) {
     const out = new Map();
     for (const r of rows) out.set(r.stage_id, mapProgress(r));
     return out;
+  }
+
+  // The single latest progress row per STAGE KEY in a project (LINA-307). The
+  // key-anchored twin of latestProgressByProject: status survives a draft re-save
+  // that re-mints stage row ids, so this is the derivation input for a draft's
+  // current status. Rows with a NULL stage_key (legacy, pre-LINA-307) are absent
+  // here and fall through to the by-id map in the service's derivation.
+  async function latestProgressByProjectKey(projectId) {
+    const { rows } = await pool.query(
+      `select distinct on (stage_key) *
+         from schedule.stage_progress
+        where project_id = $1 and stage_key is not null
+        order by stage_key, reported_at desc, seq desc`,
+      [projectId],
+    );
+    const out = new Map();
+    for (const r of rows) out.set(r.stage_key, mapProgress(r));
+    return out;
+  }
+
+  // Full attributed history for one stage KEY in a project, oldest→newest
+  // (LINA-307). The key-anchored twin of listProgressByStage — used for the
+  // note-required state-machine check and the single-stage history read, so a
+  // draft re-mint never loses "current".
+  async function listProgressByKey(projectId, stageKey) {
+    const { rows } = await pool.query(
+      `select * from schedule.stage_progress
+        where project_id = $1 and stage_key = $2
+        order by reported_at, seq`,
+      [projectId, stageKey],
+    );
+    return rows.map(mapProgress);
   }
 
   // ── Slice B1 plan import (LINA-199; contract §3) ────────────────────────────
@@ -1003,6 +1036,7 @@ export function createPgStore({ pool = getPool() } = {}) {
     deleteStageDependenciesByPlanVersion, listStageDependenciesByPlanVersion,
     importStageCounts,
     insertProgress, listProgressByStage, latestProgressByProject,
+    latestProgressByProjectKey, listProgressByKey,
     insertPlanVersion, getPlanVersion, getOpenPlanVersion, getDraftPlanVersion,
     deleteStagesByPlanVersion, nextPlanVersionNo,
     updatePlanVersionStatus, listPlanVersions,
