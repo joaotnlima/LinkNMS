@@ -678,8 +678,12 @@
 .pgt-lbl-txt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pgt-lbl-dot { flex: none; width: 6px; height: 6px; border-radius: 999px; background: var(--plan-baseline); }
 
-/* Right: scrollable day canvas. */
-.pgt-scroll { overflow-x: auto; }
+/* Right: scrollable day canvas. `min-width: 0` lets the 1fr grid track shrink to
+   the pane so the wide canvas scrolls INSIDE this box (LINA-306); without it the
+   track grows to canvasWidth, `.pgd`'s `overflow: hidden` clips the timeline, and
+   the horizontal scrollbar never appears. `overscroll-behavior-x: contain` keeps
+   a horizontal swipe on the timeline from also navigating the browser back. */
+.pgt-scroll { overflow-x: auto; min-width: 0; overscroll-behavior-x: contain; }
 .pgt-canvas { position: relative; }
 .pgt-axis { position: relative; border-bottom: 1px solid var(--outline); background: var(--sunken); }
 .pgt-axis-cell { position: absolute; top: 0; bottom: 0; }
