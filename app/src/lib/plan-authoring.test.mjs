@@ -1116,14 +1116,41 @@ test('enforceLink: moves ONLY the link dependent — the downstream chain stays 
   ])];
   phases = setDependencyType(toggleDependency(phases, 't1.1', 't1.1.1'), 't1.1', 't1.1.1', 'ends_with');
   const out = enforceLink(phases, 't1.1');
-  // The dependent (1.1) snaps its end to 1.1.1's end, duration kept.
+  // The dependent (1.1) snaps ONLY its end to 1.1.1's end; its start is pinned
+  // where the author left it — an end-to-end link resizes, it does not slide the
+  // bar earlier (LINA-306). A pinned start also keeps the timeline's left edge and
+  // every other bar's position visually put.
   assert.equal(out[0].tasks[0].end, '2026-03-25');
-  assert.equal(out[0].tasks[0].start, '2026-03-16');
+  assert.equal(out[0].tasks[0].start, '2026-03-01');
   // Everything else is byte-for-byte where it was — no cascade.
   assert.equal(out[0].tasks[1].start, '2026-03-11');   // t1.2 (follows 1.1) untouched
   assert.equal(out[0].tasks[1].end, '2026-03-15');
   assert.equal(out[0].tasks[2].start, '2026-03-16');   // t1.3 untouched
   assert.equal(out[0].tasks[3].start, '2026-03-20');   // tX untouched
+});
+
+test('enforceLink: ends_with moves only the end, pinning the start (resize, no slide)', () => {
+  // Founder's exact gesture: draw "end of 1.1 → end of 1.1.1". 1.1's END jumps to
+  // 1.1.1's finish and its START stays exactly where it was — the bar does not
+  // slide earlier, so the Fit-plan left edge (and every other bar) holds still.
+  let phases = [P('p1', [
+    { key: 't1.1', name: 'T1.1', start: '2026-03-01', end: '2026-03-10', description: '', trade: '', assigneePartyId: null, dependsOn: [],
+      children: [T('t1.1.1', '2026-03-02', '2026-03-25')] },
+  ])];
+  phases = setDependencyType(toggleDependency(phases, 't1.1', 't1.1.1'), 't1.1', 't1.1.1', 'ends_with');
+  const out = enforceLink(phases, 't1.1');
+  assert.equal(out[0].tasks[0].start, '2026-03-01', 'start pinned — no earlier slide');
+  assert.equal(out[0].tasks[0].end, '2026-03-25', 'end snapped to the target finish');
+});
+
+test('enforceLink: ends_with falls back to a whole-bar shift when the target ends on/before our start', () => {
+  // A pinned start would invert the bar (end before start), so here — and only
+  // here — the bar shifts back wholesale, duration kept, to stay valid.
+  let phases = [P('p1', [T('a', '2026-03-01', '2026-03-10'), T('b', '2026-04-01', '2026-04-05')])];
+  phases = setDependencyType(toggleDependency(phases, 'b', 'a'), 'b', 'a', 'ends_with');
+  const out = enforceLink(phases, 'b');
+  assert.equal(out[0].tasks[1].end, '2026-03-10', 'end := target finish');
+  assert.equal(out[0].tasks[1].start, '2026-03-06', '4-day span kept, shifted back from the end');
 });
 
 test('enforceLink: a released or undated link moves nothing (identity)', () => {

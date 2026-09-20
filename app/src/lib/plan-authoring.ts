@@ -954,11 +954,21 @@ function dateMaps(phases: PhaseDraft[]): {
 }
 
 /**
- * New dates for ONE dependent so it obeys its links, duration-preserving, or
- * null when nothing moves (undated, no dated predecessor, or already snapped).
- * Predecessor spans are read from the live `dates` map — a phase key resolves to
- * its children's envelope. Several predecessors take the LATEST (max) constraint
- * so every "after" is satisfied at once.
+ * New dates for ONE dependent so it obeys its links, or null when nothing moves
+ * (undated, no dated predecessor, or already snapped). Predecessor spans are read
+ * from the live `dates` map — a phase key resolves to its children's envelope.
+ * Several predecessors take the LATEST (max) constraint so every "after" is
+ * satisfied at once.
+ *
+ * How a link moves the bar (LINA-306, founder's ask):
+ *  - `starts_after` / `starts_with` move the START and keep the duration — the
+ *    task slides forward as a whole to begin after / with its predecessor.
+ *  - `ends_with` moves ONLY the END to meet the predecessor's finish and pins the
+ *    START where the author put it. Drawing "1.1 ends with 1.1.1" re-snaps 1.1's
+ *    end alone; its start does not jump earlier, so the timeline's left edge — and
+ *    every other bar's position — stays put. (If the target finishes on/before our
+ *    start the end can't just retreat past the start, so we fall back to shifting
+ *    the whole bar, duration kept, to keep the bar valid.)
  */
 function snapToLinks(
   key: string,
@@ -992,7 +1002,13 @@ function snapToLinks(
   let ns = s;
   let ne = e;
   if (startTarget !== null) { ns = startTarget; ne = ns + dur; }
-  else if (endTarget !== null) { ne = endTarget; ns = ne - dur; }
+  else if (endTarget !== null) {
+    // Pin the start, move the end to the target finish (a finish-to-finish link
+    // resizes rather than slides). Only if the target ends on/before our start —
+    // where a pinned start would invert the bar — do we shift the whole bar back.
+    if (endTarget > s) { ne = endTarget; }
+    else { ne = endTarget; ns = ne - dur; }
+  }
   if (ns === s && ne === e) return null;
   return { start: formatDay(ns), end: formatDay(ne) };
 }
