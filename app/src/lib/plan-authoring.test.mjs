@@ -23,7 +23,7 @@ import {
   planNodes, dependencyChoices, dependsOnOf, setDependsOn, toggleDependency, detectCycle,
   setDependencyType, planLinks, DEP_TYPES, DEP_LABELS, DEFAULT_DEP_TYPE, isDepType,
   // Dependency-date enforcement (LINA-306).
-  enforceDependencies,
+  enforceDependencies, enforceLink,
   // The third level (LINA-243).
   addSubtask, renameSubtask, setSubtaskDate, setSubtaskDates, setSubtaskDescription, removeSubtask,
   moveSubtask, reorderSubtask, subtaskCount,
@@ -1101,6 +1101,64 @@ test('enforceDependencies: a task may key off a whole phase envelope', () => {
   // p1's envelope ends at its latest child finish (a2 → 03-20) → b starts 03-21.
   assert.equal(out[1].tasks[0].start, '2026-03-21');
   assert.equal(out[1].tasks[0].end, '2026-03-23');
+});
+
+test('enforceLink: moves ONLY the link dependent — the downstream chain stays put', () => {
+  // The founder's bug: linking 1.1 ends_with its own sub 1.1.1 must not shove the
+  // rest of the plan. t1.2 follows t1.1 and t1.3 follows t1.2 (a real chain), and
+  // tX is independent — none of them may move when the ONE link is applied.
+  let phases = [P('p1', [
+    { key: 't1.1', name: 'T1.1', start: '2026-03-01', end: '2026-03-10', description: '', trade: '', assigneePartyId: null, dependsOn: [],
+      children: [T('t1.1.1', '2026-03-02', '2026-03-25')] },
+    T('t1.2', '2026-03-11', '2026-03-15', [{ on: 't1.1', type: 'starts_after' }]),
+    T('t1.3', '2026-03-16', '2026-03-18', [{ on: 't1.2', type: 'starts_after' }]),
+    T('tX', '2026-03-20', '2026-03-22'),
+  ])];
+  phases = setDependencyType(toggleDependency(phases, 't1.1', 't1.1.1'), 't1.1', 't1.1.1', 'ends_with');
+  const out = enforceLink(phases, 't1.1');
+  // The dependent (1.1) snaps ONLY its end to 1.1.1's end; its start is pinned
+  // where the author left it — an end-to-end link resizes, it does not slide the
+  // bar earlier (LINA-306). A pinned start also keeps the timeline's left edge and
+  // every other bar's position visually put.
+  assert.equal(out[0].tasks[0].end, '2026-03-25');
+  assert.equal(out[0].tasks[0].start, '2026-03-01');
+  // Everything else is byte-for-byte where it was — no cascade.
+  assert.equal(out[0].tasks[1].start, '2026-03-11');   // t1.2 (follows 1.1) untouched
+  assert.equal(out[0].tasks[1].end, '2026-03-15');
+  assert.equal(out[0].tasks[2].start, '2026-03-16');   // t1.3 untouched
+  assert.equal(out[0].tasks[3].start, '2026-03-20');   // tX untouched
+});
+
+test('enforceLink: ends_with moves only the end, pinning the start (resize, no slide)', () => {
+  // Founder's exact gesture: draw "end of 1.1 → end of 1.1.1". 1.1's END jumps to
+  // 1.1.1's finish and its START stays exactly where it was — the bar does not
+  // slide earlier, so the Fit-plan left edge (and every other bar) holds still.
+  let phases = [P('p1', [
+    { key: 't1.1', name: 'T1.1', start: '2026-03-01', end: '2026-03-10', description: '', trade: '', assigneePartyId: null, dependsOn: [],
+      children: [T('t1.1.1', '2026-03-02', '2026-03-25')] },
+  ])];
+  phases = setDependencyType(toggleDependency(phases, 't1.1', 't1.1.1'), 't1.1', 't1.1.1', 'ends_with');
+  const out = enforceLink(phases, 't1.1');
+  assert.equal(out[0].tasks[0].start, '2026-03-01', 'start pinned — no earlier slide');
+  assert.equal(out[0].tasks[0].end, '2026-03-25', 'end snapped to the target finish');
+});
+
+test('enforceLink: ends_with falls back to a whole-bar shift when the target ends on/before our start', () => {
+  // A pinned start would invert the bar (end before start), so here — and only
+  // here — the bar shifts back wholesale, duration kept, to stay valid.
+  let phases = [P('p1', [T('a', '2026-03-01', '2026-03-10'), T('b', '2026-04-01', '2026-04-05')])];
+  phases = setDependencyType(toggleDependency(phases, 'b', 'a'), 'b', 'a', 'ends_with');
+  const out = enforceLink(phases, 'b');
+  assert.equal(out[0].tasks[1].end, '2026-03-10', 'end := target finish');
+  assert.equal(out[0].tasks[1].start, '2026-03-06', '4-day span kept, shifted back from the end');
+});
+
+test('enforceLink: a released or undated link moves nothing (identity)', () => {
+  let phases = [P('p1', [T('a', '2026-03-01', '2026-03-05'), T('b', '', '')])];
+  phases = toggleDependency(phases, 'b', 'a');
+  assert.equal(enforceLink(phases, 'b'), phases, 'an undated dependent → identity (same ref)');
+  const noDeps = [P('p1', [T('a', '2026-03-01', '2026-03-05')])];
+  assert.equal(enforceLink(noDeps, 'a'), noDeps, 'a node with no links → identity');
 });
 
 test('enforceDependencies: pure — the input tree is never mutated', () => {

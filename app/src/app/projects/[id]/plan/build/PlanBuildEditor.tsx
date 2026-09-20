@@ -51,7 +51,7 @@ import Link from 'next/link';
 
 import {
   DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
-  addPhase, addSubtask, addTask, authorPlan, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, nodeIndex,
+  addPhase, addSubtask, addTask, authorPlan, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, enforceLink, nodeIndex,
   promoteNode,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
   reorderPhase, reorderSubtask, reorderTask,
@@ -385,6 +385,14 @@ export function PlanBuildEditor({
     apply(enforceDependencies(next));
   }, [apply]);
 
+  // Applying ONE link enforces ONLY that link's dependent — not the whole graph
+  // (LINA-306, founder's ask): drawing "1.1 ends with 1.1.1" moves 1.1 alone and
+  // leaves every other task where it is, including tasks that transitively follow
+  // it. A link is a constraint on its own pair; it does not re-flow the plan.
+  const applyLink = useCallback((next: PhaseDraft[], dependent: string) => {
+    apply(enforceLink(next, dependent));
+  }, [apply]);
+
   // The debounced writer. Reads the LATEST tree from the ref (a stale closure
   // would save the plan as it was when the timer was armed, not as it settled).
   const flushRef = useRef<() => void>(() => {});
@@ -454,24 +462,29 @@ export function PlanBuildEditor({
     if (saveTimer.current) { clearTimeout(saveTimer.current); void flushRef.current(); }
   }, []);
 
+  // Adding a link snaps its dependent (`nodeKey`) and nothing else; removing one
+  // moves nothing (a released stage keeps its last dates). Either way the rest of
+  // the plan stays put (LINA-306).
   const toggleDep = useCallback((nodeKey: string, dep: string) => {
-    applyDeps(toggleDependency(phases, nodeKey, dep));
-  }, [applyDeps, phases]);
+    const next = toggleDependency(phases, nodeKey, dep);
+    const added = dependsOnOf(next, nodeKey).some((d) => d.on === dep);
+    if (added) applyLink(next, nodeKey); else apply(next);
+  }, [applyLink, apply, phases]);
 
-  // Re-typing a link is a plan edit like any other — and now re-enforces the
+  // Re-typing a link is a plan edit like any other — and now re-enforces just the
   // dependent's dates against its new rule (LINA-306): flip starts_after to
-  // ends_with and the bar re-snaps the moment the type changes.
+  // ends_with and that one bar re-snaps the moment the type changes.
   const retypeDep = useCallback((nodeKey: string, dep: string, type: DepType) => {
-    applyDeps(setDependencyType(phases, nodeKey, dep, type));
-  }, [applyDeps, phases]);
+    applyLink(setDependencyType(phases, nodeKey, dep, type), nodeKey);
+  }, [applyLink, phases]);
 
   // Clear ONE link — the drawer chip's ✕ and now the unlink control that sits in
   // the middle of the Gantt arrow (LINA-306). toggleDependency removes an existing
-  // edge; enforcement then leaves the freed stage where it is (a released
-  // dependent keeps its last dates — no constraint, no move).
+  // edge; nothing is re-enforced, so the freed stage — and every other stage —
+  // keeps its last dates (no constraint, no move).
   const unlinkDep = useCallback((fromKey: string, toKey: string) => {
-    applyDeps(toggleDependency(phases, fromKey, toKey));
-  }, [applyDeps, phases]);
+    apply(toggleDependency(phases, fromKey, toKey));
+  }, [apply, phases]);
 
   // Draw-a-dependency on the Gantt (LINA-306): the author drags from one bar's
   // edge to another's, and the pair of edges names the type (start→end after,
@@ -483,12 +496,13 @@ export function PlanBuildEditor({
     if (fromKey === toKey) return;
     const exists = dependsOnOf(phases, fromKey).some((d) => d.on === toKey);
     const created = exists ? phases : toggleDependency(phases, fromKey, toKey);
-    // enforceDependencies is what makes "starts when that one ends" real: the
-    // link is created here AND the dependent's dates are snapped to obey it, so a
-    // fresh drag-to-link reschedules the bar in the same gesture (LINA-306).
-    applyDeps(setDependencyType(created, fromKey, toKey, type));
+    // enforceLink is what makes "starts when that one ends" real: the link is
+    // created here AND the dependent (fromKey) is snapped to obey it, so a fresh
+    // drag-to-link reschedules THAT bar — and only that bar — in the same gesture
+    // (LINA-306). Downstream tasks are left alone.
+    applyLink(setDependencyType(created, fromKey, toKey, type), fromKey);
     setOpenDeps(null);
-  }, [applyDeps, phases]);
+  }, [applyLink, phases]);
 
   const assign = useCallback((nodeKey: string, partyId: string | null) => {
     apply(setAssignee(phases, nodeKey, partyId));
