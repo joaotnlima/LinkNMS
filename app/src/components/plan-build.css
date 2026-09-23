@@ -596,6 +596,10 @@
 .pgd-tradeinput:hover:not(:disabled) { border-bottom-color: var(--outline-strong); }
 .pgd-tradeinput:focus-visible { outline: 2px solid var(--owner); outline-offset: 0; }
 .pgd-tradeinput:disabled { opacity: 0.5; }
+/* The specialty picker is a real <select> (LINA-306) so the dropdown affordance
+   is native and obvious on every browser; it borrows the input chrome above and
+   keeps the native arrow. */
+select.pgd-tradesel:not(:disabled) { cursor: pointer; }
 
 /* Owner: the avatar states who — the unassigned ring when nobody — and the
    member <select> sits invisibly on top of it, so clicking the circle opens
