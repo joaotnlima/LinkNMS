@@ -308,6 +308,19 @@ export function createPgStore({ pool = getPool() } = {}) {
     return mapStage(rows[0] ?? null);
   }
 
+  // Resolve a stage by its STABLE key within a project (LINA-306). A draft
+  // re-save re-mints the stage row id (deleteStagesByPlanVersion + re-insert),
+  // so a client holding an older id 404s on getStage — but the key never moves.
+  // Progress already anchors on (project_id, stage_key), so any surviving row
+  // for the key gives us the same project + key + authorization context. Newest
+  // by seq wins (the freshest surviving row for that key).
+  async function getCurrentStageByKey(projectId, key) {
+    const { rows } = await pool.query(
+      'select * from schedule.stage where project_id = $1 and key = $2 order by seq desc limit 1',
+      [projectId, key]);
+    return mapStage(rows[0] ?? null);
+  }
+
   // In-place edit / reorder. Builds a parameterised SET from the whitelisted
   // patch; 0 rows updated ⇒ the stage is gone ⇒ null (the service maps to 404).
   async function updateStage(client, id, patch) {
@@ -1031,7 +1044,7 @@ export function createPgStore({ pool = getPool() } = {}) {
     countPhasesByProject, updatePhaseStatus,
     insertSignOffRequest, getSignOffRequest, listSignOffRequestsByPhase, resolveSignOffRequest,
     insertPlanChangeLog, listPlanChangeLogByPhase,
-    insertStage, getStage, updateStage, listStages, maxStagePosition,
+    insertStage, getStage, getCurrentStageByKey, updateStage, listStages, maxStagePosition,
     insertPlanImport, getPlanImportByIdempotencyKey, insertStageDependency,
     deleteStageDependenciesByPlanVersion, listStageDependenciesByPlanVersion,
     importStageCounts,

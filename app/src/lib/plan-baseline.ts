@@ -157,6 +157,9 @@ export interface StageEdit {
  */
 export interface StageRow {
   id: string;
+  /** Stable client-minted key (LINA-306) — survives a draft re-save that
+   *  re-mints `id`, so status writes can recover a stale id server-side. */
+  key: string | null;
   name: string;
   trade: string | null;
   /** The owning member's party id, or null (LINA-246). Never a name. */
@@ -172,6 +175,7 @@ export interface StageRow {
 export function toRows(nodes: PlanStageNode[]): StageRow[] {
   return nodes.map((n) => ({
     id: n.id,
+    key: n.key ?? null,
     name: n.name,
     trade: n.trade,
     assigneePartyId: n.assigneePartyId ?? null,
@@ -480,9 +484,18 @@ export function withdrawVersion(projectId: string, versionId: string): Promise<{
  */
 export function reportProgress(
   stageId: string, status: StageStatus,
+  // The stable key + project let the server recover the stage when `stageId` is
+  // a draft-re-minted (stale) row id, which would otherwise 404 (LINA-306). Both
+  // optional so legacy callers keep working; the server only falls back to them
+  // when the raw id misses.
+  anchor?: { projectId?: string; stageKey?: string | null },
 ): Promise<unknown> {
-  const body: { status: StageStatus; note?: string } = { status };
+  const body: {
+    status: StageStatus; note?: string; projectId?: string; key?: string;
+  } = { status };
   if (status === 'not_started') body.note = 'Reset to not started';
+  if (anchor?.projectId) body.projectId = anchor.projectId;
+  if (anchor?.stageKey) body.key = anchor.stageKey;
   return post(`/api/v1/stages/${encodeURIComponent(stageId)}/progress`, body);
 }
 

@@ -410,3 +410,42 @@ test('reportProgress on a missing stage is a 404', async () => {
   await assert.rejects(() => service.reportProgress('nope', GC, { status: 'done' }),
     (e) => e.status === 404);
 });
+
+// ── LINA-306: a stale (draft-re-minted) stage id still resolves by its key ────
+// A draft re-save deletes the stage rows and re-inserts them with NEW ids while
+// the client-minted `key` is stable. A client holding the OLD id must not 404
+// when it reports progress — the server falls back to (project_id, key).
+test('reportProgress recovers a re-minted stage by its stable key (no 404)', async () => {
+  const { service, store } = build();
+  const KEY = 'k-foundation';
+  const oldId = 'stage-old';
+  const newId = 'stage-new';
+  const base = {
+    project_id: PROJECT, key: KEY, name: 'Foundation', position: 1,
+    plan_version_id: 'ver-1', planned_cost_cents: 0,
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  };
+  // First save mints oldId; a re-save re-mints to newId under the SAME key.
+  await store.insertStage(null, { ...base, id: oldId });
+  await store.deleteStagesByPlanVersion(null, 'ver-1');
+  await store.insertStage(null, { ...base, id: newId });
+
+  // The client still holds oldId (getStage misses) but sends the stable key.
+  const view = await service.reportProgress(oldId, GC, {
+    status: 'in_progress', projectId: PROJECT, key: KEY,
+  });
+  assert.equal(view.currentStatus, 'in_progress');
+
+  // The derived status is visible on the plan against the CURRENT (newId) stage.
+  const plan = await service.getPlan(PROJECT, HOMEOWNER);
+  const node = plan.stages.find((s) => s.id === newId);
+  assert.ok(node, 'the current stage row is present');
+  assert.equal(node.currentStatus, 'in_progress');
+});
+
+test('reportProgress with an unknown id AND unknown key is still a 404', async () => {
+  const { service } = build();
+  await assert.rejects(
+    () => service.reportProgress('nope', GC, { status: 'done', projectId: PROJECT, key: 'no-such-key' }),
+    (e) => e.status === 404);
+});
