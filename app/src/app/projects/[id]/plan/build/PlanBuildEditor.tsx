@@ -544,7 +544,9 @@ export function PlanBuildEditor({
     if (!stageId) return;
     setError(null);
     try {
-      await reportProgress(stageId, status);
+      // Pass the stable key so a stale (re-minted) stageId still resolves
+      // server-side rather than 404ing (LINA-306).
+      await reportProgress(stageId, status, { projectId, stageKey: nodeKey });
       router.refresh();
     } catch (e) {
       // Re-throw a typed refusal so the grid's picker can roll itself back and

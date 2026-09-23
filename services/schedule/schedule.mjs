@@ -254,8 +254,21 @@ export function createScheduleService({ store, ledger, identity, phases = null }
   // ---- report progress, append-only — FR-P3, spec §8.1 --------------------
   // POST /stages/:stageId/progress
   async function reportProgress(stageId, actorPartyId, input) {
-    const stage = await store.getStage(stageId);
+    // Resolve the stage. The URL carries a stage row id, but a draft re-save
+    // re-mints that id (deleteStagesByPlanVersion + re-insert) while the stable
+    // client-minted `key` never moves — so a client holding an older id would
+    // 404 here (LINA-306, the "set a task in progress → 404" bug). When the
+    // caller supplies its stable key + project, fall back to resolving by
+    // (project_id, key): progress already anchors on that pair, so it recovers
+    // the same context. `getCurrentStageByKey` picks the freshest surviving row.
+    let stage = await store.getStage(stageId);
+    if (!stage && input?.key && input?.projectId) {
+      stage = await store.getCurrentStageByKey(input.projectId, input.key);
+    }
     if (!stage) throw new DomainError(404, 'not_found', 'stage not found');
+    // From here on, address the RESOLVED row — never the (possibly stale) URL id,
+    // or the closing stageView() read would 404 after a successful append.
+    const resolvedStageId = stage.id;
     // Either project party may report progress (LINA-306): the GC runs the plan
     // in a GC-led build, the owner in an owner-led one. The authorizer holds the
     // capability set (owner + counterparty); a non-member attempt is a 403, never
@@ -299,7 +312,7 @@ export function createScheduleService({ store, ledger, identity, phases = null }
     const reportedAt = now();
     const row = {
       id,
-      stage_id: stageId,
+      stage_id: resolvedStageId,
       // Anchor the row on the stable client-minted key (LINA-307) so the status
       // survives a draft re-save that re-mints the stage row id. Null for legacy
       // stages that never carried a key (import-seeded / pre-LINA-249).
@@ -324,7 +337,7 @@ export function createScheduleService({ store, ledger, identity, phases = null }
         actorPartyId,
         occurredAt: reportedAt,
         payload: {
-          stageId,
+          stageId: resolvedStageId,
           fromStatus: currentStatus,
           toStatus: status,
           percent,
@@ -333,7 +346,7 @@ export function createScheduleService({ store, ledger, identity, phases = null }
       });
     });
 
-    return stageView(stageId);
+    return stageView(resolvedStageId);
   }
 
   // ---- the plan timeline + rollup — FR-P4, FR-P6, spec §8.3 ----------------

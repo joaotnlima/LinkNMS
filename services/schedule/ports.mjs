@@ -227,6 +227,16 @@ export function createInMemoryStore() {
     return r ? { ...r } : null;
   }
 
+  // Resolve a stage by its stable key within a project (LINA-306). Mirrors the
+  // pg-store: a draft re-save re-mints ids but not keys, so the newest surviving
+  // row for (project_id, key) recovers the project + key context progress needs.
+  function getCurrentStageByKey(projectId, key) {
+    const hits = [...stages.values()]
+      .filter((s) => s.project_id === projectId && s.key === key)
+      .sort((a, b) => b.seq - a.seq);
+    return hits.length ? { ...hits[0] } : null;
+  }
+
   // Conditional in-place update. Only stage rows are mutable; the append-only
   // history is untouched. Returns the updated row, or null if the stage is gone.
   function updateStage(_tx, id, patch) {
@@ -847,7 +857,7 @@ export function createInMemoryStore() {
     countPhasesByProject, updatePhaseStatus,
     insertSignOffRequest, getSignOffRequest, listSignOffRequestsByPhase, resolveSignOffRequest,
     insertPlanChangeLog, listPlanChangeLogByPhase,
-    insertStage, getStage, updateStage, listStages, maxStagePosition,
+    insertStage, getStage, getCurrentStageByKey, updateStage, listStages, maxStagePosition,
     insertStageDependency, listStageDependencies, deleteStageDependenciesByPlanVersion,
     listStageDependenciesByPlanVersion,
     insertPlanImport, getPlanImportByIdempotencyKey, importStageCounts,
