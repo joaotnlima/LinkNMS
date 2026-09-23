@@ -171,6 +171,89 @@ function StatusPicker({
     </span>
   );
 }
+
+/**
+ * The SPECIALTY picker (LINA-306, founder 2026-09-23 "I cannot select the
+ * specialty from the dropdown"). The old control was a bare `<input list>` whose
+ * native `<datalist>` never presents as a clickable dropdown across browsers —
+ * the founder saw a plain text box, not a picker. This is a real `<select>` so
+ * every browser shows the standard trade list on click, while an "＋ Add new…"
+ * sentinel keeps the free-text path (a typed label the catalog does not yet
+ * know) alive — the deliberate design from LINA-306 item 6, not a regression.
+ *
+ * Options are the caller's catalog (system ∪ their own) UNION the value already
+ * stored on this stage, so a free-form label authored before still shows as the
+ * selected option rather than silently blanking. Selection is presentational
+ * over the draft — it calls back into `onSet`; nothing is written until the
+ * editor's autosave lands (same as every other cell here).
+ */
+const ADD_SPECIALTY = '__add_specialty__';
+function SpecialtyCell({
+  value, options, disabled, ariaLabel, onSet, onRemember,
+}: {
+  value: string;
+  options: string[];
+  disabled: boolean;
+  ariaLabel: string;
+  onSet: (label: string) => void;
+  onRemember: (label: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  // Catalog ∪ the stage's own value, de-duped case-insensitively and sorted, so a
+  // previously-typed label survives as a selectable option.
+  const opts = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const label of [...options, value]) {
+      const l = label.trim();
+      if (!l) continue;
+      const k = l.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(l);
+    }
+    return out.sort((a, b) => a.localeCompare(b));
+  }, [options, value]);
+
+  // The free-text escape: reveal an input, commit its trimmed value on blur/Enter
+  // (which also remembers it for next time), or bail on Escape.
+  if (adding) {
+    return (
+      <span className="pgd-trade">
+        <input
+          className="pgd-tradeinput" autoFocus placeholder="New specialty" defaultValue=""
+          list="pgd-specialties" maxLength={120} aria-label={ariaLabel} disabled={disabled}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+            else if (e.key === 'Escape') setAdding(false);
+          }}
+          onBlur={(e) => {
+            const label = e.target.value.trim();
+            if (label) { onSet(label); onRemember(label); }
+            setAdding(false);
+          }}
+        />
+      </span>
+    );
+  }
+
+  return (
+    <span className="pgd-trade">
+      <select
+        className="pgd-tradeinput pgd-tradesel" value={value} aria-label={ariaLabel} disabled={disabled}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next === ADD_SPECIALTY) { setAdding(true); return; }
+          onSet(next);
+        }}
+      >
+        <option value="">Specialty…</option>
+        {opts.map((s) => <option key={s} value={s}>{s}</option>)}
+        <option value={ADD_SPECIALTY}>＋ Add new…</option>
+      </select>
+    </span>
+  );
+}
 /** Row heights, shared by the table cell and its track so the panes align.
  *  Compact rows with thin bars (founder, LINA-306): a task row is 34px, a
  *  sub-task row 28px — tighter than before so more of the plan reads at once. */
@@ -1382,16 +1465,15 @@ export function PlanGrid(props: PlanGridProps) {
               const cellFor = (c: ColKey) => {
                 if (c === 'trade') {
                   return (
-                    <span key="trade" className="pgd-trade">
-                      <input
-                        className="pgd-tradeinput" value={r.phase.trade} placeholder="Specialty"
-                        list="pgd-specialties"
-                        maxLength={120} aria-label={`Specialty for phase ${r.pi + 1}`}
-                        disabled={disabled}
-                        onChange={(e) => props.onTrade(r.key, e.target.value)}
-                        onBlur={(e) => rememberSpecialty(e.target.value)}
-                      />
-                    </span>
+                    <SpecialtyCell
+                      key="trade"
+                      value={r.phase.trade}
+                      options={specialties}
+                      disabled={disabled}
+                      ariaLabel={`Specialty for phase ${r.pi + 1}`}
+                      onSet={(label) => props.onTrade(r.key, label)}
+                      onRemember={rememberSpecialty}
+                    />
                   );
                 }
                 if (c === 'owner') {
@@ -1454,16 +1536,15 @@ export function PlanGrid(props: PlanGridProps) {
             const cellFor = (c: ColKey) => {
               if (c === 'trade') {
                 return (
-                  <span key="trade" className="pgd-trade">
-                    <input
-                      className="pgd-tradeinput" value={r.node.trade} placeholder="Specialty"
-                      list="pgd-specialties"
-                      maxLength={120} aria-label={`Specialty for ${what} ${id}`}
-                      disabled={disabled}
-                      onChange={(e) => props.onTrade(r.key, e.target.value)}
-                      onBlur={(e) => rememberSpecialty(e.target.value)}
-                    />
-                  </span>
+                  <SpecialtyCell
+                    key="trade"
+                    value={r.node.trade}
+                    options={specialties}
+                    disabled={disabled}
+                    ariaLabel={`Specialty for ${what} ${id}`}
+                    onSet={(label) => props.onTrade(r.key, label)}
+                    onRemember={rememberSpecialty}
+                  />
                 );
               }
               if (c === 'owner') {

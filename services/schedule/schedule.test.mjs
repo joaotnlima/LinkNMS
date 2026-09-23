@@ -193,26 +193,42 @@ test('AC-P9: identical reported_at resolves to one stable current status via seq
   }
 });
 
-// ── §8.2 / AC-P6 / AC-P10: GC-only writes, homeowner denied (not 500) ─────────
+// ── §8.2 / AC-P6 / AC-P10: GC-only AUTHORING, homeowner denied (not 500) ──────
+// Stage authoring (add/update the WBS) is still GC-only; the owner shapes the
+// plan through PROPOSE_PLAN drafting, not stage-level edits. Progress reporting
+// is NO LONGER GC-only — LINA-306 made it an either-party capability (see the
+// positive case below).
 
-test('AC-P10: homeowner is DENIED (403) on every write, and reads succeed for both', async () => {
+test('AC-P10: homeowner is DENIED (403) on stage authoring, and reads succeed for both', async () => {
   const { service } = build();
   const s = await service.addStage(PROJECT, GC, stageInput());
 
   const denies = [
     () => service.addStage(PROJECT, HOMEOWNER, stageInput({ name: 'Sneaky' })),
     () => service.updateStage(s.id, HOMEOWNER, { name: 'Renamed' }),
-    () => service.reportProgress(s.id, HOMEOWNER, { status: 'in_progress' }),
   ];
   for (const d of denies) {
     await assert.rejects(d, (e) => e.status === 403 && e.code === 'forbidden',
-      'a homeowner write is an authorization denial, never a 500');
+      'a homeowner authoring write is an authorization denial, never a 500');
   }
 
   // Both parties can read the plan and the stage.
   assert.ok(await service.getPlan(PROJECT, HOMEOWNER));
   assert.ok(await service.getPlan(PROJECT, GC));
   assert.ok(await service.viewStage(s.id, HOMEOWNER));
+});
+
+test('LINA-306: the homeowner (owner) MAY report progress on any task', async () => {
+  const { service } = build();
+  const s = await service.addStage(PROJECT, GC, stageInput());
+
+  const reported = await service.reportProgress(s.id, HOMEOWNER, { status: 'in_progress' });
+  assert.ok(reported, 'owner progress report is accepted');
+
+  // The derived status reflects the owner's report, attributed to the owner.
+  const view = await service.viewStage(s.id, HOMEOWNER);
+  assert.equal(view.currentStatus, 'in_progress');
+  assert.equal(view.history.at(-1).reportedBy, HOMEOWNER);
 });
 
 test('a non-member (outsider) is denied every write and every read', async () => {
