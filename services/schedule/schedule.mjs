@@ -256,7 +256,10 @@ export function createScheduleService({ store, ledger, identity, phases = null }
   async function reportProgress(stageId, actorPartyId, input) {
     const stage = await store.getStage(stageId);
     if (!stage) throw new DomainError(404, 'not_found', 'stage not found');
-    // GC-only (spec §8.2). A homeowner attempting this is a 403 denial, never a 500.
+    // Either project party may report progress (LINA-306): the GC runs the plan
+    // in a GC-led build, the owner in an owner-led one. The authorizer holds the
+    // capability set (owner + counterparty); a non-member attempt is a 403, never
+    // a 500. Superseded the original §8.2 "GC-only" rule.
     await identity.authorize({ actorPartyId, action: ACTION.REPORT_PROGRESS, projectId: stage.project_id });
 
     const status = input?.status;

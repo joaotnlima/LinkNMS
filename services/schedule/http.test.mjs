@@ -76,18 +76,24 @@ test('the actor is the session, never the body — a forged reportedBy is inert'
   assert.equal(res.body.history[0].reportedBy, GC);
 });
 
-test('homeowner write → 403 envelope, not 500 (spec §8.2)', async () => {
+test('homeowner stage authoring → 403 envelope, not 500 (spec §8.2)', async () => {
+  const http = build();
+
+  // Authoring the WBS stays GC-only: a homeowner add is a typed denial.
+  const add = await http.addStage({ session: homeowner, params: { projectId: PROJECT }, body: { name: 'X', position: 2 } });
+  assert.equal(add.status, 403);
+  assert.equal(add.body.error.code, 'forbidden');
+});
+
+test('LINA-306: homeowner (owner) MAY report progress → 201, attributed to the owner', async () => {
   const http = build();
   const created = await http.addStage({ session: gc, params: { projectId: PROJECT }, body: { name: 'A', position: 1 } });
   const stageId = created.body.id;
 
-  const add = await http.addStage({ session: homeowner, params: { projectId: PROJECT }, body: { name: 'X', position: 2 } });
-  assert.equal(add.status, 403);
-  assert.equal(add.body.error.code, 'forbidden');
-
   const report = await http.reportProgress({ session: homeowner, params: { stageId }, body: { status: 'done' } });
-  assert.equal(report.status, 403);
-  assert.equal(report.body.error.code, 'forbidden');
+  assert.equal(report.status, 201);
+  assert.equal(report.body.currentStatus, 'done');
+  assert.equal(report.body.history[0].reportedBy, HOMEOWNER);
 });
 
 test('unauthenticated (no session) → 401 envelope', async () => {

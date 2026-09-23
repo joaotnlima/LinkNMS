@@ -65,6 +65,15 @@ const OWNER = new Set([
   ACTION.DECIDE_CHANGE_ORDER, // "owner may always decide" — still subject to ≠ proposer below
   ACTION.PROPOSE_PLAN,
   ACTION.REVIEW_PLAN,
+  // LINA-306 (founder, 2026-09-23): the owner may move the status of ANY task.
+  // The original §8.2 "GC-only progress" rule assumed the GC alone runs the
+  // plan; in an owner-driven build the homeowner authors and tracks the plan
+  // themselves, so progress reporting is now an either-party capability. It is
+  // still an append-only, attributed progress report (spec §8.1) — who reported
+  // is stamped from the session, so widening WHO may report does not weaken the
+  // audit trail. Authoring the WBS (ADD_STAGE/UPDATE_STAGE) stays GC-only; the
+  // owner shapes the plan through PROPOSE_PLAN drafting, not stage-level edits.
+  ACTION.REPORT_PROGRESS,
 ]);
 
 const COUNTERPARTY = new Set([
