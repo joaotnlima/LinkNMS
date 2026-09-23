@@ -145,6 +145,7 @@ export function PlanBaseline({ projectId, view, actorPartyId, parties }: Props) 
             rows={rows}
             scale={scale}
             parties={parties}
+            projectId={projectId}
             caption={editing ? `Version ${current.versionNo}, as proposed — unchanged` : undefined}
             dimmed={editing}
             // Status is settable once the plan is real and stable — never on a
@@ -377,11 +378,14 @@ const STATUS_LABEL: Record<StageStatus, string> = {
 const STATUS_ORDER: StageStatus[] = ['not_started', 'in_progress', 'blocked', 'done'];
 
 function StatusControl({
-  stageId, value, editable,
+  stageId, value, editable, projectId, stageKey,
 }: {
   stageId: string;
   value: StageStatus;
   editable: boolean;
+  projectId: string;
+  /** The stable stage key — lets a stale (re-minted) stageId resolve server-side. */
+  stageKey: string | null;
 }) {
   const router = useRouter();
   const [val, setVal] = useState<StageStatus>(value);
@@ -406,7 +410,7 @@ function StatusControl({
           setBusy(true);
           setErr(null);
           try {
-            await reportProgress(stageId, next);
+            await reportProgress(stageId, next, { projectId, stageKey });
             // The server is the authority on what the record now says — re-read
             // so parent roll-ups and the whole grid reflect it, never a local copy.
             router.refresh();
@@ -430,7 +434,7 @@ function StatusControl({
 // ── The plan table — the B1 preview components, reused ───────────────────────
 
 function PlanTable({
-  rows, scale, caption, dimmed, parties, editable,
+  rows, scale, caption, dimmed, parties, editable, projectId,
 }: {
   rows: StageRow[];
   scale: GanttScale | null;
@@ -440,6 +444,8 @@ function PlanTable({
   parties: PartyRef[];
   /** Whether the per-task status control is interactive (LINA-306). */
   editable?: boolean;
+  /** The build id — threaded to the status control for stale-id recovery. */
+  projectId: string;
 }) {
   const flat = preorder(rows);
   const dir = partyIndex(parties);
@@ -497,8 +503,10 @@ function PlanTable({
               <StatusControl
                 key={`${node.id}:${node.status}`}
                 stageId={node.id}
+                stageKey={node.key ?? null}
                 value={node.status}
                 editable={!!editable}
+                projectId={projectId}
               />
             </span>
             <span className="pi-cell-gantt">
