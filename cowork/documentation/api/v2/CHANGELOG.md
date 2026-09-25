@@ -2,6 +2,18 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-09-25 — path parameters declared everywhere; contract lint in CI (additive)
+
+- Every templated path (110 of them) now declares its path parameters at path level
+  (`in: path, required: true`, uuid format for `*Id` names). They were implied by the templates
+  but never declared — invalid for codegen and Swagger "try it". Operation semantics unchanged.
+- `scripts/openapi-lint.py` now gates the contract in CI (job **API v2 — contract lint**):
+  unique operationIds, declared path params, resolvable $refs, global security default, colon-command
+  convention (POST, or GET when read-shaped: `:download`, `:stream`, `:suggest`), fresh index.html embed.
+- Phase-0 platform shipped against this contract: `/api/v2` router (problem+json per doc 11 §Errors,
+  incl. `idempotency_mismatch` 409 for a reused Idempotency-Key with a different body), transactional
+  outbox, ledger client, Idempotency-Key store (`platform.idempotency_key`, db/v2 migration 0002).
+
 ## 2026-09-25 — Gantt-parity + security fixes (additive)
 
 All five gaps from [gantt-on-v2.md](./gantt-on-v2.md) §MISSING closed, plus one security spec bug

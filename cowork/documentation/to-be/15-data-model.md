@@ -316,6 +316,7 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 ### `platform`
 **outbox**: `event_id PK, type, version, occurred_at, project_id, actor jsonb, scope jsonb, data jsonb, dispatched_at`.
 **holiday**: `date, scope, name` — PT national + municipal holidays.
+**idempotency_key** *(migration 0002)*: `key + caller (Clerk user id) + operation_id PK, request_hash, response_status, response_body, created_at, completed_at` — the doc-11 Idempotency-Key memory. The reservation is written in the same transaction as the command's domain write, so a rolled-back command leaves no reservation; a replay with the same body returns the stored response, a different body is `409 idempotency_mismatch`.
 
 ---
 

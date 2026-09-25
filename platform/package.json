@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 platform layer: outbox, ledger client, viewer context, problem+json, idempotency, /api/v2 router (to-be phase 0)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test *.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}

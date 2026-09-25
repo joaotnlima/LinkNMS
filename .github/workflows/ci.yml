@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # pivot/** gets push CI because the v2 rebuild (LINA-308) lives on a
+    # long-running branch with no PR until the founder's cutover approval —
+    # without this the whole pivot would build green-by-omission.
+    branches: [main, 'pivot/**']
   pull_request:
 
 jobs:
@@ -228,6 +231,70 @@ jobs:
       - name: Run analytics + composition tests
         working-directory: services
         run: npm run test:analytics
+
+  openapi-lint:
+    name: API v2 — contract lint
+    runs-on: ubuntu-latest
+
+    # Contract-first (to-be doc 11) is only real if the contract is held to in
+    # CI: unique operationIds, declared path params, resolvable $refs, a
+    # security default, and a Swagger embed that matches openapi.yaml. Stdlib
+    # + PyYAML on purpose — a linter is no place for npm supply-chain surface.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Lint the /api/v2 contract
+        run: |
+          pip install pyyaml
+          python3 scripts/openapi-lint.py
+
+  platform-tests:
+    name: Platform (v2) — outbox, ledger client, idempotency (Postgres)
+    runs-on: ubuntu-latest
+
+    # Phase-0 acceptance (to-be AGENT-INDEX §5): the ledger entry and the
+    # outbox row commit in ONE transaction, proven against the real v2
+    # migrations in a throwaway container.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: migrator
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: linknms_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: platform/package-lock.json
+
+      # `npm ci` — same lockfile-drift reasoning as every other job (LINA-66).
+      - name: Install dependencies
+        working-directory: platform
+        run: npm ci --ignore-scripts
+
+      # The suite creates its own throwaway database, so it connects to the
+      # maintenance db as the container superuser.
+      - name: Run platform tests
+        working-directory: platform
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
 
   app-typecheck:
     name: App — typecheck & build
