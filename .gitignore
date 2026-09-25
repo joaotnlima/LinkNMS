@@ -67,3 +67,10 @@ pnpm-debug.log*
 .claude-flow/data/
 .claude-flow/logs/
 .claude-flow/sessions/
+
+# Agent-tooling runtime state — never commit (removed in LINA-308 branch clean)
+ruvector.db
+.swarm/
+.claude-flow/
+.claude/tmp/
+apps/
