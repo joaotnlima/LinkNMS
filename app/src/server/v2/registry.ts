@@ -2,17 +2,52 @@
 // `register(router)` and is mounted here — nowhere else — so this file is the
 // complete answer to "what is live on v2" and stays diffable against
 // cowork/documentation/api/v2/openapi.yaml.
+import { Pool } from 'pg';
+import { clerkClient } from '@clerk/nextjs/server';
+
 import { createRouter } from '@platform/router.mjs';
+import { registerIdentity } from '@modules/identity/http/register.mjs';
+import { createIdentityStore } from '@modules/identity/infra/pg-store.mjs';
 
 let router: ReturnType<typeof createRouter> | null = null;
+let pool: Pool | null = null;
+
+// One pool for the v2 surface, for now. The per-module least-privilege DB
+// roles of doc 02 arrive with the module GRANTs (phase 2+); handlers already
+// go through their module's store, so tightening later is a wiring change.
+function getPool() {
+  if (!pool) pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
+  return pool;
+}
+
+// Clerk gateway port of the identity module — the only place besides
+// viewer.ts where the v2 surface talks to Clerk.
+const clerkGateway = {
+  async createOrganization(args: {
+    name: string; createdBy: string; publicMetadata: Record<string, unknown>;
+  }) {
+    const client = await clerkClient();
+    const org = await client.organizations.createOrganization({
+      name: args.name,
+      createdBy: args.createdBy,
+      publicMetadata: args.publicMetadata,
+    });
+    return { clerkOrgId: org.id };
+  },
+};
 
 export function getRouter() {
   if (router) return router;
   router = createRouter();
 
-  // Phase 0 ships the platform only; module registrations land phase by phase
-  // (AGENT-INDEX §5):
-  //   registerIdentity(router)     — phase 1
+  // Phase 1 — Identity & Access (AGENT-INDEX §5).
+  registerIdentity(router, {
+    store: createIdentityStore(getPool()),
+    clerk: clerkGateway,
+    webhookSecret: () => process.env.CLERK_WEBHOOK_SIGNING_SECRET,
+  });
+
+  // Module registrations land phase by phase (AGENT-INDEX §5):
   //   registerProject(router)      — phase 2
   //   registerContracting(router)  — phases 3, 5
   //   registerPlanning(router)     — phase 4

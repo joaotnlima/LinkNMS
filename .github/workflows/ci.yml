@@ -296,6 +296,19 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
         run: npm test
 
+      # Phase-1 acceptance (AGENT-INDEX §5): the doc-16 §5 matrix has tests,
+      # and the identity store proves staffing + its ledger entry commit in
+      # ONE transaction, against the same throwaway Postgres.
+      - name: Install identity module dependencies
+        working-directory: modules/identity
+        run: npm ci --ignore-scripts
+
+      - name: Run identity module tests
+        working-directory: modules/identity
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
   app-typecheck:
     name: App — typecheck & build
     runs-on: ubuntu-latest

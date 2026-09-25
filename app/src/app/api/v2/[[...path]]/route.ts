@@ -19,19 +19,27 @@ export const dynamic = 'force-dynamic';
 async function handle(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path = [] } = await params;
 
-  const viewer = await viewerFromClerk();
-  if (!viewer) {
+  // Machine callers (`security: []` in the contract — today only the Clerk
+  // webhook) authenticate inside their handler (svix signature over the raw
+  // body), never with a session.
+  const machineCaller = path[0] === 'webhooks';
+
+  const viewer = machineCaller ? null : await viewerFromClerk();
+  if (!viewer && !machineCaller) {
     return respond(problemResponse('unauthenticated', 'sign in to use /api/v2'));
   }
 
   let body: unknown = null;
+  let rawBody: string | null = null;
   if (req.method !== 'GET' && req.method !== 'HEAD') {
-    const raw = await req.text();
-    if (raw) {
+    rawBody = await req.text();
+    if (rawBody) {
       try {
-        body = JSON.parse(raw);
+        body = JSON.parse(rawBody);
       } catch {
-        return respond(problemResponse('validation_failed', 'request body is not valid JSON'));
+        if (!machineCaller) {
+          return respond(problemResponse('validation_failed', 'request body is not valid JSON'));
+        }
       }
     }
   }
@@ -42,6 +50,7 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path?: s
     viewer,
     query: Object.fromEntries(req.nextUrl.searchParams),
     body,
+    rawBody,
     headers: Object.fromEntries(req.headers),
   });
   return respond(result);

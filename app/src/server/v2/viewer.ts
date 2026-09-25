@@ -20,7 +20,8 @@ const PERMISSIONS = [
   'org:contracts:sign',
   'org:measurements:submit', 'org:measurements:approve',
   'org:payments:declare', 'org:payments:confirm',
-  'org:profile:manage', 'org:members:manage',
+  'org:profile:manage', 'org:reviews:write', 'org:templates:publish',
+  'org:members:manage', 'org:billing:manage',
 ] as const;
 
 export type ViewerContext = ReturnType<typeof createViewerContext>;

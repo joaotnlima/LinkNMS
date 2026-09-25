@@ -7,7 +7,7 @@
 //     /projects/{id}            /contracts/{id}:sign
 // so a registered route is greppable against api/v2/openapi.yaml by string.
 //
-// A handler receives { viewer, params, query, body, headers } and returns
+// A handler receives { viewer, params, query, body, rawBody, headers } and returns
 // { status, body, headers? }. It may throw ProblemError; anything else that
 // escapes is a 500 with no internals leaked.
 import { ProblemError, problemResponse } from './errors.mjs';
@@ -51,15 +51,15 @@ export function createRouter() {
 
   /**
    * @param {{ method: string, path: string, viewer?: unknown,
-   *           query?: Record<string, string>, body?: unknown,
+   *           query?: Record<string, string>, body?: unknown, rawBody?: string|null,
    *           headers?: Record<string, string> }} req
    * @returns {Promise<{status: number, body: any, headers: Record<string, string>}>}
    */
-  async function dispatch({ method, path, viewer, query = {}, body = null, headers = {} }) {
+  async function dispatch({ method, path, viewer, query = {}, body = null, rawBody = null, headers = {} }) {
     const found = match(method, path);
     if (!found) return problemResponse('not_found', `no ${method} ${path} on /api/v2`);
     try {
-      const res = await found.route.handler({ viewer, params: found.params, query, body, headers });
+      const res = await found.route.handler({ viewer, params: found.params, query, body, rawBody, headers });
       return {
         status: res.status ?? 200,
         body: res.body ?? null,

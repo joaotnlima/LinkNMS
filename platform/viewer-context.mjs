@@ -57,6 +57,8 @@ export function createViewerContext(init) {
     channel,
     /** `has('org:plan:edit')` — the Clerk custom-permission check, token-only. */
     has: (permission) => perms.has(permission),
+    /** The token's permission list, for /me — never a substitute for has(). */
+    permissionList: () => [...perms].sort(),
     /** For the ledger's actor columns (person, org, role at the moment of the action). */
     actor: () => ({ personId, orgId, orgRole }),
   });
