@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/contracting",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 contracting module: contract tree, BoQ projection, signature, lifecycle (to-be phase 3; change orders, measurements and payments land phase 5)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test domain/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}

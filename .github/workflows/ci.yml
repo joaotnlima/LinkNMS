@@ -323,6 +323,21 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
         run: npm test
 
+      # Phase-3 acceptance (AGENT-INDEX §5): the doc-09 contract transition
+      # table and the doc-04 V2/V3 projection have tests, the http layer
+      # proves permission ∧ relationship ∧ staffing (incl. x-human-only
+      # sign), and the store proves contract writes ledger + publish in ONE
+      # transaction, one-live-prime (C3) and boq_freeze (§6.2) at DB level.
+      - name: Install contracting module dependencies
+        working-directory: modules/contracting
+        run: npm ci --ignore-scripts
+
+      - name: Run contracting module tests
+        working-directory: modules/contracting
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
   app-typecheck:
     name: App — typecheck & build
     runs-on: ubuntu-latest

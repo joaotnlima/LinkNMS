@@ -10,6 +10,8 @@ import { registerIdentity } from '@modules/identity/http/register.mjs';
 import { createIdentityStore } from '@modules/identity/infra/pg-store.mjs';
 import { registerProject } from '@modules/project/http/register.mjs';
 import { createProjectStore } from '@modules/project/infra/pg-store.mjs';
+import { registerContracting } from '@modules/contracting/http/register.mjs';
+import { createContractingStore } from '@modules/contracting/infra/pg-store.mjs';
 
 let router: ReturnType<typeof createRouter> | null = null;
 let pool: Pool | null = null;
@@ -58,8 +60,12 @@ export function getRouter() {
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://portal.linknms.com'),
   });
 
+  // Phase 3 — Contracting core (contract tree, signature, V2/V3
+  // projection). The rest of the tag — sponsor, reception, termination,
+  // change orders, measurements, payments — lands with phase 5.
+  registerContracting(router, { store: createContractingStore(getPool()) });
+
   // Module registrations land phase by phase (AGENT-INDEX §5):
-  //   registerContracting(router)  — phases 3, 5
   //   registerPlanning(router)     — phase 4
   //   …
 

@@ -493,6 +493,22 @@ export function createProjectStore(pool) {
       });
     },
 
+    /**
+     * Consumer write (application/consumers.mjs): the supplier of a signed
+     * contract becomes a participant. Not ledgered here — the signature is
+     * the ledgered fact (contracting); this row is a projection of it.
+     * Idempotent for at-least-once outbox delivery.
+     */
+    async addContractParticipation({ projectId, orgId, capacity, contractId }) {
+      await pool.query(
+        `INSERT INTO project.participation (project_id, org_id, capacity, source, contract_id)
+         VALUES ($1, $2, $3, 'contract', $4)
+         ON CONFLICT (project_id, org_id, capacity) DO UPDATE
+           SET status = 'active', contract_id = excluded.contract_id`,
+        [projectId, orgId, capacity, contractId],
+      );
+    },
+
     // ── idempotency (POST /projects) ─────────────────────────────────────
     async idempotent(meta, fn) {
       if (!meta.key) return fn();

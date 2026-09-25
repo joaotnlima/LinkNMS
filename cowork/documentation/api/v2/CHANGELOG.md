@@ -2,6 +2,30 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-09-25 — Contracting core live (phase 3, additive; no contract change)
+
+- Phase 3 shipped `modules/contracting` behind the contract: `createContract` (direct entry;
+  Idempotency-Key honoured), `listContracts`/`getContract` (V2/V3 projection: parties full,
+  everyone else `_visibility: scope` with commercial terms and `value` ABSENT — never null —
+  and `value` additionally gated by `org:money:view`, invariant §6.5), `updateContract`
+  (draft-only, client-only, If-Match on `version`), `signContract` (manager/admin of a party,
+  x-human-only enforced against the MCP channel; both parties → `signed`, C3 one-live-prime
+  answered as a 409 problem). Ledger entries are CONTRACT-scoped so V7 redaction hides them
+  from non-parties. `contracting.contract.created`/`.signed` publish through the outbox;
+  the project module consumes `.signed` into `project.participation` (source `contract`,
+  capacity from the kind) — planning binds roots + baselines from the same event in phase 4.
+- Rest of the tag (`sponsorContract`, `receiveProvisionally`, `closeContract`,
+  `terminateContract`, change orders, measurements, payments, `financials`, `cash-flow`)
+  lands with phase 5. Calling them still 404s.
+- **Documented limitation:** `ContractCreate.supplier_email` (off-platform supplier) answers
+  422 for now — the model requires a supplier organisation (`contracting.contract.supplier_org_id`
+  NOT NULL) and the invite lane belongs to tendering/directory (phases 6/9). `Contract.value`
+  is computed live from non-superseded BoQ lines; until phase 5 adds BoQ writes it is 0 for
+  direct-entry contracts.
+- DB: migration `db/v2/0004_contracting_contract_root.sql` — `contracting.contract_root`
+  records which plan rows a DRAFT contract covers (`root_task_ids`); `planning.task.contract_id`
+  is only stamped at signature, by planning, from the event (doc 15).
+
 ## 2026-09-25 — Project module live; invitation token in the 201 (additive)
 
 - Phase 2 shipped `modules/project` behind the contract: `createProject`/`listProjects`/
