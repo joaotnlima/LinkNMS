@@ -2,6 +2,21 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-09-25 — Gantt-parity + security fixes (additive)
+
+All five gaps from [gantt-on-v2.md](./gantt-on-v2.md) §MISSING closed, plus one security spec bug
+from [21-gap-review.md](../../to-be/21-gap-review.md) (S4):
+
+- `uploadScheduleImport`: multipart request body added (`file` required, `parent_task_id` optional
+  uuid = plan root when absent).
+- `TaskDelta.changes`: `kind` added to the delta keys (task ↔ milestone; summary stays derived).
+- `PlanTemplate.is_default` added (single default per person, personal/org scope);
+  `listTemplates` gains `?default=true` — replaces v1 `GET /me/plan-template`.
+- `streamEvents`: `Last-Event-ID` header param for resume (replay re-projected against current
+  visibility); presence documented as connect-registers / disconnect-clears — no heartbeat op.
+- `clerkWebhook`: `security: []` override (Svix-signed machine caller, not a Clerk session);
+  verification headers documented.
+
 ## 2026-09-25 — v2 contract adopted; v1 frozen
 
 - `openapi.yaml` (OpenAPI 3.1, 153 operations, 12 domain tags + platform) adopted as the v2

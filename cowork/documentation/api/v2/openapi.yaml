@@ -221,13 +221,17 @@ paths:
       - Identity & Access
       operationId: clerkWebhook
       summary: 'Clerk webhook: user.*, organization.*, organizationMembership.* → identity mirror'
-      description: 'Svix-signed. Rejects deleting an org that is party to a signed contract.
+      description: 'Svix-signed (svix-id / svix-timestamp / svix-signature headers verified against
+        CLERK_WEBHOOK_SIGNING_SECRET; ±5 min timestamp tolerance). No Clerk session: this endpoint
+        is called by Clerk, not by a user, so the global security requirement is overridden to none.
+        Rejects deleting an org that is party to a signed contract.
 
 
-        **Clerk permission:** none beyond an authenticated session
+        **Clerk permission:** none (machine caller)
 
 
         **Relationship (LinkNMS):** none'
+      security: []
       responses:
         '204':
           description: No content
@@ -2153,6 +2157,23 @@ paths:
       x-relationship: edit scope ∋ target parent
       parameters:
       - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The Excel workbook (.xlsx)
+                parent_task_id:
+                  type: string
+                  format: uuid
+                  description: Row the imported subtree lands under; absent = plan root. Must be inside the actor's edit scope.
+              required:
+              - file
       responses:
         '201':
           description: Created
@@ -2306,6 +2327,12 @@ paths:
         required: false
         schema:
           type: string
+      - name: default
+        in: query
+        required: false
+        schema:
+          type: boolean
+        description: 'true: return only the viewer''s default template (0 or 1 items) — the v1 `GET /me/plan-template` flow'
       - name: cursor
         in: query
         required: false
@@ -5766,10 +5793,22 @@ paths:
       description: '**Clerk permission:** none beyond an authenticated session
 
 
-        **Relationship (LinkNMS):** project.participant'
+        **Relationship (LinkNMS):** project.participant
+
+
+        Connecting registers the viewer''s presence on the project (broadcast as a `presence` event);
+        disconnecting clears it — there is no separate heartbeat operation. Events use the envelope of
+        doc 10 (`10-domain-events.md`), projected per viewer; `event:` carries the event name, `id:`
+        the envelope id for resume.'
       x-relationship: project.participant
       parameters:
       - $ref: '#/components/parameters/projectId'
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema:
+          type: string
+        description: Resume the stream after this envelope id; replayed events are re-projected against the viewer's CURRENT visibility, never the historical one.
       responses:
         '200':
           description: text/event-stream of projected event envelopes
@@ -6740,8 +6779,8 @@ components:
           type: object
           additionalProperties:
             $ref: '#/components/schemas/FieldChange'
-          description: 'keys: name, description, specialty, location_id, dating_mode, start, finish, duration_wd, assignee_org_id,
-            assignee_person_id, acceptance_criteria'
+          description: 'keys: name, description, kind (task ↔ milestone only; to/from summary is derived from children), specialty,
+            location_id, dating_mode, start, finish, duration_wd, assignee_org_id, assignee_person_id, acceptance_criteria'
         confirm_not_assignee:
           type: boolean
           description: UI confirmed 'you are not responsible for this row'
@@ -7187,6 +7226,9 @@ components:
           - org
           - public
           - library
+        is_default:
+          type: boolean
+          description: The viewer's single default template (per person; personal or org scope only). Setting it true clears the previous default.
         name:
           type: string
         description:
