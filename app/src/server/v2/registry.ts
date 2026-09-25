@@ -8,6 +8,8 @@ import { clerkClient } from '@clerk/nextjs/server';
 import { createRouter } from '@platform/router.mjs';
 import { registerIdentity } from '@modules/identity/http/register.mjs';
 import { createIdentityStore } from '@modules/identity/infra/pg-store.mjs';
+import { registerProject } from '@modules/project/http/register.mjs';
+import { createProjectStore } from '@modules/project/infra/pg-store.mjs';
 
 let router: ReturnType<typeof createRouter> | null = null;
 let pool: Pool | null = null;
@@ -47,8 +49,16 @@ export function getRouter() {
     webhookSecret: () => process.env.CLERK_WEBHOOK_SIGNING_SECRET,
   });
 
+  // Phase 2 — Project (brief, lifecycle, locations, participants,
+  // invitations, calendar, share links).
+  registerProject(router, {
+    store: createProjectStore(getPool()),
+    shareBaseUrl: () =>
+      process.env.NEXT_PUBLIC_APP_URL
+      ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://portal.linknms.com'),
+  });
+
   // Module registrations land phase by phase (AGENT-INDEX §5):
-  //   registerProject(router)      — phase 2
   //   registerContracting(router)  — phases 3, 5
   //   registerPlanning(router)     — phase 4
   //   …

@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/project",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 project module: brief, lifecycle, locations, participants, invitations, calendar, share links (to-be phase 2)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test domain/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}

@@ -309,6 +309,20 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
         run: npm test
 
+      # Phase-2 acceptance (AGENT-INDEX §5): the doc-09 project transition
+      # table has tests, the http layer proves permission ∧ relationship ∧
+      # staffing per operation, and the store proves every project write
+      # ledgers in ONE transaction against the same throwaway Postgres.
+      - name: Install project module dependencies
+        working-directory: modules/project
+        run: npm ci --ignore-scripts
+
+      - name: Run project module tests
+        working-directory: modules/project
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
   app-typecheck:
     name: App — typecheck & build
     runs-on: ubuntu-latest

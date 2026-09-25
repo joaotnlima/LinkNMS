@@ -2,6 +2,23 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-09-25 — Project module live; invitation token in the 201 (additive)
+
+- Phase 2 shipped `modules/project` behind the contract: `createProject`/`listProjects`/
+  `getProject`/`updateProject` (If-Match optimistic concurrency on `version`), lifecycle commands
+  `:claim`/`:cancel`/`:close` (doc-09 transition table + guards), `overview`, locations CRUD,
+  participants, invitations + `:accept`, calendar (holidays merged from `platform.holiday`),
+  share links. Every write ledgers on the same transaction (§6.4).
+- `ProjectInvitation.token` added (response-only, additive): the raw invite token is returned once
+  to the inviter in the 201 — only its SHA-256 lives in the DB. Rationale: the notifications module
+  (email delivery) is a later phase; without the token in the response the accept flow would be
+  unreachable. When notifications land, the field stays (harmless) but UIs should stop displaying it.
+- `overview`/`listProjects` roll-ups (`end_date`, `cost`, `health`) are omitted and counters are 0
+  until Planning (phase 4) / Contracting (phases 3+5) provide them — declared here so clients don't
+  read the zeros as data.
+- DB: migration `db/v2/0003_project_claim.sql` — `project.project.pending_owner_email` (who may
+  claim a supplier-created draft, doc 14 Q4) + XOR constraint with `owner_org_id`.
+
 ## 2026-09-25 — path parameters declared everywhere; contract lint in CI (additive)
 
 - Every templated path (110 of them) now declares its path parameters at path level

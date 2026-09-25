@@ -7314,6 +7314,12 @@ components:
       properties:
         id: *id001
         project_id: *id001
+        token:
+          type: string
+          description: Present ONLY in the 201 response to the inviter — shown
+            once, never stored (the server keeps a hash). Until the
+            notifications module delivers invitation emails, the inviter
+            forwards the accept link themselves.
         email:
           type: string
           format: email
