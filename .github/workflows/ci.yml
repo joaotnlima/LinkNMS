@@ -338,6 +338,22 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
         run: npm test
 
+      # Phase-4 acceptance (AGENT-INDEX §5): the doc-05 link engine
+      # (working-day propagation, rigid links, pins, summaries) and the D-33
+      # scope are pure-domain tested; the http layer proves the D-26 delta
+      # contract (LWW + base + overwrote + client_change_id replay); the
+      # store proves plan writes ledger + publish in ONE serialized
+      # transaction and the contract.signed consumer baselines idempotently.
+      - name: Install planning module dependencies
+        working-directory: modules/planning
+        run: npm ci --ignore-scripts
+
+      - name: Run planning module tests
+        working-directory: modules/planning
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
   app-typecheck:
     name: App — typecheck & build
     runs-on: ubuntu-latest

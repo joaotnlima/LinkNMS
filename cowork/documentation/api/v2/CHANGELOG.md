@@ -2,6 +2,34 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-09-25 — Planning core live (phase 4, additive; no contract change)
+
+- Phase 4 shipped `modules/planning` behind the contract: `getSchedule` (tree + links + calendar +
+  render-ready segments + per-viewer `can_edit` + health), `createTask` (Idempotency-Key honoured;
+  assignee inherited from the branch, D-33), `getTask` (fields + full delta history + progress),
+  `updateTask` (D-26: field-level delta, last-write-wins, `base` mismatches applied AND reported in
+  `overwrote`, `client_change_id` replay-safe; dragging a linked successor re-tunes the link's lag),
+  `previewMove`, `recordActual`, `applySchedule` (atomic batch: `move_subtree`/`indent`/`outdent`/
+  `delete_subtree`/`paste_rows`/`create_rows`+links; `dry_run` computes in the transaction and rolls
+  back), `createLink`/`updateLink`/`deleteLink` (anchor pairs per D-32, cycles → 409
+  `dependency_cycle` with the path), `getScheduleHealth`.
+- The doc-05 link engine runs server-side in working days on the project calendar: rigid links
+  push AND pull, multiple predecessors hold the successor at the latest position, done rows never
+  move, started rows keep their actual start (`sequence_warning` otherwise), summaries move as
+  their subtree, undated/open-external anchors are inert. Every plan write serializes per project
+  (advisory lock), ledgers and publishes (`planning.task.*`, `planning.link.*`,
+  `planning.edit.overwritten`) in ONE transaction.
+- Planning consumes `contracting.contract.signed`: stamps `task.contract_id` on the tendered
+  roots, `branch_contract_id` down their subtrees, and takes **baseline v1** (dates, duration,
+  scope text, acceptance criteria, cost lines) — `planning.baseline.taken` published; segments
+  (`baseline`/`extension`/`delay_start`) render from it. Idempotent under at-least-once delivery.
+- **Documented limitations:** `Task.variations` is `[]` and no Variation is recorded yet —
+  execution control (variations, notifications digest) is phase 5, on the baselines this phase
+  writes. Cost lines (`/tasks/{id}/cost-lines`), progress reporting, `/me/tasks`, plan templates
+  (`insert_template` answers 422 with a clear message) and schedule imports land with their
+  phases; those routes still 404/422. `Task.cost` roll-ups are omitted until cost lines write.
+- DB: no new migration — the phase runs entirely on db/v2 0001 planning tables.
+
 ## 2026-09-25 — Contracting core live (phase 3, additive; no contract change)
 
 - Phase 3 shipped `modules/contracting` behind the contract: `createContract` (direct entry;

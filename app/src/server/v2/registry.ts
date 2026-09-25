@@ -12,6 +12,8 @@ import { registerProject } from '@modules/project/http/register.mjs';
 import { createProjectStore } from '@modules/project/infra/pg-store.mjs';
 import { registerContracting } from '@modules/contracting/http/register.mjs';
 import { createContractingStore } from '@modules/contracting/infra/pg-store.mjs';
+import { registerPlanning } from '@modules/planning/http/register.mjs';
+import { createPlanningStore } from '@modules/planning/infra/pg-store.mjs';
 
 let router: ReturnType<typeof createRouter> | null = null;
 let pool: Pool | null = null;
@@ -65,9 +67,14 @@ export function getRouter() {
   // change orders, measurements, payments — lands with phase 5.
   registerContracting(router, { store: createContractingStore(getPool()) });
 
-  // Module registrations land phase by phase (AGENT-INDEX §5):
-  //   registerPlanning(router)     — phase 4
-  //   …
+  // Phase 4 — Planning core (the WBS plan: rows, links, working-day
+  // propagation, D-26 deltas, D-33 edit scope, baseline binding on
+  // signature). Variations, cost lines, progress, templates and imports
+  // land with later phases.
+  registerPlanning(router, { store: createPlanningStore(getPool()) });
+
+  // Module registrations land phase by phase (AGENT-INDEX §5): tendering,
+  // quality, documents, collaboration, notifications, billing …
 
   return router;
 }
