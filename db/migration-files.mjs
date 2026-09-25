@@ -37,11 +37,41 @@ function serviceMigrations(root) {
   return out;
 }
 
+// The v2 (to-be) model: db/v2/NNNN_*.sql is the bootstrap DDL (all 13 module
+// schemas in one verified unit — see db/v2/README.md), then per-module forward
+// migrations under modules/<module>/migrations/NNNN_*.sql. Seed and checks in
+// db/v2 are deliberately excluded: they are test artefacts, never migrations.
+function v2Migrations(root) {
+  const out = [];
+  const bootDir = join(root, 'db', 'v2');
+  if (existsSync(bootDir)) {
+    for (const f of readdirSync(bootDir).sort()) {
+      if (/^\d{4}_.*\.sql$/.test(f)) out.push(`db/v2/${f}`);
+    }
+  }
+  const modRoot = join(root, 'modules');
+  if (existsSync(modRoot)) {
+    for (const mod of readdirSync(modRoot).sort()) {
+      const dir = join(modRoot, mod, 'migrations');
+      if (!existsSync(dir)) continue;
+      for (const f of readdirSync(dir).sort()) {
+        if (f.endsWith('.sql') && !f.endsWith('.test.sql')) {
+          out.push(`modules/${mod}/migrations/${f}`);
+        }
+      }
+    }
+  }
+  return out;
+}
+
 // db/0001_platform.sql (creates platform.schema_migrations) first, then every
-// service migration sorted by (service, NNNN). Repo-relative paths — these are
-// the exact strings recorded in platform.schema_migrations.filename.
+// v1 service migration sorted by (service, NNNN), then the v2 set (bootstrap
+// before module migrations). Repo-relative paths — these are the exact strings
+// recorded in platform.schema_migrations.filename.
 export function migrationFiles(root = ROOT) {
-  return ['db/0001_platform.sql', ...serviceMigrations(root)].filter((rel) =>
-    existsSync(join(root, rel)),
-  );
+  return [
+    'db/0001_platform.sql',
+    ...serviceMigrations(root),
+    ...v2Migrations(root),
+  ].filter((rel) => existsSync(join(root, rel)));
 }
