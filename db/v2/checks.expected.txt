@@ -1,0 +1,84 @@
+== 1. Contracts each org may read commercially (V2) ==
+             viewer             |         readable_contracts         
+--------------------------------+------------------------------------
+ Ana e Rui Silva                | C-2026-003, C-2026-014, C-2026-015
+ Caixilharia Atlântico, Lda.    | D-SUB-032
+ Canalizações Norte, Unip. Lda. | D-SUB-031
+ Construções Douro, Lda.        | C-2026-014, D-SUB-031, D-SUB-032
+ Eletro Mota — Nuno Mota        | C-2026-015
+ Marta Sousa Arquitetura        | C-2026-003
+
+== 2. Cost column per viewer (V5, D-27): subtree roll-up, split by the viewer's side of each contract ==
+   revenue = lines of contracts where the viewer is supplier · cost = lines where the viewer is client (or own estimates)
+                     row                      |    viewer     | revenue_eur | cost_eur  | margin_eur |  note   
+----------------------------------------------+---------------+-------------+-----------+------------+---------
+ Ligação definitiva à rede elétrica (E-Redes) | org.atlantico |             |           |            | (empty)
+ Ligação definitiva à rede elétrica (E-Redes) | org.douro     |             |           |            | (empty)
+ Ligação definitiva à rede elétrica (E-Redes) | org.silva     |             | 1,200.00  |            | 
+ Estrutura                                    | org.atlantico |             |           |            | (empty)
+ Estrutura                                    | org.douro     | 27,885.00   |           |            | 
+ Estrutura                                    | org.silva     |             | 27,885.00 |            | 
+ Canalização — tubagem embebida               | org.atlantico |             |           |            | (empty)
+ Canalização — tubagem embebida               | org.douro     | 9,800.00    | 7,600.00  | 2,200.00   | 
+ Canalização — tubagem embebida               | org.silva     |             | 9,800.00  |            | 
+ Caixilharia                                  | org.atlantico | 15,840.00   |           |            | 
+ Caixilharia                                  | org.douro     | 19,680.00   | 15,840.00 | 3,840.00   | 
+ Caixilharia                                  | org.silva     |             | 19,680.00 |            | 
+
+== 3. Edit scope per org (D-33): own branches + descendants in the contract chain; owner = everything ==
+              org               |                                                                                                                          editable_top_rows                                                                                                                          | editable_rows 
+--------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------
+ Ana e Rui Silva                | Licenciamento · Ligação definitiva à rede elétrica (E-Redes) · Estrutura · Alvenarias · Cobertura · Canalização — tubagem embebida · Eletricidade — tubagem embebida · Caixilharia · Pavimentos · Garagem — estrutura e cobertura · Receção provisória (empreitada) |            19
+ Construções Douro, Lda.        | Estrutura · Alvenarias · Cobertura · Canalização — tubagem embebida · Caixilharia · Pavimentos · Garagem — estrutura e cobertura · Receção provisória (empreitada)                                                                                                  |            13
+ Caixilharia Atlântico, Lda.    | Caixilharia                                                                                                                                                                                                                                                         |             3
+ Canalizações Norte, Unip. Lda. | Canalização — tubagem embebida                                                                                                                                                                                                                                      |             1
+ Eletro Mota — Nuno Mota        | Eletricidade — tubagem embebida                                                                                                                                                                                                                                     |             1
+
+== 4. Variations the owner is notified about (time/scope all; cost/material only on readable contracts) ==
+ kind |              name               |          delta           |    status    
+------+---------------------------------+--------------------------+--------------
+ time | Alvenarias                      | {"finish_wd": 10}        | acknowledged
+ time | Canalização — tubagem embebida  | {"finish_wd": 10}        | open
+ time | Eletricidade — tubagem embebida | {"finish_wd": 10}        | open
+ time | Garagem — estrutura e cobertura | {"finish_wd": 5}         | open
+ cost | Fabrico e montagem              | {"amount_cents": 246000} | formalised
+
+== 5. Ledger as the owner reads it (V7): out-of-scope entries redacted, chain still verifiable ==
+ seq |               type                |                            payload                            |                            entry_hash                            
+-----+-----------------------------------+---------------------------------------------------------------+------------------------------------------------------------------
+   1 | project.project.created           | {"name": "Casa Silva — Lote 12", "municipality": "1306"}      | 68f5c7a655ff0ac65157409cb8f3639e8727b44e1c0f9088f0a10a733ae9a1f7
+   2 | contracting.contract.signed       | {"value_cents": 8930500, "retention_bp": 500}                 | 6dcb34048fa59fa949d8c41b343e8680ea0294aad520d4acf71ba60b6220abbe
+   3 | contracting.contract.signed       | [redacted: change in a contract you are not party to]         | 0f48cf41372a759f32c429b42e9dad702bc88c6642c17732579688af47716a2b
+   4 | planning.task.updated             | {"new": "2026-09-11", "old": "2026-08-28", "field": "finish"} | 8fb51ad25399e8d5797e1693465ec65bfff496eb7afa6c05de4a005e7c072c01
+   5 | contracting.change_order.approved | [redacted: change in a contract you are not party to]         | 81ce3763eea7ecb309aa4a2d6777e94763d35d41e93ed06eb386023446373343
+   6 | contracting.change_order.approved | {"linked": "CO-S-001", "delta_cents": 246000}                 | 297eb9b1f659d6286d41225dfaaebdf4bf729853896b8941e23d7ec79494e715
+
+== 6. Chain verification (recompute every hash) ==
+ length | valid 
+--------+-------
+      6 | t
+
+== 7. Proposal lanes under T-500 as the issuer (Douro) sees them (D-36) ==
+           bidder            | channel  |  status  | total_eur | wd 
+-----------------------------+----------+----------+-----------+----
+ Alufer, Lda.                | platform | invited  |           |   
+ Caixilharia Atlântico, Lda. | platform | awarded  | 13,860.00 |  9
+ vendas@vidralux.example.pt  | email    | declined | 15,120.00 | 12
+
+== 8. The database refuses what the model forbids (each must ERROR) ==
+-- 8a change order decided by its proposer
+psql:checks.sql:83: ERROR:  new row for relation "change_order" violates check constraint "change_order_check"
+-- 8b edit a BoQ line of a signed contract in place
+psql:checks.sql:85: ERROR:  boq_item of a signed contract changes only via change order (supersede + add)
+-- 8c rewrite progress history
+psql:checks.sql:87: ERROR:  planning.progress_report is append-only
+-- 8d tamper with the ledger
+psql:checks.sql:89: ERROR:  record.audit_event is append-only
+-- 8e a second live prime contract on the same project
+psql:checks.sql:92: ERROR:  duplicate key value violates unique constraint "contract_one_live_prime"
+-- 8f an 11th hierarchy level
+psql:checks.sql:94: ERROR:  new row for relation "task" violates check constraint "task_depth_check"
+-- 8g a verification decided by the organisation that asked for it
+psql:checks.sql:96: ERROR:  new row for relation "verification_request" violates check constraint "verification_request_check"
+-- 8h a non-conformity closed by someone other than who raised it
+psql:checks.sql:99: ERROR:  new row for relation "nonconformity" violates check constraint "nonconformity_check"

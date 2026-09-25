@@ -1,5 +1,9 @@
 # Ruflo — Claude Code Configuration
 
+> **LinkNMS platform revamp (v2):** before any work on the platform, read
+> [`cowork/documentation/to-be/AGENT-INDEX.md`](cowork/documentation/to-be/AGENT-INDEX.md).
+> It defines the sources of truth, the gate, the phase plan and the invariants.
+
 ## Rules
 
 - Do what has been asked; nothing more, nothing less
