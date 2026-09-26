@@ -7,12 +7,13 @@
 //
 // v1 routes (app/src/app/api/…) are untouched and keep serving until cutover
 // (AGENT-INDEX §7: do not modify v1 except to keep it running).
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 
 import { problemResponse } from '@platform/errors.mjs';
 
 import { getRouter } from '@/server/v2/registry';
 import { viewerFromClerk } from '@/server/v2/viewer';
+import { dispatchOutbox } from '@/server/v2/dispatcher';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +54,14 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path?: s
     rawBody,
     headers: Object.fromEntries(req.headers),
   });
+
+  // A successful write may have published outbox events in its transaction —
+  // drain them once the response is out. after() keeps the request fast and
+  // the consumers close behind the commit; the cron tick catches anything a
+  // dying instance drops here.
+  if (req.method !== 'GET' && req.method !== 'HEAD' && result.status < 400) {
+    after(() => dispatchOutbox());
+  }
   return respond(result);
 }
 

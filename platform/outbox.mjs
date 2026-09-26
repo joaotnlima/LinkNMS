@@ -96,3 +96,53 @@ function normalizeHandlers(handlers) {
     handle,
   }));
 }
+
+/**
+ * Merge per-module consumer maps into one handler list WITHOUT clobbering.
+ * Two modules may subscribe to the same type (planning.progress.reported
+ * feeds both quality and contracting; planning.variation.* feeds planning's
+ * digest rows AND collaboration's notifications) — an object spread would
+ * silently drop all but the last, so maps become list entries instead.
+ */
+export function combineConsumers(...maps) {
+  const subs = [];
+  for (const map of maps) subs.push(...normalizeHandlers(map));
+  return subs;
+}
+
+// Advisory lock key for the runtime dispatcher — one tick at a time across
+// every serverless instance. dispatchPending itself is safe under overlap
+// (handlers dedupe on event_id), the lock just stops routine double delivery.
+const DISPATCH_LOCK = 0x4c4e4d53; // 'LNMS'
+
+/**
+ * One runtime dispatcher tick: take the advisory lock (skip the tick when
+ * another instance holds it — its drain covers our rows), drain pending rows
+ * batch by batch, unlock. Returns how many events were dispatched.
+ */
+export async function runDispatchTick(pool, handlers, { limit = 100, maxBatches = 10 } = {}) {
+  const client = await pool.connect();
+  try {
+    const { rows: [{ locked }] } = await client.query(
+      'SELECT pg_try_advisory_lock($1) AS locked',
+      [DISPATCH_LOCK],
+    );
+    if (!locked) return 0;
+    try {
+      let total = 0;
+      for (let i = 0; i < maxBatches; i += 1) {
+        // Drain on the SAME client that holds the lock: one connection for
+        // the whole tick, so a small pool can never deadlock between the
+        // lock holder and the drain queries.
+        const n = await dispatchPending(client, handlers, { limit });
+        total += n;
+        if (n < limit) break;
+      }
+      return total;
+    } finally {
+      await client.query('SELECT pg_advisory_unlock($1)', [DISPATCH_LOCK]);
+    }
+  } finally {
+    client.release();
+  }
+}

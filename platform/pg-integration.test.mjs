@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { appendAuditEvent } from './ledger.mjs';
-import { publishEvent, dispatchPending } from './outbox.mjs';
+import { publishEvent, dispatchPending, runDispatchTick } from './outbox.mjs';
 import { withIdempotency } from './idempotency.mjs';
 
 const url = process.env.DATABASE_URL;
@@ -118,6 +118,30 @@ describe('platform over Postgres (v2 migrations)', { skip }, () => {
     assert.deepEqual(seen, ['contracting.contract.signed']);
     n = await dispatchPending(pool, { contracting: (e) => seen.push(e.type) });
     assert.equal(n, 0, 'dispatched rows are never re-delivered');
+  });
+
+  test('runDispatchTick drains under the advisory lock; a held lock skips the tick', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await appendAuditEvent(client, entry());
+      await publishEvent(client, evt('02'));
+      await client.query('COMMIT');
+
+      // Simulate a concurrent dispatcher: hold the lock on another session.
+      await client.query('SELECT pg_advisory_lock($1)', [0x4c4e4d53]);
+      const seen = [];
+      let n = await runDispatchTick(pool, { contracting: (e) => seen.push(e.event_id) });
+      assert.equal(n, 0, 'a held lock must skip the tick');
+      assert.deepEqual(seen, []);
+
+      await client.query('SELECT pg_advisory_unlock($1)', [0x4c4e4d53]);
+      n = await runDispatchTick(pool, { contracting: (e) => seen.push(e.event_id) });
+      assert.equal(n, 1);
+      assert.deepEqual(seen, [evt('02').event_id]);
+    } finally {
+      client.release();
+    }
   });
 
   test('Idempotency-Key: replay returns the stored result; different body 409s', async () => {

@@ -1,7 +1,9 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { validateEnvelope, publishEvent, dispatchPending } from './outbox.mjs';
+import {
+  validateEnvelope, publishEvent, dispatchPending, combineConsumers, runDispatchTick,
+} from './outbox.mjs';
 
 const EVT = Object.freeze({
   event_id: '0192aaaa-bbbb-7ccc-8ddd-eeeeffff0001',
@@ -80,5 +82,77 @@ describe('dispatchPending', () => {
       /consumer down/,
     );
     assert.deepEqual(pool.marked, []);
+  });
+});
+
+describe('combineConsumers', () => {
+  test('two modules on the SAME type both fire (no map clobbering)', async () => {
+    const seen = [];
+    const handlers = combineConsumers(
+      { 'planning.progress.reported': () => seen.push('quality') },
+      { 'planning.progress.reported': () => seen.push('contracting') },
+    );
+    const rows = [{ ...EVT, event_id: 'e1', type: 'planning.progress.reported' }];
+    const marked = [];
+    const pool = {
+      query: async (sql, params) => {
+        if (/SELECT/.test(sql)) return { rows };
+        marked.push(params[0]);
+        return { rows: [] };
+      },
+    };
+    await dispatchPending(pool, handlers);
+    assert.deepEqual(seen, ['quality', 'contracting']);
+    assert.deepEqual(marked, ['e1']);
+  });
+});
+
+describe('runDispatchTick', () => {
+  function tickPool({ locked = true, batches = [[]] } = {}) {
+    const log = [];
+    let batch = 0;
+    // The whole tick — lock, drain, unlock — runs on ONE client (a small
+    // pool must never deadlock between the lock holder and the drain).
+    const client = {
+      query: async (sql) => {
+        if (/pg_try_advisory_lock/.test(sql)) { log.push('lock'); return { rows: [{ locked }] }; }
+        if (/pg_advisory_unlock/.test(sql)) { log.push('unlock'); return { rows: [] }; }
+        if (/SELECT/.test(sql)) return { rows: batches[Math.min(batch++, batches.length - 1)] };
+        if (/UPDATE platform\.outbox/.test(sql)) return { rows: [] };
+        throw new Error(`unexpected client sql: ${sql}`);
+      },
+      release: () => log.push('release'),
+    };
+    return {
+      log,
+      connect: async () => client,
+      query: async (sql) => { throw new Error(`tick must not query the pool directly: ${sql}`); },
+    };
+  }
+
+  test('skips the tick when another instance holds the lock', async () => {
+    const pool = tickPool({ locked: false });
+    const n = await runDispatchTick(pool, { contracting: () => { throw new Error('must not run'); } });
+    assert.equal(n, 0);
+    assert.deepEqual(pool.log, ['lock', 'release']); // no unlock we never held
+  });
+
+  test('drains batch by batch until short, then unlocks and releases', async () => {
+    const full = Array.from({ length: 2 }, (_, i) => ({ ...EVT, event_id: `f${i}` }));
+    const pool = tickPool({ batches: [full, [{ ...EVT, event_id: 'last' }]] });
+    const seen = [];
+    const n = await runDispatchTick(pool, { contracting: (e) => seen.push(e.event_id) }, { limit: 2 });
+    assert.equal(n, 3);
+    assert.deepEqual(seen, ['f0', 'f1', 'last']);
+    assert.deepEqual(pool.log, ['lock', 'unlock', 'release']);
+  });
+
+  test('unlocks even when a consumer throws', async () => {
+    const pool = tickPool({ batches: [[{ ...EVT, event_id: 'e1' }]] });
+    await assert.rejects(
+      runDispatchTick(pool, { contracting: () => { throw new Error('consumer down'); } }),
+      /consumer down/,
+    );
+    assert.deepEqual(pool.log, ['lock', 'unlock', 'release']);
   });
 });

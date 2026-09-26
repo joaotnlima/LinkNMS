@@ -2,6 +2,23 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-09-26 — Runtime outbox dispatcher live (platform; no contract change)
+
+- The phase-7 note "the runtime dispatcher is still the platform follow-up" is closed. Every
+  module's consumers (project, contracting, planning, quality, collaboration) are assembled in
+  `app/src/server/v2/dispatcher.ts` and run in-process behind two triggers:
+  **after()** on every successful `/api/v2` write (consumers run seconds behind the commit, the
+  response never waits), and **GET `/api/internal/dispatch`** — a `CRON_SECRET`-guarded drain
+  (Vercel cron every 5 min, `app/vercel.json`) that retries anything a dying instance dropped.
+  The internal route is NOT part of the contract.
+- `platform/outbox.mjs` grew `combineConsumers` (modules subscribing to the SAME event type —
+  `planning.progress.reported` feeds quality AND contracting — concatenate, never object-merge)
+  and `runDispatchTick` (pg advisory lock `0x4c4e4d53` so overlapping triggers skip instead of
+  double-delivering; the whole tick — lock, drain, unlock — runs on ONE pooled connection so a
+  small pool cannot deadlock between the lock holder and the drain queries).
+- Delivery stays at-least-once and ordered; a throwing consumer leaves its row undispatched and
+  the cron tick retries in order. New env var on the portal project: `CRON_SECRET`.
+
 ## 2026-09-26 — Documents + Collaboration live (phase 7, additive; no contract change)
 
 - **Documents module** (tag fully implemented, 5 ops): `createDocument` / `createDocumentVersion`

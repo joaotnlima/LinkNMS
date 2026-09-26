@@ -31,7 +31,8 @@ let pool: Pool | null = null;
 // One pool for the v2 surface, for now. The per-module least-privilege DB
 // roles of doc 02 arrive with the module GRANTs (phase 2+); handlers already
 // go through their module's store, so tightening later is a wiring change.
-function getPool() {
+// Exported for dispatcher.ts — the outbox consumers run on the same pool.
+export function getPool() {
   if (!pool) pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
   return pool;
 }
