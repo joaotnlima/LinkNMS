@@ -38,6 +38,12 @@
       ],
       "@services/*": [
         "../services/*"
+      ],
+      "@platform/*": [
+        "../platform/*"
+      ],
+      "@modules/*": [
+        "../modules/*"
       ]
     },
     "target": "ES2017"
@@ -47,7 +53,9 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "../services/**/*.mjs"
+    "../services/**/*.mjs",
+    "../platform/*.mjs",
+    "../modules/**/*.mjs"
   ],
   "exclude": [
     "node_modules"

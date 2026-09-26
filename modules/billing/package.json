@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/billing",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 billing module: plan catalogue, one subscription per org, sponsorship coverage, add-ons, and the entitlements port (billing.entitled) — reads of signed contracts are never gated (phase 8); charging provider deliberately absent (open question 17)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test domain/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}

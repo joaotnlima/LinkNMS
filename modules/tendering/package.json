@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/tendering",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 tendering module: RFPs at any level, individual invitations, clarifications, proposal lanes (D-36 — never plan rows), comparison, award (phase 6)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test domain/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}

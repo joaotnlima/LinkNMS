@@ -1,0 +1,276 @@
+# API changelog
+
+One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
+
+## 2026-09-26 — Billing live (phase 8, additive; no contract change)
+
+- **Billing module** (tag fully implemented, 7 ops): `listPlans` (the catalogue filtered by the
+  viewer's org kind — session + active org only), `subscribe` / `changeSubscription`
+  (**x-human-only**, `org:billing:manage`; one subscription per org — a live or past_due one
+  answers 409, a canceled slot is replaced in place on `org_id UNIQUE`; PATCH changes
+  **plan_code only**, same-org-kind rule enforced as 422), `cancelSubscription` (idempotent —
+  canceling a canceled subscription replays 200), `getUsage` (`{ limit, used }` per key the
+  org's plan meters, add-on top-ups folded into the limit), `buyAddOn` (the Plan-schema body's
+  `code` names the add-on kind `open_rfp_credits` | `promotion`, `entitlements.quantity`
+  defaults to 1; needs a live subscription — 402 `not_entitled` otherwise; answers the org's
+  Subscription per the contract), and `billingWebhook`.
+- **The entitlements port** — the point of the phase: `createEntitlements(store)` in
+  `modules/billing/application/entitled.mjs` answers `entitled(orgId, key, { projectId })` →
+  `{ allowed, limit, used }`. Keys are CREATE/MANAGE capabilities only (frozen `GATED_KEYS`:
+  `projects:active`, `seats`, `rfp:open-credits`); **any key outside that vocabulary is allowed
+  unconditionally, before any I/O** — the phase-8 invariant "reads of signed contracts and their
+  record are never blocked" (doc 04 §4), proven in tests against a canceled subscription. Lapsed
+  (past_due/canceled/none) denies gated keys **unless a live sponsorship covers the org on a
+  contract of the given project** (D-05 mitigation). Usage counts what is countable today:
+  active-project participations, active org memberships, open-visibility RFPs issued this
+  calendar month.
+- **No charging provider** — open question 17 (Clerk Billing vs Stripe + AT-certified invoicing)
+  is the founder's. Subscriptions run in "manual" mode (`provider_ref = null`, nothing charged)
+  and `POST /billing/webhooks/{provider}` verifies nothing and accepts nothing: **404 for every
+  provider name**. The store + use-cases + entitlements port are the boundary a provider adapter
+  lands behind later, with no contract change.
+- Events: `billing.subscription.changed` (scope `org_private`) on every subscribe/change/cancel,
+  same transaction as the write; billing is platform housekeeping — **nothing is ledgered**
+  (doc 10 lists no billing ledger row).
+- DB: migration `db/v2/0006_billing_phase8.sql` — the plan catalogue seed only (the four
+  billing tables shipped with the 0001 bootstrap): `owner-project` (household, per project),
+  `gc-starter`/`gc-pro`/`gc-business`, `specialty-solo`/`specialty-crew`/`specialty-company`
+  (contractor, monthly), `consultant` (consultant, monthly) — prices and limits illustrative per
+  doc 07. `seed_casa_silva.sql` gained the Part-2 subscriptions (silva/douro/atlantico/
+  eletromota/marta) and Douro's sponsorship of Canalizações Norte on `ctr.sub.plumb`.
+- No new env vars.
+
+## 2026-09-26 — Runtime outbox dispatcher live (platform; no contract change)
+
+- The phase-7 note "the runtime dispatcher is still the platform follow-up" is closed. Every
+  module's consumers (project, contracting, planning, quality, collaboration) are assembled in
+  `app/src/server/v2/dispatcher.ts` and run in-process behind two triggers:
+  **after()** on every successful `/api/v2` write (consumers run seconds behind the commit, the
+  response never waits), and **GET `/api/internal/dispatch`** — a `CRON_SECRET`-guarded drain
+  (Vercel cron every 5 min, `app/vercel.json`) that retries anything a dying instance dropped.
+  The internal route is NOT part of the contract.
+- `platform/outbox.mjs` grew `combineConsumers` (modules subscribing to the SAME event type —
+  `planning.progress.reported` feeds quality AND contracting — concatenate, never object-merge)
+  and `runDispatchTick` (pg advisory lock `0x4c4e4d53` so overlapping triggers skip instead of
+  double-delivering; the whole tick — lock, drain, unlock — runs on ONE pooled connection so a
+  small pool cannot deadlock between the lock holder and the drain queries).
+- Delivery stays at-least-once and ordered; a throwing consumer leaves its row undispatched and
+  the cron tick retries in order. New env var on the portal project: `CRON_SECRET`.
+
+## 2026-09-26 — Documents + Collaboration live (phase 7, additive; no contract change)
+
+- **Documents module** (tag fully implemented, 5 ops): `createDocument` / `createDocumentVersion`
+  reserve a version row and answer an **UploadTicket** — a presigned R2 PUT with the declared
+  sha256 pinned into the signature (`x-amz-checksum-sha256`), so storage itself refuses different
+  bytes; `completeUpload` (wire id `<document_id>.<version_no>` — the composite PK; a colon would
+  collide with command routing) proves the object exists with the declared size, then advances
+  `current_version` + writes ledger (sha256) + `documents.version.uploaded` in ONE transaction —
+  until then the version is invisible everywhere, downloads included; `listDocuments` (by scope);
+  `downloadDocument` = **302** to a 5-minute presigned GET, `Cache-Control: no-store`. The v2
+  bucket is private — every read is minted per request (unlike v1's public CDN URLs).
+  Authorization is V6 relationships, no Clerk permission: WRITE = edit scope of the target object,
+  READ = readers of the scope; non-readers get 404 (existence hiding), readers without edit get 403.
+- **Collaboration module** (tag fully implemented, 12 ops): threads (`listComments`,
+  `createComment` — notes + **addressed questions**, D-13: a question names its addressee org;
+  a thread's visibility IS its object's, `THREAD_OBJECT_TYPES` in domain/lifecycle.mjs),
+  question lanes (`answerQuestion` addressee-only, `resolveQuestion` asker-only,
+  `listMyQuestions` = my org's addressee queue, default `open`), meeting minutes (`createMinute`
+  participant-drafted, `circulateMinute` **author-only**, `acknowledgeMinute` one ack per
+  attending org; all-acked flips the status), `listActivity` (outbox projection,
+  viewer-filtered), and notifications (`listNotifications`, `markNotificationsRead`,
+  `putNotificationPreferences` upsert).
+- **Consumers wired** (test-dispatched; the runtime dispatcher is still the platform follow-up):
+  collaboration OWNS the notifications table — `collaboration.question.*`,
+  `quality.nonconformity.raised`, `tendering.clarification.answered` fan out to the relevant
+  org's staffed people; `planning.variation.recorded/.updated` fold into the doc-10 **15-minute
+  owner digest** (one unread row per window, count in `object_ref`). Person-level dedupe is a DB
+  partial unique index `(person_id, event_id)` — at-least-once delivery is safe to replay.
+  Notifications are housekeeping, never ledgered.
+- DB: migration `db/v2/0005_collaboration_phase7.sql` — `meeting_minute.created_by_org_id/
+  person_id` (nullable: forward-only migrations don't invent authors; an authorless row refuses
+  to circulate), `comment.attachment_document_ids uuid[]` (document ids, not bytes), and the
+  notification dedupe index.
+- New runtime dependency: `@aws-sdk/s3-request-presigner` (lazy-imported next to `client-s3`).
+  R2_* env vars are required at first documents write — loud error, no silent fallback.
+
+## 2026-09-26 — Tendering live (phase 6); award body + response-only fields (additive)
+
+- Phase 6 shipped `modules/tendering` behind the contract — the whole Tendering tag (22 ops):
+  RFP lifecycle (`createRfp` — level owner/sub DERIVED from who tenders which rows, never posted;
+  `getRfp`, `updateRfp` draft-only If-Match, `publishRfp` **human-only**, `addAddendum` = R2
+  re-snapshot + versioned package, `closeRfp`, `cancelRfp`), recipients (`addRecipients` opens one
+  proposal lane each, individual token per recipient, sha256 at rest; `listRecipients`),
+  discovery (`browseOpenRfps` D-15 open listing, `listMyRfps`), clarifications (`askClarification`
+  recipient-only; `answerClarification` published to all bidders, asker anonymised EVERYWHERE),
+  lanes (`listProposalLanes` — V8 in SQL: issuer all, bidder its own, others none; `getProposal`,
+  `putProposal` whole-document with If-Match, `submitProposal` revisions, `withdrawProposal`,
+  `recordOfflineProposal` = issuer records an emailed answer, channel `email`),
+  evaluation (`getComparison` — behind `org:money:view`, lower-median in integer cents;
+  `shortlistProposal`) and `awardRfp` (**human-only**).
+- **Award is one transaction:** RFP → `awarded`, winner lane → `awarded`, every other live lane →
+  `declined` (silent invitations lapse), and the contract DRAFT is written by contracting's award
+  port (`modules/contracting/application/award.mjs`) on the same client — `origin: award`,
+  `origin_proposal_id`, BoQ copied from the winner's priced lines (task binding via the packaged
+  item; variant lines contract-level). The 201 answers with the Contract. `tendering.rfp.awarded`
+  + `contracting.contract.created` publish through the outbox.
+- **D-36 at signature, not award:** on `contracting.contract.signed`, planning copies the winning
+  platform proposal's plan (rows, dates, links) under the tendered rows, hands the roots to the
+  supplier, then takes baseline v1 over the whole branch — email-channel awards keep the packaged
+  children. New project consumer: `tendering.rfp.published` → project `draft → tendering` (doc 09).
+- **Contract deltas (additive):**
+  - `awardRfp` request body is now `Award {proposal_id (required), note}` — the yaml said "Body
+    carries proposal_id" but pointed at `Decision {note}`, which made the operation uncallable.
+  - `Rfp.package` + `Rfp.clarifications` (response-only, on `getRfp`): the summary promised
+    bidders "package + clarifications" but the schema carried neither; the package is rows +
+    items with quantities and NO prices (schema-enforced — `rfp_item` has no price column).
+  - `Recipient.token` (response-only, ONCE, in the `addRecipients` 201): the notifications module
+    (email delivery) is a later phase; without the raw token the personal link would be
+    unreachable — same rationale as `ProjectInvitation.token` (2026-09-25 entry).
+  - `Proposal.status` gained its enum (the lane vocabulary; it was a bare string).
+- **Defaults applied (flagged):** (1) owner-level contract kind at award: package spanning >1
+  specialty ⇒ `prime`, single specialty ⇒ `direct` (D-35 never names the discriminator — founder
+  may overrule). (2) Entitlements `rfp.publish`/`rfp.open_listing`/`proposal.submit_open` are the
+  billing port — phase 8; not enforced yet. (3) Q7 default kept: NO sealed bidding, the issuer
+  sees proposals as they arrive. (4) Awarding an emailed lane whose bidder never signed up answers
+  422 (the contract needs a supplier org — same limitation as phase-3 `supplier_email`).
+  (5) Deadline auto-close is a scheduler concern (none exists yet): `closeRfp` is manual and award
+  is also allowed from `published` once EVERY invitee responded (doc 09 guard, verbatim).
+- No DB migration: the phase runs entirely on the 0001 tendering schema.
+
+## 2026-09-26 — Quality + money flow live (phase 5, additive; no contract change)
+
+- **Contracting money flow** (tag now fully implemented): `sponsorContract`, `receiveProvisionally`,
+  `closeContract`, `terminateContract`, `getFinancials`, change orders (`createChangeOrder`,
+  `getChangeOrder`, `:submit`/`:approve`/`:reject`/`:withdraw` — proposer never decides, §6.1;
+  approved scope supersedes + adds BoQ lines, never edits in place, §6.2), measurements
+  (`suggestMeasurement`, `createMeasurement`, `:approve`/`:dispute` — against the live BoQ),
+  payments (`:declare-paid`/`:confirm`/`:dispute`) and `getCashFlow`. Money stays ABSENT without
+  V2 rights + `org:money:view` (§6.5).
+- **Planning execution**: cost lines (`listCostLines`, `createCostLine`, `updateCostLine`,
+  `deleteCostLine`; task cost roll-ups now populate, split by side per D-38), variations
+  (`listVariations`, `getVariation`, `:acknowledge`, `:question`; time variations open/close from
+  baseline drift) and progress (`reportProgress`, `listProgress` — append-only, §6.3).
+- **Quality module** (tag fully implemented): verification queue (`listMyVerifications`,
+  `:accept`/`:reject` — never the reporting org's own work, D-31/§8a), non-conformities
+  (`raiseNonConformity`, `:assign`/`:fix`/`:close`/`:reject-fix` — only the raiser closes, §8b)
+  and `recordInspection`.
+- Consumers wired (still test-dispatched; the runtime dispatcher is platform follow-up):
+  `planning.progress.reported` → quality verification request (done reports only, idempotent);
+  `quality.verification.accepted` → verified progress appended once; `contracting.change_order.approved`
+  → planning re-baselines from the order's time entries and formalises/closes its variations.
+- `getPlanHealth`: the registered operationId now matches the spec string (was `getScheduleHealth`
+  in the phase-4 register; same path, no runtime change).
+- **Still missing from Planning** (later phases): templates CRUD, schedule imports, `listMyTasks`,
+  `getSiteCalendar`, `listBaselines` — those routes still 404.
+- DB: no new migration — phase 5 runs entirely on the db/v2 0001 quality/contracting/planning tables.
+
+## 2026-09-25 — Planning core live (phase 4, additive; no contract change)
+
+- Phase 4 shipped `modules/planning` behind the contract: `getSchedule` (tree + links + calendar +
+  render-ready segments + per-viewer `can_edit` + health), `createTask` (Idempotency-Key honoured;
+  assignee inherited from the branch, D-33), `getTask` (fields + full delta history + progress),
+  `updateTask` (D-26: field-level delta, last-write-wins, `base` mismatches applied AND reported in
+  `overwrote`, `client_change_id` replay-safe; dragging a linked successor re-tunes the link's lag),
+  `previewMove`, `recordActual`, `applySchedule` (atomic batch: `move_subtree`/`indent`/`outdent`/
+  `delete_subtree`/`paste_rows`/`create_rows`+links; `dry_run` computes in the transaction and rolls
+  back), `createLink`/`updateLink`/`deleteLink` (anchor pairs per D-32, cycles → 409
+  `dependency_cycle` with the path), `getScheduleHealth`.
+- The doc-05 link engine runs server-side in working days on the project calendar: rigid links
+  push AND pull, multiple predecessors hold the successor at the latest position, done rows never
+  move, started rows keep their actual start (`sequence_warning` otherwise), summaries move as
+  their subtree, undated/open-external anchors are inert. Every plan write serializes per project
+  (advisory lock), ledgers and publishes (`planning.task.*`, `planning.link.*`,
+  `planning.edit.overwritten`) in ONE transaction.
+- Planning consumes `contracting.contract.signed`: stamps `task.contract_id` on the tendered
+  roots, `branch_contract_id` down their subtrees, and takes **baseline v1** (dates, duration,
+  scope text, acceptance criteria, cost lines) — `planning.baseline.taken` published; segments
+  (`baseline`/`extension`/`delay_start`) render from it. Idempotent under at-least-once delivery.
+- **Documented limitations:** `Task.variations` is `[]` and no Variation is recorded yet —
+  execution control (variations, notifications digest) is phase 5, on the baselines this phase
+  writes. Cost lines (`/tasks/{id}/cost-lines`), progress reporting, `/me/tasks`, plan templates
+  (`insert_template` answers 422 with a clear message) and schedule imports land with their
+  phases; those routes still 404/422. `Task.cost` roll-ups are omitted until cost lines write.
+- DB: no new migration — the phase runs entirely on db/v2 0001 planning tables.
+
+## 2026-09-25 — Contracting core live (phase 3, additive; no contract change)
+
+- Phase 3 shipped `modules/contracting` behind the contract: `createContract` (direct entry;
+  Idempotency-Key honoured), `listContracts`/`getContract` (V2/V3 projection: parties full,
+  everyone else `_visibility: scope` with commercial terms and `value` ABSENT — never null —
+  and `value` additionally gated by `org:money:view`, invariant §6.5), `updateContract`
+  (draft-only, client-only, If-Match on `version`), `signContract` (manager/admin of a party,
+  x-human-only enforced against the MCP channel; both parties → `signed`, C3 one-live-prime
+  answered as a 409 problem). Ledger entries are CONTRACT-scoped so V7 redaction hides them
+  from non-parties. `contracting.contract.created`/`.signed` publish through the outbox;
+  the project module consumes `.signed` into `project.participation` (source `contract`,
+  capacity from the kind) — planning binds roots + baselines from the same event in phase 4.
+- Rest of the tag (`sponsorContract`, `receiveProvisionally`, `closeContract`,
+  `terminateContract`, change orders, measurements, payments, `financials`, `cash-flow`)
+  lands with phase 5. Calling them still 404s.
+- **Documented limitation:** `ContractCreate.supplier_email` (off-platform supplier) answers
+  422 for now — the model requires a supplier organisation (`contracting.contract.supplier_org_id`
+  NOT NULL) and the invite lane belongs to tendering/directory (phases 6/9). `Contract.value`
+  is computed live from non-superseded BoQ lines; until phase 5 adds BoQ writes it is 0 for
+  direct-entry contracts.
+- DB: migration `db/v2/0004_contracting_contract_root.sql` — `contracting.contract_root`
+  records which plan rows a DRAFT contract covers (`root_task_ids`); `planning.task.contract_id`
+  is only stamped at signature, by planning, from the event (doc 15).
+
+## 2026-09-25 — Project module live; invitation token in the 201 (additive)
+
+- Phase 2 shipped `modules/project` behind the contract: `createProject`/`listProjects`/
+  `getProject`/`updateProject` (If-Match optimistic concurrency on `version`), lifecycle commands
+  `:claim`/`:cancel`/`:close` (doc-09 transition table + guards), `overview`, locations CRUD,
+  participants, invitations + `:accept`, calendar (holidays merged from `platform.holiday`),
+  share links. Every write ledgers on the same transaction (§6.4).
+- `ProjectInvitation.token` added (response-only, additive): the raw invite token is returned once
+  to the inviter in the 201 — only its SHA-256 lives in the DB. Rationale: the notifications module
+  (email delivery) is a later phase; without the token in the response the accept flow would be
+  unreachable. When notifications land, the field stays (harmless) but UIs should stop displaying it.
+- `overview`/`listProjects` roll-ups (`end_date`, `cost`, `health`) are omitted and counters are 0
+  until Planning (phase 4) / Contracting (phases 3+5) provide them — declared here so clients don't
+  read the zeros as data.
+- DB: migration `db/v2/0003_project_claim.sql` — `project.project.pending_owner_email` (who may
+  claim a supplier-created draft, doc 14 Q4) + XOR constraint with `owner_org_id`.
+
+## 2026-09-25 — path parameters declared everywhere; contract lint in CI (additive)
+
+- Every templated path (110 of them) now declares its path parameters at path level
+  (`in: path, required: true`, uuid format for `*Id` names). They were implied by the templates
+  but never declared — invalid for codegen and Swagger "try it". Operation semantics unchanged.
+- `scripts/openapi-lint.py` now gates the contract in CI (job **API v2 — contract lint**):
+  unique operationIds, declared path params, resolvable $refs, global security default, colon-command
+  convention (POST, or GET when read-shaped: `:download`, `:stream`, `:suggest`), fresh index.html embed.
+- Phase-0 platform shipped against this contract: `/api/v2` router (problem+json per doc 11 §Errors,
+  incl. `idempotency_mismatch` 409 for a reused Idempotency-Key with a different body), transactional
+  outbox, ledger client, Idempotency-Key store (`platform.idempotency_key`, db/v2 migration 0002).
+
+## 2026-09-25 — Gantt-parity + security fixes (additive)
+
+All five gaps from [gantt-on-v2.md](./gantt-on-v2.md) §MISSING closed, plus one security spec bug
+from [21-gap-review.md](../../to-be/21-gap-review.md) (S4):
+
+- `uploadScheduleImport`: multipart request body added (`file` required, `parent_task_id` optional
+  uuid = plan root when absent).
+- `TaskDelta.changes`: `kind` added to the delta keys (task ↔ milestone; summary stays derived).
+- `PlanTemplate.is_default` added (single default per person, personal/org scope);
+  `listTemplates` gains `?default=true` — replaces v1 `GET /me/plan-template`.
+- `streamEvents`: `Last-Event-ID` header param for resume (replay re-projected against current
+  visibility); presence documented as connect-registers / disconnect-clears — no heartbeat op.
+- `clerkWebhook`: `security: []` override (Svix-signed machine caller, not a Clerk session);
+  verification headers documented.
+
+## 2026-09-25 — v2 contract adopted; v1 frozen
+
+- `openapi.yaml` (OpenAPI 3.1, 153 operations, 12 domain tags + platform) adopted as the v2
+  contract (founder commit b7232f6, "revamp startup"; LINA-308).
+- `/api/v1` is **frozen**: no new v1 endpoints; fixes only to keep the live portal running.
+  Retirement = pivot phase 12, gated on the v2 UI serving all traffic + founder approval.
+  The 15-day sunset clock starts the day the v2 UI is live in production.
+- Known contract gaps found by the Gantt parity review ([gantt-on-v2.md](./gantt-on-v2.md)
+  §MISSING) — to be fixed additively in `openapi.yaml`:
+  1. `uploadScheduleImport` lacks a request body (multipart) and `parent_task_id`.
+  2. No default-template resolve (v1 `GET /me/plan-template` equivalent).
+  3. No operation changes a row's `kind` (task ↔ milestone).
+  4. Presence signal for `streamEvents` unspecified.
+  5. SSE resume (`Last-Event-ID`) and event envelope under-specified in the yaml.

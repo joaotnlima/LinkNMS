@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/collaboration",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 collaboration module: threads with notes and addressed questions (the owner's dispute channel, D-13), meeting minutes with per-org acknowledgement, the activity feed projection, and notifications with the 15-minute variation digest (phase 7)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test domain/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}

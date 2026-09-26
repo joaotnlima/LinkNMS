@@ -27,7 +27,10 @@ const nextConfig = {
   // Cloudflare R2 over its S3 API) is a server-only upload SDK reached via a lazy
   // `import()`; keep it external so the bundler never tries to trace it into a
   // client chunk.
-  serverExternalPackages: ['pg', 'exceljs', '@aws-sdk/client-s3'],
+  // `@aws-sdk/s3-request-presigner` is its lazy-imported companion in
+  // modules/documents/infra/storage.mjs (the v2 presigned upload/download
+  // tickets) — same shape, same treatment.
+  serverExternalPackages: ['pg', 'exceljs', '@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner'],
 
   // `services/ledger/db.mjs` does `import pg from 'pg'`, and webpack resolves a
   // bare specifier from the IMPORTING file's directory — <repo>/services/…,
@@ -53,6 +56,7 @@ const nextConfig = {
       pg: path.join(appDir, 'node_modules', 'pg'),
       exceljs: path.join(appDir, 'node_modules', 'exceljs'),
       '@aws-sdk/client-s3': path.join(appDir, 'node_modules', '@aws-sdk/client-s3'),
+      '@aws-sdk/s3-request-presigner': path.join(appDir, 'node_modules', '@aws-sdk/s3-request-presigner'),
     };
     return config;
   },

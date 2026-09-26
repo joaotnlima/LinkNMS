@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/identity",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 identity & access module: Clerk mirror, role matrix (doc 16), staffing (to-be phase 1)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test domain/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}
