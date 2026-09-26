@@ -19,6 +19,11 @@ import { createQualityStore } from '@modules/quality/infra/pg-store.mjs';
 import { registerTendering } from '@modules/tendering/http/register.mjs';
 import { createTenderingStore } from '@modules/tendering/infra/pg-store.mjs';
 import { createContractFromAward } from '@modules/contracting/application/award.mjs';
+import { registerDocuments } from '@modules/documents/http/register.mjs';
+import { createDocumentsStore } from '@modules/documents/infra/pg-store.mjs';
+import { createR2ObjectStorage } from '@modules/documents/infra/storage.mjs';
+import { registerCollaboration } from '@modules/collaboration/http/register.mjs';
+import { createCollaborationStore } from '@modules/collaboration/infra/pg-store.mjs';
 
 let router: ReturnType<typeof createRouter> | null = null;
 let pool: Pool | null = null;
@@ -89,8 +94,19 @@ export function getRouter() {
     contractingAward: createContractFromAward,
   });
 
-  // Module registrations land phase by phase (AGENT-INDEX §5): documents,
-  // collaboration, notifications, billing …
+  // Phase 7 — Documents (versioned files on R2 behind presigned tickets,
+  // sha256 proven in the ledger, downloads gated by V6 scope visibility).
+  registerDocuments(router, {
+    store: createDocumentsStore(getPool()),
+    storage: createR2ObjectStorage(),
+  });
+
+  // Phase 7 — Collaboration (threads with addressed questions, meeting
+  // minutes, the activity feed, notifications). The event consumers that
+  // FILL notifications run with the outbox dispatcher, not here.
+  registerCollaboration(router, { store: createCollaborationStore(getPool()) });
+
+  // Module registrations land phase by phase (AGENT-INDEX §5): billing …
 
   return router;
 }

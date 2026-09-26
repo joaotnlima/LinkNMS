@@ -2,6 +2,42 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-09-26 — Documents + Collaboration live (phase 7, additive; no contract change)
+
+- **Documents module** (tag fully implemented, 5 ops): `createDocument` / `createDocumentVersion`
+  reserve a version row and answer an **UploadTicket** — a presigned R2 PUT with the declared
+  sha256 pinned into the signature (`x-amz-checksum-sha256`), so storage itself refuses different
+  bytes; `completeUpload` (wire id `<document_id>.<version_no>` — the composite PK; a colon would
+  collide with command routing) proves the object exists with the declared size, then advances
+  `current_version` + writes ledger (sha256) + `documents.version.uploaded` in ONE transaction —
+  until then the version is invisible everywhere, downloads included; `listDocuments` (by scope);
+  `downloadDocument` = **302** to a 5-minute presigned GET, `Cache-Control: no-store`. The v2
+  bucket is private — every read is minted per request (unlike v1's public CDN URLs).
+  Authorization is V6 relationships, no Clerk permission: WRITE = edit scope of the target object,
+  READ = readers of the scope; non-readers get 404 (existence hiding), readers without edit get 403.
+- **Collaboration module** (tag fully implemented, 12 ops): threads (`listComments`,
+  `createComment` — notes + **addressed questions**, D-13: a question names its addressee org;
+  a thread's visibility IS its object's, `THREAD_OBJECT_TYPES` in domain/lifecycle.mjs),
+  question lanes (`answerQuestion` addressee-only, `resolveQuestion` asker-only,
+  `listMyQuestions` = my org's addressee queue, default `open`), meeting minutes (`createMinute`
+  participant-drafted, `circulateMinute` **author-only**, `acknowledgeMinute` one ack per
+  attending org; all-acked flips the status), `listActivity` (outbox projection,
+  viewer-filtered), and notifications (`listNotifications`, `markNotificationsRead`,
+  `putNotificationPreferences` upsert).
+- **Consumers wired** (test-dispatched; the runtime dispatcher is still the platform follow-up):
+  collaboration OWNS the notifications table — `collaboration.question.*`,
+  `quality.nonconformity.raised`, `tendering.clarification.answered` fan out to the relevant
+  org's staffed people; `planning.variation.recorded/.updated` fold into the doc-10 **15-minute
+  owner digest** (one unread row per window, count in `object_ref`). Person-level dedupe is a DB
+  partial unique index `(person_id, event_id)` — at-least-once delivery is safe to replay.
+  Notifications are housekeeping, never ledgered.
+- DB: migration `db/v2/0005_collaboration_phase7.sql` — `meeting_minute.created_by_org_id/
+  person_id` (nullable: forward-only migrations don't invent authors; an authorless row refuses
+  to circulate), `comment.attachment_document_ids uuid[]` (document ids, not bytes), and the
+  notification dedupe index.
+- New runtime dependency: `@aws-sdk/s3-request-presigner` (lazy-imported next to `client-s3`).
+  R2_* env vars are required at first documents write — loud error, no silent fallback.
+
 ## 2026-09-26 — Tendering live (phase 6); award body + response-only fields (additive)
 
 - Phase 6 shipped `modules/tendering` behind the contract — the whole Tendering tag (22 ops):

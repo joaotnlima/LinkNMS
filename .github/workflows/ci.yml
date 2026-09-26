@@ -384,6 +384,33 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
         run: npm test
 
+      # Phase-7 acceptance (AGENT-INDEX §5): documents prove the upload
+      # protocol (ticket → PUT → complete; sha256 pinned in the signed PUT,
+      # nothing visible before the bytes are proven) and V6 scope visibility
+      # in SQL; collaboration proves the D-13 question lanes, author-only
+      # minute circulation, the activity projection, and the doc-10
+      # notification consumers incl. the 15-minute variation digest with
+      # DB-level (person, event) dedupe.
+      - name: Install documents module dependencies
+        working-directory: modules/documents
+        run: npm ci --ignore-scripts
+
+      - name: Run documents module tests
+        working-directory: modules/documents
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
+      - name: Install collaboration module dependencies
+        working-directory: modules/collaboration
+        run: npm ci --ignore-scripts
+
+      - name: Run collaboration module tests
+        working-directory: modules/collaboration
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
   app-typecheck:
     name: App — typecheck & build
     runs-on: ubuntu-latest

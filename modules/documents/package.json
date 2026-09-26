@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/documents",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 documents module: versioned files on R2 behind presigned tickets, sha256 proven in the ledger, downloads gated by V6 scope visibility (phase 7)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test domain/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}
