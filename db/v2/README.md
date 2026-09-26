@@ -15,9 +15,13 @@ seed of the "Casa Silva" scenario, and checks that prove the rules hold.
 DATABASE_URL=postgres://postgres@localhost:5432/postgres ./db/v2/verify.sh
 ```
 
-**Status:** design artefact. It is not wired to the migration runner (`db/migrate.mjs`) and does not
-touch the as-is schemas. When implementation starts (decision D-03, option A), this file is split into
-per-module forward migrations under `modules/<module>/migrations/`.
+**Status:** live (LINA-308 pivot). `0001_schema.sql` is enumerated by the migration runner
+(`db/migration-files.mjs`) as the v2 bootstrap — one verified, forward-only unit applied after the
+v1 service migrations. It does not touch the as-is tables (the shared schema *names* `platform` and
+`identity` are additive: `CREATE SCHEMA IF NOT EXISTS`, no table collisions — proven against a
+production copy on the Neon `pivot` branch). Subsequent v2 DDL goes in per-module forward
+migrations under `modules/<module>/migrations/NNNN_*.sql`, which the runner also enumerates.
+`seed_casa_silva.sql` and `checks.sql` are test artefacts, never migrations.
 
 **Rule:** a change to the model changes `15-data-model.md`, this DDL and the seed in the same commit,
 and `verify.sh` must still pass.

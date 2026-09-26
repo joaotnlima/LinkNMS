@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # pivot/** gets push CI because the v2 rebuild (LINA-308) lives on a
+    # long-running branch with no PR until the founder's cutover approval —
+    # without this the whole pivot would build green-by-omission.
+    branches: [main, 'pivot/**']
   pull_request:
 
 jobs:
@@ -228,6 +231,202 @@ jobs:
       - name: Run analytics + composition tests
         working-directory: services
         run: npm run test:analytics
+
+  openapi-lint:
+    name: API v2 — contract lint
+    runs-on: ubuntu-latest
+
+    # Contract-first (to-be doc 11) is only real if the contract is held to in
+    # CI: unique operationIds, declared path params, resolvable $refs, a
+    # security default, and a Swagger embed that matches openapi.yaml. Stdlib
+    # + PyYAML on purpose — a linter is no place for npm supply-chain surface.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Lint the /api/v2 contract
+        run: |
+          pip install pyyaml
+          python3 scripts/openapi-lint.py
+
+  platform-tests:
+    name: Platform (v2) — outbox, ledger client, idempotency (Postgres)
+    runs-on: ubuntu-latest
+
+    # Phase-0 acceptance (to-be AGENT-INDEX §5): the ledger entry and the
+    # outbox row commit in ONE transaction, proven against the real v2
+    # migrations in a throwaway container.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: migrator
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: linknms_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: platform/package-lock.json
+
+      # `npm ci` — same lockfile-drift reasoning as every other job (LINA-66).
+      - name: Install dependencies
+        working-directory: platform
+        run: npm ci --ignore-scripts
+
+      # The suite creates its own throwaway database, so it connects to the
+      # maintenance db as the container superuser.
+      - name: Run platform tests
+        working-directory: platform
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
+      # Phase-1 acceptance (AGENT-INDEX §5): the doc-16 §5 matrix has tests,
+      # and the identity store proves staffing + its ledger entry commit in
+      # ONE transaction, against the same throwaway Postgres.
+      - name: Install identity module dependencies
+        working-directory: modules/identity
+        run: npm ci --ignore-scripts
+
+      - name: Run identity module tests
+        working-directory: modules/identity
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
+      # Phase-2 acceptance (AGENT-INDEX §5): the doc-09 project transition
+      # table has tests, the http layer proves permission ∧ relationship ∧
+      # staffing per operation, and the store proves every project write
+      # ledgers in ONE transaction against the same throwaway Postgres.
+      - name: Install project module dependencies
+        working-directory: modules/project
+        run: npm ci --ignore-scripts
+
+      - name: Run project module tests
+        working-directory: modules/project
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
+      # Phase-3 acceptance (AGENT-INDEX §5): the doc-09 contract transition
+      # table and the doc-04 V2/V3 projection have tests, the http layer
+      # proves permission ∧ relationship ∧ staffing (incl. x-human-only
+      # sign), and the store proves contract writes ledger + publish in ONE
+      # transaction, one-live-prime (C3) and boq_freeze (§6.2) at DB level.
+      - name: Install contracting module dependencies
+        working-directory: modules/contracting
+        run: npm ci --ignore-scripts
+
+      - name: Run contracting module tests
+        working-directory: modules/contracting
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
+      # Phase-4 acceptance (AGENT-INDEX §5): the doc-05 link engine
+      # (working-day propagation, rigid links, pins, summaries) and the D-33
+      # scope are pure-domain tested; the http layer proves the D-26 delta
+      # contract (LWW + base + overwrote + client_change_id replay); the
+      # store proves plan writes ledger + publish in ONE serialized
+      # transaction and the contract.signed consumer baselines idempotently.
+      - name: Install planning module dependencies
+        working-directory: modules/planning
+        run: npm ci --ignore-scripts
+
+      - name: Run planning module tests
+        working-directory: modules/planning
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
+      # Phase-5 acceptance (AGENT-INDEX §5): checks §8a/8b/8g/8h at API
+      # level — verifier ≠ reporting org, only the raiser closes an NC,
+      # proposer never decides a change order, measurements against the
+      # live BoQ — and the stores prove money/quality writes ledger +
+      # publish in ONE transaction against the same throwaway Postgres.
+      - name: Install quality module dependencies
+        working-directory: modules/quality
+        run: npm ci --ignore-scripts
+
+      - name: Run quality module tests
+        working-directory: modules/quality
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
+      # Phase-6 acceptance (AGENT-INDEX §5): lanes never enter planning
+      # roll-ups (they live in tendering.* until signature) and bidders see
+      # only their own lane — V8 proven in SQL; the award is ONE transaction
+      # (RFP + lanes + contracting's contract draft, or nothing); the
+      # winner's plan is copied + baselined only on contract.signed (D-36).
+      - name: Install tendering module dependencies
+        working-directory: modules/tendering
+        run: npm ci --ignore-scripts
+
+      - name: Run tendering module tests
+        working-directory: modules/tendering
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
+      # Phase-7 acceptance (AGENT-INDEX §5): documents prove the upload
+      # protocol (ticket → PUT → complete; sha256 pinned in the signed PUT,
+      # nothing visible before the bytes are proven) and V6 scope visibility
+      # in SQL; collaboration proves the D-13 question lanes, author-only
+      # minute circulation, the activity projection, and the doc-10
+      # notification consumers incl. the 15-minute variation digest with
+      # DB-level (person, event) dedupe.
+      - name: Install documents module dependencies
+        working-directory: modules/documents
+        run: npm ci --ignore-scripts
+
+      - name: Run documents module tests
+        working-directory: modules/documents
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
+      - name: Install collaboration module dependencies
+        working-directory: modules/collaboration
+        run: npm ci --ignore-scripts
+
+      - name: Run collaboration module tests
+        working-directory: modules/collaboration
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
+      # Phase-8 acceptance (AGENT-INDEX §5): the entitlements port answers
+      # allowed for any non-gated key even on a CANCELED subscription (reads
+      # of signed contracts never blocked — doc 04 §4); gated keys deny when
+      # lapsed unless a live sponsorship covers the project; one subscription
+      # per org at DB level (canceled slot replaced in place); subscription
+      # writes publish billing.subscription.changed and ledger NOTHING
+      # (doc 10); the provider webhook 404s for every name (open question 17).
+      - name: Install billing module dependencies
+        working-directory: modules/billing
+        run: npm ci --ignore-scripts
+
+      - name: Run billing module tests
+        working-directory: modules/billing
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
 
   app-typecheck:
     name: App — typecheck & build

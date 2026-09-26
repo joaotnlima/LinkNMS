@@ -116,6 +116,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /organizations/{orgId}/members:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Identity & Access
@@ -153,6 +160,19 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/staffing/{personId}:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: personId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     put:
       tags:
       - Identity & Access
@@ -221,13 +241,17 @@ paths:
       - Identity & Access
       operationId: clerkWebhook
       summary: 'Clerk webhook: user.*, organization.*, organizationMembership.* → identity mirror'
-      description: 'Svix-signed. Rejects deleting an org that is party to a signed contract.
+      description: 'Svix-signed (svix-id / svix-timestamp / svix-signature headers verified against
+        CLERK_WEBHOOK_SIGNING_SECRET; ±5 min timestamp tolerance). No Clerk session: this endpoint
+        is called by Clerk, not by a user, so the global security requirement is overridden to none.
+        Rejects deleting an org that is party to a signed contract.
 
 
-        **Clerk permission:** none beyond an authenticated session
+        **Clerk permission:** none (machine caller)
 
 
         **Relationship (LinkNMS):** none'
+      security: []
       responses:
         '204':
           description: No content
@@ -244,6 +268,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /organizations/{orgId}/profile:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     put:
       tags:
       - Directory
@@ -283,6 +314,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /organizations/{orgId}/profile/completeness:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Directory
@@ -309,6 +347,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /organizations/{orgId}/portfolio:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Directory
@@ -347,6 +392,19 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /organizations/{orgId}/portfolio/{entryId}:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: entryId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     delete:
       tags:
       - Directory
@@ -449,6 +507,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /directory/organizations/{orgId}:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Directory
@@ -614,6 +679,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Project
@@ -679,6 +751,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}:claim:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Project
@@ -711,6 +790,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}:cancel:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Project
@@ -744,6 +830,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}:close:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Project
@@ -776,6 +869,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/overview:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Project
@@ -807,6 +907,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/locations:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Project
@@ -887,6 +994,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /locations/{locationId}:
+    parameters:
+    - name: locationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     patch:
       tags:
       - Project
@@ -954,6 +1068,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/participants:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Project
@@ -991,6 +1112,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/invitations:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Project
@@ -1030,6 +1158,12 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /project-invitations/{token}:accept:
+    parameters:
+    - name: token
+      in: path
+      required: true
+      schema:
+        type: string
     post:
       tags:
       - Project
@@ -1061,6 +1195,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/calendar:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Project
@@ -1125,6 +1266,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/share-links:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Project
@@ -1164,6 +1312,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/schedule:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Planning
@@ -1225,6 +1380,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/tasks:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -1270,6 +1432,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /tasks/{taskId}:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Planning
@@ -1347,6 +1516,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /tasks/{taskId}:preview-move:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -1391,6 +1567,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /tasks/{taskId}:record-actual:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -1430,6 +1613,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/schedule:apply:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -1476,6 +1666,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /tasks/{taskId}/links:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -1520,6 +1717,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /links/{linkId}:
+    parameters:
+    - name: linkId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     patch:
       tags:
       - Planning
@@ -1587,6 +1791,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /tasks/{taskId}/cost-lines:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Planning
@@ -1662,6 +1873,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /cost-lines/{costLineId}:
+    parameters:
+    - name: costLineId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     patch:
       tags:
       - Planning
@@ -1729,6 +1947,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /tasks/{taskId}/progress:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -1809,6 +2034,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/variations:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Planning
@@ -1874,6 +2106,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /variations/{variationId}:
+    parameters:
+    - name: variationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Planning
@@ -1900,6 +2139,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /variations/{variationId}:acknowledge:
+    parameters:
+    - name: variationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -1933,6 +2179,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /variations/{variationId}:question:
+    parameters:
+    - name: variationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -1971,6 +2224,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/schedule/health:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Planning
@@ -2007,6 +2267,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/baselines:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Planning
@@ -2104,6 +2371,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/site-calendar:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Planning
@@ -2140,6 +2414,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/schedule-imports:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -2153,6 +2434,23 @@ paths:
       x-relationship: edit scope ∋ target parent
       parameters:
       - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The Excel workbook (.xlsx)
+                parent_task_id:
+                  type: string
+                  format: uuid
+                  description: Row the imported subtree lands under; absent = plan root. Must be inside the actor's edit scope.
+              required:
+              - file
       responses:
         '201':
           description: Created
@@ -2173,6 +2471,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /schedule-imports/{importId}:map:
+    parameters:
+    - name: importId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -2211,6 +2516,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /schedule-imports/{importId}:preview:
+    parameters:
+    - name: importId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -2243,6 +2555,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /schedule-imports/{importId}:confirm:
+    parameters:
+    - name: importId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Planning
@@ -2306,6 +2625,12 @@ paths:
         required: false
         schema:
           type: string
+      - name: default
+        in: query
+        required: false
+        schema:
+          type: boolean
+        description: 'true: return only the viewer''s default template (0 or 1 items) — the v1 `GET /me/plan-template` flow'
       - name: cursor
         in: query
         required: false
@@ -2369,6 +2694,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /plan-templates/{templateId}:
+    parameters:
+    - name: templateId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Planning
@@ -2464,6 +2796,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/rfps:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -2509,6 +2848,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /rfps/{rfpId}:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Tendering
@@ -2574,6 +2920,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /rfps/{rfpId}/recipients:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -2663,6 +3016,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /rfps/{rfpId}:publish:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -2703,6 +3063,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /rfps/{rfpId}/addenda:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -2742,6 +3109,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /rfps/{rfpId}:close:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -2775,6 +3149,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /rfps/{rfpId}:cancel:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -2897,6 +3278,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /rfps/{rfpId}/clarifications:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -2936,6 +3324,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /clarifications/{clarificationId}:answer:
+    parameters:
+    - name: clarificationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -2975,6 +3370,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /tasks/{taskId}/proposal-lanes:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Tendering
@@ -3017,6 +3419,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /proposals/{proposalId}:
+    parameters:
+    - name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Tendering
@@ -3087,6 +3496,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /proposals/{proposalId}:submit:
+    parameters:
+    - name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -3120,6 +3536,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /proposals/{proposalId}:withdraw:
+    parameters:
+    - name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -3153,6 +3576,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /proposals/{proposalId}:record-offline:
+    parameters:
+    - name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -3192,6 +3622,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /rfps/{rfpId}/comparison:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Tendering
@@ -3224,6 +3661,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /proposals/{proposalId}:shortlist:
+    parameters:
+    - name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -3257,6 +3701,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /rfps/{rfpId}:award:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Tendering
@@ -3282,7 +3733,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Decision'
+              $ref: '#/components/schemas/Award'
       responses:
         '201':
           description: Created
@@ -3303,6 +3754,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/contracts:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3384,6 +3842,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /contracts/{contractId}:
+    parameters:
+    - name: contractId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Contracting
@@ -3449,6 +3914,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /contracts/{contractId}:sign:
+    parameters:
+    - name: contractId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3489,6 +3961,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /contracts/{contractId}:sponsor:
+    parameters:
+    - name: contractId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3522,6 +4001,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /contracts/{contractId}:receive-provisionally:
+    parameters:
+    - name: contractId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3555,6 +4041,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /contracts/{contractId}:close:
+    parameters:
+    - name: contractId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3588,6 +4081,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /contracts/{contractId}:terminate:
+    parameters:
+    - name: contractId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3627,6 +4127,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /contracts/{contractId}/financials:
+    parameters:
+    - name: contractId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Contracting
@@ -3654,6 +4161,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /contracts/{contractId}/change-orders:
+    parameters:
+    - name: contractId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3694,6 +4208,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /change-orders/{changeOrderId}:
+    parameters:
+    - name: changeOrderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Contracting
@@ -3720,6 +4241,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /change-orders/{changeOrderId}:submit:
+    parameters:
+    - name: changeOrderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3760,6 +4288,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /change-orders/{changeOrderId}:approve:
+    parameters:
+    - name: changeOrderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3804,6 +4339,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /change-orders/{changeOrderId}:reject:
+    parameters:
+    - name: changeOrderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3848,6 +4390,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /change-orders/{changeOrderId}:withdraw:
+    parameters:
+    - name: changeOrderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3888,6 +4437,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /contracts/{contractId}/measurements:suggest:
+    parameters:
+    - name: contractId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Contracting
@@ -3925,6 +4481,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /contracts/{contractId}/measurements:
+    parameters:
+    - name: contractId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -3964,6 +4527,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /measurements/{measurementId}:approve:
+    parameters:
+    - name: measurementId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -4001,6 +4571,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /measurements/{measurementId}:dispute:
+    parameters:
+    - name: measurementId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -4040,6 +4617,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /payments/{paymentId}:declare-paid:
+    parameters:
+    - name: paymentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -4077,6 +4661,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /payments/{paymentId}:confirm:
+    parameters:
+    - name: paymentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -4114,6 +4705,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /payments/{paymentId}:dispute:
+    parameters:
+    - name: paymentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Contracting
@@ -4153,6 +4751,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/cash-flow:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Contracting
@@ -4241,6 +4846,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /verifications/{verificationId}:accept:
+    parameters:
+    - name: verificationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Quality
@@ -4278,6 +4890,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /verifications/{verificationId}:reject:
+    parameters:
+    - name: verificationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Quality
@@ -4321,6 +4940,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/nonconformities:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Quality
@@ -4360,6 +4986,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /nonconformities/{nonconformityId}:assign:
+    parameters:
+    - name: nonconformityId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Quality
@@ -4399,6 +5032,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /nonconformities/{nonconformityId}:fix:
+    parameters:
+    - name: nonconformityId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Quality
@@ -4438,6 +5078,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /nonconformities/{nonconformityId}:close:
+    parameters:
+    - name: nonconformityId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Quality
@@ -4481,6 +5128,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /nonconformities/{nonconformityId}:reject-fix:
+    parameters:
+    - name: nonconformityId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Quality
@@ -4520,6 +5174,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/inspections:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Quality
@@ -4640,6 +5301,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /documents/{documentId}/versions:
+    parameters:
+    - name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Documents
@@ -4678,6 +5346,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /document-versions/{versionId}:complete:
+    parameters:
+    - name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Documents
@@ -4709,6 +5384,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /document-versions/{versionId}:download:
+    parameters:
+    - name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Documents
@@ -4731,6 +5413,18 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /threads/{objectType}/{objectId}/comments:
+    parameters:
+    - name: objectType
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: objectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Collaboration
@@ -4812,6 +5506,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /comments/{commentId}:answer:
+    parameters:
+    - name: commentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Collaboration
@@ -4850,6 +5551,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /comments/{commentId}:resolve:
+    parameters:
+    - name: commentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Collaboration
@@ -4922,6 +5630,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/minutes:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Collaboration
@@ -4965,6 +5680,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /minutes/{minuteId}:circulate:
+    parameters:
+    - name: minuteId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Collaboration
@@ -4997,6 +5719,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /minutes/{minuteId}:acknowledge:
+    parameters:
+    - name: minuteId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Collaboration
@@ -5029,6 +5758,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/activity:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Collaboration
@@ -5192,6 +5928,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/record:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Record
@@ -5247,6 +5990,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/record:verify:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Record
@@ -5279,6 +6029,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/record:export:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Record
@@ -5388,6 +6145,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /reviews/{reviewId}:reply:
+    parameters:
+    - name: reviewId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Reputation
@@ -5427,6 +6191,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /organizations/{orgId}/reviews:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Reputation
@@ -5463,6 +6234,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /organizations/{orgId}/metrics:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Reputation
@@ -5488,6 +6266,13 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/portfolio-consent:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     put:
       tags:
       - Reputation
@@ -5597,6 +6382,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /billing/subscriptions/{subscriptionId}:
+    parameters:
+    - name: subscriptionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     patch:
       tags:
       - Billing
@@ -5639,6 +6431,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /billing/subscriptions/{subscriptionId}:cancel:
+    parameters:
+    - name: subscriptionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     post:
       tags:
       - Billing
@@ -5731,6 +6530,12 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /billing/webhooks/{provider}:
+    parameters:
+    - name: provider
+      in: path
+      required: true
+      schema:
+        type: string
     post:
       tags:
       - Billing
@@ -5758,6 +6563,13 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/events:stream:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       tags:
       - Realtime
@@ -5766,10 +6578,22 @@ paths:
       description: '**Clerk permission:** none beyond an authenticated session
 
 
-        **Relationship (LinkNMS):** project.participant'
+        **Relationship (LinkNMS):** project.participant
+
+
+        Connecting registers the viewer''s presence on the project (broadcast as a `presence` event);
+        disconnecting clears it — there is no separate heartbeat operation. Events use the envelope of
+        doc 10 (`10-domain-events.md`), projected per viewer; `event:` carries the event name, `id:`
+        the envelope id for resume.'
       x-relationship: project.participant
       parameters:
       - $ref: '#/components/parameters/projectId'
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema:
+          type: string
+        description: Resume the stream after this envelope id; replayed events are re-projected against the viewer's CURRENT visibility, never the historical one.
       responses:
         '200':
           description: text/event-stream of projected event envelopes
@@ -6490,6 +7314,12 @@ components:
       properties:
         id: *id001
         project_id: *id001
+        token:
+          type: string
+          description: Present ONLY in the 201 response to the inviter — shown
+            once, never stored (the server keeps a hash). Until the
+            notifications module delivers invitation emails, the inviter
+            forwards the accept link themselves.
         email:
           type: string
           format: email
@@ -6740,8 +7570,8 @@ components:
           type: object
           additionalProperties:
             $ref: '#/components/schemas/FieldChange'
-          description: 'keys: name, description, specialty, location_id, dating_mode, start, finish, duration_wd, assignee_org_id,
-            assignee_person_id, acceptance_criteria'
+          description: 'keys: name, description, kind (task ↔ milestone only; to/from summary is derived from children), specialty,
+            location_id, dating_mode, start, finish, duration_wd, assignee_org_id, assignee_person_id, acceptance_criteria'
         confirm_not_assignee:
           type: boolean
           description: UI confirmed 'you are not responsible for this row'
@@ -7187,6 +8017,9 @@ components:
           - org
           - public
           - library
+        is_default:
+          type: boolean
+          description: The viewer's single default template (per person; personal or org scope only). Setting it true clears the previous default.
         name:
           type: string
         description:
@@ -7352,6 +8185,61 @@ components:
         awarded_proposal_id: *id001
         version:
           type: integer
+        package:
+          type: object
+          description: 'Response-only, on getRfp: the current package version — subtree
+            structure and BoQ quantities, never prices (doc 05 §10).'
+          properties:
+            rows:
+              type: array
+              items:
+                type: object
+                properties:
+                  task_id: *id001
+                  parent_task_id: *id001
+                  name:
+                    type: string
+                  scope_text:
+                    type: string
+                  specialty:
+                    type: string
+                  position:
+                    type: string
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  rfp_item_id: *id001
+                  task_id: *id001
+                  code:
+                    type: string
+                  description:
+                    type: string
+                  unit:
+                    type: string
+                  quantity:
+                    type: string
+                  material_spec:
+                    type: string
+                  specialty:
+                    type: string
+        clarifications:
+          type: array
+          description: 'Response-only, on getRfp: askers anonymised; a bidder sees
+            answered questions and its own open ones.'
+          items:
+            $ref: '#/components/schemas/Clarification'
+    Award:
+      type: object
+      properties:
+        proposal_id: *id001
+        note:
+          type: string
+      required:
+      - proposal_id
+      description: The winning proposal. Award creates the contract draft (origin
+        award); losing live lanes become declined.
     RfpCreate:
       type: object
       properties:
@@ -7409,6 +8297,12 @@ components:
           - bounced
         sent_at: *id004
         opened_at: *id004
+        token:
+          type: string
+          description: 'Response-only, ONCE, in the addRecipients 201: the raw
+            personal-link token (only its SHA-256 is stored). Returned to the
+            issuer until the notifications module owns email delivery — same
+            rationale as ProjectInvitation.token.'
       description: Visible to the issuer only.
     Clarification:
       type: object
@@ -7480,6 +8374,14 @@ components:
           - email
         status:
           type: string
+          enum:
+          - invited
+          - draft
+          - submitted
+          - withdrawn
+          - shortlisted
+          - awarded
+          - declined
         revision:
           type: integer
         rows:

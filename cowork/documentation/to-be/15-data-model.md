@@ -279,9 +279,9 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 
 ### `collaboration`
 **thread** — `UNIQUE(object_type, object_id)`: `project_id?`.
-**comment**: `thread_id, author_person_id, author_org_id, kind (note/question/answer), body, mentions uuid[], addressee_org_id (questions), question_status (open/answered/resolved), answers_comment_id, edited_until, deleted_at`.
-**meeting_minute**: `project_id, date, attendees uuid[] (orgs), status (draft/circulated/acknowledged)`; **minute_item**: `minute_id, text, owner_org_id, due_date, object_type?, object_id?`; **minute_ack**: `minute_id, org_id, person_id, at`.
-**notification**: `person_id, event_id, category, title, object_ref, read_at`. **notification_preference**: `person_id, category, channel, enabled`.
+**comment**: `thread_id, author_person_id, author_org_id, kind (note/question/answer), body, mentions uuid[], attachment_document_ids uuid[] (0005), addressee_org_id (questions), question_status (open/answered/resolved), answers_comment_id, edited_until, deleted_at`.
+**meeting_minute**: `project_id, date, attendees uuid[] (orgs), status (draft/circulated/acknowledged), created_by_org_id?, created_by_person_id? (0005 — circulate is author-only)`; **minute_item**: `minute_id, text, owner_org_id, due_date, object_type?, object_id?`; **minute_ack**: `minute_id, org_id, person_id, at`.
+**notification**: `person_id, event_id, category, title, object_ref, read_at` — `UNIQUE(person_id, event_id) WHERE event_id IS NOT NULL` (0005: at-least-once outbox dedupe; digest rows aggregate a window under the first event's id). **notification_preference**: `person_id, category, channel, enabled`.
 
 ### `directory`
 **organization_profile** — `PK(org_id)`: `display_name, description, logo_document_id, specialties text[], tags text[], service_areas text[] (municipality/district codes), team_size_band, founded_year, declared_nif, declared_impic_number, declared_impic_class, declared_insurance, listed bool, completeness smallint (derived, materialised)`.
@@ -316,6 +316,7 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 ### `platform`
 **outbox**: `event_id PK, type, version, occurred_at, project_id, actor jsonb, scope jsonb, data jsonb, dispatched_at`.
 **holiday**: `date, scope, name` — PT national + municipal holidays.
+**idempotency_key** *(migration 0002)*: `key + caller (Clerk user id) + operation_id PK, request_hash, response_status, response_body, created_at, completed_at` — the doc-11 Idempotency-Key memory. The reservation is written in the same transaction as the command's domain write, so a rolled-back command leaves no reservation; a replay with the same body returns the stored response, a different body is `409 idempotency_mismatch`.
 
 ---
 

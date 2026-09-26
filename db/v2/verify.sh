@@ -7,7 +7,10 @@ url="${DATABASE_URL:-postgres://postgres@localhost:5432/postgres}"
 db="linknms_v2_verify"
 psql "$url" -qc "DROP DATABASE IF EXISTS $db" -c "CREATE DATABASE $db"
 target="${url%/*}/$db"
-psql "$target" -v ON_ERROR_STOP=1 -q -f "$here/0001_schema.sql"
+# All v2 forward migrations, in order — the same set db/migration-files.mjs enumerates.
+for mig in "$here"/[0-9][0-9][0-9][0-9]_*.sql; do
+  psql "$target" -v ON_ERROR_STOP=1 -q -f "$mig"
+done
 psql "$target" -v ON_ERROR_STOP=1 -q -f "$here/seed_casa_silva.sql" > /dev/null
 cd "$here" && psql "$target" -q -f checks.sql 2>&1 | tee checks.out
 echo; echo "Compare with checks.expected.txt:"; diff -q "$here/checks.out" "$here/checks.expected.txt" && echo "identical"
