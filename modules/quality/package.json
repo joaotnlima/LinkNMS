@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/quality",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 quality module: verification queue and decisions (D-31 — never your own org's work), non-conformity lifecycle (closure belongs to the raiser), inspections (phase 5)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test domain/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}

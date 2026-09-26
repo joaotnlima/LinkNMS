@@ -5,6 +5,8 @@
 import { makeCalendar, durationWd } from '../domain/calendar.mjs';
 import { inEditScope, effectiveAssignee } from '../domain/scope.mjs';
 import { effectiveSpans } from '../domain/propagation.mjs';
+import { variationVisibleTo } from '../domain/variations.mjs';
+import { lineAmountCents } from '../domain/cost-lines.mjs';
 
 /** children index — a row with children renders as a summary (doc 05 §2). */
 export function childCounts(tasks) {
@@ -78,6 +80,8 @@ export function taskBody(task, ctx) {
     acceptance_criteria: task.acceptanceCriteria ?? undefined,
     can_edit: canEdit,
     editor_is_assignee: assignee ? assignee.orgId === ctx.viewerOrgId : undefined,
+    ...costField(task.id, ctx),
+    ...openVariationsField(task.id, ctx),
     last_change: task.lastChangedAt
       ? {
           by: { person_id: task.lastChangedByPersonId ?? undefined, org_id: task.lastChangedByOrgId ?? undefined },
@@ -135,8 +139,115 @@ export function planHealth({ tasks, links, statuses, costedTaskIds }) {
   };
 }
 
+/**
+ * Task.cost — the D-38 / checks §2 roll-up: over the row's SUBTREE, live
+ * (non-superseded) lines only; revenue = Σ where the viewer org is the
+ * line-contract's supplier, cost = Σ where it is the client or the estimate
+ * owner; margin when both. NOTHING visible → the field is ABSENT, not zero.
+ */
+function costField(taskId, ctx) {
+  const totals = ctx.costRollups?.get(taskId);
+  if (!totals || (totals.revenue == null && totals.cost == null)) return {};
+  const eur = (cents) => ({ amount_cents: cents, currency: 'EUR' });
+  return {
+    cost: {
+      ...(totals.revenue != null ? { revenue: eur(totals.revenue) } : {}),
+      ...(totals.cost != null ? { cost: eur(totals.cost) } : {}),
+      ...(totals.revenue != null && totals.cost != null
+        ? { margin: eur(totals.revenue - totals.cost) }
+        : {}),
+    },
+  };
+}
+
+function openVariationsField(taskId, ctx) {
+  if (!ctx.variationsByTask) return {};
+  const open = (ctx.variationsByTask.get(taskId) ?? []).filter(
+    (v) => ['open', 'acknowledged'].includes(v.status)
+      && variationVisibleTo(v, ctx.viewerOrgId, { contracts: ctx.world.contracts }),
+  );
+  return open.length ? { open_variations: open.length } : {};
+}
+
+/** api/v2 Variation — history derived at read time (ruling 12). */
+export function variationBody(v, { taskName, history = [] } = {}) {
+  return {
+    id: v.id,
+    task_id: v.taskId,
+    task_name: taskName ?? v.taskName ?? undefined,
+    kind: v.kind,
+    baseline_value: v.baselineValue ?? null,
+    current_value: v.currentValue ?? null,
+    delta: v.delta,
+    cause: v.cause,
+    cause_task_id: v.causeTaskId ?? undefined,
+    last_changed_by: { org_id: v.lastChangedByOrgId },
+    first_changed_at: iso(v.firstChangedAt),
+    last_changed_at: iso(v.lastChangedAt),
+    status: v.status,
+    acknowledged_by: (v.acks ?? []).map((a) => ({ person_id: a.personId, at: iso(a.acknowledgedAt) })),
+    change_order_id: v.changeOrderId ?? undefined,
+    history,
+  };
+}
+
+function iso(value) {
+  if (value == null) return undefined;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
+/** Per-viewer subtree cost roll-up for every row, in one bottom-up pass. */
+function costRollups(snapshot, viewerOrgId) {
+  const lines = snapshot.boqLines ?? [];
+  if (!lines.length) return new Map();
+  const own = new Map(); // taskId → {revenue, cost} nullable
+  const add = (map, id, side, cents) => {
+    const t = map.get(id) ?? { revenue: null, cost: null };
+    t[side] = (t[side] ?? 0) + cents;
+    map.set(id, t);
+  };
+  for (const l of lines) {
+    if (l.supersededByChangeOrderId != null || !l.taskId) continue;
+    const amount = lineAmountCents(l.quantity, l.unitPriceCents);
+    if (l.contractId) {
+      const c = snapshot.contracts.get(l.contractId);
+      if (!c) continue;
+      if (c.supplierOrgId === viewerOrgId) add(own, l.taskId, 'revenue', amount);
+      if (c.clientOrgId === viewerOrgId) add(own, l.taskId, 'cost', amount);
+    } else if (l.estimateOwnerOrgId === viewerOrgId) {
+      add(own, l.taskId, 'cost', amount);
+    }
+  }
+  if (!own.size) return new Map();
+  const rolled = new Map();
+  const byDepth = [...snapshot.tasks.values()].sort((a, b) => b.depth - a.depth);
+  for (const t of byDepth) {
+    const mine = own.get(t.id);
+    const sub = rolled.get(t.id) ?? { revenue: null, cost: null };
+    const totals = {
+      revenue: mine?.revenue != null || sub.revenue != null ? (mine?.revenue ?? 0) + (sub.revenue ?? 0) : null,
+      cost: mine?.cost != null || sub.cost != null ? (mine?.cost ?? 0) + (sub.cost ?? 0) : null,
+    };
+    rolled.set(t.id, totals);
+    if (t.parentId && (totals.revenue != null || totals.cost != null)) {
+      const p = rolled.get(t.parentId) ?? { revenue: null, cost: null };
+      if (totals.revenue != null) p.revenue = (p.revenue ?? 0) + totals.revenue;
+      if (totals.cost != null) p.cost = (p.cost ?? 0) + totals.cost;
+      rolled.set(t.parentId, p);
+    }
+  }
+  return rolled;
+}
+
 /** Everything taskBody needs, from a snapshot. */
 export function projectionCtx(snapshot, viewerOrgId, today) {
+  const variationsByTask = new Map();
+  for (const v of snapshot.variations?.values() ?? []) {
+    const list = variationsByTask.get(v.taskId) ?? [];
+    list.push(v);
+    variationsByTask.set(v.taskId, list);
+  }
   return {
     tasks: snapshot.tasks,
     counts: childCounts(snapshot.tasks),
@@ -146,6 +257,8 @@ export function projectionCtx(snapshot, viewerOrgId, today) {
     orgNames: snapshot.orgNames,
     viewerOrgId,
     today,
+    costRollups: costRollups(snapshot, viewerOrgId),
+    variationsByTask,
   };
 }
 

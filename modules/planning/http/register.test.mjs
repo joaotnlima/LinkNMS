@@ -146,6 +146,7 @@ function fakeStore() {
     async loadPlan() { return loadPlan(); },
     async listFieldChanges(taskId) { return state.fieldChanges.filter((f) => f.taskId === taskId); },
     async listProgress(taskId) { return state.progress.filter((p) => p.taskId === taskId); },
+    async listVariations() { return []; },
     async idempotent(meta, fn) { return fn(); },
     async withPlanTx(projectId, fn, { dryRun = false } = {}) {
       const snap = snapshotState();

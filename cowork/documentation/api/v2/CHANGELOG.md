@@ -2,6 +2,33 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-09-26 — Quality + money flow live (phase 5, additive; no contract change)
+
+- **Contracting money flow** (tag now fully implemented): `sponsorContract`, `receiveProvisionally`,
+  `closeContract`, `terminateContract`, `getFinancials`, change orders (`createChangeOrder`,
+  `getChangeOrder`, `:submit`/`:approve`/`:reject`/`:withdraw` — proposer never decides, §6.1;
+  approved scope supersedes + adds BoQ lines, never edits in place, §6.2), measurements
+  (`suggestMeasurement`, `createMeasurement`, `:approve`/`:dispute` — against the live BoQ),
+  payments (`:declare-paid`/`:confirm`/`:dispute`) and `getCashFlow`. Money stays ABSENT without
+  V2 rights + `org:money:view` (§6.5).
+- **Planning execution**: cost lines (`listCostLines`, `createCostLine`, `updateCostLine`,
+  `deleteCostLine`; task cost roll-ups now populate, split by side per D-38), variations
+  (`listVariations`, `getVariation`, `:acknowledge`, `:question`; time variations open/close from
+  baseline drift) and progress (`reportProgress`, `listProgress` — append-only, §6.3).
+- **Quality module** (tag fully implemented): verification queue (`listMyVerifications`,
+  `:accept`/`:reject` — never the reporting org's own work, D-31/§8a), non-conformities
+  (`raiseNonConformity`, `:assign`/`:fix`/`:close`/`:reject-fix` — only the raiser closes, §8b)
+  and `recordInspection`.
+- Consumers wired (still test-dispatched; the runtime dispatcher is platform follow-up):
+  `planning.progress.reported` → quality verification request (done reports only, idempotent);
+  `quality.verification.accepted` → verified progress appended once; `contracting.change_order.approved`
+  → planning re-baselines from the order's time entries and formalises/closes its variations.
+- `getPlanHealth`: the registered operationId now matches the spec string (was `getScheduleHealth`
+  in the phase-4 register; same path, no runtime change).
+- **Still missing from Planning** (later phases): templates CRUD, schedule imports, `listMyTasks`,
+  `getSiteCalendar`, `listBaselines` — those routes still 404.
+- DB: no new migration — phase 5 runs entirely on the db/v2 0001 quality/contracting/planning tables.
+
 ## 2026-09-25 — Planning core live (phase 4, additive; no contract change)
 
 - Phase 4 shipped `modules/planning` behind the contract: `getSchedule` (tree + links + calendar +

@@ -354,6 +354,21 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
         run: npm test
 
+      # Phase-5 acceptance (AGENT-INDEX §5): checks §8a/8b/8g/8h at API
+      # level — verifier ≠ reporting org, only the raiser closes an NC,
+      # proposer never decides a change order, measurements against the
+      # live BoQ — and the stores prove money/quality writes ledger +
+      # publish in ONE transaction against the same throwaway Postgres.
+      - name: Install quality module dependencies
+        working-directory: modules/quality
+        run: npm ci --ignore-scripts
+
+      - name: Run quality module tests
+        working-directory: modules/quality
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
   app-typecheck:
     name: App — typecheck & build
     runs-on: ubuntu-latest

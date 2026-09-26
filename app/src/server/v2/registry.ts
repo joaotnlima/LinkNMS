@@ -14,6 +14,8 @@ import { registerContracting } from '@modules/contracting/http/register.mjs';
 import { createContractingStore } from '@modules/contracting/infra/pg-store.mjs';
 import { registerPlanning } from '@modules/planning/http/register.mjs';
 import { createPlanningStore } from '@modules/planning/infra/pg-store.mjs';
+import { registerQuality } from '@modules/quality/http/register.mjs';
+import { createQualityStore } from '@modules/quality/infra/pg-store.mjs';
 
 let router: ReturnType<typeof createRouter> | null = null;
 let pool: Pool | null = null;
@@ -62,19 +64,22 @@ export function getRouter() {
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://portal.linknms.com'),
   });
 
-  // Phase 3 — Contracting core (contract tree, signature, V2/V3
-  // projection). The rest of the tag — sponsor, reception, termination,
-  // change orders, measurements, payments — lands with phase 5.
+  // Phases 3 + 5 — Contracting: core (contract tree, signature, V2/V3
+  // projection) plus the money flow (sponsor, reception, termination,
+  // change orders, measurements, payments, cash-flow).
   registerContracting(router, { store: createContractingStore(getPool()) });
 
-  // Phase 4 — Planning core (the WBS plan: rows, links, working-day
+  // Phases 4 + 5 — Planning: the WBS plan (rows, links, working-day
   // propagation, D-26 deltas, D-33 edit scope, baseline binding on
-  // signature). Variations, cost lines, progress, templates and imports
-  // land with later phases.
+  // signature) plus execution (progress, variations, cost lines).
+  // Templates and imports land with later phases.
   registerPlanning(router, { store: createPlanningStore(getPool()) });
 
+  // Phase 5 — Quality (verification, non-conformities, inspections).
+  registerQuality(router, { store: createQualityStore(getPool()) });
+
   // Module registrations land phase by phase (AGENT-INDEX §5): tendering,
-  // quality, documents, collaboration, notifications, billing …
+  // documents, collaboration, notifications, billing …
 
   return router;
 }
