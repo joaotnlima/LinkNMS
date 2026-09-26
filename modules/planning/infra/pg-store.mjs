@@ -446,6 +446,14 @@ export function createPlanningStore(pool) {
           'UPDATE planning.task SET contract_id = $1 WHERE id = ANY($2::uuid[])',
           [contractId, roots],
         );
+
+        // D-36: for an AWARDED contract whose winning proposal was built on
+        // the platform, the bidder's plan is copied into the project under
+        // the tendered rows NOW — before the branch walk, so the copied rows
+        // join the branch and the baseline. An email-channel award keeps the
+        // packaged children (the supplier details them later; plan health
+        // flags the gap). Assignment: the supplier takes the roots.
+        const copied = await copyAwardedProposal(client, { contractId, projectId, roots, actor });
         // The branch: the roots and everything under them, stopping at rows
         // bound to their own (deeper) contract.
         const { rows: branchRows } = await client.query(
@@ -502,7 +510,10 @@ export function createPlanningStore(pool) {
           type: 'planning.baseline.taken',
           scope: { type: 'project', id: projectId },
           object: { type: 'baseline', id: baselineId },
-          payload: { contract_id: contractId, version: 1, roots, rows: branchIds.length },
+          payload: {
+            contract_id: contractId, version: 1, roots, rows: branchIds.length,
+            ...(copied ? { copied_proposal_id: copied.proposalId, copied_rows: copied.inserted } : {}),
+          },
           channel: 'system',
         });
         await publishEvent(client, {
@@ -923,6 +934,115 @@ export function createPlanningStore(pool) {
       });
     },
   };
+}
+
+/**
+ * D-36, on contracting.contract.signed for an AWARDED contract: copy the
+ * winning platform proposal's plan into the project under the tendered rows
+ * (structure, dates, links) and hand the roots to the supplier. Runs INSIDE
+ * bindSignedContract's transaction, before the branch walk, so the copied
+ * rows are baselined with everything else. Email-channel awards copy nothing.
+ * Idempotent by the caller's already-baselined guard.
+ */
+async function copyAwardedProposal(client, { contractId, projectId, roots, actor }) {
+  const { rows: [contract] } = await client.query(
+    'SELECT origin, origin_proposal_id, supplier_org_id FROM contracting.contract WHERE id = $1',
+    [contractId],
+  );
+  if (!contract || contract.origin !== 'award' || !contract.origin_proposal_id) return null;
+
+  // The tendered rows are the supplier's now (doc 06 §Award).
+  await client.query(
+    'UPDATE planning.task SET assignee_org_id = $1, assignee_inherited = false WHERE id = ANY($2::uuid[])',
+    [contract.supplier_org_id, roots],
+  );
+
+  const { rows: [proposal] } = await client.query(
+    'SELECT id, channel FROM tendering.proposal WHERE id = $1', [contract.origin_proposal_id],
+  );
+  if (!proposal || proposal.channel !== 'platform') return null;
+  const { rows: pRows } = await client.query(
+    'SELECT * FROM tendering.proposal_row WHERE proposal_id = $1 ORDER BY position', [proposal.id],
+  );
+  if (!pRows.length) return null;
+
+  const packagedIds = pRows.map((r) => r.packaged_task_id).filter(Boolean);
+  const { rows: live } = packagedIds.length ? await client.query(
+    `SELECT id, depth FROM planning.task
+      WHERE id = ANY($1::uuid[]) AND project_id = $2 AND deleted_at IS NULL`,
+    [packagedIds, projectId],
+  ) : { rows: [] };
+  const depthOf = new Map(live.map((t) => [t.id, t.depth]));
+  const { rows: rootDepths } = await client.query(
+    'SELECT id, depth FROM planning.task WHERE id = ANY($1::uuid[])', [roots],
+  );
+  for (const t of rootDepths) depthOf.set(t.id, t.depth);
+
+  // Packaged rows keep their identity — the proposal's dates land on them.
+  const mapped = new Map(); // proposal_row id → planning.task id
+  for (const r of pRows) {
+    if (!r.packaged_task_id || !depthOf.has(r.packaged_task_id)) continue;
+    mapped.set(r.id, r.packaged_task_id);
+    await client.query(
+      `UPDATE planning.task SET
+         start = coalesce($2, start), finish = coalesce($3, finish),
+         duration_wd = coalesce($4, duration_wd),
+         dating_mode = CASE WHEN $2::date IS NOT NULL THEN 'dated' ELSE dating_mode END,
+         last_change_cause = 'awarded_proposal'
+       WHERE id = $1`,
+      [r.packaged_task_id, r.start, r.finish, r.duration_wd],
+    );
+  }
+
+  // New rows insert under their mapped parent (or the first tendered root),
+  // parents before children.
+  let inserted = 0;
+  let pending = pRows.filter((r) => !mapped.has(r.id));
+  let progress = true;
+  while (pending.length && progress) {
+    progress = false;
+    const next = [];
+    for (const r of pending) {
+      const parentTask = r.parent_row_id ? mapped.get(r.parent_row_id) : roots[0];
+      if (!parentTask) { next.push(r); continue; }
+      const depth = Math.min((depthOf.get(parentTask) ?? 1) + 1, 10);
+      const id = randomUUID();
+      const finish = r.kind === 'milestone' ? r.start : r.finish;
+      await client.query(
+        `INSERT INTO planning.task
+           (id, project_id, parent_id, depth, position, kind, name,
+            dating_mode, start, finish, duration_wd, last_change_cause)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'awarded_proposal')`,
+        [id, projectId, parentTask, depth, r.position, r.kind, r.name,
+          r.start ? 'dated' : 'undated', r.start, finish, r.duration_wd],
+      );
+      mapped.set(r.id, id);
+      depthOf.set(id, depth);
+      inserted += 1;
+      progress = true;
+    }
+    pending = next;
+  }
+
+  const { rows: pLinks } = await client.query(
+    'SELECT * FROM tendering.proposal_link WHERE proposal_id = $1', [proposal.id],
+  );
+  for (const l of pLinks) {
+    const pred = mapped.get(l.predecessor_row);
+    const succ = mapped.get(l.successor_row);
+    // planning.link requires its author; a signature always has one.
+    if (!pred || !succ || !actor?.orgId || !actor?.personId) continue;
+    await client.query(
+      `INSERT INTO planning.link
+         (id, project_id, predecessor_id, successor_id, from_anchor, to_anchor, lag_wd,
+          created_by_org_id, created_by_person_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (predecessor_id, successor_id) DO NOTHING`,
+      [randomUUID(), projectId, pred, succ, l.from_anchor, l.to_anchor, l.lag_wd,
+        actor.orgId, actor.personId],
+    );
+  }
+  return { proposalId: proposal.id, inserted };
 }
 
 function progressN(r) {

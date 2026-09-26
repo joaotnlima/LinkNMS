@@ -18,6 +18,11 @@ const CAPACITY_BY_KIND = Object.freeze({
  */
 export function projectConsumers(store) {
   return {
+    // Doc 09 §Project: publishing the FIRST RFP moves draft → tendering.
+    'tendering.rfp.published': async (evt) => {
+      await store.markTendering({ projectId: evt.project_id });
+    },
+
     'contracting.contract.signed': async (evt) => {
       const capacity = CAPACITY_BY_KIND[evt.data.kind];
       if (!capacity) throw new Error(`unknown contract kind in event: ${evt.data.kind}`);

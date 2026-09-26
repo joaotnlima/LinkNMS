@@ -16,6 +16,9 @@ import { registerPlanning } from '@modules/planning/http/register.mjs';
 import { createPlanningStore } from '@modules/planning/infra/pg-store.mjs';
 import { registerQuality } from '@modules/quality/http/register.mjs';
 import { createQualityStore } from '@modules/quality/infra/pg-store.mjs';
+import { registerTendering } from '@modules/tendering/http/register.mjs';
+import { createTenderingStore } from '@modules/tendering/infra/pg-store.mjs';
+import { createContractFromAward } from '@modules/contracting/application/award.mjs';
 
 let router: ReturnType<typeof createRouter> | null = null;
 let pool: Pool | null = null;
@@ -78,8 +81,16 @@ export function getRouter() {
   // Phase 5 — Quality (verification, non-conformities, inspections).
   registerQuality(router, { store: createQualityStore(getPool()) });
 
-  // Module registrations land phase by phase (AGENT-INDEX §5): tendering,
-  // documents, collaboration, notifications, billing …
+  // Phase 6 — Tendering (RFPs, lanes, comparison, award). The award
+  // transaction runs contracting's award port on the same client so the
+  // contract draft exists the instant the RFP says awarded.
+  registerTendering(router, {
+    store: createTenderingStore(getPool()),
+    contractingAward: createContractFromAward,
+  });
+
+  // Module registrations land phase by phase (AGENT-INDEX §5): documents,
+  // collaboration, notifications, billing …
 
   return router;
 }

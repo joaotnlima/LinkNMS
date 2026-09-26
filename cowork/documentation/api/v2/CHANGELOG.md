@@ -2,6 +2,50 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-09-26 — Tendering live (phase 6); award body + response-only fields (additive)
+
+- Phase 6 shipped `modules/tendering` behind the contract — the whole Tendering tag (22 ops):
+  RFP lifecycle (`createRfp` — level owner/sub DERIVED from who tenders which rows, never posted;
+  `getRfp`, `updateRfp` draft-only If-Match, `publishRfp` **human-only**, `addAddendum` = R2
+  re-snapshot + versioned package, `closeRfp`, `cancelRfp`), recipients (`addRecipients` opens one
+  proposal lane each, individual token per recipient, sha256 at rest; `listRecipients`),
+  discovery (`browseOpenRfps` D-15 open listing, `listMyRfps`), clarifications (`askClarification`
+  recipient-only; `answerClarification` published to all bidders, asker anonymised EVERYWHERE),
+  lanes (`listProposalLanes` — V8 in SQL: issuer all, bidder its own, others none; `getProposal`,
+  `putProposal` whole-document with If-Match, `submitProposal` revisions, `withdrawProposal`,
+  `recordOfflineProposal` = issuer records an emailed answer, channel `email`),
+  evaluation (`getComparison` — behind `org:money:view`, lower-median in integer cents;
+  `shortlistProposal`) and `awardRfp` (**human-only**).
+- **Award is one transaction:** RFP → `awarded`, winner lane → `awarded`, every other live lane →
+  `declined` (silent invitations lapse), and the contract DRAFT is written by contracting's award
+  port (`modules/contracting/application/award.mjs`) on the same client — `origin: award`,
+  `origin_proposal_id`, BoQ copied from the winner's priced lines (task binding via the packaged
+  item; variant lines contract-level). The 201 answers with the Contract. `tendering.rfp.awarded`
+  + `contracting.contract.created` publish through the outbox.
+- **D-36 at signature, not award:** on `contracting.contract.signed`, planning copies the winning
+  platform proposal's plan (rows, dates, links) under the tendered rows, hands the roots to the
+  supplier, then takes baseline v1 over the whole branch — email-channel awards keep the packaged
+  children. New project consumer: `tendering.rfp.published` → project `draft → tendering` (doc 09).
+- **Contract deltas (additive):**
+  - `awardRfp` request body is now `Award {proposal_id (required), note}` — the yaml said "Body
+    carries proposal_id" but pointed at `Decision {note}`, which made the operation uncallable.
+  - `Rfp.package` + `Rfp.clarifications` (response-only, on `getRfp`): the summary promised
+    bidders "package + clarifications" but the schema carried neither; the package is rows +
+    items with quantities and NO prices (schema-enforced — `rfp_item` has no price column).
+  - `Recipient.token` (response-only, ONCE, in the `addRecipients` 201): the notifications module
+    (email delivery) is a later phase; without the raw token the personal link would be
+    unreachable — same rationale as `ProjectInvitation.token` (2026-09-25 entry).
+  - `Proposal.status` gained its enum (the lane vocabulary; it was a bare string).
+- **Defaults applied (flagged):** (1) owner-level contract kind at award: package spanning >1
+  specialty ⇒ `prime`, single specialty ⇒ `direct` (D-35 never names the discriminator — founder
+  may overrule). (2) Entitlements `rfp.publish`/`rfp.open_listing`/`proposal.submit_open` are the
+  billing port — phase 8; not enforced yet. (3) Q7 default kept: NO sealed bidding, the issuer
+  sees proposals as they arrive. (4) Awarding an emailed lane whose bidder never signed up answers
+  422 (the contract needs a supplier org — same limitation as phase-3 `supplier_email`).
+  (5) Deadline auto-close is a scheduler concern (none exists yet): `closeRfp` is manual and award
+  is also allowed from `published` once EVERY invitee responded (doc 09 guard, verbatim).
+- No DB migration: the phase runs entirely on the 0001 tendering schema.
+
 ## 2026-09-26 — Quality + money flow live (phase 5, additive; no contract change)
 
 - **Contracting money flow** (tag now fully implemented): `sponsorContract`, `receiveProvisionally`,

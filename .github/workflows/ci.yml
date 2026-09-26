@@ -369,6 +369,21 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
         run: npm test
 
+      # Phase-6 acceptance (AGENT-INDEX §5): lanes never enter planning
+      # roll-ups (they live in tendering.* until signature) and bidders see
+      # only their own lane — V8 proven in SQL; the award is ONE transaction
+      # (RFP + lanes + contracting's contract draft, or nothing); the
+      # winner's plan is copied + baselined only on contract.signed (D-36).
+      - name: Install tendering module dependencies
+        working-directory: modules/tendering
+        run: npm ci --ignore-scripts
+
+      - name: Run tendering module tests
+        working-directory: modules/tendering
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
   app-typecheck:
     name: App — typecheck & build
     runs-on: ubuntu-latest

@@ -3733,7 +3733,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Decision'
+              $ref: '#/components/schemas/Award'
       responses:
         '201':
           description: Created
@@ -8185,6 +8185,61 @@ components:
         awarded_proposal_id: *id001
         version:
           type: integer
+        package:
+          type: object
+          description: 'Response-only, on getRfp: the current package version — subtree
+            structure and BoQ quantities, never prices (doc 05 §10).'
+          properties:
+            rows:
+              type: array
+              items:
+                type: object
+                properties:
+                  task_id: *id001
+                  parent_task_id: *id001
+                  name:
+                    type: string
+                  scope_text:
+                    type: string
+                  specialty:
+                    type: string
+                  position:
+                    type: string
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  rfp_item_id: *id001
+                  task_id: *id001
+                  code:
+                    type: string
+                  description:
+                    type: string
+                  unit:
+                    type: string
+                  quantity:
+                    type: string
+                  material_spec:
+                    type: string
+                  specialty:
+                    type: string
+        clarifications:
+          type: array
+          description: 'Response-only, on getRfp: askers anonymised; a bidder sees
+            answered questions and its own open ones.'
+          items:
+            $ref: '#/components/schemas/Clarification'
+    Award:
+      type: object
+      properties:
+        proposal_id: *id001
+        note:
+          type: string
+      required:
+      - proposal_id
+      description: The winning proposal. Award creates the contract draft (origin
+        award); losing live lanes become declined.
     RfpCreate:
       type: object
       properties:
@@ -8242,6 +8297,12 @@ components:
           - bounced
         sent_at: *id004
         opened_at: *id004
+        token:
+          type: string
+          description: 'Response-only, ONCE, in the addRecipients 201: the raw
+            personal-link token (only its SHA-256 is stored). Returned to the
+            issuer until the notifications module owns email delivery — same
+            rationale as ProjectInvitation.token.'
       description: Visible to the issuer only.
     Clarification:
       type: object
@@ -8313,6 +8374,14 @@ components:
           - email
         status:
           type: string
+          enum:
+          - invited
+          - draft
+          - submitted
+          - withdrawn
+          - shortlisted
+          - awarded
+          - declined
         revision:
           type: integer
         rows:

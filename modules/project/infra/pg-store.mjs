@@ -509,6 +509,21 @@ export function createProjectStore(pool) {
       );
     },
 
+    /**
+     * Consumer write (application/consumers.mjs): publishing the first RFP
+     * moves the project draft → tendering (doc 09 §Project,
+     * publish_first_rfp). Not ledgered here — the publication is the
+     * ledgered fact (tendering); this status is a projection of it.
+     * Idempotent: the WHERE status = 'draft' filter absorbs replays.
+     */
+    async markTendering({ projectId }) {
+      await pool.query(
+        `UPDATE project.project SET status = 'tendering', version = version + 1
+          WHERE id = $1 AND status = 'draft'`,
+        [projectId],
+      );
+    },
+
     // ── idempotency (POST /projects) ─────────────────────────────────────
     async idempotent(meta, fn) {
       if (!meta.key) return fn();
