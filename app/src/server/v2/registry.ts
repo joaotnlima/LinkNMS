@@ -24,6 +24,8 @@ import { createDocumentsStore } from '@modules/documents/infra/pg-store.mjs';
 import { createR2ObjectStorage } from '@modules/documents/infra/storage.mjs';
 import { registerCollaboration } from '@modules/collaboration/http/register.mjs';
 import { createCollaborationStore } from '@modules/collaboration/infra/pg-store.mjs';
+import { registerBilling } from '@modules/billing/http/register.mjs';
+import { createBillingStore } from '@modules/billing/infra/pg-store.mjs';
 
 let router: ReturnType<typeof createRouter> | null = null;
 let pool: Pool | null = null;
@@ -107,7 +109,15 @@ export function getRouter() {
   // FILL notifications run with the outbox dispatcher, not here.
   registerCollaboration(router, { store: createCollaborationStore(getPool()) });
 
-  // Module registrations land phase by phase (AGENT-INDEX §5): billing …
+  // Phase 8 — Billing (plan catalogue, one subscription per org, usage,
+  // add-ons). The entitlements PORT other modules consume is
+  // createEntitlements(store) in modules/billing/application/entitled.mjs —
+  // reads are never gated (doc 04 §4). No charging provider is wired (open
+  // question 17): subscriptions run in manual mode (provider_ref null) and
+  // /billing/webhooks/{provider} answers 404 for every provider name.
+  registerBilling(router, { store: createBillingStore(getPool()) });
+
+  // Module registrations land phase by phase (AGENT-INDEX §5): directory …
 
   return router;
 }

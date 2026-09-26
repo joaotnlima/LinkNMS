@@ -411,6 +411,23 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
         run: npm test
 
+      # Phase-8 acceptance (AGENT-INDEX §5): the entitlements port answers
+      # allowed for any non-gated key even on a CANCELED subscription (reads
+      # of signed contracts never blocked — doc 04 §4); gated keys deny when
+      # lapsed unless a live sponsorship covers the project; one subscription
+      # per org at DB level (canceled slot replaced in place); subscription
+      # writes publish billing.subscription.changed and ledger NOTHING
+      # (doc 10); the provider webhook 404s for every name (open question 17).
+      - name: Install billing module dependencies
+        working-directory: modules/billing
+        run: npm ci --ignore-scripts
+
+      - name: Run billing module tests
+        working-directory: modules/billing
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
   app-typecheck:
     name: App — typecheck & build
     runs-on: ubuntu-latest

@@ -2,6 +2,44 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-09-26 — Billing live (phase 8, additive; no contract change)
+
+- **Billing module** (tag fully implemented, 7 ops): `listPlans` (the catalogue filtered by the
+  viewer's org kind — session + active org only), `subscribe` / `changeSubscription`
+  (**x-human-only**, `org:billing:manage`; one subscription per org — a live or past_due one
+  answers 409, a canceled slot is replaced in place on `org_id UNIQUE`; PATCH changes
+  **plan_code only**, same-org-kind rule enforced as 422), `cancelSubscription` (idempotent —
+  canceling a canceled subscription replays 200), `getUsage` (`{ limit, used }` per key the
+  org's plan meters, add-on top-ups folded into the limit), `buyAddOn` (the Plan-schema body's
+  `code` names the add-on kind `open_rfp_credits` | `promotion`, `entitlements.quantity`
+  defaults to 1; needs a live subscription — 402 `not_entitled` otherwise; answers the org's
+  Subscription per the contract), and `billingWebhook`.
+- **The entitlements port** — the point of the phase: `createEntitlements(store)` in
+  `modules/billing/application/entitled.mjs` answers `entitled(orgId, key, { projectId })` →
+  `{ allowed, limit, used }`. Keys are CREATE/MANAGE capabilities only (frozen `GATED_KEYS`:
+  `projects:active`, `seats`, `rfp:open-credits`); **any key outside that vocabulary is allowed
+  unconditionally, before any I/O** — the phase-8 invariant "reads of signed contracts and their
+  record are never blocked" (doc 04 §4), proven in tests against a canceled subscription. Lapsed
+  (past_due/canceled/none) denies gated keys **unless a live sponsorship covers the org on a
+  contract of the given project** (D-05 mitigation). Usage counts what is countable today:
+  active-project participations, active org memberships, open-visibility RFPs issued this
+  calendar month.
+- **No charging provider** — open question 17 (Clerk Billing vs Stripe + AT-certified invoicing)
+  is the founder's. Subscriptions run in "manual" mode (`provider_ref = null`, nothing charged)
+  and `POST /billing/webhooks/{provider}` verifies nothing and accepts nothing: **404 for every
+  provider name**. The store + use-cases + entitlements port are the boundary a provider adapter
+  lands behind later, with no contract change.
+- Events: `billing.subscription.changed` (scope `org_private`) on every subscribe/change/cancel,
+  same transaction as the write; billing is platform housekeeping — **nothing is ledgered**
+  (doc 10 lists no billing ledger row).
+- DB: migration `db/v2/0006_billing_phase8.sql` — the plan catalogue seed only (the four
+  billing tables shipped with the 0001 bootstrap): `owner-project` (household, per project),
+  `gc-starter`/`gc-pro`/`gc-business`, `specialty-solo`/`specialty-crew`/`specialty-company`
+  (contractor, monthly), `consultant` (consultant, monthly) — prices and limits illustrative per
+  doc 07. `seed_casa_silva.sql` gained the Part-2 subscriptions (silva/douro/atlantico/
+  eletromota/marta) and Douro's sponsorship of Canalizações Norte on `ctr.sub.plumb`.
+- No new env vars.
+
 ## 2026-09-26 — Runtime outbox dispatcher live (platform; no contract change)
 
 - The phase-7 note "the runtime dispatcher is still the platform follow-up" is closed. Every

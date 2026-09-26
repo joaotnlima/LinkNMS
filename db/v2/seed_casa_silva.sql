@@ -220,6 +220,19 @@ INSERT INTO tendering.proposal_row (id, proposal_id, packaged_task_id, parent_ro
  (seed.id('pr.atl.2'), seed.id('prop.atlantico'), NULL, NULL, 'task', 'Fabrico e montagem', 7, 'b');
 INSERT INTO tendering.proposal_link VALUES (seed.id('prop.atlantico'), seed.id('pr.atl.1'), seed.id('pr.atl.2'), 'end', 'start', 0);
 
+-- billing (15-data-model.md Part 2): every org subscribed except Canalizações Norte,
+-- whose project-scoped entitlements are covered by Douro's sponsorship on ctr.sub.plumb
+-- (contract.sponsored_by_org_id above; doc 04 §4). provider_ref NULL everywhere:
+-- no charging provider is wired — open question 17.
+INSERT INTO billing.subscription (id, org_id, plan_code, status, current_period_end, provider_ref) VALUES
+ (seed.id('sub.silva'),      seed.id('org.silva'),      'owner-project',  'active', NULL,                  NULL),
+ (seed.id('sub.douro'),      seed.id('org.douro'),      'gc-pro',         'active', '2026-10-01 00:00+01', NULL),
+ (seed.id('sub.atlantico'),  seed.id('org.atlantico'),  'specialty-crew', 'active', '2026-10-05 00:00+01', NULL),
+ (seed.id('sub.eletromota'), seed.id('org.eletromota'), 'specialty-solo', 'active', '2026-10-12 00:00+01', NULL),
+ (seed.id('sub.marta'),      seed.id('org.marta'),      'consultant',     'active', '2026-10-20 00:00+01', NULL);
+INSERT INTO billing.sponsorship (contract_id, sponsor_org_id, sponsored_org_id, starts_at, ends_at) VALUES
+ (seed.id('ctr.sub.plumb'), seed.id('org.douro'), seed.id('org.canorte'), '2026-08-31 00:00+01', NULL);
+
 -- ledger: a few chained entries --------------------------------------------------------------
 SELECT record.append_event(seed.id('prj.silva'), '2026-03-02 10:14+00', seed.id('p.ana'), seed.id('org.silva'), 'admin', 'project', 'project.project.created', 'project', seed.id('prj.silva'), 'project', seed.id('prj.silva'), '{"name":"Casa Silva — Lote 12","municipality":"1306"}');
 SELECT record.append_event(seed.id('prj.silva'), '2026-04-20 11:02+01', seed.id('p.ana'), seed.id('org.silva'), 'admin', 'contracting', 'contracting.contract.signed', 'contract', seed.id('ctr.prime'), 'contract', seed.id('ctr.prime'), '{"value_cents":8930500,"retention_bp":500}');
