@@ -18,11 +18,11 @@
 // deriving "verified" on the front end from `progress = done` would be the UI
 // inventing a verification nobody performed. The badge legend says so out loud
 // rather than the state quietly never appearing.
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 
-import { getBuild, getRecord, isSignedIn } from '@/lib/api';
-import { directoryOf } from '@/lib/view';
+import { isSignedIn } from '@/lib/api';
+import { getBuildV2, getRecordV2, getRecordDirectoryV2 } from '@/lib/v2/record';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContext } from '@/server/portal-shell';
 import { MoneyMovement } from '@/components/MoneyMovement';
@@ -57,10 +57,17 @@ export default async function RecordPage({
   const tab: Tab = (TABS as readonly string[]).includes(rawTab ?? '') ? (rawTab as Tab) : 'plan';
   const comparing = compare === '1';
 
-  const [build, record] = await Promise.all([getBuild(id), getRecord(id)]);
+  // S2 (LINA-326): the record surface reads v2. `getBuildV2` fail-closes to null
+  // when the viewer cannot read this project (not a participant / not found) —
+  // that is a not-found, never a crash or a leaked name. `getRecordV2` is the
+  // B2 new-work (empty) record; its tabs fill from their own v2 module reads as
+  // those land (see lib/v2/record-view.ts).
+  const [build, record, directory] = await Promise.all([
+    getBuildV2(id), getRecordV2(id), getRecordDirectoryV2(id),
+  ]);
+  if (!build) notFound();
   const shell = await buildShellContext(id, build.name);
 
-  const directory = directoryOf(build);
   const nameOf = (partyId: string | null | undefined) =>
     (partyId && directory.get(partyId)?.name) || 'Unknown party';
   const lineNames = new Map(record.tabs.plan.lines.map((l) => [l.stageId, l.name]));
