@@ -49,6 +49,14 @@ and events have fired (LINA-129/166 lineage).
 
 ### Gate B — production data strategy (FOUNDER/CEO decision, moves scope + timeline)
 
+> **DECIDED 2026-09-27 — B2 (FRESH START).** Founder decision (via CEO, LINA-310):
+> v2 launches empty; existing v1 projects go **read-only/archived behind the v1 API** for a
+> transition window; all new work happens on v2. **No importer, no ledger re-key, no day-one
+> migration.** Rationale: fastest path to cutover (saves ~3–5 days vs B1); live data stays
+> accessible for reference via v1. Consequence for phase 11: every S1–S7 slice targets the
+> **empty-portal** UX (no migrated portfolio to render), and S1–S7 are now cleared to merge to
+> `main` once each is validated on dev. The B1 migrate/importer work below is **not** being built.
+
 v2's schemas hold seed data only. The existing production record (v1 projects, decisions, change
 orders, the append-only ledger) lives entirely in the v1 schemas. Two options:
 
@@ -64,7 +72,11 @@ the product promise (the audit trail). **Escalated to the CEO/founder as the gat
 LINA-309.** Nothing in phase 11's per-surface work should merge to `main` before B is decided,
 because the target shapes and the "empty portal vs migrated portfolio" UX differ.
 
-## 3. Per-surface slice plan (phase 11, after Gate A; shapes finalised after Gate B)
+## 3. Per-surface slice plan (phase 11 — Gate A DONE, Gate B = B2 fresh start)
+
+Shapes are now final (Gate B = B2): each slice renders the **empty-portal / new-work-on-v2** UX;
+there is no migrated portfolio to display. A v1 project appears only via the archived read-only v1
+surface, out of scope for these slices.
 
 Each slice is a thin vertical: swap one surface's data-access from the v1 in-process call to a v2
 client, adapt the view transform to the v2 wire shape, keep the screen's UX. Deliver
@@ -95,8 +107,8 @@ client, adapt the view transform to the v2 wire shape, keep the screen's UX. Del
 
 ## 5. Recommended sequencing
 
-1. **Gate A** (keystone viewer resolution) — ship immediately; no-regret. *(architect/backend)*
-2. **Gate B** decision — CEO/founder. *(blocks S1–S7 merges to main)*
+1. **Gate A** (keystone viewer resolution) — ✅ DONE, merged to main @ 8e27834 (PR #180). *(architect/backend)*
+2. **Gate B** decision — ✅ DONE 2026-09-27, **B2 fresh start** (LINA-310). *(S1–S7 now cleared to merge)*
 3. Shared v2 client + **S1** — architect leads, proves the path.
 4. **S2–S7** fan out in parallel worktrees once S1 lands. *(frontend + backend devs)*
 5. **Phase 12** cutover + v1 drop — architect owns the last mile.
