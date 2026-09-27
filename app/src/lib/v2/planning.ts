@@ -1,0 +1,53 @@
+// The plan grid's v2 I/O layer, on `/api/v2` (LINA-320, S3 of the UI cutover,
+// doc 22 §3). This is the read side of the plan/Gantt cutover: it fetches the
+// live WBS schedule through the shared v2 client (`./client.ts`, LINA-309) and
+// hands the grid the tree it already renders (`./planning-view.ts`).
+//
+// ── FIRST-CLASS EMPTY / NO-ORG STATES (doc 22 header + the S1 pattern) ────────
+// The v2 access model is org-centric: a signed-in Clerk user with no mirror row,
+// or no active org, or who is not a participant on this build, must NOT crash the
+// plan page — those are ordinary states of a fresh B2 install (LINA-310), not
+// errors. As in `profile.ts`, any `V2Error` (401/403/404) collapses to an EMPTY
+// plan: no rows, not baselined. The page then renders its own "no plan yet"
+// authoring affordance rather than a stack trace. A non-V2 error (a real bug) is
+// rethrown — we fail closed on authorization, not on our own defects.
+//
+// The pure wire→view transforms live in `./planning-view.ts` so they stay
+// unit-testable without a session; this module is only the I/O and the
+// fail-closed handling.
+import 'server-only';
+
+import { v2, V2Error } from './client';
+import {
+  toPlanGridView,
+  type PlanGridView,
+  type V2ScheduleView,
+} from './planning-view';
+
+/** The empty plan — a signed-in viewer with no readable schedule (no org / not a
+ *  participant / nothing authored). Distinct object each call, never shared. */
+function emptyPlan(projectId: string): PlanGridView {
+  return { projectId, rows: [], isBaselined: false, dependenciesBySuccessor: {} };
+}
+
+/**
+ * GET /api/v2/projects/{id}/schedule → the grid-native plan view, membership
+ * scoped server-side (the viewer's participation on this build, never a
+ * client-held claim). Returns the EMPTY plan for any authorization failure — a
+ * viewer who cannot read the schedule sees "no plan", never a crash and never
+ * another org's rows.
+ */
+export async function getPlanGrid(projectId: string): Promise<PlanGridView> {
+  try {
+    const body = await v2<V2ScheduleView>({
+      method: 'GET',
+      path: `/projects/${projectId}/schedule`,
+    });
+    return toPlanGridView(body);
+  } catch (err) {
+    if (err instanceof V2Error) return emptyPlan(projectId); // no access / no plan — not a crash
+    throw err;
+  }
+}
+
+export type { PlanGridView } from './planning-view';
