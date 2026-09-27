@@ -211,6 +211,106 @@ export function createTenderingStore(pool) {
       return rows.length > 0;
     },
 
+    /**
+     * The public token lookup (gap S1): a recipient by the sha256 of its raw
+     * token, with every fact the public surface needs — the RFP, the project
+     * name/location, and the recipient's own proposal id. Returns null for an
+     * unknown, revoked, or expired token, so the handler answers a uniform
+     * not_found and the token never becomes an existence oracle. The token is
+     * hashed HERE (one place), never compared in plaintext.
+     */
+    async findRecipientByToken(rawToken) {
+      const { rows } = await pool.query(
+        `SELECT rec.id, rec.rfp_id, rec.org_id, rec.email, rec.status,
+                rec.expires_at, rec.revoked_at,
+                r.title, r.scope_text, r.specialties, r.submission_deadline,
+                r.status AS rfp_status, r.project_id, r.package_version,
+                pr.name AS project_name,
+                -- The site's name is a public-safe locality; the full address
+                -- (PII) is never handed to an anonymous bidder.
+                (SELECT name FROM project.location
+                  WHERE project_id = r.project_id AND kind = 'site'
+                  ORDER BY position LIMIT 1) AS project_location,
+                p.id AS proposal_id
+           FROM tendering.rfp_recipient rec
+           JOIN tendering.rfp r ON r.id = rec.rfp_id
+           JOIN project.project pr ON pr.id = r.project_id
+           LEFT JOIN tendering.proposal p ON p.recipient_id = rec.id
+          WHERE rec.token_hash = $1
+            AND rec.revoked_at IS NULL
+            AND (rec.expires_at IS NULL OR rec.expires_at > now())`,
+        [sha256(rawToken)],
+      );
+      return rows[0] ?? null;
+    },
+
+    /** Best-effort delivery breadcrumb: first open flips queued/sent → opened. */
+    async markRecipientOpened(recipientId) {
+      await pool.query(
+        `UPDATE tendering.rfp_recipient
+            SET status = 'opened', opened_at = coalesce(opened_at, now())
+          WHERE id = $1 AND status IN ('queued','sent')`,
+        [recipientId],
+      );
+    },
+
+    /**
+     * A public bidder submits their proposal through the personal link
+     * (gap S1). Same shape as recordOfflineProposal (a summary bid — total,
+     * duration, conditions, documents; no priced BoQ), but channel stays
+     * 'platform' (it came through the platform, not an emailed answer the
+     * issuer typed) and there is no recorder: the actor on the ledger entry is
+     * anonymous (the token IS the authority). Single-use is the `from` guard —
+     * a second submit finds the proposal already 'submitted' and returns null.
+     */
+    async submitPublicProposal({ proposalId, from, revision, totalCents, durationWd,
+      conditions, validityUntil, documentIds, projectId, rfpId, recipientOrgId }) {
+      return tx(async (client) => {
+        const { rows } = await client.query(
+          `UPDATE tendering.proposal SET
+             status = 'submitted', current_revision = $3,
+             summary_total_cents = $4, summary_duration_wd = $5,
+             conditions = $6, validity_until = $7, document_ids = $8,
+             version = version + 1
+           WHERE id = $1 AND status = $2 RETURNING *`,
+          [proposalId, from, revision, totalCents, durationWd,
+            conditions, validityUntil, documentIds],
+        );
+        if (!rows.length) return null;
+        await client.query(
+          `INSERT INTO tendering.proposal_revision (proposal_id, revision, total_cents)
+           VALUES ($1,$2,$3)`,
+          [proposalId, revision, totalCents],
+        );
+        await client.query(
+          `UPDATE tendering.rfp_recipient SET status = 'proposal_submitted' WHERE id = $2 AND rfp_id = $1`,
+          [rfpId, rows[0].recipient_id],
+        );
+        // Anonymous actor: the token is the authority, not a person/org session.
+        // The ledger accepts a null person/org (platform/ledger.mjs); the
+        // bidder's org, if the recipient was invited by org, is attributed.
+        const actor = { personId: null, orgId: recipientOrgId ?? null, orgRole: null, channel: 'ui' };
+        await appendAuditEvent(client, {
+          projectId, actor,
+          category: 'tendering',
+          type: 'tendering.proposal.submitted',
+          scope: { type: 'rfp_private', id: proposalId },
+          object: { type: 'proposal', id: proposalId },
+          payload: { rfp_id: rfpId, revision, total: totalCents, channel: 'platform', via: 'public_link' },
+          channel: actor.channel,
+        });
+        await publishEvent(client, {
+          event_id: randomUUID(),
+          type: 'tendering.proposal.submitted',
+          project_id: projectId,
+          actor: { person_id: null, org_id: recipientOrgId ?? null },
+          scope: { type: 'rfp_private', id: proposalId },
+          data: { rfp_id: rfpId, proposal_id: proposalId, bidder_org_id: recipientOrgId ?? null, revision },
+        });
+        return rows[0];
+      });
+    },
+
     async recipientCount(rfpId) {
       const { rows } = await pool.query(
         'SELECT count(*)::int AS n FROM tendering.rfp_recipient WHERE rfp_id = $1',
@@ -449,8 +549,11 @@ export function createTenderingStore(pool) {
         for (const r of recipients) {
           const token = randomBytes(32).toString('hex');
           const { rows } = await client.query(
-            `INSERT INTO tendering.rfp_recipient (id, rfp_id, org_id, email, token_hash)
-             VALUES ($1,$2,$3,$4,$5)
+            // expires_at = the RFP's submission deadline + a 14-day proposal
+            // validity window (gap S1, doc 21); a re-issue later rotates it.
+            `INSERT INTO tendering.rfp_recipient (id, rfp_id, org_id, email, token_hash, expires_at)
+             VALUES ($1,$2,$3,$4,$5,
+               (SELECT submission_deadline + interval '14 days' FROM tendering.rfp WHERE id = $2))
              ON CONFLICT (rfp_id, email) DO NOTHING
              RETURNING *`,
             [randomUUID(), rfpId, r.orgId, r.email, sha256(token)],
