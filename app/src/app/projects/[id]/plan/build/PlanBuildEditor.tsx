@@ -51,7 +51,7 @@ import Link from 'next/link';
 
 import {
   DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
-  addPhase, addSubtask, addTask, authorPlan, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, enforceLink, nodeIndex,
+  addPhase, addSubtask, addTask, authorPlan, authorPlanV2, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, enforceLink, nodeIndex,
   promoteNode,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
   reorderPhase, reorderSubtask, reorderTask,
@@ -220,9 +220,13 @@ function rowOfKey(
 
 export function PlanBuildEditor({
   projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
-  importHref = null, initialStageIds = {},
+  importHref = null, initialStageIds = {}, isV2 = false, v2ExistingTaskIds = [],
 }: {
   projectId: string;
+  /** When true, writes go to the v2 `applySchedule` endpoint instead of v1. */
+  isV2?: boolean;
+  /** Existing v2 task IDs for the whole-tree replace (delete-then-create). */
+  v2ExistingTaskIds?: string[];
   /**
    * Where the "import a spreadsheet instead" link points, or null to hide it.
    * The plan page passes it only for the GC (importing is theirs, B1 §5) — the
@@ -429,23 +433,30 @@ export function PlanBuildEditor({
     savingRef.current = true;
     setSaveState('saving');
     try {
-      const result = await authorPlan(projectId, stages);
-      // Light up every current row's workspace: after this write the server holds
-      // them all, so a freshly-added task can collect comments/files immediately.
-      setSavedKeys((prev) => {
-        const nextKeys = new Set(prev);
-        const eat = (k: string) => nextKeys.add(k);
-        current.forEach((p) => {
-          eat(p.key);
-          p.tasks.forEach((t) => { eat(t.key); (t.children ?? []).forEach((s) => eat(s.key)); });
+      if (isV2) {
+        // v2 write: whole-tree replace via applySchedule (LINA-320, S3).
+        // stageIds / savedKeys are not updated for v2 (v2 uses a different task
+        // workspace model; stable keys are a v1 concept).
+        await authorPlanV2(projectId, current, v2ExistingTaskIds);
+      } else {
+        const result = await authorPlan(projectId, stages);
+        // Light up every current row's workspace: after this write the server holds
+        // them all, so a freshly-added task can collect comments/files immediately.
+        setSavedKeys((prev) => {
+          const nextKeys = new Set(prev);
+          const eat = (k: string) => nextKeys.add(k);
+          current.forEach((p) => {
+            eat(p.key);
+            p.tasks.forEach((t) => { eat(t.key); (t.children ?? []).forEach((s) => eat(s.key)); });
+          });
+          return nextKeys;
         });
-        return nextKeys;
-      });
-      // Refresh the key→id lookup from THIS save (LINA-307): the re-save re-minted
-      // every stage id, so a status POST must target the ids this response names,
-      // not the ones the page loaded with. Replace wholesale — a key dropped from
-      // the plan should drop from the map too.
-      if (result.stageIds) setStageIdByKey(new Map(Object.entries(result.stageIds)));
+        // Refresh the key→id lookup from THIS save (LINA-307): the re-save re-minted
+        // every stage id, so a status POST must target the ids this response names,
+        // not the ones the page loaded with. Replace wholesale — a key dropped from
+        // the plan should drop from the map too.
+        if (result.stageIds) setStageIdByKey(new Map(Object.entries(result.stageIds)));
+      }
       setSaveState('saved');
     } catch (e) {
       if (e instanceof PlanAuthorError && (e.code === 'open_plan_exists' || e.code === 'draft_exists')) {

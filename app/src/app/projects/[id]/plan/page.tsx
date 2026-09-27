@@ -30,6 +30,7 @@ import { hydrateDraft, type PhaseDraft, type TemplatePhase } from '@/lib/plan-au
 import { stageIdsByKey, stageKeysOf } from '@/lib/task-workspace';
 import { openRequest } from '@/lib/phase-signoff';
 import { SignOffPanel } from '@/components/SignOffPanel';
+import { getScheduleV2, v2TasksToStageNodes, toV2PlanRows, type V2Schedule } from '@/lib/v2/schedule';
 import { PlanBaseline, type PartyRef } from './PlanBaseline';
 import { PlanBuildEditor } from './build/PlanBuildEditor';
 import { PlanImportWizard } from './import/PlanImportWizard';
@@ -48,9 +49,28 @@ export default async function PlanPage({
   const { id } = await params;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan`);
 
-  const [build, plan, phasesResult, session] = await Promise.all([
-    getBuild(id), getPlan(id), getPhases(id), currentSession(),
+  // S3: probe v2 first. v2 returns null when the project lives only in v1
+  // (404/403) — in that case fall through to the v1 getPlan path. Both
+  // reads run in parallel with the build/session reads for no added latency.
+  const [build, planV1, v2Schedule, phasesResult, session] = await Promise.all([
+    getBuild(id),
+    getPlan(id),
+    getScheduleV2(id),
+    getPhases(id),
+    currentSession(),
   ]);
+
+  // v2Schedule != null → this is a v2 project; use v2 data model.
+  // v2Schedule === null → v1-only project; fall back to v1 plan.
+  const isV2Project = v2Schedule !== null;
+  // Synthesise a null-like PlanBaselineView for v2 projects so the v1 display
+  // path (PlanBaseline) still works for the review surface — the v2 task rows
+  // are injected via a synthetic "current" version. The proposal workflow is
+  // suppressed because v2 has no version-based approve/reject concept.
+  const plan = isV2Project
+    ? buildV2PlanView(v2Schedule!)
+    : planV1;
+
   const shell = await buildShellContext(id, build.name);
   const { imported, drafted, compose: composeRaw } = await searchParams;
   const compose: Compose = composeRaw === 'build' || composeRaw === 'import' ? composeRaw : null;
@@ -69,10 +89,13 @@ export default async function PlanPage({
   // withdrawn v1 leaves a build with no open version and a real history, and
   // showing "add your plan" over a negotiation that happened would be the record
   // forgetting it.
-  const hasPlan = plan.current !== null || plan.baseline !== null || plan.history.length > 0;
+  const hasPlan = isV2Project
+    ? v2Schedule!.tasks.length > 0
+    : (planV1.current !== null || planV1.baseline !== null || planV1.history.length > 0);
 
   const executionSlot = await buildExecutionSlot({
     id, compose, plan, build, parties, execution, session, hasPlan, isGC,
+    isV2Project, v2Schedule,
   });
 
   return (
@@ -131,15 +154,17 @@ export default async function PlanPage({
 async function buildExecutionSlot(ctx: {
   id: string;
   compose: Compose;
-  plan: Awaited<ReturnType<typeof getPlan>>;
+  plan: ReturnType<typeof buildV2PlanView> | Awaited<ReturnType<typeof getPlan>>;
   build: Awaited<ReturnType<typeof getBuild>>;
   parties: PartyRef[];
   execution: WirePhase | null;
   session: Awaited<ReturnType<typeof currentSession>>;
   hasPlan: boolean;
   isGC: boolean;
+  isV2Project: boolean;
+  v2Schedule: V2Schedule | null;
 }) {
-  const { id, compose, plan, parties, execution, session, isGC } = ctx;
+  const { id, compose, plan, parties, execution, session, isGC, isV2Project, v2Schedule } = ctx;
 
   // ── Authoring, folded in from the retired sub-routes ──────────────────────
   if (compose === 'import') {
@@ -147,27 +172,37 @@ async function buildExecutionSlot(ctx: {
   }
 
   // The plan surface IS the interactive Gantt editor whenever the plan is still
-  // the author's to shape — no plan yet, or an unsent draft (founder, LINA-306:
-  // "/plan should land on /plan/build — exact same view"). `/plan/build` still
-  // 307s here, but the editor no longer waits on `?compose=build`: landing on
-  // /plan with nothing proposed shows the grid directly rather than a chooser or
-  // a static preview. A PROPOSED or FROZEN plan drops through to the review /
-  // baseline surface below, where a change routes through request-changes /
-  // change orders, never free authoring.
-  const authoring = compose === 'build'
-    || (plan.baseline === null && (plan.current === null || plan.current.status === 'draft'));
+  // the author's to shape — no plan yet, or an unsent draft.
+  // For v2 projects: always show the editor (v2 has no proposal workflow at the
+  // plan grid level; the plan is always editable by the authorised party).
+  // For v1: same as before — draft or no plan → editor; proposed/frozen → review.
+  const v1Authoring = !isV2Project && (
+    compose === 'build'
+    || (plan.baseline === null && (plan.current === null || plan.current.status === 'draft'))
+  );
+  const authoring = isV2Project || v1Authoring;
+
   if (authoring) {
     const template = await resolveTemplate();
-    // "Keep editing" resumes the saved draft. getPlan surfaces a draft to its
-    // author ONLY (LINA-230), so a `draft` current is this party's to resume;
-    // otherwise the editor scaffolds from `template`. Order matters: a saved
-    // draft always wins, or scaffolding would silently discard saved work.
-    const draft: PhaseDraft[] | undefined =
-      plan.current?.status === 'draft' ? hydrateDraft(plan.current.stages) : undefined;
-    const savedStageKeys = [...stageKeysOf(plan.current?.stages)];
-    // The live key→id map for this draft's saved stages (LINA-307) — the editor's
-    // seed for turning a status change into a POST against the right stage id.
-    const initialStageIds = stageIdsByKey(plan.current?.stages);
+    let draft: PhaseDraft[] | undefined;
+    let savedStageKeys: string[] = [];
+    let initialStageIds: Record<string, string> = {};
+    let v2ExistingTaskIds: string[] = [];
+
+    if (isV2Project && v2Schedule) {
+      // Resume editing from existing v2 tasks (B2: draft = always open for edit).
+      if (v2Schedule.tasks.length > 0) {
+        const stageNodes = v2TasksToStageNodes(v2Schedule.tasks);
+        draft = hydrateDraft(stageNodes);
+      }
+      v2ExistingTaskIds = v2Schedule.tasks.map((t) => t.id);
+    } else if (!isV2Project) {
+      // v1 path: resume saved draft if one exists.
+      draft = plan.current?.status === 'draft' ? hydrateDraft(plan.current.stages) : undefined;
+      savedStageKeys = [...stageKeysOf(plan.current?.stages)];
+      initialStageIds = stageIdsByKey(plan.current?.stages);
+    }
+
     return (
       <PlanBuildEditor
         projectId={id}
@@ -176,43 +211,27 @@ async function buildExecutionSlot(ctx: {
         parties={parties}
         savedStageKeys={savedStageKeys}
         initialStageIds={initialStageIds}
-        // Importing is the GC's route (B1 §5). Landing straight in the editor
-        // used to hide the "upload a spreadsheet" door the old chooser offered —
-        // this keeps it one click away, only for the party it belongs to.
+        isV2={isV2Project}
+        v2ExistingTaskIds={v2ExistingTaskIds}
         importHref={isGC ? `/projects/${id}/plan?compose=import` : null}
       />
     );
   }
 
-  // ── The plan itself, plus the sign-off controls once a plan exists ────────
-  // The "is there anything to sign off" count comes from the OPEN version: a
-  // sign-off is requested on the active plan, which is `current`. A frozen
-  // baseline with no open version is not a plan you can request sign-off on
-  // (edits route through change orders by then), so it correctly counts as zero.
+  // ── The plan itself (v1 only below: v2 is always in authoring mode) ───────
   const taskCount = (plan.current?.stages ?? []).length;
   const pending = openRequest(execution);
-  // A plain party-id → name map for the sign-off panel. It must be a serializable
-  // object, not the `directory` Map or a resolver function — SignOffPanel is a
-  // Client Component and neither crosses the RSC boundary (LINA-306).
   const partyNames: Record<string, string> = Object.fromEntries(
     parties.map((p) => [p.partyId, p.name]),
   );
   const viewer = {
     partyId: session?.partyId ?? null,
-    // v1: any project member may request sign-off (ADR-0023 Addendum A §2). The
-    // page only loads for a member, so this is true here.
     canRequest: true,
-    // The approver is anyone who did NOT open the pending request — a plan is
-    // signed off BY THE OTHER PARTY, never self-approved. The server enforces
-    // `cannot_self_approve` regardless; this only decides which control shows.
     canDecide: pending !== null && pending.requestedBy !== (session?.partyId ?? null),
   };
 
   return (
     <>
-      {/* Not authoring → the plan is proposed or frozen, so `hasPlan` is always
-          true here: the review / baseline surface, never the empty-plan chooser
-          (that case now opens the editor above). */}
       <PlanBaseline
         projectId={id}
         view={plan}
@@ -248,5 +267,36 @@ async function resolveTemplate(): Promise<TemplatePhase[] | undefined> {
     console.warn('[plan] could not resolve the default plan template', err);
     return undefined;
   }
+}
+
+/**
+ * Wraps a v2 schedule in the `PlanBaselineView` shape so PlanBaseline can render
+ * the v2 tasks on the existing grid without changes. The v2 plan is always
+ * "draft" from the v1 workflow perspective — there is no version-based propose/
+ * accept cycle; the plan is simply the current set of tasks.
+ *
+ * This is a shim for the display path only (the v2 authoring path passes tasks
+ * directly to `PlanBuildEditor` via `isV2`). The proposal / review / baseline
+ * affordances in PlanBaseline are naturally suppressed because `current.status`
+ * stays `'draft'` — `canWithdraw` and `canReview` both return false for a draft.
+ */
+function buildV2PlanView(schedule: V2Schedule): import('@/lib/plan-baseline').PlanBaselineView {
+  const stageNodes = v2TasksToStageNodes(schedule.tasks);
+  return {
+    baseline: null,
+    current: schedule.tasks.length === 0 ? null : {
+      id: 'v2-synthetic',
+      versionNo: null,
+      status: 'draft',
+      sourceImportId: null,
+      supersedesVersionId: null,
+      proposedByPartyId: '',
+      createdAt: new Date().toISOString(),
+      frozenAt: null,
+      acceptances: [],
+      stages: stageNodes,
+    },
+    history: [],
+  };
 }
 
