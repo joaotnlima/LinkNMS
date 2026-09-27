@@ -1,9 +1,32 @@
 # 22 — UI cutover plan (v1 → v2) and v1 deprecation
 
-**Status:** proposed by the Full-Stack Architect for LINA-309 ("Connect and deprecate").
-This is the execution plan for AGENT-INDEX **phase 11** (rebuild the UI on `/api/v2`) and
-**phase 12** (retire v1 routes and schemas). It does not re-open any Accepted decision; it
-sequences the remaining work and names the two gates that must clear before a responsible cutover.
+**Status:** ACTIVE — both gates cleared (2026-09-27). Owned by the Full-Stack Architect for
+LINA-309 ("Connect and deprecate"). This is the execution plan for AGENT-INDEX **phase 11**
+(rebuild the UI on `/api/v2`) and **phase 12** (retire v1 routes and schemas). It does not
+re-open any Accepted decision; it sequences the remaining work.
+
+> **Gate status (2026-09-27).**
+> - **Gate A — v2 viewer resolves local identity: DONE.** `viewerFromClerk()` now resolves
+>   `personId`/`orgId`/`orgKind` from the Clerk mirror and fails closed on a missing row
+>   (LINA-309 Gate A, PR #179, on `main`). §2 below is kept as the record.
+> - **Gate B — production data strategy: DECIDED = B2 (FRESH START)** by the founder/CEO
+>   (child LINA-310). v2 launches empty; existing v1 projects stay read-only behind v1 for a
+>   transition window; all new work happens on v2. **No migration/importer work** (B1 is not
+>   taken). The per-surface slice shapes are therefore finalised — see §3.
+>
+> **B2 consequence the slices must honour — the identity model INVERTS from party to org.**
+> v1 was party-centric (`/projects` was membership-scoped to the acting *party*, no org needed).
+> v2 is org-centric (doc 16): `listProjects` calls `requireActiveOrg(viewer)` and scopes to the
+> viewer's active Clerk **org**, and `/me` returns the Clerk **org-role** vocabulary, not the v1
+> build-role. So every read surface must handle **"signed in but no active org"** as a first-class
+> empty/onboarding state (route to org creation or the empty portal), never a crash — a brand-new
+> B2 user has no org and no projects on first load. This is the single largest shape change in the
+> cutover and is called out in each affected slice below.
+>
+> **The shared v2 client seam now exists** — `app/src/lib/v2/client.ts` (LINA-309), the single
+> place the UI talks to `/api/v2`, mirroring the two-transport design of `lib/api.ts` (in-process
+> by default; HTTP when `LINKNMS_API_BASE` is set). It speaks problem+json (`V2Error`/
+> `V2Unauthenticated`, discriminated on the stable `code`). Every slice below imports from it.
 
 Sources: [AGENT-INDEX](./AGENT-INDEX.md) §5 phases 11–12, [13-gap-analysis](./13-gap-analysis.md)
 ("what carries over"), [20-url-structure](./20-url-structure.md), [16-access-model-clerk](./16-access-model-clerk.md).
@@ -109,8 +132,10 @@ client, adapt the view transform to the v2 wire shape, keep the screen's UX. Del
 
 1. **Gate A** (keystone viewer resolution) — ✅ DONE, merged to main @ 8e27834 (PR #180). *(architect/backend)*
 2. **Gate B** decision — ✅ DONE 2026-09-27, **B2 fresh start** (LINA-310). *(S1–S7 now cleared to merge)*
-3. Shared v2 client + **S1** — architect leads, proves the path.
-4. **S2–S7** fan out in parallel worktrees once S1 lands. *(frontend + backend devs)*
-5. **Phase 12** cutover + v1 drop — architect owns the last mile.
+3. Shared v2 client — ✅ DONE, `app/src/lib/v2/client.ts` (LINA-309). **S1** proves the path
+   end-to-end through it (architect-led / frontend).
+4. **S2–S7** fan out in parallel worktrees once S1 lands — one worktree per agent, off `origin/main`,
+   `feature → dev → main`, delete the branch on merge. *(frontend + backend devs)*
+5. **Phase 12** cutover + v1 drop — architect owns the last mile, only after every surface is on v2.
 
 Do not big-bang the whole UI in one PR. Ship thin slices; keep v1 serving until the last surface flips.
