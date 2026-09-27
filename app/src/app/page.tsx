@@ -7,17 +7,23 @@
 // (LINA-132) hands off to once a profile is complete.
 //
 // KNOWN GAP, stated rather than papered over — and the reason this route can
-// branch here between <EmptyPortal/> and a portfolio list. That endpoint landed
-// (GET /api/v1/projects, LINA-197), so this route now makes the call and shows
-// the list when it comes back non-empty. The list is membership-scoped
-// server-side (the session, never a client-held set of remembered ids), so
-// there is still only one authorized source of truth about who is on what.
+// branch here between <EmptyPortal/> and a portfolio list. The list is
+// membership-scoped server-side (the acting party, never a client-held set of
+// remembered ids), so there is still only one authorized source of truth about
+// who is on what.
+//
+// ── v2 CUTOVER (LINA-311, S1) ────────────────────────────────────────────────
+// This is the FIRST surface to read through the shared v2 client (doc 22 §3).
+// The portfolio and account identity now come from `/api/v2` via
+// `lib/v2/profile.ts` — org-scoped, and fail-closed to the empty-portal state for
+// a viewer who is not yet mirrored or has no active org (B2 fresh start). The
+// Clerk seat/setup gate below is unchanged: it is authentication, not a v1 domain
+// read, and stays until phase 12 retires v1.
 import { redirect } from 'next/navigation';
 import { EmptyPortal } from '@/components/EmptyPortal';
 import { PortfolioList } from '@/components/PortfolioList';
-import { getMe, listProjects } from '@/lib/api';
-import { roleLabel } from '@/lib/format';
-import type { Role } from '@/lib/types';
+import type { PortalUser } from '@/components/PortalShell';
+import { getViewerProfile, listPortfolio } from '@/lib/v2/profile';
 import { sessionState } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -44,17 +50,18 @@ export default async function Home() {
   // run) and terminates, because completing it flips the flag that got them here.
   if (!state.session.setupComplete) redirect('/onboarding/setup');
 
-  // Seated and set up: branch on the portfolio. Empty renders the first-time
-  // screen inside the portal shell (LINA-216); non-empty renders the D1 list.
-  // Drafts count as builds — an abandoned wizard is a build in progress, and the
-  // list is where it is resumed from.
-  const projects = await listProjects();
-  // The shell's user footer/account menu is real identity, not decoration: it is
-  // the label beside every decision this party records, so it comes from the
-  // authoritative /me profile (LINA-154), never an email local-part. Both the
-  // empty and populated portfolios wear the shell now (LINA-219), so both need it.
-  const me = await getMe();
-  const user = { displayName: me.displayName, roleLabel: roleLabel(me.role as Role) };
+  // Seated and set up: branch on the portfolio, now read from v2 (S1). Empty
+  // renders the first-time screen inside the portal shell (LINA-216); non-empty
+  // renders the D1 list. Drafts count as builds — an abandoned wizard is a build
+  // in progress, and the list is where it is resumed from. The two reads are
+  // independent, so they go concurrently.
+  const [profile, projects] = await Promise.all([getViewerProfile(), listPortfolio()]);
+  // The shell's account menu is real identity, not decoration: it is the label
+  // beside every decision this party records, so it comes from the authoritative
+  // v2 /me profile, never an email local-part. When the mirror has not caught up
+  // (profile null, fail-closed), fall back to a neutral shell rather than crash —
+  // the viewer sees an empty, non-leaking portfolio, which is the honest state.
+  const user: PortalUser = profile ?? { displayName: 'Your account', roleLabel: '' };
   if (projects.length === 0) {
     return <EmptyPortal user={user} />;
   }
