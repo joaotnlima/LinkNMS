@@ -5,6 +5,17 @@
 import { auth } from '@clerk/nextjs/server';
 
 import { createViewerContext } from '@platform/viewer-context.mjs';
+import { createIdentityStore } from '@modules/identity/infra/pg-store.mjs';
+
+import { getPool } from './registry';
+
+// One store instance over the shared pool. registry.ts owns the pool and does
+// NOT import this file, so this import is not a cycle.
+let identityStore: ReturnType<typeof createIdentityStore> | null = null;
+function store() {
+  if (!identityStore) identityStore = createIdentityStore(getPool());
+  return identityStore;
+}
 
 // Doc 16 §5 — the custom-permission catalogue, spelled out. Clerk's `has()`
 // answers from the session token; we materialise the answers once per request
@@ -31,16 +42,27 @@ export async function viewerFromClerk(): Promise<ViewerContext | null> {
   const session = await auth();
   if (!session.userId) return null;
 
+  // Resolve the LOCAL identity from the Clerk webhook mirror (phase-1). The
+  // access rule is `allow = permission ∧ relationship ∧ staffing ∧ entitlement`,
+  // and the last three are looked up by these ids — a null personId/orgId makes
+  // every scoped handler blind, so we resolve them here, once per request.
+  //
+  // FAIL CLOSED, never auto-provision: a userId with no mirrored person (webhook
+  // not yet delivered) resolves to a viewer whose personId stays null, so scoped
+  // handlers DENY rather than leak or invent a party. The mirror is Clerk's to
+  // fill; the viewer only reads it.
+  const clerkOrgId = session.orgId ?? null;
+  const [person, org] = await Promise.all([
+    store().getPersonByClerkId(session.userId),
+    clerkOrgId ? store().getOrgByClerkId(clerkOrgId) : Promise.resolve(null),
+  ]);
+
   return createViewerContext({
     clerkUserId: session.userId,
-    // identity.person / identity.organization ids come from the phase-1 mirror
-    // (Clerk webhook → identity schema); until that lands the v2 surface knows
-    // the Clerk ids only, and handlers that need the local ids must resolve
-    // them through the identity module.
-    personId: null,
-    orgId: null,
-    clerkOrgId: session.orgId ?? null,
-    orgKind: null,
+    personId: person?.id ?? null,
+    orgId: org?.id ?? null,
+    clerkOrgId,
+    orgKind: org?.kind ?? null,
     // Clerk spells roles `org:admin`; the domain vocabulary (doc 16 §4, the
     // ledger's actor_org_role column) uses the bare key.
     orgRole: session.orgRole ? session.orgRole.replace(/^org:/, '') : null,
