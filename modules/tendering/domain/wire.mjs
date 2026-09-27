@@ -74,6 +74,38 @@ export function recipientBody(row, { token } = {}) {
   };
 }
 
+/**
+ * #/components/schemas/RfpLinkView — the public, token-scoped read (gap S1).
+ *
+ * A bidder holding a personal link is anonymous: they see the SCOPE they are
+ * asked to price and nothing that would leak the tender's internals. So this
+ * projection is deliberately narrow — the package (structure + quantities, no
+ * prices, same as packageBody), enough of the project to know which job this
+ * is, the invited email (so they can see which address was invited), and their
+ * OWN proposal echoed back once submitted. It never carries the issuer org, the
+ * other recipients, or any other lane (V8). `closed` is true when the RFP is no
+ * longer receiving proposals, so the form can say so without a second call.
+ */
+export function rfpLinkView(rfp, { pkg, project, recipientEmail, proposal, seesMoney = true }) {
+  return {
+    project: {
+      name: project.name,
+      location: project.location ?? null,
+    },
+    rfp: {
+      title: rfp.title,
+      scope_text: rfp.scope_text ?? undefined,
+      specialties: rfp.specialties ?? [],
+      submission_deadline: iso(rfp.submission_deadline),
+      package: packageBody(pkg.rows, pkg.items),
+    },
+    recipient_email: recipientEmail,
+    closed: rfp.status !== 'published',
+    // The bidder always sees the money on their OWN proposal (it is theirs).
+    proposal: proposal ? proposalBody(proposal.row, { ...proposal.doc, seesMoney }) : null,
+  };
+}
+
 /** #/components/schemas/Clarification — the asker is NEVER on the wire. */
 export function clarificationBody(row) {
   return {

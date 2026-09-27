@@ -20,10 +20,12 @@ export const dynamic = 'force-dynamic';
 async function handle(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path = [] } = await params;
 
-  // Machine callers (`security: []` in the contract — today only the Clerk
-  // webhook) authenticate inside their handler (svix signature over the raw
-  // body), never with a session.
-  const machineCaller = path[0] === 'webhooks';
+  // Anonymous callers (`security: []` in the contract): the Clerk webhook
+  // (svix signature over the raw body) and the RFP personal link, whose token
+  // in the path IS the credential (gap S1) — the tendering handler hashes it,
+  // checks expiry/revocation, and never leaks whether it exists. Neither
+  // authenticates with a session, so both bypass the viewer resolution below.
+  const machineCaller = path[0] === 'webhooks' || path[0] === 'rfp-links';
 
   const viewer = machineCaller ? null : await viewerFromClerk();
   if (!viewer && !machineCaller) {

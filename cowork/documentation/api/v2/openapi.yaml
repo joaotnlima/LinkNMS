@@ -2847,6 +2847,151 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /rfp-links/{token}:
+    parameters:
+    - name: token
+      in: path
+      required: true
+      description: The 64-hex-char personal link token; hashed at rest, compared server-side.
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{64}$'
+    get:
+      tags:
+      - Tendering
+      operationId: getRfpByToken
+      summary: 'RFP personal link: the package a bidder prices (gap S1, anonymous)'
+      description: 'The one anonymous surface in tendering (doc 21 S1): a bidder who arrived from an
+        email holds the token and nothing else — no Clerk session. The token IS the authority, so the
+        global security requirement is overridden to none. The projection is deliberately narrow — the
+        package (structure + quantities, no prices), the project name/locality, the invited email, and
+        the bidder''s OWN proposal once submitted; never the issuer, the other recipients, or another
+        lane (V8). An unknown, revoked, or expired token answers a uniform 404, so it is not an
+        existence oracle.
+
+
+        **Clerk permission:** none (token-authenticated)
+
+
+        **Relationship (LinkNMS):** the invited recipient'
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [project, rfp, recipient_email, closed, proposal]
+                properties:
+                  project:
+                    type: object
+                    required: [name, location]
+                    properties:
+                      name: { type: string }
+                      location: { type: string, nullable: true }
+                  rfp:
+                    type: object
+                    required: [title, specialties, submission_deadline, package]
+                    properties:
+                      title: { type: string }
+                      scope_text: { type: string }
+                      specialties: { type: array, items: { type: string } }
+                      submission_deadline: { type: string, format: date-time }
+                      package:
+                        type: object
+                        description: Subtree structure and BoQ quantities, never prices (doc 05 §10).
+                        properties:
+                          rows:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                task_id: { type: string, format: uuid }
+                                parent_task_id: { type: string, format: uuid }
+                                name: { type: string }
+                                scope_text: { type: string }
+                                specialty: { type: string }
+                                position: { type: string }
+                          items:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                rfp_item_id: { type: string, format: uuid }
+                                task_id: { type: string, format: uuid }
+                                code: { type: string }
+                                description: { type: string }
+                                unit: { type: string }
+                                quantity: { type: string }
+                                material_spec: { type: string }
+                                specialty: { type: string }
+                  recipient_email: { type: string, format: email }
+                  closed:
+                    type: boolean
+                    description: True when the RFP is no longer receiving proposals.
+                  proposal:
+                    nullable: true
+                    allOf:
+                    - $ref: '#/components/schemas/Proposal'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /rfp-links/{token}/proposal:
+    parameters:
+    - name: token
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{64}$'
+    post:
+      tags:
+      - Tendering
+      operationId: submitProposalByToken
+      summary: 'RFP personal link: submit a proposal (gap S1, anonymous, single-use)'
+      description: 'The bidder submits a summary proposal (total, duration, conditions, documents;
+        no priced BoQ) through the personal link. Anonymous — the token authenticates it (global
+        security overridden to none). Single-use: the auto-created lane starts `invited`; this moves
+        it to `submitted` and is guarded on that state, so a second POST answers 409 and the GET
+        afterwards returns the confirmation view. The window can close between load and submit — a
+        closed RFP answers 409 rather than landing a bid nobody reads. A refusal never distinguishes
+        an unknown token from a dead one (uniform 404).
+
+
+        **Clerk permission:** none (token-authenticated)
+
+
+        **Relationship (LinkNMS):** the invited recipient'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [total, duration_wd]
+              properties:
+                total: { $ref: '#/components/schemas/Money' }
+                duration_wd: { type: integer, minimum: 1, description: Working days to complete. }
+                conditions: { type: string, nullable: true }
+                validity_until: { type: string, format: date, nullable: true }
+                document_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                  description: Portfolio / supporting document ids already uploaded.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /rfps/{rfpId}:
     parameters:
     - name: rfpId

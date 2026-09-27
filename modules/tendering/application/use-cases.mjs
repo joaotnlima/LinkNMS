@@ -26,7 +26,7 @@ import { ProblemError } from '../../../platform/errors.mjs';
 import { visibilityOf, contractBody } from '../../contracting/domain/lifecycle.mjs';
 import { rfpTransition, proposalTransition } from '../domain/lifecycle.mjs';
 import {
-  rfpBody, packageBody, recipientBody, clarificationBody, laneBody, proposalBody,
+  rfpBody, packageBody, recipientBody, clarificationBody, laneBody, proposalBody, rfpLinkView,
 } from '../domain/wire.mjs';
 import { comparisonMatrix, missingLineCount } from '../domain/comparison.mjs';
 
@@ -123,6 +123,103 @@ export async function getRfp({ viewer, store, rfpId }) {
     status: 200,
     body: { ...rfpBody(rfp), package: packageBody(pkg.rows, pkg.items), clarifications },
   };
+}
+
+// ── Public personal link (gap S1, security: []) ─────────────────────────────
+// The RFP personal link is the one anonymous surface in tendering: the caller
+// holds a 32-byte token and NOTHING else — no session, no viewer. So these two
+// use cases take no `viewer`; the token IS the authority. Three rules run
+// through both (doc 21 S1, mirroring the as-is LINA-284/294):
+//   1. A refusal never leaks whether the token exists — unknown, revoked and
+//      expired tokens all answer a uniform not_found (the store returns null
+//      for all three), so the endpoint is not an existence oracle.
+//   2. The projection is narrow (rfpLinkView): the package to price, the
+//      project name/locality, the invited email, and the bidder's OWN proposal.
+//      Never the issuer, the other recipients, or another lane (V8).
+//   3. The link is single-use for submission: the auto-created proposal starts
+//      'invited'; the submit moves it to 'submitted' and is guarded on that, so
+//      a second POST answers already_submitted and the GET afterwards returns
+//      the confirmation view (the proposal echoed back) instead of the form.
+
+/** operationId: getRfpByToken — GET /rfp-links/{token}, security: []. */
+export async function getRfpByToken({ store, token }) {
+  const rec = await store.findRecipientByToken(token ?? '');
+  if (!rec) throw new ProblemError('not_found', 'this link is not valid');
+  // A best-effort delivery breadcrumb; never blocks the read.
+  await store.markRecipientOpened(rec.id).catch(() => {});
+  const pkg = await store.packageOf(rec.rfp_id, rec.package_version);
+  const proposal = await loadOwnProposalEcho(store, rec.proposal_id);
+  return {
+    status: 200,
+    body: rfpLinkView(
+      { title: rec.title, scope_text: rec.scope_text, specialties: rec.specialties,
+        submission_deadline: rec.submission_deadline, status: rec.rfp_status },
+      { pkg, project: { name: rec.project_name, location: rec.project_location },
+        recipientEmail: rec.email, proposal },
+    ),
+  };
+}
+
+/** operationId: submitProposalByToken — POST /rfp-links/{token}/proposal, security: []. */
+export async function submitProposalByToken({ store, token, body }) {
+  const rec = await store.findRecipientByToken(token ?? '');
+  if (!rec) throw new ProblemError('not_found', 'this link is not valid');
+  const proposal = await store.getProposal(rec.proposal_id);
+  // Single-use: only a fresh lane accepts a bid; anything else is spent. The v2
+  // vocabulary (doc 11) has no `already_submitted` code — a spent link is a
+  // state-machine refusal, so it is invalid_transition (the GET's `closed` and
+  // echoed `proposal` are what the form reads to render the confirmation view).
+  if (!proposal || !['invited', 'draft'].includes(proposal.status)) {
+    throw new ProblemError('invalid_transition', 'a proposal has already been sent for this link');
+  }
+  // The window can close between the page load and the submit — refuse rather
+  // than land a bid nobody will read (the as-is checked this on POST too).
+  if (rec.rfp_status !== 'published') {
+    throw new ProblemError('invalid_transition', 'this RFP is no longer accepting proposals');
+  }
+
+  const errors = {};
+  if (!Number.isInteger(body?.total?.amount_cents) || body.total.amount_cents < 0) {
+    errors.total = 'Money {amount_cents, currency}';
+  } else if (body.total.currency !== 'EUR') errors.total = 'currency must be EUR';
+  if (!Number.isInteger(body?.duration_wd) || body.duration_wd <= 0) {
+    errors.duration_wd = 'working days > 0';
+  }
+  const docs = body?.document_ids ?? [];
+  if (!Array.isArray(docs) || docs.some((d) => !UUID.test(d ?? ''))) errors.document_ids = 'document ids';
+  if (body?.validity_until !== undefined && body?.validity_until !== null
+      && !DATE_ONLY.test(body.validity_until)) errors.validity_until = 'YYYY-MM-DD';
+  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+
+  const outcome = proposalTransition(proposal.status, 'submit');
+  if (!outcome.ok) throw new ProblemError('invalid_transition', outcome.reason);
+
+  const updated = await store.submitPublicProposal({
+    proposalId: proposal.id,
+    from: proposal.status,
+    revision: proposal.current_revision + 1,
+    totalCents: body.total.amount_cents,
+    durationWd: body.duration_wd,
+    conditions: body.conditions ?? null,
+    validityUntil: body.validity_until ?? null,
+    documentIds: [...new Set(docs)],
+    projectId: proposal.project_id,
+    rfpId: proposal.rfp_id,
+    recipientOrgId: rec.org_id ?? null,
+  });
+  if (!updated) throw new ProblemError('invalid_transition', 'a proposal has already been sent for this link');
+  const doc = await store.proposalDoc(updated.id);
+  // The bidder always sees the money on their own proposal.
+  return { status: 200, body: proposalBody(updated, { ...doc, seesMoney: true }) };
+}
+
+/** The recipient's own proposal, echoed once it has left the invited state. */
+async function loadOwnProposalEcho(store, proposalId) {
+  if (!proposalId) return null;
+  const row = await store.getProposal(proposalId);
+  if (!row || row.status === 'invited') return null;
+  const doc = await store.proposalDoc(proposalId);
+  return { row, doc };
 }
 
 /** operationId: updateRfp — draft only, If-Match on version. */
