@@ -108,7 +108,7 @@ client, adapt the view transform to the v2 wire shape, keep the screen's UX. Del
 | Slice | Surface(s) | v2 tags | Notes |
 |---|---|---|---|
 | S1 | `/me` + portfolio home (`page.tsx`, `lib/profile.ts`) | Identity, Project | Smallest read; proves the v2 client path end-to-end |
-| S2 | Project dashboard + record (`getProject`, `lib/record.ts`) | Project, Contracting, Record | Pillars/counts re-derived from v2 reads |
+| S2 | Project dashboard + record (`getProject`, `lib/record.ts`) | Project, Contracting, Record | **Partly shipped (LINA-353) — see §3.1.** Header/state + Schedule tab on v2; Plan/Money/History blocked on a v2 record backend that does not exist yet |
 | S3 | Plan grid + Gantt (`PlanGrid.tsx`, `lib/plan-baseline.ts`, `lib/plan-authoring.ts`) | Planning, Realtime | Largest; new delta/link/segment shapes (doc 05) |
 | S4 | Change orders (`RaiseChangeOrderForm.tsx`, `CoDecisionButtons.tsx`) | Contracting (change orders) | Proposer-never-decides invariant (§6.1) |
 | S5 | Tendering / RFP public form (`rfp/[token]/*`, `lib/rfp-proposal.ts`, `lib/procurement.ts`) | Tendering | Public-token lifecycle gap S1 in [21](./21-gap-review.md) must be closed first |
@@ -118,6 +118,41 @@ client, adapt the view transform to the v2 wire shape, keep the screen's UX. Del
 **Build a shared v2 client first** (`app/src/lib/v2/client.ts`): the single place that talks to
 `/api/v2` (or the in-process router), mirroring the two-transport design of today's `lib/api.ts`
 (in-process default; HTTP when `LINKNMS_API_BASE` is set for E2E). Every slice imports from it.
+
+### 3.1 S2 as-built + the v2 record-backend gap (LINA-353, 2026-09-27)
+
+Cutting S2 surfaced a gap the table above assumed away: **the v1 record surface's four tabs do not
+all have a v2 read to point at.** Verified against the live backend (`server/v2/registry.ts` + each
+module's `http/register.mjs`):
+
+| Record tab | v1 source | v2 read | Status |
+|---|---|---|---|
+| Header / state | `getRecord` | `GET /projects/{id}` (getProject) + schedule baseline | ✅ cut |
+| Schedule | `getRecord.tabs.schedule` | `GET /projects/{id}/schedule` (getSchedule) — task `status` enum is identical to v1 `ProgressStatus` | ✅ cut |
+| Plan (materials) | `getRecord.tabs.plan` + `getStageMaterials`/`materials:swap` | — none | ❌ **no v2 model** |
+| Money (movements) | `getRecord.tabs.money` | — none | ❌ **no v2 model** |
+| History (ledger) | `getRecord.tabs.history` | `GET /projects/{id}/record` (`listRecord`, tag `Record`) | ❌ **openapi-only, registered nowhere** |
+
+The Slice-B3 materials/movements model (`materials:swap`, `MovementView`, `price_movement` vs
+`scope_change`) was never ported to a v2 module; v2 contracting is a different model (contract tree,
+change orders, measurements, payments). And `listRecord` — the "who changed what" audit-ledger
+projection, the product's core promise — exists in `openapi.yaml` only.
+
+**Decided S2 shape (B2-consistent, decision-neutral, reversible):** ship the two tabs that have a
+real v2 read now (`lib/v2/record.ts` + `lib/v2/record-view.ts`, driving header/state + Schedule),
+plus the first **v2 build-shell chrome** helper (`lib/v2/shell.ts`, reusing S1's `getViewerProfile`
++ `listPortfolio` — S1 cut only the standalone portfolio page, not the shared shell helper that
+every build-scoped page wears, so S2 is the first page that needs it and S3–S7 adopt it). The
+Plan/Money/History tabs render honest "arrives with the v2 record slice" panels — under B2 a fresh
+v2 project genuinely has no materials, no movements and an empty ledger, so this is truthful, not a
+stub. When the backend lands the panels light up with no change to the page's shape.
+
+**Tracked backend follow-up (moves scope → CEO decision):** register + implement `listRecord` (the
+v2 ledger projection) and decide the materials/money disposition on v2 — **port** the B3 model into
+a v2 module, or **re-conceive** the live-record/money surface on v2's own contracting model (change
+orders / measurements / variations). History/Plan/Money depend on that decision; the `record/[stageId]`
+materials detail + `MoneyMovement.tsx` stay on v1 until it lands (they are unreachable from the v2
+record page, which no longer links to them).
 
 ## 4. Phase 12 — deprecate v1 (only after every surface is on v2)
 
