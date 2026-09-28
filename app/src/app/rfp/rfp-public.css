@@ -83,6 +83,18 @@
 }
 .rfp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 
+/* The package to price: structure + quantities, never prices (doc 05 §10). A
+   plain read-only table so the bidder sees exactly what the single total covers.
+   Right-aligned, tabular quantities so figures line up down the column. */
+.rfp-package { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: var(--s3); }
+.rfp-package th, .rfp-package td {
+  text-align: left; padding: 6px var(--s2);
+  border-bottom: 1px solid var(--border); vertical-align: top;
+}
+.rfp-package th { font-weight: 600; color: var(--muted); }
+.rfp-package .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rfp-package tr:last-child td { border-bottom: 0; }
+
 /* Attachments: a list of links, each naming its own size. Opened in a new tab
    because losing a half-filled form to a PDF click is the worst small bug this
    screen could have. */
@@ -107,6 +119,19 @@
 .rfp-timeline { display: flex; gap: var(--s2); }
 .rfp-timeline input { flex: 1 1 auto; }
 .rfp-timeline select { flex: 0 0 108px; width: auto; }
+
+/* The total: a currency sign fused to the input as one control, so the € reads
+   as part of the figure rather than as a separate character to the left of an
+   empty box (the same one-label discipline as .rfp-timeline). */
+.rfp-money { display: flex; align-items: stretch; }
+.rfp-money > span {
+  display: flex; align-items: center; padding: 0 var(--s2);
+  border: 1px solid var(--border); border-right: 0;
+  border-radius: var(--r2) 0 0 var(--r2);
+  background: var(--sunken); color: var(--muted); font-weight: 600;
+}
+.rfp-money input { flex: 1 1 auto; border-radius: 0 var(--r2) var(--r2) 0; }
+.rfp-money:focus-within > span { border-color: var(--accent); }
 
 /* A field-level error. Smaller and quieter than `.form-error`, which is the
    whole-form banner — two weights, so the eye can tell "this box" from "this
