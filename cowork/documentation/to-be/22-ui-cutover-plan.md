@@ -110,7 +110,7 @@ client, adapt the view transform to the v2 wire shape, keep the screen's UX. Del
 | S1 | `/me` + portfolio home (`page.tsx`, `lib/profile.ts`) | Identity, Project | Smallest read; proves the v2 client path end-to-end |
 | S2 | Project dashboard + record (`getProject`, `lib/record.ts`) | Project, Contracting, Record | **Partly shipped (LINA-353) — see §3.1.** Header/state + Schedule tab on v2; Plan/Money/History blocked on a v2 record backend that does not exist yet |
 | S3 | Plan grid + Gantt (`PlanGrid.tsx`, `lib/plan-baseline.ts`, `lib/plan-authoring.ts`) | Planning, Realtime | Largest; new delta/link/segment shapes (doc 05) |
-| S4 | Change orders (`RaiseChangeOrderForm.tsx`, `CoDecisionButtons.tsx`) | Contracting (change orders) | Proposer-never-decides invariant (§6.1) |
+| S4 | Change orders (`RaiseChangeOrderForm.tsx`, `CoDecisionButtons.tsx`) | Contracting (change orders) | **Splits — see §3.2 (LINA-358).** DETAIL + DECIDE (list/read/gate) are blocked-by-S1-only and ready now; PROPOSE is **blocked-by-S2** (needs a signed contract + live BoQ to attach line ops to). Proposer-never-decides invariant (§6.1) |
 | S5 | Tendering / RFP public form (`rfp/[token]/*`, `lib/rfp-proposal.ts`, `lib/procurement.ts`) | Tendering | Public-token lifecycle gap S1 in [21](./21-gap-review.md) must be closed first |
 | S6 | Sign-off + phases (`SignOffPanel.tsx`) | Project (phases), Collaboration | |
 | S7 | Task workspace (`lib/task-workspace.ts`) | Collaboration, Documents | R2 downloads gated by V6 |
@@ -153,6 +153,77 @@ a v2 module, or **re-conceive** the live-record/money surface on v2's own contra
 orders / measurements / variations). History/Plan/Money depend on that decision; the `record/[stageId]`
 materials detail + `MoneyMovement.tsx` stay on v1 until it lands (they are unreachable from the v2
 record page, which no longer links to them).
+
+### 3.2 S4 as-designed — v1 free-cost change order → v2 line-item model (LINA-358, 2026-09-28)
+
+Cutting S4 surfaces the same class of gap §3.1 found: the S4 row assumed the whole surface is
+blocked-by-S1-only, but **the two halves of S4 have different dependencies and one of them cannot
+be built yet.** The v1 change order and the v2 change order are not the same object — one is a
+project-scoped narrative, the other is a contract-scoped ledger entry — so this is the design
+ruling the wiring (LINA-321) waits on. Verified against the live backend
+(`modules/contracting/application/use-cases.mjs::createChangeOrder`,
+`modules/contracting/domain/money.mjs`, `modules/contracting/http/register.mjs`) and the merged v2
+data layer (`app/src/lib/v2/change-orders.ts` + `change-orders-view.ts`, PR #188).
+
+**What the two models actually carry:**
+
+| Facet | v1 (`RaiseChangeOrderForm` → `ChangeOrderDetail`) | v2 (`createChangeOrder` → `ChangeOrder`) |
+|---|---|---|
+| Scope | **Project**-scoped narrative record | **Contract**-scoped ledger entry (`POST /contracts/{id}/change-orders`) |
+| "What changed" | free-typed `title` | `kind` = `scope` \| `time` \| `scope_and_time` + a `reason` (the human line) |
+| Cost | free-typed `costDeltaCents` (any amount, typed by hand) | **derived** — `amount_delta` = Σ `lineAmountCents(qty × unit_price)` over BoQ line ops; never typed |
+| Scope body | `scopeImpactNote` (free text) | `lines[]` ops `add` \| `replace` \| `remove` against the contract's **live BoQ** (`add`/`replace` carry a client-minted `new_line` = code/description/unit/quantity/unit_price) |
+| Schedule body | `scheduleImpactDays` + `scheduleImpactNote` | `time[]` ops (baseline start/finish) |
+| Quality | `qualityFlag` + `qualityNote` | **no representation** |
+| Who raised it | name + **build role** (raised by "{name} ({role})") | `Actor { org_id, person_id?, org_role? }` — no display name, no build role |
+| Budget context | before → after pair on the CO body | **not on the CO** — `GET /contracts/{id}/financials` (value / approved_changes / measured / …) |
+| Lifecycle | single `proposed → decided` | five states `draft → submitted → approved \| rejected \| withdrawn` |
+
+**Ruling 1 — sequencing (Architect):** S4 splits.
+- **DETAIL + DECIDE + LIST are ready now** (blocked-by-S1-only): the reads and the whole
+  decision gate exist and are tested — `getChangeOrderDetail`, `submit`/`approve`/`reject`/`withdraw`
+  (PR #188), the `two_sided_rule` surfacing, and the list endpoint `GET /projects/{id}/change-orders`
+  (LINA-357). This half of LINA-321 can wire `CoDecisionButtons.tsx` + the detail/list pages
+  against v2 immediately.
+- **PROPOSE is blocked-by-S2**, not by S1. `createChangeOrder` requires a `contractId` in the path
+  and BoQ line ops that reference **live `boq_item_id`s of a signed contract**. There is no way to
+  raise a v2 CO without first selecting a contract and its BoQ — and that contract/BoQ surface is
+  **S2 (Contracting)**, which has not shipped (§3.1). The doc-22 table's "S4 blocked-by-S1-only" was
+  a gap; corrected in the S4 row above.
+
+**Ruling 2 — mapping (Architect, ledger-integrity call):** the v1 free-cost `RaiseChangeOrderForm`
+is **retired**, not adapted. The v2 propose surface is a **BoQ-line authoring form** (pick contract →
+choose `kind` → add/replace/remove BoQ lines and/or time ops → the server sums `amount_delta`),
+built together with S2's contract/BoQ surface. **No interim synthetic lump-sum line.** A single
+hand-typed "lump-sum" line would mint a fake BoQ item (the op requires code/description/unit/
+quantity/unit_price ≥ 0) that then becomes a *live* line every downstream measurement and payment
+references — it corrupts the meaning of the ledger, which is the product's core promise. Because
+PROPOSE is blocked on S2 regardless, there is no schedule pressure that a degraded interim would
+relieve. Field mapping for the new form: v1 `title` + `scopeImpactNote` → `reason` + `lines[]`;
+`scheduleImpactDays`/`Note` → `kind:time` + `time[]`; there is **no** v2 home for a
+`qualityFlag`/`qualityNote` — a quality-only change with no cost and no schedule impact is not a
+change *order* in v2 and belongs on the record as a comment/decision (**flag to Product**, below).
+
+**Ruling 3 — detail rendering (Architect):** resolve from the authoritative source, do not invent.
+- **Party name:** resolve `proposed_by.org_id` / `decided_by.org_id` → org display name via an
+  identity read at render time; never put a name on the CO body. **Drop the v1 build-role line** —
+  the v2 `Actor` carries `org_role` only, no build role.
+- **Budget before → after:** **dropped** (it would be an invented pair). Replace it with the
+  contract financials snapshot from `GET /contracts/{id}/financials` (contract value, approved
+  changes, and this CO's `amount_delta`) — the honest running-total surface.
+- **Status:** render the v2 five-state `status` directly, not the lossy legacy three-state chip
+  (`toLegacyChipStatus` collapses draft+submitted and withdrawn, documented in
+  `change-orders-view.ts`); `kind`, `lineCount`, `timeCount` render straight off the CO body.
+
+**Flag to Product/CEO (scope, not blocking this ruling):** v2 change orders have no `quality` axis
+and no free-cost path. If "raise a quality-only concern" or "log an ad-hoc cost that isn't a BoQ
+line movement" must remain a first-class action, it needs its own v2 surface (a record
+comment/decision, or a new event) — it is **not** a change order. Raised so the S4 propose UX is
+scoped honestly; does not block LINA-321's DETAIL/DECIDE half.
+
+**Net for LINA-321:** proceed now with the DETAIL/DECIDE/LIST wiring (Rulings 1 + 3). Hold the
+PROPOSE half behind S2 and build it as the BoQ-line form (Ruling 2), not a port of the free-cost
+form. Track PROPOSE as blocked-by-S2 rather than a separate estimate against S1.
 
 ## 4. Phase 12 — deprecate v1 (only after every surface is on v2)
 
