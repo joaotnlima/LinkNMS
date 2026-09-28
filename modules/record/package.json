@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/record",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 record module: the audit ledger read side — listRecord (V7 redaction) + verifyRecord (chain recompute) (LINA-359)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test domain/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}

@@ -428,6 +428,22 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
         run: npm test
 
+      # LINA-359 acceptance: the audit-ledger READ side. The V7 redaction
+      # projection is pure-domain tested; the http layer proves the
+      # project.participant ∧ staffing gate and the redaction passthrough; and
+      # the store proves — against the same append_event() that wrote it — the
+      # scope-visibility join for all four scope kinds AND that verifyChain
+      # recomputes the hash chain in SQL and CATCHES a tampered payload.
+      - name: Install record module dependencies
+        working-directory: modules/record
+        run: npm ci --ignore-scripts
+
+      - name: Run record module tests
+        working-directory: modules/record
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
   app-typecheck:
     name: App — typecheck & build
     runs-on: ubuntu-latest
