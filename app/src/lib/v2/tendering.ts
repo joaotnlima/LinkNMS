@@ -1,0 +1,279 @@
+// The tendering surface's data layer, on `/api/v2` (LINA-361, S5 of the UI
+// cutover, doc 22 §3). Mirrors S1/S2 (`profile.ts`/`record.ts`): this module is
+// ONLY the I/O and the fail-closed error handling; the pure wire→view transforms
+// live in `./tendering-view.ts` so they stay unit-testable without a session.
+//
+// It replaces the v1 procurement client (`lib/procurement.ts`), which talked to
+// the schedule service under `/api/v1` and modelled one flat RFP per procurement
+// phase. Every call here goes through the single shared v2 seam
+// (`./client.ts::v2`) — there is deliberately NO second client (LINA-309).
+//
+// ── THE TWO FIRST-CLASS EMPTY STATES (issue requirement) ─────────────────────
+//  • Signed in, no active org — a person with no organisation selected. v2's
+//    tendering reads require an active org (doc 16 §4); with none, `getMyRfps`
+//    returns [] and the surface renders its neutral "pick an organisation" state
+//    rather than crashing. We skip the org-required read entirely in that case,
+//    the same shortcut `profile.ts::listPortfolio` takes.
+//  • Empty reads — a viewer with an org but no RFPs, or an RFP with no proposals
+//    yet, is not an error: the reads return [] / a lane-less inbox and the
+//    surface says so.
+//
+// Fail-closed exactly as S1/S2: a `V2Error` on a read (not a participant, denied,
+// not mirrored) resolves to the empty shape, never a rendered 500 and never a
+// leak. Writes DO surface their `V2Error` — a refused create/publish/award is an
+// answer the composer must show, not swallow.
+import 'server-only';
+import { randomUUID } from 'node:crypto';
+
+import { v2, V2Error } from './client';
+import type { V2Me } from './profile-view';
+import type {
+  V2Rfp, V2Recipient, V2ProposalLane, V2Comparison, RfpDraftInput, RfpVisibility,
+} from './tendering-view';
+
+// ── Reads: the composer's own RFPs ───────────────────────────────────────────
+
+interface ListBody<T> { items: T[]; next_cursor?: string | null }
+
+/**
+ * GET /me/rfps → the RFPs this org issues, newest server-order first. Returns []
+ * for a viewer with no active org (nothing to scope to) or any V2Error — the
+ * B2 empty-portal posture: an honest empty inbox, never a crash.
+ */
+export async function getMyRfps(): Promise<V2Rfp[]> {
+  const me = await v2<V2Me>({ method: 'GET', path: '/me' }).catch(() => null);
+  if (!me?.active_org) return []; // no org → nothing to scope RFPs to
+  try {
+    const list = await v2<ListBody<V2Rfp>>({ method: 'GET', path: '/me/rfps' });
+    return list.items ?? [];
+  } catch (err) {
+    if (err instanceof V2Error) return [];
+    throw err;
+  }
+}
+
+/**
+ * GET /rfps/{rfpId} → the full RFP including its packaged BoQ, or null when the
+ * viewer cannot see it (not the issuer, not mirrored, gone). Null is the
+ * page's "no such RFP for you" state, never a leak of existence.
+ */
+export async function getRfp(rfpId: string): Promise<V2Rfp | null> {
+  try {
+    return await v2<V2Rfp>({ method: 'GET', path: `/rfps/${encodeURIComponent(rfpId)}` });
+  } catch (err) {
+    if (err instanceof V2Error) return null;
+    throw err;
+  }
+}
+
+/** GET /rfps/{rfpId}/recipients → the issuer's recipient list (never bidders). */
+export async function listRecipients(rfpId: string): Promise<V2Recipient[]> {
+  try {
+    const list = await v2<ListBody<V2Recipient>>({
+      method: 'GET', path: `/rfps/${encodeURIComponent(rfpId)}/recipients`,
+    });
+    return list.items ?? [];
+  } catch (err) {
+    if (err instanceof V2Error) return [];
+    throw err;
+  }
+}
+
+// ── Reads: the proposals inbox ───────────────────────────────────────────────
+
+/**
+ * The inbox read, money-gate aware. The issuer who can see money gets the full
+ * comparison matrix (lanes + per-row prices + medians, GET /rfps/{id}/comparison
+ * — itself behind `org:money:view`). An issuer WITHOUT money cannot call it
+ * (403), so we fall back to the per-task lane reads (`/tasks/{id}/proposal-lanes`
+ * over the RFP's root tasks), which carry no prices — a first-class, honest
+ * "you can compare who bid, not for how much" state rather than a dead screen.
+ */
+export interface Inbox {
+  lanes: V2ProposalLane[];
+  /** Present only for a viewer with `org:money:view`. */
+  comparison: V2Comparison | null;
+  seesMoney: boolean;
+}
+
+export async function getInbox(rfp: Pick<V2Rfp, 'id' | 'root_task_ids'>): Promise<Inbox> {
+  try {
+    const cmp = await v2<V2Comparison>({
+      method: 'GET', path: `/rfps/${encodeURIComponent(rfp.id)}/comparison`,
+    });
+    return { lanes: cmp.proposals ?? [], comparison: cmp, seesMoney: true };
+  } catch (err) {
+    // 403 = money gate (or not the issuer). Fall back to the price-free lanes;
+    // any other V2Error is fail-closed to an empty inbox.
+    if (err instanceof V2Error && err.status === 403) {
+      return { lanes: await gatherLanes(rfp.root_task_ids), comparison: null, seesMoney: false };
+    }
+    if (err instanceof V2Error) return { lanes: [], comparison: null, seesMoney: false };
+    throw err;
+  }
+}
+
+/**
+ * Lanes across an RFP's tendered tasks, de-duplicated by proposal — the
+ * money-less inbox's read. A per-task read that denies (a task the viewer is not
+ * on) contributes nothing rather than failing the whole inbox.
+ */
+async function gatherLanes(rootTaskIds: readonly string[]): Promise<V2ProposalLane[]> {
+  const perTask = await Promise.all(rootTaskIds.map(async (taskId) => {
+    try {
+      const list = await v2<ListBody<V2ProposalLane>>({
+        method: 'GET', path: `/tasks/${encodeURIComponent(taskId)}/proposal-lanes`,
+      });
+      return list.items ?? [];
+    } catch (err) {
+      if (err instanceof V2Error) return [];
+      throw err;
+    }
+  }));
+  const byProposal = new Map<string, V2ProposalLane>();
+  for (const lane of perTask.flat()) {
+    if (!byProposal.has(lane.proposal_id)) byProposal.set(lane.proposal_id, lane);
+  }
+  return [...byProposal.values()];
+}
+
+// ── Writes: the composer ─────────────────────────────────────────────────────
+// A refused write surfaces its `V2Error` — the composer shows the reason
+// (validation_failed carries field errors; forbidden carries a role/relationship
+// reason). Only the id is minted here; the acting org and the RFP level are
+// decided server-side from the session, never sent (the actor is never in the
+// body — the v1 rule this preserves).
+
+/**
+ * POST /projects/{projectId}/rfps — create the draft over the chosen tasks.
+ *
+ * The `id` is a client-generated UUID the create handler dedupes on (it doubles
+ * as the Idempotency-Key), so a double-submit yields one RFP. Specialties and
+ * the packaged BoQ are derived server-side from `root_task_ids`; they are not in
+ * the body. Returns the stored RFP (its id is the caller's own, echoed back).
+ */
+export async function createRfp(projectId: string, draft: RfpDraftInput): Promise<V2Rfp> {
+  const id = randomUUID();
+  return v2<V2Rfp>({
+    method: 'POST',
+    path: `/projects/${encodeURIComponent(projectId)}/rfps`,
+    idempotencyKey: id,
+    body: {
+      id,
+      root_task_ids: draft.rootTaskIds,
+      title: draft.title.trim(),
+      ...(draft.scopeText.trim() ? { scope_text: draft.scopeText.trim() } : {}),
+      visibility: draft.visibility,
+      ...(draft.questionsDeadline ? { questions_deadline: draft.questionsDeadline } : {}),
+      submission_deadline: draft.submissionDeadline,
+    },
+  });
+}
+
+/**
+ * PATCH /rfps/{rfpId} — edit a draft's title/scope/deadlines/visibility. The
+ * `version` becomes the `If-Match` the handler uses for optimistic concurrency;
+ * a stale version is a 409 the caller re-reads on. Only a draft is editable.
+ */
+export interface RfpPatch {
+  title?: string;
+  scopeText?: string;
+  questionsDeadline?: string | null;
+  submissionDeadline?: string;
+  visibility?: RfpVisibility;
+}
+
+export async function updateRfp(rfpId: string, patch: RfpPatch, version: number): Promise<V2Rfp> {
+  const body: Record<string, unknown> = {};
+  if (patch.title !== undefined) body.title = patch.title.trim();
+  if (patch.scopeText !== undefined) body.scope_text = patch.scopeText.trim();
+  if (patch.questionsDeadline !== undefined) body.questions_deadline = patch.questionsDeadline;
+  if (patch.submissionDeadline !== undefined) body.submission_deadline = patch.submissionDeadline;
+  if (patch.visibility !== undefined) body.visibility = patch.visibility;
+  return v2<V2Rfp>({
+    method: 'PATCH',
+    path: `/rfps/${encodeURIComponent(rfpId)}`,
+    body: { ...body, version },
+  });
+}
+
+/**
+ * POST /rfps/{rfpId}/recipients — invite one address or a whole pasted column.
+ *
+ * The 201 carries each recipient's raw personal-link `token` ONCE (email
+ * delivery is a later module — same rationale as ProjectInvitation.token), so
+ * the composer can show/copy the link. The server re-derives status; we send
+ * only the emails.
+ */
+export async function addRecipients(rfpId: string, emails: string[]): Promise<V2Recipient[]> {
+  const res = await v2<{ items?: V2Recipient[] } | V2Recipient[]>({
+    method: 'POST',
+    path: `/rfps/${encodeURIComponent(rfpId)}/recipients`,
+    body: { recipients: emails.map((email) => ({ email })) },
+  });
+  return Array.isArray(res) ? res : (res.items ?? []);
+}
+
+/** POST /rfps/{rfpId}:publish — the one-way door: draft → published, tokens live. */
+export async function publishRfp(rfpId: string): Promise<V2Rfp> {
+  return v2<V2Rfp>({ method: 'POST', path: `/rfps/${encodeURIComponent(rfpId)}:publish` });
+}
+
+/** POST /rfps/{rfpId}:close — stop receiving proposals, ahead of awarding. */
+export async function closeRfp(rfpId: string): Promise<V2Rfp> {
+  return v2<V2Rfp>({ method: 'POST', path: `/rfps/${encodeURIComponent(rfpId)}:close` });
+}
+
+/** POST /rfps/{rfpId}:cancel — abandon the tender (draft/published/closed). */
+export async function cancelRfp(rfpId: string): Promise<V2Rfp> {
+  return v2<V2Rfp>({ method: 'POST', path: `/rfps/${encodeURIComponent(rfpId)}:cancel` });
+}
+
+// ── Writes: the inbox / evaluation ───────────────────────────────────────────
+
+/** POST /proposals/{proposalId}:shortlist — submitted → shortlisted (issuer). */
+export async function shortlistProposal(proposalId: string): Promise<void> {
+  await v2<unknown>({ method: 'POST', path: `/proposals/${encodeURIComponent(proposalId)}:shortlist` });
+}
+
+/**
+ * POST /rfps/{rfpId}:award — choose the winner. Human-only, and the contract
+ * draft is written in the same transaction (awarded can never exist without its
+ * contract). Every other live lane is declined. Returns the awarded RFP.
+ */
+export async function awardRfp(rfpId: string, proposalId: string): Promise<V2Rfp> {
+  return v2<V2Rfp>({
+    method: 'POST',
+    path: `/rfps/${encodeURIComponent(rfpId)}:award`,
+    body: { proposal_id: proposalId },
+  });
+}
+
+/**
+ * POST /proposals/{proposalId}:record-offline — the issuer types in a bid that
+ * arrived by email (PDFs + a total + a duration), so an off-platform contractor
+ * still sits in the comparison. `total` is integer cents on the wire.
+ */
+export interface OfflineProposalInput {
+  documentIds: string[];
+  totalCents: number;
+  durationWd?: number;
+  start?: string;
+  conditions?: string;
+  validityUntil?: string;
+}
+
+export async function recordOfflineProposal(proposalId: string, offline: OfflineProposalInput): Promise<void> {
+  await v2<unknown>({
+    method: 'POST',
+    path: `/proposals/${encodeURIComponent(proposalId)}:record-offline`,
+    body: {
+      document_ids: offline.documentIds,
+      total: { amount_cents: offline.totalCents, currency: 'EUR' },
+      ...(offline.durationWd !== undefined ? { duration_wd: offline.durationWd } : {}),
+      ...(offline.start ? { start: offline.start } : {}),
+      ...(offline.conditions ? { conditions: offline.conditions } : {}),
+      ...(offline.validityUntil ? { validity_until: offline.validityUntil } : {}),
+    },
+  });
+}
