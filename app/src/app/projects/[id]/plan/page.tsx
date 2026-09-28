@@ -31,6 +31,7 @@
 // comes back as a sentence beside the plan (`savePlanV2` returns `{ ok: false }`),
 // never a stack trace.
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 
 import { isSignedIn, getPlanTemplate } from '@/lib/api';
 import { PortalShell } from '@/components/PortalShell';
@@ -91,9 +92,18 @@ export default async function PlanPage({
           // stage ids. Both arrive with their own v2 slices.
           parties={[]}
           saveV2={savePlanV2.bind(null, id)}
+          // The door to the plan's Procurement surface (its own page, LINA-371).
+          procurementHref={`/projects/${id}/plan/procurement`}
         />
       ) : (
         <main className="pi">
+          <p style={{ marginBottom: '1rem' }}>
+            <Link className="pbx-icon" href={`/projects/${id}/plan/procurement`}
+              title="Put part of the plan out to tender and compare the bids"
+              style={{ width: 'auto', padding: '0 10px', display: 'inline-flex', alignItems: 'center' }}>
+              Tendering
+            </Link>
+          </p>
           <V2PlanGridReadOnly phases={phases} todayIso={todayIso} />
         </main>
       )}

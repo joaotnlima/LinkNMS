@@ -52,6 +52,23 @@ export async function getViewerProfile(): Promise<PortalUser | null> {
 }
 
 /**
+ * GET /api/v2/me → does the viewer have an ACTIVE organisation? The v2 tendering
+ * reads are org-scoped, so a surface that renders `<ProcurementSection>` needs to
+ * tell "no org selected" (a first-class neutral state, LINA-310) apart from "org
+ * with no tenders" — a distinction an empty RFP list cannot make on its own.
+ * Fail-closed: not mirrored / not signed in / any V2Error → false (no org).
+ */
+export async function viewerHasActiveOrg(): Promise<boolean> {
+  try {
+    const me = await v2<V2Me>({ method: 'GET', path: '/me' });
+    return me.active_org != null;
+  } catch (err) {
+    if (err instanceof V2Error) return false; // no mirror / no session — treat as no org
+    throw err;
+  }
+}
+
+/**
  * GET /api/v2/projects → the acting org's portfolio, membership-scoped
  * server-side (the viewer's active org, never a client-held id). Returns [] for a
  * viewer with no active org or no mirror row — the B2 empty-portal state, which is

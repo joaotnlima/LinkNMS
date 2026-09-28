@@ -240,7 +240,7 @@ export type SaveV2 = (
 
 export function PlanBuildEditor({
   projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
-  importHref = null, initialStageIds = {}, saveV2,
+  importHref = null, procurementHref = null, initialStageIds = {}, saveV2,
 }: {
   projectId: string;
   /**
@@ -250,6 +250,12 @@ export function PlanBuildEditor({
    * route the old empty-plan chooser used to hold.
    */
   importHref?: string | null;
+  /**
+   * Where the "Tendering" link points, or null to hide it. The plan's Procurement
+   * surface is its own page (LINA-371); this is the door to it from the editor's
+   * tools row, since /plan no longer wraps procurement in an accordion (LINA-306).
+   */
+  procurementHref?: string | null;
   /** An existing saved draft to resume editing; absent → scaffold from the template. */
   initialPhases?: PhaseDraft[];
   /**
@@ -760,6 +766,13 @@ export function PlanBuildEditor({
               title="Bring the plan in from a spreadsheet instead"
               style={{ width: 'auto', padding: '0 10px', display: 'inline-flex', alignItems: 'center' }}>
               Import a spreadsheet
+            </Link>
+          ) : null}
+          {procurementHref ? (
+            <Link className="pbx-icon" href={procurementHref}
+              title="Put part of the plan out to tender and compare the bids"
+              style={{ width: 'auto', padding: '0 10px', display: 'inline-flex', alignItems: 'center' }}>
+              Tendering
             </Link>
           ) : null}
           <button type="button" className="pbx-icon" onClick={reset}
