@@ -7,6 +7,9 @@ import {
   listParticipants, inviteToProject, acceptProjectInvitation,
   getCalendar, putCalendar, createShareLink,
 } from '../application/use-cases.mjs';
+import {
+  listPhases, requestSignOff, approveSignOff, rejectSignOff,
+} from '../application/phases.mjs';
 
 /**
  * @param {{ store: object, shareBaseUrl: () => string }} deps
@@ -65,4 +68,17 @@ export function registerProject(router, { store, shareBaseUrl }) {
 
   router.register('POST', '/projects/{projectId}/share-links', 'createShareLink', ({ viewer, params, body }) =>
     createShareLink({ viewer, store, projectId: params.projectId, body, shareBaseUrl: shareBaseUrl() }));
+
+  // ── phases + execution sign-off (LINA-356; ADR-0024) ─────────────────────
+  router.register('GET', '/projects/{projectId}/phases', 'listPhases', ({ viewer, params }) =>
+    listPhases({ viewer, store, projectId: params.projectId }));
+
+  router.register('POST', '/projects/{projectId}/phases/{phaseId}/sign-off', 'requestSignOff', ({ viewer, params }) =>
+    requestSignOff({ viewer, store, projectId: params.projectId, phaseId: params.phaseId }));
+
+  router.register('POST', '/projects/{projectId}/phases/{phaseId}/sign-off/{requestId}/approve', 'approveSignOff', ({ viewer, params, body }) =>
+    approveSignOff({ viewer, store, projectId: params.projectId, phaseId: params.phaseId, requestId: params.requestId, body }));
+
+  router.register('POST', '/projects/{projectId}/phases/{phaseId}/sign-off/{requestId}/reject', 'rejectSignOff', ({ viewer, params, body }) =>
+    rejectSignOff({ viewer, store, projectId: params.projectId, phaseId: params.phaseId, requestId: params.requestId, body }));
 }

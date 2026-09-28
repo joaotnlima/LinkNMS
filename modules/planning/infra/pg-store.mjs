@@ -337,6 +337,23 @@ export function createPlanningStore(pool) {
       return rows.length > 0;
     },
 
+    /**
+     * The change-order lock (ADR-0024): the execution plan is immutable once the
+     * project's execution phase is signed_off — structural edits then route
+     * through the change-order ledger (ADR-0014). Cross-schema READ of the
+     * project module's phase table (single pool; same query-port discipline as
+     * the identity/project reads above). An absent execution phase (project not
+     * yet seeded) reads as unlocked — a legitimate pre-lock edit.
+     */
+    async isPlanLocked(projectId) {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM project.project_phase
+          WHERE project_id = $1 AND kind = 'execution' AND status = 'signed_off' LIMIT 1`,
+        [projectId],
+      );
+      return rows.length > 0;
+    },
+
     async isStaffed(projectId, orgId, personId) {
       const { rows } = await pool.query(
         'SELECT 1 FROM identity.project_staffing WHERE project_id = $1 AND org_id = $2 AND person_id = $3',

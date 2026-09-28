@@ -524,6 +524,116 @@ export function createProjectStore(pool) {
       );
     },
 
+    // ── phases + execution sign-off (LINA-356; ADR-0024) ────────────────
+    // The one-way signed_off lock is a DB trigger (db/v2/0008); the sign-off
+    // request is resolved in place. Cross-schema READ of planning.task for the
+    // "≥1 plan task" guard — the same query-port discipline as location-in-use.
+
+    async listPhasesByProject(projectId) {
+      const { rows } = await pool.query(
+        'SELECT * FROM project.project_phase WHERE project_id = $1 ORDER BY sequence',
+        [projectId],
+      );
+      return rows;
+    },
+
+    async getPhaseById(id) {
+      const { rows } = await pool.query('SELECT * FROM project.project_phase WHERE id = $1', [id]);
+      return rows[0] ?? null;
+    },
+
+    async countPlanTasks(projectId) {
+      const { rows } = await pool.query(
+        'SELECT count(*)::int AS n FROM planning.task WHERE project_id = $1 AND deleted_at IS NULL',
+        [projectId],
+      );
+      return rows[0]?.n ?? 0;
+    },
+
+    async listSignOffRequestsByPhase(phaseId) {
+      const { rows } = await pool.query(
+        'SELECT * FROM project.phase_sign_off_request WHERE phase_id = $1 ORDER BY requested_at',
+        [phaseId],
+      );
+      return rows;
+    },
+
+    async getSignOffRequest(id) {
+      const { rows } = await pool.query('SELECT * FROM project.phase_sign_off_request WHERE id = $1', [id]);
+      return rows[0] ?? null;
+    },
+
+    /**
+     * Seed the two default phases inside one transaction, idempotently. Which
+     * phase starts `active` is the seed-time decision (ADR-0024): no signed
+     * contractor → procurement active (run an RFP first), execution pending. A
+     * concurrent seed / re-run is a safe no-op — ON CONFLICT (project_id, kind)
+     * DO NOTHING absorbs the race so lazy-init never poisons the tx.
+     */
+    async ensurePhases(projectId, defaults, { hasSignedContractor = false } = {}) {
+      return tx(async (client) => {
+        for (const d of defaults) {
+          const status = d.kind === 'procurement'
+            ? (hasSignedContractor ? 'pending' : 'active')
+            : (hasSignedContractor ? 'active' : 'pending');
+          await client.query(
+            `INSERT INTO project.project_phase (project_id, kind, name, status, sequence)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (project_id, kind) DO NOTHING`,
+            [projectId, d.kind, d.name, status, d.sequence],
+          );
+        }
+      });
+    },
+
+    async insertSignOffRequest({ id, phaseId, requestedBy }) {
+      const { rows } = await pool.query(
+        `INSERT INTO project.phase_sign_off_request (id, phase_id, requested_by, status)
+         VALUES ($1, $2, $3, 'pending') RETURNING *`,
+        [id, phaseId, requestedBy],
+      );
+      return rows[0];
+    },
+
+    /**
+     * Resolve the request AND flip the phase to signed_off in ONE transaction —
+     * the decision and the lock commit together (the audit invariant). The
+     * WHERE status = 'pending' guard makes a concurrent approve a no-op that
+     * surfaces as invalid_transition rather than a double-lock.
+     */
+    async approveSignOff({ requestId, phaseId, comment }) {
+      return tx(async (client) => {
+        const { rows } = await client.query(
+          `UPDATE project.phase_sign_off_request
+              SET status = 'approved', resolved_at = now(), resolution_comment = $2
+            WHERE id = $1 AND status = 'pending' RETURNING *`,
+          [requestId, comment],
+        );
+        if (!rows[0]) {
+          throw Object.assign(new Error('sign-off request is no longer pending'), { code: 'not_pending' });
+        }
+        const { rows: pr } = await client.query(
+          `UPDATE project.project_phase SET status = 'signed_off', updated_at = now()
+            WHERE id = $1 RETURNING *`,
+          [phaseId],
+        );
+        return { request: rows[0], phase: pr[0] };
+      });
+    },
+
+    async rejectSignOff({ requestId, comment }) {
+      const { rows } = await pool.query(
+        `UPDATE project.phase_sign_off_request
+            SET status = 'rejected', resolved_at = now(), resolution_comment = $2
+          WHERE id = $1 AND status = 'pending' RETURNING *`,
+        [requestId, comment],
+      );
+      if (!rows[0]) {
+        throw Object.assign(new Error('sign-off request is no longer pending'), { code: 'not_pending' });
+      }
+      return rows[0];
+    },
+
     // ── idempotency (POST /projects) ─────────────────────────────────────
     async idempotent(meta, fn) {
       if (!meta.key) return fn();

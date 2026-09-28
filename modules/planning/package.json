@@ -5,7 +5,7 @@
   "description": "v2 planning module: the WBS plan — rows, links, working-day propagation, D-26 deltas, D-33 edit scope, baseline binding on signature (to-be phase 4; variations, cost lines, progress, templates and imports land with later phases)",
   "type": "module",
   "scripts": {
-    "test": "node --test domain/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+    "test": "node --test domain/*.test.mjs application/*.test.mjs infra/*.test.mjs http/*.test.mjs"
   },
   "devDependencies": {
     "pg": "^8.13.1"
