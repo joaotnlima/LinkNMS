@@ -13,14 +13,17 @@
 //    v1 `ProgressStatus`, so it maps straight across.
 //
 // The Plan (materials) and Money (movements) tabs read the Slice-B3
-// materials/movements model, which was NEVER ported to a v2 module, and the
-// History tab reads `listRecord` (the audit-ledger projection), which exists in
-// openapi.yaml only and is registered nowhere. Under B2 (fresh start) that is
-// coherent — a fresh v2 project has no materials, no movements and an empty
-// ledger — so this module deliberately produces NOTHING for those three tabs
-// rather than inventing it. When the v2 record-ledger backend lands, this file
-// gains their transforms; the empty panels the page renders today are the honest
-// stand-in, not a stub to paper over a bug.
+// materials/movements model, which was NEVER ported to a v2 module. Under B2
+// (fresh start) a fresh v2 project has no materials and no movements, so this
+// module deliberately produces NOTHING for those two tabs rather than inventing
+// it. When that backend lands, this file gains their transforms.
+//
+// The History tab reads `listRecord` (the audit-ledger projection), which is
+// LIVE on v2 as of LINA-363: `toHistoryEntries` below maps its AuditEntry wire
+// into the row the page renders. Out-of-scope entries arrive redacted (payload
+// withheld, `redacted: true`) but keep their seq/type/hashes, so the tab shows
+// the shape of every change while withholding the detail of the ones the viewer
+// is not party to.
 import type { ProgressStatus, ScheduleLine } from '@/lib/record';
 
 // ── The v2 wire shapes we read (subset) ──────────────────────────────────────
@@ -129,5 +132,73 @@ export function toScheduleLines(tasks: V2ScheduleTask[]): ScheduleLine[] {
     plannedEndDate: t.finish,
     status: toProgressStatus(t.status),
     percent: null,
+  }));
+}
+
+// ── History tab (the audit ledger, projected) ─────────────────────────────────
+// The AuditEntry of cowork/documentation/api/v2/openapi.yaml, as listRecord
+// returns it. `payload` is absent on a redacted entry; `redacted` says which.
+
+export interface V2Actor {
+  person_id: string | null;
+  org_id: string | null;
+  org_role: string | null;
+}
+
+export interface V2AuditEntry {
+  seq: number;
+  occurred_at: string;
+  category: string;
+  type: string;
+  actor: V2Actor;
+  object_type: string;
+  object_id: string;
+  payload?: unknown;
+  redacted: boolean;
+  entry_hash: string;
+  prev_hash: string | null;
+}
+
+/** One row of the History tab: who did what, when, and whether the detail is in
+ *  the viewer's scope. Kept flat and presentational — the page renders it, the
+ *  chain fields stay so a reader can verify locally. */
+export interface HistoryEntry {
+  seq: number;
+  occurredAt: string;
+  /** A human label for `type`, e.g. "Change order decided". */
+  action: string;
+  /** The dotted event type, verbatim, for the reader who wants the exact key. */
+  eventType: string;
+  /** Who acted — the org role at the moment, e.g. "site_lead", or null. */
+  actorRole: string | null;
+  objectType: string;
+  redacted: boolean;
+  entryHash: string;
+}
+
+/** Humanise a dotted event `type` ("contracting.change_order.decided") into a
+ *  short sentence ("Change order decided"). Falls back to the raw type so an
+ *  event we have not seen a phrasing for is still legible, never blank. */
+export function humaniseEventType(type: string): string {
+  const parts = type.split('.');
+  // drop the leading category ("contracting", "planning", …) — the row already
+  // carries enough context; the noun+verb tail is the readable part.
+  const tail = parts.length > 1 ? parts.slice(1) : parts;
+  const words = tail.join(' ').replace(/_/g, ' ').trim();
+  if (!words) return type;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** listRecord items → History rows, newest-first as the server returns them. */
+export function toHistoryEntries(items: V2AuditEntry[]): HistoryEntry[] {
+  return items.map((e) => ({
+    seq: e.seq,
+    occurredAt: e.occurred_at,
+    action: humaniseEventType(e.type),
+    eventType: e.type,
+    actorRole: e.actor?.org_role ?? null,
+    objectType: e.object_type,
+    redacted: e.redacted,
+    entryHash: e.entry_hash,
   }));
 }

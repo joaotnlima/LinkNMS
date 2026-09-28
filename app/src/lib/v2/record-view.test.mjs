@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { toRecordHeader, toScheduleLines } from './record-view.ts';
+import { toRecordHeader, toScheduleLines, toHistoryEntries, humaniseEventType } from './record-view.ts';
 
 const task = (over = {}) => ({
   id: 't1', name: 'Groundworks', position: 'a', depth: 0,
@@ -67,4 +67,51 @@ test('toRecordHeader: a baseline with no dates is not a baseline', () => {
 test('toRecordHeader: always "accepted" — never a deviation from schedule status', () => {
   const h = toRecordHeader(project, [task({ status: 'blocked' }), task({ id: 't2', status: 'done' })]);
   assert.equal(h.state, 'accepted');
+});
+
+// ── History tab ───────────────────────────────────────────────────────────────
+
+const entry = (over = {}) => ({
+  seq: 3, occurred_at: '2026-09-20T10:00:00.000Z', category: 'contracting',
+  type: 'contracting.change_order.decided',
+  actor: { person_id: 'p1', org_id: 'o1', org_role: 'site_lead' },
+  object_type: 'change_order', object_id: 'co1',
+  payload: { delta_cents: 1200 }, redacted: false, entry_hash: 'h3', prev_hash: 'h2', ...over,
+});
+
+test('humaniseEventType: drops the category, humanises the tail', () => {
+  assert.equal(humaniseEventType('contracting.change_order.decided'), 'Change order decided');
+  assert.equal(humaniseEventType('planning.progress.reported'), 'Progress reported');
+});
+
+test('humaniseEventType: falls back to the raw type when there is no tail', () => {
+  assert.equal(humaniseEventType('created'), 'Created');
+});
+
+test('toHistoryEntries: maps an in-scope entry, actor role surfaced', () => {
+  const [row] = toHistoryEntries([entry()]);
+  assert.equal(row.seq, 3);
+  assert.equal(row.action, 'Change order decided');
+  assert.equal(row.eventType, 'contracting.change_order.decided');
+  assert.equal(row.actorRole, 'site_lead');
+  assert.equal(row.objectType, 'change_order');
+  assert.equal(row.redacted, false);
+  assert.equal(row.entryHash, 'h3');
+});
+
+test('toHistoryEntries: a redacted entry keeps who/when/shape but is flagged', () => {
+  const [row] = toHistoryEntries([entry({ redacted: true, payload: undefined })]);
+  assert.equal(row.redacted, true);
+  assert.equal(row.action, 'Change order decided'); // the shape is still shown
+  assert.equal(row.entryHash, 'h3'); // the chain fields survive redaction
+});
+
+test('toHistoryEntries: a null actor role does not crash', () => {
+  const [row] = toHistoryEntries([entry({ actor: { person_id: null, org_id: null, org_role: null } })]);
+  assert.equal(row.actorRole, null);
+});
+
+test('toHistoryEntries: preserves the server order (newest first)', () => {
+  const rows = toHistoryEntries([entry({ seq: 5 }), entry({ seq: 4 }), entry({ seq: 3 })]);
+  assert.deepEqual(rows.map((r) => r.seq), [5, 4, 3]);
 });

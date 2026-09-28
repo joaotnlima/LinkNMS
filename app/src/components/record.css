@@ -87,6 +87,9 @@ a.rc-line:hover { background: var(--sunken); }
 .rc-event-seq { font-size: 12px; color: var(--muted); min-width: 44px; }
 .rc-event-main { display: flex; flex-direction: column; gap: 2px; }
 .rc-event-t { font-size: 14px; font-weight: 600; }
+/* the "Withheld" marker on a redacted (out-of-scope) ledger entry sits at the
+   trailing edge of the row (LINA-363). */
+.rc-event > .badge { margin-left: auto; align-self: center; }
 
 /* ---- D16 · budget movement ---- */
 .rc-money { display: flex; flex-direction: column; gap: var(--s4); }

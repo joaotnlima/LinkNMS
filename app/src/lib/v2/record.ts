@@ -20,8 +20,9 @@ import 'server-only';
 
 import { v2, V2Error } from './client';
 import {
-  toRecordHeader, toScheduleLines,
+  toRecordHeader, toScheduleLines, toHistoryEntries,
   type RecordHeaderV2, type V2Project, type V2Schedule,
+  type V2AuditEntry, type HistoryEntry,
 } from './record-view';
 import type { ScheduleLine } from '@/lib/record';
 
@@ -61,6 +62,25 @@ export async function getRecordV2(projectId: string): Promise<RecordV2 | null> {
     };
   } catch (err) {
     if (err instanceof V2Error) return null; // not mirrored / no access — no leak
+    throw err;
+  }
+}
+
+/** The History tab's data: one page of the audit ledger for a v2 project, as
+ *  the viewer is entitled to read it (out-of-scope entries redacted). Fetched
+ *  lazily — only when the History tab is open — so the record page does not pay
+ *  for the ledger read on every view. Fail-closed to an empty list: a viewer
+ *  who cannot see the build (not mirrored, no active org, not a participant)
+ *  gets no history rather than a crash or another party's ledger. */
+export async function getRecordHistoryV2(projectId: string): Promise<HistoryEntry[]> {
+  try {
+    const page = await v2<{ items: V2AuditEntry[]; next_cursor: string | null }>({
+      method: 'GET',
+      path: `/projects/${encodeURIComponent(projectId)}/record`,
+    });
+    return toHistoryEntries(page.items ?? []);
+  } catch (err) {
+    if (err instanceof V2Error) return []; // no access — empty history, no leak
     throw err;
   }
 }

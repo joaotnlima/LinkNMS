@@ -26,6 +26,8 @@ import { registerCollaboration } from '@modules/collaboration/http/register.mjs'
 import { createCollaborationStore } from '@modules/collaboration/infra/pg-store.mjs';
 import { registerBilling } from '@modules/billing/http/register.mjs';
 import { createBillingStore } from '@modules/billing/infra/pg-store.mjs';
+import { registerRecord } from '@modules/record/http/register.mjs';
+import { createRecordStore } from '@modules/record/infra/pg-store.mjs';
 
 let router: ReturnType<typeof createRouter> | null = null;
 let pool: Pool | null = null;
@@ -116,6 +118,12 @@ export function getRouter() {
   // question 17): subscriptions run in manual mode (provider_ref null) and
   // /billing/webhooks/{provider} answers 404 for every provider name.
   registerBilling(router, { store: createBillingStore(getPool()) });
+
+  // Record — the ledger projected: "who decided what, when" (listRecord).
+  // Read-only over the shared hash-chained record.audit_event; out-of-scope
+  // entries are redacted (V7) but keep their hashes so the chain still
+  // verifies. platform/ledger.mjs stays the sole WRITER.
+  registerRecord(router, { store: createRecordStore(getPool()) });
 
   // Module registrations land phase by phase (AGENT-INDEX §5): directory …
 

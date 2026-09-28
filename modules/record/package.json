@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/record",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 record module: the ledger projected — who decided what, when (listRecord). Reads the shared hash-chained record.audit_event with V7 out-of-scope redaction.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test application/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}

@@ -28,10 +28,10 @@ import Link from 'next/link';
 import { isSignedIn } from '@/lib/api';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContextV2 } from '@/lib/v2/shell';
-import { getRecordV2, type RecordV2 } from '@/lib/v2/record';
+import { getRecordV2, getRecordHistoryV2 } from '@/lib/v2/record';
 import { formatDate } from '@/lib/format';
 import { progressLabel } from '@/lib/record';
-import type { RecordHeaderV2 } from '@/lib/v2/record-view';
+import type { RecordHeaderV2, HistoryEntry } from '@/lib/v2/record-view';
 import type { ScheduleLine } from '@/lib/record';
 import '@/components/record.css';
 
@@ -66,6 +66,9 @@ export default async function RecordPage({
   const name = record?.name ?? 'This build';
   const shell = await buildShellContextV2(id, name);
 
+  // The ledger read is lazy — only the History tab pays for it.
+  const history = tab === 'history' ? await getRecordHistoryV2(id) : [];
+
   return (
     <PortalShell
       user={shell.user}
@@ -91,6 +94,8 @@ export default async function RecordPage({
 
         {tab === 'schedule' ? (
           <ScheduleTab lines={record?.schedule ?? []} />
+        ) : tab === 'history' ? (
+          <HistoryTab entries={history} />
         ) : (
           <PendingTab projectId={id} tab={tab} />
         )}
@@ -168,23 +173,65 @@ function ScheduleTab({ lines }: { lines: ScheduleLine[] }) {
 
 // ── Tabs pending the v2 record slice — honest, decision-neutral placeholders ──
 
-const PENDING_COPY: Record<Exclude<Tab, 'schedule'>, string> = {
+type PendingTab = Exclude<Tab, 'schedule' | 'history'>;
+
+const PENDING_COPY: Record<PendingTab, string> = {
   plan:
     'The line-by-line plan and the materials behind each price are being rebuilt on the v2 record. '
     + 'Until that slice lands, this build reports its plan through the Plan surface.',
   money:
     'Budget movement — scope changes and price movements — is being rebuilt on the v2 record. '
     + 'Until that slice lands, there is nothing recorded to move against on this build.',
-  history:
-    'The full who-changed-what ledger is being rebuilt on the v2 record. Until that slice lands, '
-    + 'this tab has no chain to show for a build created on v2.',
 };
 
-function PendingTab({ projectId, tab }: { projectId: string; tab: Exclude<Tab, 'schedule'> }) {
+function PendingTab({ projectId, tab }: { projectId: string; tab: PendingTab }) {
   return (
     <section className="rc-panel">
       <p className="notice">{PENDING_COPY[tab]}</p>
       <Link className="btn" href={`/projects/${projectId}/plan`}>Go to the plan</Link>
+    </section>
+  );
+}
+
+// ── Tab · History — the audit ledger, projected (who decided what, when) ──────
+// LINA-363: live on v2 via listRecord. Every change to this build, newest
+// first. Entries the viewer is not party to arrive redacted — the row still
+// shows the WHEN, WHO and the SHAPE of the change, but the detail is withheld,
+// because the ledger is one shared chain and the read must not leak another
+// party's business (V7).
+
+function HistoryTab({ entries }: { entries: HistoryEntry[] }) {
+  if (entries.length === 0) {
+    return (
+      <section className="rc-panel">
+        <p className="notice">Nothing recorded yet — this build has no history to show.</p>
+      </section>
+    );
+  }
+  return (
+    <section className="rc-panel" aria-labelledby="rc-hist-t">
+      <h2 className="rc-panel-t" id="rc-hist-t">Who decided what, when</h2>
+      <p className="cap">
+        Every recorded change to this build, newest first. Changes in a contract you are not
+        party to are listed but their detail is withheld.
+      </p>
+      <ol className="rc-events card">
+        {entries.map((e) => (
+          <li key={e.seq} className="rc-event">
+            <span className="rc-event-seq">{formatDate(e.occurredAt)}</span>
+            <span className="rc-event-main">
+              <span className="rc-event-t">{e.action}</span>
+              <span className="cap">
+                {e.actorRole ? `by ${e.actorRole.replace(/_/g, ' ')} · ` : ''}
+                {e.objectType.replace(/_/g, ' ')}
+              </span>
+            </span>
+            {e.redacted ? (
+              <span className="badge neutral" title="A change in a contract you are not party to.">Withheld</span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
