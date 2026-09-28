@@ -5,36 +5,42 @@
 // the "could not be loaded" crash (the QA blocker handed here from LINA-365);
 // this cut reads the v2 schedule instead.
 //
-// ── WHAT S3 SHIPS, AND WHAT IT HONESTLY DEFERS ────────────────────────────────
-// This increment is the READ half: the live WBS grid + Gantt, rendered read-only
-// on the same `PlanGrid` the authoring editor uses (`V2PlanGridReadOnly`), from
-// the tested `getPlanGrid` seam. Authoring on v2 (the write half) is the next
-// increment (a child of LINA-320): the write seams `applyPlanDraft` /
-// `applyPlanEdits` are already merged and unit-tested, but threading them into
-// the 915-line autosave editor needs a created-row rekey pass on the
-// audit-critical write path, so it ships on its own rather than riding this
-// crash-fix. Until then a build with no plan yet shows an honest "authoring
-// arrives next" panel rather than a v1 editor that would write to the wrong API.
+// ── WHAT S3 SHIPS ─────────────────────────────────────────────────────────────
+// The READ half (LINA-320, PR #219) cut the live WBS grid + Gantt onto the tested
+// `getPlanGrid` seam. This is the WRITE half (LINA-369): the same `PlanBuildEditor`
+// the v1 plan authored through, now autosaving through `/api/v2` via the
+// `savePlanV2` server action (incremental diff → `schedule:apply` + task PATCHes +
+// link create/delete, one `client_change_id` per save). A build with no plan lands
+// straight in the editor scaffold; an existing plan resumes into it; a BASELINED
+// plan stays read-only (a frozen baseline is not free-authoring — that routes
+// through change orders, ADR-0014). Assignment is not authored here (v2 inherits
+// from the branch, D-33), and status stays the honest all-grey meter until the
+// plan is signed (ADR-0019) — so the editor is mounted with no parties and no live
+// stage ids, both of which arrive with their own v2 slices.
 //
 // The v1 sign-off / phase-negotiation panels are NOT carried here: v2 has no
 // phases backend yet (that is S6, LINA-323, blocked on BE). Their absence is
-// deliberate, not a regression — a fresh B2 build has nothing to sign off.
+// deliberate, not a regression — a fresh B2 build has nothing to sign off, and
+// "send for approval" arrives with the v2 record.
 //
 // ── FAIL-CLOSED, FIRST-CLASS EMPTY STATES (doc 22 header + the S1 pattern) ─────
 // The v2 access model is org-centric: a signed-in Clerk user with no mirror row,
 // no active org, or who is not a participant on this build must NOT crash — those
 // are ordinary states of a fresh B2 install (LINA-310). `getPlanGrid` collapses
-// any authorization error to the EMPTY plan, and the shell fails closed to a
-// neutral identity, so the worst case here is "no plan yet", never a stack trace.
+// any authorization error to the EMPTY plan, and a WRITE the viewer cannot make
+// comes back as a sentence beside the plan (`savePlanV2` returns `{ ok: false }`),
+// never a stack trace.
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 
-import { isSignedIn } from '@/lib/api';
+import { isSignedIn, getPlanTemplate } from '@/lib/api';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContextV2 } from '@/lib/v2/shell';
 import { getPlanGrid } from '@/lib/v2/planning';
 import { planGridToDraft } from '@/lib/v2/planning-hydrate';
+import { savePlanV2 } from '@/lib/v2/plan-write';
 import { getRecordV2 } from '@/lib/v2/record';
+import type { TemplatePhase } from '@/lib/plan-authoring';
+import { PlanBuildEditor } from './build/PlanBuildEditor';
 import { V2PlanGridReadOnly } from './V2PlanGridReadOnly';
 import '@/components/plan-import.css';
 
@@ -60,6 +66,11 @@ export default async function PlanPage({
   // Anchor the Gantt's fallback window once, server-side, so the canvas is stable.
   const todayIso = new Date().toISOString().slice(0, 10);
 
+  // A BASELINED plan is frozen: edits route through change orders (ADR-0014), not
+  // free authoring, so it stays read-only. Everything else — no plan yet, or a
+  // plan still being shaped — is the author's to edit.
+  const authoring = !grid.isBaselined;
+
   return (
     <PortalShell
       user={shell.user}
@@ -67,32 +78,41 @@ export default async function PlanPage({
       activeBuild={{ id, name }}
       section="plan"
     >
-      <main className="pi">
-        {hasPlan ? (
+      {authoring ? (
+        <PlanBuildEditor
+          projectId={id}
+          // Resume an existing plan; scaffold from the author's default template
+          // for an empty build. `undefined` initialPhases is what makes the editor
+          // seed rather than resume.
+          initialPhases={hasPlan ? phases : undefined}
+          templateBody={hasPlan ? undefined : await resolveTemplate()}
+          // v2 authoring does not assign (v2 inherits from the branch, D-33) and
+          // keeps status read-only on a draft (ADR-0019) — so no parties, no live
+          // stage ids. Both arrive with their own v2 slices.
+          parties={[]}
+          saveV2={savePlanV2.bind(null, id)}
+        />
+      ) : (
+        <main className="pi">
           <V2PlanGridReadOnly phases={phases} todayIso={todayIso} />
-        ) : (
-          <EmptyPlan projectId={id} />
-        )}
-      </main>
+        </main>
+      )}
     </PortalShell>
   );
 }
 
 /**
- * A build with no plan on v2 yet. Honest about the state (nothing authored) and
- * about the moment (authoring on v2 is the next increment) — never a fake editor
- * that would write to the retired v1 API. The record link keeps the reader moving
- * rather than stranding them on a dead end.
+ * The author's default plan scaffold (names only), fail-closed. Same degradation
+ * as the v1 editor: an unreachable template still leaves a usable editor, seeded
+ * from the built-in skeleton. It is a user preference, not project data, so
+ * reading it over v1 while the plan reads over v2 is fine — it writes nothing.
  */
-function EmptyPlan({ projectId }: { projectId: string }) {
-  return (
-    <section className="pi-empty card" aria-labelledby="pi-empty-t">
-      <h1 className="pi-empty-t" id="pi-empty-t">No plan yet</h1>
-      <p className="cap">
-        Nothing has been added to this build&rsquo;s plan. Authoring the plan on the new record is
-        landing next — until then there is no plan to show here.
-      </p>
-      <Link className="btn" href={`/projects/${projectId}/record`}>Open the record</Link>
-    </section>
-  );
+async function resolveTemplate(): Promise<TemplatePhase[] | undefined> {
+  try {
+    const resolved = await getPlanTemplate();
+    return resolved.body?.length ? resolved.body : undefined;
+  } catch (err) {
+    console.warn('[plan] could not resolve the default plan template', err);
+    return undefined;
+  }
 }
