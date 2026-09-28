@@ -16,6 +16,7 @@
 // unit-testable without a session; this module is only the I/O and the
 // fail-closed handling.
 import 'server-only';
+import { randomUUID } from 'node:crypto';
 
 import { v2, V2Error } from './client';
 import {
@@ -23,6 +24,8 @@ import {
   type PlanGridView,
   type V2ScheduleView,
 } from './planning-view';
+import { authoredToCreateBatch } from './plan-apply';
+import type { AuthoredNode } from '@/lib/plan-authoring';
 
 /** The empty plan — a signed-in viewer with no readable schedule (no org / not a
  *  participant / nothing authored). Distinct object each call, never shared. */
@@ -48,6 +51,49 @@ export async function getPlanGrid(projectId: string): Promise<PlanGridView> {
     if (err instanceof V2Error) return emptyPlan(projectId); // no access / no plan — not a crash
     throw err;
   }
+}
+
+/** What the fresh-authoring write returns to the editor: the created row ids by
+ *  author-local key (the LINA-307 refresh) and the plan's row count. */
+export interface ApplyPlanResult {
+  /** author-local key → the stable v2 row id the server created for it. */
+  idByKey: Record<string, string>;
+  /** How many rows the batch created. */
+  createdCount: number;
+}
+
+/** The `schedule:apply` response we read back — only the fields we surface. */
+interface V2ApplyResponse {
+  applied: boolean;
+  created?: Array<{ id: string }>;
+}
+
+/**
+ * Author a FRESH plan on v2 — the empty-plan case, the only one where the editor
+ * owns the whole tree (see `plan-apply.ts`). Mints a row UUID per node and a
+ * single `client_change_id`, builds one `create_rows` batch, and commits it via
+ * `POST /api/v2/projects/{id}/schedule:apply` behind the shared client. The
+ * change id doubles as the `Idempotency-Key`, so a retried submit is a proven
+ * no-op, never a second plan.
+ *
+ * Unlike the READ path (`getPlanGrid`, which fail-closes to an empty plan on any
+ * authorization error), a WRITE rethrows: a viewer who cannot author must see the
+ * refusal, not a silent success. The caller (a server action) maps the thrown
+ * `V2Error` to the editor's field-level messaging.
+ */
+export async function applyPlanDraft(
+  projectId: string,
+  nodes: AuthoredNode[],
+): Promise<ApplyPlanResult> {
+  const clientChangeId = randomUUID();
+  const { request, idByKey } = authoredToCreateBatch(nodes, () => randomUUID(), clientChangeId);
+  const res = await v2<V2ApplyResponse>({
+    method: 'POST',
+    path: `/projects/${projectId}/schedule:apply`,
+    body: request,
+    idempotencyKey: clientChangeId,
+  });
+  return { idByKey, createdCount: res.created?.length ?? 0 };
 }
 
 export type { PlanGridView } from './planning-view';

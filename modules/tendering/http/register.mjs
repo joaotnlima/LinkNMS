@@ -8,6 +8,7 @@ import {
   askClarification, answerClarification, listProposalLanes, getProposal,
   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
   getComparison, shortlistProposal, awardRfp,
+  getRfpByToken, submitProposalByToken,
 } from '../application/use-cases.mjs';
 
 /**
@@ -16,6 +17,15 @@ import {
  *   (modules/contracting/application/award.mjs), run on the award transaction.
  */
 export function registerTendering(router, { store, contractingAward }) {
+  // Public personal link (gap S1) — security: [], no viewer. The token is the
+  // authority; the /api/v2 adapter lets these two through without a session
+  // (path[0] === 'rfp-links'), exactly as it does the Clerk webhook.
+  router.register('GET', '/rfp-links/{token}', 'getRfpByToken', ({ params }) =>
+    getRfpByToken({ store, token: params.token }));
+
+  router.register('POST', '/rfp-links/{token}/proposal', 'submitProposalByToken', ({ params, body }) =>
+    submitProposalByToken({ store, token: params.token, body }));
+
   router.register('POST', '/projects/{projectId}/rfps', 'createRfp', ({ viewer, params, body, headers }) =>
     createRfp({ viewer, store, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] }));
 
