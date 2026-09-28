@@ -131,3 +131,84 @@ export function toScheduleLines(tasks: V2ScheduleTask[]): ScheduleLine[] {
     percent: null,
   }));
 }
+
+// ── History tab — the audit ledger (LINA-359) ─────────────────────────────────
+// `GET /projects/{id}/record` returns the V7-projected ledger: in-scope entries
+// carry `type`/`actor`/`payload`; out-of-scope entries are `redacted:true` and
+// keep only `seq`/`occurred_at`/`category` + the hashes, so the chain still
+// verifies but no withheld content leaks. This transform shapes both into one
+// view row the History tab renders in order — a redacted row is a real row that
+// happened, shown as "a change you cannot see was recorded", never hidden.
+
+/** One entry of the `listRecord` page (OpenAPI `AuditEntry`). */
+export interface V2AuditEntry {
+  seq: number;
+  occurred_at: string;
+  category: string;
+  type?: string;
+  actor?: { person_id: string | null; org_id: string | null; org_role: string | null };
+  object_type?: string;
+  object_id?: string;
+  payload?: Record<string, unknown>;
+  redacted: boolean;
+  entry_hash: string;
+  prev_hash: string | null;
+}
+
+/** A History row for the record page — enough to render one line of the chain. */
+export interface RecordHistoryLineV2 {
+  seq: number;
+  occurredAt: string;
+  category: string;
+  redacted: boolean;
+  /** A human sentence for the row; a redacted row says only that it happened. */
+  sentence: string;
+  actorOrgId: string | null;
+  actorOrgRole: string | null;
+}
+
+/**
+ * A sentence for a dotted v2 ledger `type` (`module.aggregate.event`, doc 10).
+ * Unknown types fall back to a humanised form of the segments after the module
+ * rather than being hidden — the tab's promise is the whole chain in order.
+ */
+export function eventSentenceV2(type: string): string {
+  switch (type) {
+    case 'project.created': return 'The build was created';
+    case 'project.status_changed': return 'The build status changed';
+    case 'contracting.contract.signed': return 'A contract was signed';
+    case 'contracting.contract.activated': return 'A contract was activated';
+    case 'contracting.contract.terminated': return 'A contract was terminated';
+    case 'contracting.change_order.submitted': return 'A change order was submitted';
+    case 'contracting.change_order.approved': return 'A change order was approved';
+    case 'contracting.change_order.rejected': return 'A change order was rejected';
+    case 'contracting.measurement.approved': return 'A measurement was approved';
+    case 'contracting.payment.confirmed': return 'A payment was confirmed';
+    case 'planning.progress.reported': return 'Progress was reported';
+    case 'planning.baseline.taken': return 'A baseline was taken';
+    case 'planning.variation.recorded': return 'A variation was recorded';
+    case 'tendering.rfp.published': return 'An RFP was published';
+    case 'tendering.rfp.awarded': return 'An RFP was awarded';
+    case 'quality.verification.accepted': return 'A verification was accepted';
+    case 'documents.version.uploaded': return 'A document version was uploaded';
+    default: {
+      const tail = type.split('.').slice(1).join(' ').replace(/_/g, ' ');
+      return tail ? tail.charAt(0).toUpperCase() + tail.slice(1) : type;
+    }
+  }
+}
+
+/** Ledger entries (newest first, as the server returns them) → History rows. */
+export function toHistoryLines(entries: V2AuditEntry[]): RecordHistoryLineV2[] {
+  return entries.map((e) => ({
+    seq: e.seq,
+    occurredAt: e.occurred_at,
+    category: e.category,
+    redacted: e.redacted,
+    sentence: e.redacted
+      ? 'A change you do not have access to was recorded'
+      : eventSentenceV2(e.type ?? ''),
+    actorOrgId: e.redacted ? null : (e.actor?.org_id ?? null),
+    actorOrgRole: e.redacted ? null : (e.actor?.org_role ?? null),
+  }));
+}

@@ -11,17 +11,18 @@
 // where `useState` does not. That is unchanged from v1.
 //
 // ── WHAT S2 CUTS OVER, AND WHAT IT HONESTLY LEAVES FOR THE v2 RECORD SLICE ─────
-// The v1 page read ONE `getRecord` projection for all four tabs. On v2 only two
-// of the four have a backing read (verified against the live backend, doc 22 §3):
+// The v1 page read ONE `getRecord` projection for all four tabs. On v2 (doc 22
+// §3, verified against the live backend):
 //
 //   • Header / state + Schedule tab ← `getRecordV2` (getProject + getSchedule).
-//   • Plan (materials) + Money (movements) + History (audit ledger) ← nothing.
-//     The Slice-B3 materials/movements model was never ported to a v2 module, and
-//     `listRecord` (the ledger projection) is registered nowhere. Under B2 (fresh
-//     start) a fresh v2 project has no materials, no movements and an empty
-//     ledger, so those three tabs render an honest "arrives with the v2 record
-//     slice" panel rather than fake data. When that backend lands they light up
-//     with no change to this page's shape — see `lib/v2/record-view.ts`.
+//   • History tab (audit ledger)     ← `listRecord` — LIVE as of LINA-359. The
+//     V7-projected chain, newest first; out-of-scope entries render as redacted
+//     rows so the chain stays complete without leaking their content.
+//   • Plan (materials) + Money (movements) ← nothing yet. That Slice-B3 model is
+//     being re-conceived on the v2-native model (change orders / cost lines),
+//     tracked separately (LINA-362/363/364); under B2 a fresh build has neither,
+//     so those two tabs render an honest "arrives with the v2 record slice" panel
+//     rather than fake data. See `lib/v2/record-view.ts`.
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 
@@ -31,7 +32,7 @@ import { buildShellContextV2 } from '@/lib/v2/shell';
 import { getRecordV2, type RecordV2 } from '@/lib/v2/record';
 import { formatDate } from '@/lib/format';
 import { progressLabel } from '@/lib/record';
-import type { RecordHeaderV2 } from '@/lib/v2/record-view';
+import type { RecordHeaderV2, RecordHistoryLineV2 } from '@/lib/v2/record-view';
 import type { ScheduleLine } from '@/lib/record';
 import '@/components/record.css';
 
@@ -91,6 +92,8 @@ export default async function RecordPage({
 
         {tab === 'schedule' ? (
           <ScheduleTab lines={record?.schedule ?? []} />
+        ) : tab === 'history' ? (
+          <HistoryTab lines={record?.history ?? []} />
         ) : (
           <PendingTab projectId={id} tab={tab} />
         )}
@@ -166,21 +169,62 @@ function ScheduleTab({ lines }: { lines: ScheduleLine[] }) {
   );
 }
 
-// ── Tabs pending the v2 record slice — honest, decision-neutral placeholders ──
+// ── Tab · History — the audit ledger (LINA-359) ──────────────────────────────
+// The whole chain, newest first, V7-projected: an entry the viewer may read
+// carries its sentence and who acted; an out-of-scope entry is shown as a
+// redacted row — that a change happened is not itself a secret, its content is.
+// The row keeps its `seq` so the order is the chain's order, not a re-sort.
 
-const PENDING_COPY: Record<Exclude<Tab, 'schedule'>, string> = {
+function HistoryTab({ lines }: { lines: RecordHistoryLineV2[] }) {
+  if (lines.length === 0) {
+    return (
+      <section className="rc-panel">
+        <p className="notice">Nothing has been recorded against this build yet.</p>
+      </section>
+    );
+  }
+  return (
+    <section className="rc-panel" aria-labelledby="rc-hist-t">
+      <h2 className="rc-panel-t" id="rc-hist-t">Who changed what, and when</h2>
+      <p className="cap">
+        Every recorded change, newest first. Entries outside your access show that a change
+        happened without disclosing its content — the chain stays complete and verifiable.
+      </p>
+      <ol className="rc-hist">
+        {lines.map((e) => (
+          <li key={e.seq} className={`rc-hist-row ${e.redacted ? 'is-redacted' : ''}`.trim()}>
+            <span className="rc-hist-when cap">{formatDate(e.occurredAt)}</span>
+            <span className="rc-hist-what">
+              {e.sentence}
+              {e.redacted ? (
+                <span className="badge neutral">Not visible</span>
+              ) : e.actorOrgRole ? (
+                <span className="cap"> · by a {e.actorOrgRole}</span>
+              ) : null}
+            </span>
+            <span className="rc-hist-cat cap">{e.category}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+// ── Tabs pending the v2 record slice — honest, decision-neutral placeholders ──
+// Plan (materials) and Money (movements) are being re-conceived on the v2-native
+// model (change orders / cost lines), tracked separately (LINA-362/363/364); the
+// History tab above is live as of LINA-359.
+
+const PENDING_COPY: Record<'plan' | 'money', string> = {
   plan:
     'The line-by-line plan and the materials behind each price are being rebuilt on the v2 record. '
     + 'Until that slice lands, this build reports its plan through the Plan surface.',
   money:
     'Budget movement — scope changes and price movements — is being rebuilt on the v2 record. '
     + 'Until that slice lands, there is nothing recorded to move against on this build.',
-  history:
-    'The full who-changed-what ledger is being rebuilt on the v2 record. Until that slice lands, '
-    + 'this tab has no chain to show for a build created on v2.',
 };
 
-function PendingTab({ projectId, tab }: { projectId: string; tab: Exclude<Tab, 'schedule'> }) {
+function PendingTab({ projectId, tab }: { projectId: string; tab: 'plan' | 'money' }) {
   return (
     <section className="rc-panel">
       <p className="notice">{PENDING_COPY[tab]}</p>

@@ -196,3 +196,22 @@ a.rc-line:hover { background: var(--sunken); }
   .rc-head-r { align-items: flex-start; text-align: left; }
   .rc-budget-figs { gap: var(--s4); }
 }
+
+/* ---- the audit ledger (D14 tab 4 — History, LINA-359) ---- */
+.rc-hist { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.rc-hist-row {
+  display: grid; align-items: baseline; gap: var(--s3);
+  grid-template-columns: 132px minmax(0, 1fr) 128px;
+  padding: 12px var(--s4); border-bottom: 1px solid var(--outline);
+}
+.rc-hist-row:last-child { border-bottom: none; }
+.rc-hist-when { white-space: nowrap; }
+.rc-hist-what { font-size: 14px; display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
+.rc-hist-cat { text-align: right; white-space: nowrap; }
+/* A redacted row is real but withheld: muted, never hidden. */
+.rc-hist-row.is-redacted .rc-hist-what { color: var(--muted); font-style: italic; }
+
+@media (max-width: 720px) {
+  .rc-hist-row { grid-template-columns: 1fr auto; row-gap: 4px; }
+  .rc-hist-cat { text-align: left; }
+}
