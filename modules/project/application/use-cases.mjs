@@ -405,14 +405,14 @@ function seesWholeOrg(viewer) {
   return viewer.orgRole === 'admin' || viewer.orgRole === 'manager';
 }
 
-async function requireActor(store, viewer) {
+export async function requireActor(store, viewer) {
   const person = await store.getPersonByClerkId(viewer.clerkUserId);
   if (!person) throw new ProblemError('version_conflict', 'your identity mirror has not caught up yet — retry');
   return person;
 }
 
 /** relationship: project.participant (∧ staffing for non-managers). */
-async function requireParticipant({ viewer, store, projectId }) {
+export async function requireParticipant({ viewer, store, projectId }) {
   requireActiveOrg(viewer);
   const project = await store.getProject(projectId);
   if (!project) throw new ProblemError('not_found');
