@@ -187,7 +187,12 @@ export function PortalShell({
           )}
 
           {buildScoped ? (
-            <Link className="psh-create" href={`/projects/${bid}/change-orders/new`}>
+            // LINA-354: "Log a change" opens the v2 change-order surface, not the
+            // retired v1 free-cost propose form. Raising is deferred to S2 (the
+            // contract + BoQ surface, LINA-358 ruling 2); the list carries the
+            // honest "arrives with the contract surface" pending state, so this
+            // is the entry point rather than a dead v1 route.
+            <Link className="psh-create" href={`/projects/${bid}/change-orders`}>
               <PlusIcon />
               Log a change
             </Link>
