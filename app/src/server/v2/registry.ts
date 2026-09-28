@@ -26,6 +26,8 @@ import { registerCollaboration } from '@modules/collaboration/http/register.mjs'
 import { createCollaborationStore } from '@modules/collaboration/infra/pg-store.mjs';
 import { registerBilling } from '@modules/billing/http/register.mjs';
 import { createBillingStore } from '@modules/billing/infra/pg-store.mjs';
+import { registerRecord } from '@modules/record/http/register.mjs';
+import { createRecordStore } from '@modules/record/infra/pg-store.mjs';
 
 let router: ReturnType<typeof createRouter> | null = null;
 let pool: Pool | null = null;
@@ -116,6 +118,13 @@ export function getRouter() {
   // question 17): subscriptions run in manual mode (provider_ref null) and
   // /billing/webhooks/{provider} answers 404 for every provider name.
   registerBilling(router, { store: createBillingStore(getPool()) });
+
+  // Record — the audit ledger, read side (LINA-359). Writers live in every
+  // producing module (they ledger inside their own transaction, invariant
+  // §6.4); this only projects (V7-redacted) and verifies the hash chain.
+  // `record:export` (a Document artefact) is a separate slice, tracked, not
+  // registered here.
+  registerRecord(router, { store: createRecordStore(getPool()) });
 
   // Module registrations land phase by phase (AGENT-INDEX §5): directory …
 

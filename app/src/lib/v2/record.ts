@@ -20,8 +20,9 @@ import 'server-only';
 
 import { v2, V2Error } from './client';
 import {
-  toRecordHeader, toScheduleLines,
+  toRecordHeader, toScheduleLines, toHistoryLines,
   type RecordHeaderV2, type V2Project, type V2Schedule,
+  type V2AuditEntry, type RecordHistoryLineV2,
 } from './record-view';
 import type { ScheduleLine } from '@/lib/record';
 
@@ -31,7 +32,12 @@ export interface RecordV2 {
   name: string;
   header: RecordHeaderV2;
   schedule: ScheduleLine[];
+  /** The audit ledger, newest first, V7-redacted (LINA-359). */
+  history: RecordHistoryLineV2[];
 }
+
+/** The `listRecord` page shape (OpenAPI: Page + items[]). */
+interface RecordPageV2 { items: V2AuditEntry[]; next_cursor: string | null }
 
 /**
  * GET /api/v2/projects/{id} + /schedule → the record surface for a v2 project,
@@ -42,7 +48,7 @@ export interface RecordV2 {
  */
 export async function getRecordV2(projectId: string): Promise<RecordV2 | null> {
   try {
-    const [project, schedule] = await Promise.all([
+    const [project, schedule, ledger] = await Promise.all([
       v2<V2Project>({ method: 'GET', path: `/projects/${encodeURIComponent(projectId)}` }),
       // The schedule read can legitimately deny (a participant who is not yet on
       // the plan) while the project read succeeds — treat that as an empty plan,
@@ -52,12 +58,21 @@ export async function getRecordV2(projectId: string): Promise<RecordV2 | null> {
           if (err instanceof V2Error) return { project_id: projectId, tasks: [] } as V2Schedule;
           throw err;
         }),
+      // The ledger read (LINA-359): the first page, newest first. A denial here
+      // is an empty history, not a failure of the whole surface — same rule as
+      // the schedule read above.
+      v2<RecordPageV2>({ method: 'GET', path: `/projects/${encodeURIComponent(projectId)}/record` })
+        .catch((err) => {
+          if (err instanceof V2Error) return { items: [], next_cursor: null } as RecordPageV2;
+          throw err;
+        }),
     ]);
     return {
       projectId,
       name: project.name,
       header: toRecordHeader(project, schedule.tasks),
       schedule: toScheduleLines(schedule.tasks),
+      history: toHistoryLines(ledger.items),
     };
   } catch (err) {
     if (err instanceof V2Error) return null; // not mirrored / no access — no leak
