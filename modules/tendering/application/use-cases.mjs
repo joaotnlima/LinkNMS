@@ -22,6 +22,8 @@
 // The store owns transactions AND writes ledger + outbox inside them
 // (invariants §6.3/§6.4); a use case never half-commits. Proposal-scoped
 // entries carry scope rfp_private (V7/V8).
+import { randomUUID } from 'node:crypto';
+
 import { ProblemError } from '../../../platform/errors.mjs';
 import { visibilityOf, contractBody } from '../../contracting/domain/lifecycle.mjs';
 import { rfpTransition, proposalTransition } from '../domain/lifecycle.mjs';
@@ -29,6 +31,10 @@ import {
   rfpBody, packageBody, recipientBody, clarificationBody, laneBody, proposalBody, rfpLinkView,
 } from '../domain/wire.mjs';
 import { comparisonMatrix, missingLineCount } from '../domain/comparison.mjs';
+import {
+  validateAttachmentFile, attachmentStorageKey, uploadTicketBody, attachmentBody,
+  MAX_ATTACHMENTS_PER_PROPOSAL,
+} from '../domain/attachment.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -185,8 +191,19 @@ export async function submitProposalByToken({ store, token, body }) {
   if (!Number.isInteger(body?.duration_wd) || body.duration_wd <= 0) {
     errors.duration_wd = 'working days > 0';
   }
+  // document_ids are the bidder's own uploaded attachments (LINA-370). Each
+  // must be a `stored` proposal_document of THIS proposal — a well-formed UUID
+  // that names someone else's file, or a ticket never completed, is refused
+  // here so a submit cannot smuggle a reference the download side would reject.
   const docs = body?.document_ids ?? [];
-  if (!Array.isArray(docs) || docs.some((d) => !UUID.test(d ?? ''))) errors.document_ids = 'document ids';
+  if (!Array.isArray(docs) || docs.some((d) => !UUID.test(d ?? ''))) {
+    errors.document_ids = 'document ids';
+  } else if (docs.length) {
+    const stored = await store.storedProposalDocumentIds(proposal.id);
+    if (docs.some((d) => !stored.has(d))) {
+      errors.document_ids = 'each id must be a completed upload on this proposal';
+    }
+  }
   if (body?.validity_until !== undefined && body?.validity_until !== null
       && !DATE_ONLY.test(body.validity_until)) errors.validity_until = 'YYYY-MM-DD';
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
@@ -220,6 +237,114 @@ async function loadOwnProposalEcho(store, proposalId) {
   if (!row || row.status === 'invited') return null;
   const doc = await store.proposalDoc(proposalId);
   return { row, doc };
+}
+
+/**
+ * The token → live proposal guard the public upload steps share with the
+ * submit: the token must resolve, its proposal must still be open to a bid
+ * (`invited`/`draft`), and the RFP must still be `published`. A spent or closed
+ * link cannot grow new attachments — same refusal vocabulary as the submit,
+ * same uniform not_found for an unknown token (no existence oracle).
+ */
+async function resolveLiveTokenProposal(store, token) {
+  const rec = await store.findRecipientByToken(token ?? '');
+  if (!rec) throw new ProblemError('not_found', 'this link is not valid');
+  const proposal = await store.getProposal(rec.proposal_id);
+  if (!proposal || !['invited', 'draft'].includes(proposal.status)) {
+    throw new ProblemError('invalid_transition', 'a proposal has already been sent for this link');
+  }
+  if (rec.rfp_status !== 'published') {
+    throw new ProblemError('invalid_transition', 'this RFP is no longer accepting proposals');
+  }
+  return { rec, proposal };
+}
+
+/**
+ * operationId: reserveProposalDocumentByToken —
+ * POST /rfp-links/{token}/documents, security: [].
+ *
+ * The tokened bidder's portfolio-image upload (LINA-370): reserve a `pending`
+ * attachment row and answer a presigned PUT whose signature pins the declared
+ * sha256, so R2 itself refuses any bytes but the ones declared. The client PUTs
+ * the file, then calls :complete. Nothing is referable until it is `stored`.
+ */
+export async function reserveProposalDocumentByToken({ store, storage, token, body }) {
+  const { proposal } = await resolveLiveTokenProposal(store, token);
+
+  const errors = validateAttachmentFile(body?.file);
+  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+
+  // Bound how many tickets one link may open — a hard cap on the anonymous
+  // surface, checked before the reserve (a tiny race past the cap is harmless).
+  if (await store.proposalDocumentCount(proposal.id) >= MAX_ATTACHMENTS_PER_PROPOSAL) {
+    throw new ProblemError('validation_failed', null,
+      { errors: { file: `at most ${MAX_ATTACHMENTS_PER_PROPOSAL} files per proposal` } });
+  }
+
+  const id = randomUUID();
+  const key = attachmentStorageKey({ proposalId: proposal.id, documentId: id, fileName: body.file.name });
+  const document = await store.createProposalDocument({
+    id, proposalId: proposal.id, storageKey: key, file: body.file,
+  });
+  const { url, expiresAt } = await storage.signUpload({
+    key, mime: document.mime, sha256Hex: document.sha256,
+  });
+  return { status: 201, body: uploadTicketBody({ document, url, expiresAt }) };
+}
+
+/**
+ * operationId: completeProposalDocumentByToken —
+ * POST /rfp-links/{token}/documents/{documentId}:complete, security: [].
+ *
+ * Prove the bytes arrived: HEAD the object, check the stored size against the
+ * declared one (sha256 was already pinned into the PUT), then flip the row to
+ * `stored`. Only then may the submit reference it. The attachment must belong
+ * to THIS token's proposal — a document id from another lane answers not_found.
+ */
+export async function completeProposalDocumentByToken({ store, storage, token, documentId }) {
+  const { proposal } = await resolveLiveTokenProposal(store, token);
+  if (!UUID.test(documentId ?? '')) throw new ProblemError('not_found');
+  const doc = await store.getProposalDocument(documentId);
+  if (!doc || doc.proposal_id !== proposal.id) throw new ProblemError('not_found');
+
+  if (doc.status !== 'stored') {
+    const head = await storage.head({ key: doc.storage_key });
+    if (!head) {
+      throw new ProblemError('validation_failed',
+        'the file has not arrived in storage yet — PUT it to the ticket URL first',
+        { errors: { upload: 'object not found in storage' } });
+    }
+    if (head.sizeBytes !== Number(doc.size_bytes)) {
+      throw new ProblemError('validation_failed', null,
+        { errors: { 'file.size_bytes': `declared ${doc.size_bytes}, stored ${head.sizeBytes}` } });
+    }
+  }
+  const stored = await store.completeProposalDocument(documentId);
+  return { status: 200, body: attachmentBody(stored) };
+}
+
+/**
+ * operationId: downloadProposalDocument —
+ * GET /proposals/{proposalId}/documents/{documentId}:download.
+ *
+ * The authed read side (no token — the viewer is a session): the issuer of the
+ * RFP and the bidder org of the proposal may fetch a bidder's attachment; a
+ * 302 to a short-lived presigned GET, exactly as the Documents module does.
+ * Existence hiding: a non-party, or an id under a different proposal, is 404.
+ */
+export async function downloadProposalDocument({ viewer, store, storage, proposalId, documentId }) {
+  requireActiveOrg(viewer);
+  if (!UUID.test(documentId ?? '')) throw new ProblemError('not_found');
+  const doc = await store.proposalDocumentForDownload(documentId);
+  if (!doc || doc.proposal_id !== proposalId || doc.status !== 'stored') {
+    throw new ProblemError('not_found');
+  }
+  const isParty = doc.issuer_org_id === viewer.orgId
+    || (doc.bidder_org_id != null && doc.bidder_org_id === viewer.orgId);
+  if (!isParty) throw new ProblemError('not_found');
+
+  const { url } = await storage.signDownload({ key: doc.storage_key, fileName: doc.file_name });
+  return { status: 302, body: null, headers: { location: url, 'cache-control': 'no-store' } };
 }
 
 /** operationId: updateRfp — draft only, If-Match on version. */

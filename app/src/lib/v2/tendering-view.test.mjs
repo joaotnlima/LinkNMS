@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import {
   formatMoney, rfpStatusBadge, proposalStatusBadge, recipientStatusBadge,
   parseRecipients, createBlockedReason, publishBlockedReason,
-  orderLanes, isLive, awardBlockedReason, packageSpecialties,
+  orderLanes, isLive, awardBlockedReason, packageSpecialties, eurosToCents,
 } from './tendering-view.ts';
 
 // ── money ─────────────────────────────────────────────────────────────────
@@ -140,4 +140,30 @@ test('awardBlockedReason: needs a live winner with an org, and a closeable RFP',
 test('packageSpecialties: dedupes; empty is a real state', () => {
   assert.deepEqual(packageSpecialties({ specialties: ['roofing', 'roofing', 'electrical'] }), ['roofing', 'electrical']);
   assert.deepEqual(packageSpecialties({ specialties: [] }), []);
+});
+
+// ── recorded-offline money entry ────────────────────────────────────────────
+test('eurosToCents: plain integers are whole euros', () => {
+  assert.equal(eurosToCents('180000'), 18000000);
+  assert.equal(eurosToCents('0'), 0);
+  assert.equal(eurosToCents(' 1500 '), 150000);
+});
+
+test('eurosToCents: a two-digit tail is cents', () => {
+  assert.equal(eurosToCents('1500.50'), 150050);
+  assert.equal(eurosToCents('180.000,50'), 18000050); // grouped whole + comma cents
+  assert.equal(eurosToCents('1500,05'), 150005);
+});
+
+test('eurosToCents: separators with a non-2-digit tail are thousands grouping', () => {
+  assert.equal(eurosToCents('1,500'), 150000);   // 1500 euros, not 1.5
+  assert.equal(eurosToCents('180.000'), 18000000);
+  assert.equal(eurosToCents('1,234,567'), 123456700);
+});
+
+test('eurosToCents: empty / non-numeric / negative → null', () => {
+  assert.equal(eurosToCents(''), null);
+  assert.equal(eurosToCents('   '), null);
+  assert.equal(eurosToCents('abc'), null);
+  assert.equal(eurosToCents('-5'), 500); // the sign is stripped; the caller gates on ≥0 server-side
 });

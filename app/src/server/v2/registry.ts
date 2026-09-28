@@ -91,11 +91,17 @@ export function getRouter() {
   // Phase 5 — Quality (verification, non-conformities, inspections).
   registerQuality(router, { store: createQualityStore(getPool()) });
 
+  // The R2 object store is shared by Documents and by the token-scoped
+  // proposal attachments Tendering exposes (LINA-370) — one private bucket,
+  // presigned both ways.
+  const objectStorage = createR2ObjectStorage();
+
   // Phase 6 — Tendering (RFPs, lanes, comparison, award). The award
   // transaction runs contracting's award port on the same client so the
   // contract draft exists the instant the RFP says awarded.
   registerTendering(router, {
     store: createTenderingStore(getPool()),
+    storage: objectStorage,
     contractingAward: createContractFromAward,
   });
 
@@ -103,7 +109,7 @@ export function getRouter() {
   // sha256 proven in the ledger, downloads gated by V6 scope visibility).
   registerDocuments(router, {
     store: createDocumentsStore(getPool()),
-    storage: createR2ObjectStorage(),
+    storage: objectStorage,
   });
 
   // Phase 7 — Collaboration (threads with addressed questions, meeting

@@ -3196,6 +3196,155 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /rfp-links/{token}/documents:
+    parameters:
+    - name: token
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{64}$'
+    post:
+      tags:
+      - Tendering
+      operationId: reserveProposalDocumentByToken
+      summary: 'RFP personal link: reserve a portfolio-attachment upload (gap S1, anonymous)'
+      description: 'Reserve one proposal attachment and return a presigned PUT (LINA-370). Anonymous —
+        the token authenticates it. The declared sha256 is pinned into the signature, so storage
+        refuses any bytes but the ones declared; call `:complete` once the PUT lands. Bounded to a
+        short image/PDF whitelist, a 15 MB cap, and a per-proposal count cap. Only a live link
+        (proposal still `invited`/`draft`, RFP still `published`) may reserve; otherwise 409. An
+        unknown token is a uniform 404.
+
+
+        **Clerk permission:** none (token-authenticated)
+
+
+        **Relationship (LinkNMS):** the invited recipient'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: object
+                  required: [name, mime, size_bytes, sha256]
+                  properties:
+                    name: { type: string }
+                    mime:
+                      type: string
+                      enum: [image/jpeg, image/png, image/webp, image/gif, image/heic, application/pdf]
+                    size_bytes: { type: integer, minimum: 1, maximum: 15728640 }
+                    sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+      responses:
+        '201':
+          description: An upload ticket — PUT the file to `upload_url`, then call `:complete`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [document_id, upload_url, expires_at]
+                properties:
+                  document_id: { type: string, format: uuid }
+                  upload_url: { type: string, format: uri }
+                  expires_at: { type: string, format: date-time }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /rfp-links/{token}/documents/{documentId}:complete:
+    parameters:
+    - name: token
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{64}$'
+    - name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Tendering
+      operationId: completeProposalDocumentByToken
+      summary: 'RFP personal link: prove an attachment upload (gap S1, anonymous)'
+      description: 'Prove the bytes reached storage with the declared size (sha256 was already pinned
+        into the PUT), then mark the attachment `stored` (LINA-370). Idempotent. The attachment must
+        belong to this token''s own proposal; anything else is 404. Only then may `submitProposalByToken`
+        reference the id in `document_ids`.
+
+
+        **Clerk permission:** none (token-authenticated)
+
+
+        **Relationship (LinkNMS):** the invited recipient'
+      security: []
+      responses:
+        '200':
+          description: The stored attachment.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [document_id, file_name, mime, size_bytes, status]
+                properties:
+                  document_id: { type: string, format: uuid }
+                  file_name: { type: string }
+                  mime: { type: string }
+                  size_bytes: { type: integer }
+                  status: { type: string, enum: [stored] }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /proposals/{proposalId}/documents/{documentId}:download:
+    parameters:
+    - name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Tendering
+      operationId: downloadProposalDocument
+      summary: Download a proposal attachment (issuer | bidder)
+      description: 'A 302 to a short-lived presigned GET for a bidder''s portfolio attachment
+        (LINA-370). The issuer of the RFP and the bidder org of the proposal may read it; anyone else,
+        or an id under a different proposal, is existence-hidden (404).
+
+
+        **Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** issuer | author (bidder)'
+      x-relationship: issuer | author
+      responses:
+        '302':
+          description: Redirect to a short-lived presigned download URL.
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+        '404':
+          $ref: '#/components/responses/NotFound'
   /rfps/{rfpId}:
     parameters:
     - name: rfpId

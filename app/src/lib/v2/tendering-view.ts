@@ -364,3 +364,25 @@ export function awardBlockedReason(
 export function packageSpecialties(rfp: Pick<V2Rfp, 'specialties'>): string[] {
   return [...new Set(rfp.specialties ?? [])];
 }
+
+// ── Recorded-offline money entry ─────────────────────────────────────────────
+
+/**
+ * Euros as a person types them → integer cents (what `:record-offline` wants), or
+ * null when the field is empty/unparseable so the form can keep the button off.
+ *
+ * The last separator is a decimal point ONLY when exactly two digits trail it;
+ * otherwise every separator is thousands grouping — so "1,500" is 1500, not 1.5,
+ * and "180.000,50" is 18_000_050 cents. A bid is quoted in round money, so the
+ * common case ("180000") needs no separators at all.
+ */
+export function eurosToCents(input: string): number | null {
+  const normalized = input.trim().replace(/[^\d.,]/g, '');
+  if (!normalized) return null;
+  const lastSep = Math.max(normalized.lastIndexOf('.'), normalized.lastIndexOf(','));
+  const isDecimal = lastSep >= 0 && normalized.length - lastSep - 1 === 2;
+  const euros = Number((isDecimal ? normalized.slice(0, lastSep) : normalized).replace(/[.,]/g, '') || '0');
+  const cents = isDecimal ? Number(normalized.slice(lastSep + 1)) : 0;
+  if (!Number.isFinite(euros) || euros < 0 || !Number.isFinite(cents)) return null;
+  return euros * 100 + cents;
+}

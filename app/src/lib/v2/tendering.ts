@@ -30,6 +30,7 @@ import type { V2Me } from './profile-view';
 import type {
   V2Rfp, V2Recipient, V2ProposalLane, V2Comparison, RfpDraftInput, RfpVisibility,
 } from './tendering-view';
+import type { V2UploadTicket } from './task-workspace-view';
 
 // ── Reads: the composer's own RFPs ───────────────────────────────────────────
 
@@ -97,16 +98,23 @@ export interface Inbox {
 }
 
 export async function getInbox(rfp: Pick<V2Rfp, 'id' | 'root_task_ids'>): Promise<Inbox> {
+  // The lane list is ALWAYS the per-task read, for every viewer: it carries the
+  // full set of proposals — including the `invited` lanes a bid has not yet
+  // landed on — which `/comparison` omits (it filters to submitted+). The inbox
+  // needs those invited lanes to offer "record an emailed bid" against them, and
+  // for a money-viewer the per-task read still carries `total` (LINA-372). The
+  // comparison call is then only the money-gated per-line matrix.
+  const lanes = await gatherLanes(rfp.root_task_ids);
   try {
     const cmp = await v2<V2Comparison>({
       method: 'GET', path: `/rfps/${encodeURIComponent(rfp.id)}/comparison`,
     });
-    return { lanes: cmp.proposals ?? [], comparison: cmp, seesMoney: true };
+    return { lanes, comparison: cmp, seesMoney: true };
   } catch (err) {
-    // 403 = money gate (or not the issuer). Fall back to the price-free lanes;
-    // any other V2Error is fail-closed to an empty inbox.
+    // 403 = money gate (or not the issuer). Keep the price-free lanes; any other
+    // V2Error is fail-closed to an empty inbox.
     if (err instanceof V2Error && err.status === 403) {
-      return { lanes: await gatherLanes(rfp.root_task_ids), comparison: null, seesMoney: false };
+      return { lanes, comparison: null, seesMoney: false };
     }
     if (err instanceof V2Error) return { lanes: [], comparison: null, seesMoney: false };
     throw err;
@@ -275,5 +283,70 @@ export async function recordOfflineProposal(proposalId: string, offline: Offline
       ...(offline.conditions ? { conditions: offline.conditions } : {}),
       ...(offline.validityUntil ? { validity_until: offline.validityUntil } : {}),
     },
+  });
+}
+
+// ── Writes: recorded-offline proposal documents (R2, doc scope `proposal`) ─────
+// The emailed bid a `:record-offline` references carries the bidder's PDFs. They
+// are real documents in the documents module (SCOPE_TYPES includes `proposal`;
+// `canEditScope` grants the RFP issuer write on a proposal it owns), reserved and
+// completed through the SAME reserve → browser-PUT → complete protocol the task
+// workspace uses (`task-workspace.ts`), scoped to the proposal instead of a task.
+// Reserve and complete run server-side (they call `/api/v2`); the browser only
+// does the presigned PUT (`upload-client.ts`). The document `id` is minted here
+// so the caller holds it before the bytes land — it is what `:record-offline`
+// then lists in `document_ids`.
+
+/** A reserved proposal-document upload: its id, the version to complete, the PUT. */
+export interface ProposalUploadTicket {
+  documentId: string;
+  versionRef: string;
+  uploadUrl: string;
+  expiresAt: string;
+}
+
+/**
+ * Step 1: reserve a `proposal`-scoped document (its first version) and get a
+ * presigned PUT ticket. The declared sha256 is pinned into the signature, so the
+ * browser cannot upload bytes other than the ones it declared. The minted `id`
+ * doubles as the idempotency key AND is the document id `:record-offline` will
+ * reference.
+ */
+export async function reserveProposalDocument(
+  proposalId: string,
+  file: { name: string; mime: string; sizeBytes: number; sha256: string },
+): Promise<ProposalUploadTicket> {
+  const id = randomUUID();
+  const ticket = await v2<V2UploadTicket>({
+    method: 'POST',
+    path: '/documents',
+    idempotencyKey: id,
+    body: {
+      id,
+      scope_type: 'proposal',
+      scope_id: proposalId,
+      kind: 'other',
+      title: file.name,
+      file: {
+        name: file.name,
+        mime: file.mime,
+        size_bytes: file.sizeBytes,
+        sha256: file.sha256.toLowerCase(),
+      },
+    },
+  });
+  return {
+    documentId: id,
+    versionRef: ticket.document_version_id,
+    uploadUrl: ticket.upload_url,
+    expiresAt: ticket.expires_at,
+  };
+}
+
+/** Step 3 (step 2 is the browser PUT): prove the bytes landed and finalise it. */
+export async function completeProposalDocument(versionRef: string): Promise<void> {
+  await v2<unknown>({
+    method: 'POST',
+    path: `/document-versions/${encodeURIComponent(versionRef)}:complete`,
   });
 }

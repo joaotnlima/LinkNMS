@@ -255,3 +255,28 @@ pre-computed there. The storage is not: bids live in Tendering, because as real 
 corrupt roll-ups (the sum of competing prices), leak prices to other participants, and litter the
 ledger. Answers come on the platform (the bidder's own plan) or by email (PDFs recorded by the issuer).
 On signature the winner's plan is copied into the project and baselined.
+
+## Session 2026-09-28 — token-scoped proposal attachments (LINA-370)
+
+### D-37 — A tokened bidder's portfolio uploads live in Tendering, not Documents
+The public RFP form (gap S1) keeps `proposal.document_ids` for a bidder's supporting files, but an
+anonymous bidder holds only a token — no Clerk person, no org, no V6 relationship. The Documents
+module is built on exactly those: both uploader columns are `NOT NULL` and every write is a V6
+`canEditScope` check. Two ways to let a stranger upload were weighed:
+
+- **Reuse Documents** — relax the uploader columns to nullable and add an anonymous, token-authorized
+  entry that bypasses V6. Rejected: it weakens an invariant the whole module (ledger `uploaded_by`,
+  wire, existence-hiding) leans on, and punches an anonymous hole into a surface whose one rule is
+  "authorization is V6".
+- **Keep it in Tendering** (chosen) — the anonymous surface already lives here (the `rfp-links` token
+  bypass). Attachments get a small owned table, `tendering.proposal_document`, on the **same private R2
+  bucket** Documents uses (the object-store port is shared, presigned both ways). The token authorizes
+  the write; the issuer/bidder relationship authorizes the read.
+
+Protocol mirrors Documents: reserve a row + a presigned PUT whose signature pins the declared sha256
+(storage refuses other bytes) → the client PUTs → `:complete` proves the object is present at the
+declared size and flips the row to `stored`. The anonymous surface is bounded — an image/PDF mime
+whitelist, a 15 MB cap, and a per-proposal count cap — and `submitProposalByToken` accepts only
+`stored` ids of that same proposal, so a bid cannot smuggle a reference the download side would reject.
+The authed read (`GET /proposals/{id}/documents/{id}:download`) is a 302 to a short-lived presigned GET
+for the issuer or the bidder org, existence-hidden to everyone else. Migration `db/v2/0008`.
