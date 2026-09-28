@@ -52,18 +52,19 @@ export interface SignOffPanelProps {
 }
 
 /**
- * The one place the sign-off URL shape lives (LINA-290).
+ * The one place the sign-off URL shape lives (LINA-290, repointed to v2 in
+ * LINA-323).
  *
- * LINA-282 built this panel ahead of the API against flat guesses
- * (`/api/v1/phases/:phaseId/sign-off`, `/api/v1/sign-off/:requestId/approve`).
- * LINA-278 shipped every route nested under the project instead, so all three
- * guesses returned 404 — which the guard above correctly surfaced as "nothing
- * was recorded", but only after the user had asked for a commitment. Verified
- * against the as-built route files under
- * `app/src/app/api/v1/projects/[id]/phases/[phaseId]/sign-off/`.
+ * The routes are project-nested and identical in shape between v1 and v2; the
+ * cutover (S6) only moved the base path from `/api/v1` to `/api/v2`. The v2
+ * router (`app/src/app/api/v2/[[...path]]`) dispatches these straight to the
+ * project module's `requestSignOff`/`approveSignOff`/`rejectSignOff` (ADR-0024),
+ * resolving the viewer from the forwarded Clerk session — the same authority the
+ * server-side read (`getPhasesV2`) uses. Verified against the registered routes
+ * in `modules/project/http/register.mjs`.
  */
 function signOffPath(projectId: string, phaseId: string, suffix = '') {
-  return `/api/v1/projects/${projectId}/phases/${phaseId}/sign-off${suffix}`;
+  return `/api/v2/projects/${projectId}/phases/${phaseId}/sign-off${suffix}`;
 }
 
 export function SignOffPanel({
@@ -89,8 +90,15 @@ export function SignOffPanel({
         body: JSON.stringify(body ?? {}),
       });
       if (!res.ok) {
+        // The v2 surface speaks problem+json (RFC 9457, platform/errors.mjs):
+        // `{ type, title, status, code, detail }`. Prefer `detail` (the specific
+        // sentence) then `title`, falling back to the "nothing was recorded"
+        // guard so a 404 still reads as a non-event, never a phantom success.
         const j = await res.json().catch(() => ({}));
-        setError(j?.error?.message ?? `Nothing was recorded (${res.status}). The plan is unchanged.`);
+        setError(
+          j?.detail ?? j?.title
+          ?? `Nothing was recorded (${res.status}). The plan is unchanged.`,
+        );
         setBusy(null);
         return false;
       }
