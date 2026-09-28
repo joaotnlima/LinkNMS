@@ -22,7 +22,8 @@ import {
   getMyRfps, getRfp, listRecipients, getInbox,
   createRfp, updateRfp, addRecipients, publishRfp, closeRfp, cancelRfp,
   shortlistProposal, awardRfp, recordOfflineProposal,
-  type Inbox, type RfpPatch, type OfflineProposalInput,
+  reserveProposalDocument, completeProposalDocument,
+  type Inbox, type RfpPatch, type OfflineProposalInput, type ProposalUploadTicket,
 } from '@/lib/v2/tendering';
 import type { V2Rfp, V2Recipient, RfpDraftInput } from '@/lib/v2/tendering-view';
 
@@ -106,4 +107,20 @@ export async function awardAction(rfpId: string, proposalId: string): Promise<Re
 
 export async function recordOfflineAction(proposalId: string, offline: OfflineProposalInput): Promise<Result<null>> {
   return guard('That offline bid did not record. Try again.', async () => { await recordOfflineProposal(proposalId, offline); return null; });
+}
+
+// ── Recorded-offline document uploads (reserve/complete; the PUT is browser-side) ─
+
+export async function reserveProposalDocumentAction(
+  proposalId: string,
+  file: { name: string; mime: string; sizeBytes: number; sha256: string },
+): Promise<Result<ProposalUploadTicket>> {
+  return guard('Could not start that upload. Try again.', () => reserveProposalDocument(proposalId, file));
+}
+
+export async function completeProposalDocumentAction(versionRef: string): Promise<Result<null>> {
+  return guard('That file did not finish uploading. Try again.', async () => {
+    await completeProposalDocument(versionRef);
+    return null;
+  });
 }

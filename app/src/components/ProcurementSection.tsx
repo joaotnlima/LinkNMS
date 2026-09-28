@@ -33,18 +33,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   loadMyRfpsAction, loadComposerAction, loadInboxAction,
-  createRfpAction, addRecipientsAction, publishRfpAction,
-  closeRfpAction, shortlistAction, awardAction,
+  createRfpAction, updateRfpAction, addRecipientsAction, publishRfpAction,
+  closeRfpAction, shortlistAction, awardAction, recordOfflineAction,
+  reserveProposalDocumentAction, completeProposalDocumentAction,
   type ComposerData,
 } from './procurement-actions';
 import {
   formatMoney, rfpStatusBadge, proposalStatusBadge, recipientStatusBadge,
   parseRecipients, createBlockedReason, publishBlockedReason,
-  orderLanes, isLive, awardBlockedReason, packageSpecialties,
+  orderLanes, isLive, awardBlockedReason, packageSpecialties, eurosToCents,
   type V2Rfp, type V2Recipient, type V2ProposalLane, type V2Comparison,
   type RfpVisibility, type RfpDraftInput,
 } from '@/lib/v2/tendering-view';
 import type { Inbox } from '@/lib/v2/tendering';
+import { digestSha256, putToTicket } from '@/lib/v2/upload-client';
 import './procurement.css';
 
 /** A plan task the composer can tender over — supplied by the mounting surface. */
@@ -445,10 +447,10 @@ function Composer({
     <section className="prc-composer" aria-label="Request for proposals">
       <p className="prc-quiet">
         Private until you publish it. No contractor can see this — the personal links do not exist
-        yet. Title, scope and deadlines are set when the draft is created; publish sends it.
+        yet. Edit the details until you are ready; publishing sends it.
       </p>
 
-      {rfp.scope_text ? <p className="prc-comment">{rfp.scope_text}</p> : null}
+      <DraftDetails rfp={rfp} onError={onError} onRfpChanged={onRfpChanged} />
 
       {/* ── Recipients ──────────────────────────────────────────────────── */}
       <div className="prc-field">
@@ -534,6 +536,163 @@ function Composer({
   );
 }
 
+// ── Draft details: read view + inline editor (updateRfp) ─────────────────────
+// Title, scope, deadlines and visibility are set at creation, but a draft is not
+// yet a promise to anyone — so they stay editable until publish (LINA-372). The
+// tendered TASKS are not editable here: the package is snapshotted from
+// `root_task_ids` at creation, so changing what is tendered is a new RFP, not a
+// patch. Optimistic concurrency rides on `rfp.version` (If-Match); a stale
+// version surfaces the server's refusal and a re-read is one tap away.
+
+function DraftDetails({
+  rfp, onError, onRfpChanged,
+}: {
+  rfp: V2Rfp;
+  onError: (msg: string | null) => void;
+  onRfpChanged: (rfp: V2Rfp) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  if (!editing) {
+    return (
+      <div className="prc-details">
+        {rfp.scope_text ? <p className="prc-comment">{rfp.scope_text}</p> : (
+          <p className="prc-quiet">No scope written yet.</p>
+        )}
+        <dl className="prc-meta">
+          <div><dt>Submission deadline</dt><dd>{formatWhen(rfp.submission_deadline)}</dd></div>
+          {rfp.questions_deadline ? (
+            <div><dt>Questions close</dt><dd>{formatWhen(rfp.questions_deadline)}</dd></div>
+          ) : null}
+          <div><dt>Visibility</dt><dd>{rfp.visibility === 'open' ? 'Open (marketplace)' : 'Invite only'}</dd></div>
+        </dl>
+        <div className="prc-row">
+          <button type="button" className="btn" onClick={() => { onError(null); setEditing(true); }}>
+            Edit details
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <DraftEditor
+      rfp={rfp}
+      onCancel={() => setEditing(false)}
+      onSaved={(next) => { onRfpChanged(next); setEditing(false); }}
+      onError={onError}
+    />
+  );
+}
+
+function DraftEditor({
+  rfp, onCancel, onSaved, onError,
+}: {
+  rfp: V2Rfp;
+  onCancel: () => void;
+  onSaved: (rfp: V2Rfp) => void;
+  onError: (msg: string | null) => void;
+}) {
+  const [title, setTitle] = useState(rfp.title);
+  const [scopeText, setScopeText] = useState(rfp.scope_text ?? '');
+  const [submissionDeadline, setSubmissionDeadline] = useState(toLocalInput(rfp.submission_deadline));
+  const [questionsDeadline, setQuestionsDeadline] = useState(toLocalInput(rfp.questions_deadline));
+  const [visibility, setVisibility] = useState<RfpVisibility>(rfp.visibility);
+  const [busy, setBusy] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const blocked = createBlockedReason({ title, rootTaskIds: rfp.root_task_ids, submissionDeadline });
+
+  const save = async () => {
+    if (blocked) return;
+    setBusy(true);
+    onError(null);
+    setFieldErrors({});
+    const res = await updateRfpAction(rfp.id, {
+      title,
+      scopeText,
+      submissionDeadline: toIso(submissionDeadline),
+      questionsDeadline: questionsDeadline ? toIso(questionsDeadline) : null,
+      visibility,
+    }, rfp.version);
+    setBusy(false);
+    if (res.ok) { onSaved(res.data); return; }
+    onError(res.message);
+    if (res.fieldErrors) setFieldErrors(res.fieldErrors);
+  };
+
+  return (
+    <section className="prc-composer" aria-label="Edit RFP details">
+      <div className="prc-field">
+        <label className="prc-label" htmlFor="prc-edit-title">Title</label>
+        <input
+          id="prc-edit-title"
+          className="prc-line"
+          value={title}
+          maxLength={200}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        {fieldErrors.title ? <p className="prc-reject">{fieldErrors.title}</p> : null}
+      </div>
+
+      <div className="prc-field">
+        <label className="prc-label" htmlFor="prc-edit-scope">Scope</label>
+        <textarea
+          id="prc-edit-scope"
+          className="prc-input"
+          value={scopeText}
+          maxLength={8000}
+          onChange={(e) => setScopeText(e.target.value)}
+        />
+      </div>
+
+      <div className="prc-row">
+        <div className="prc-field">
+          <label className="prc-label" htmlFor="prc-edit-subd">Submission deadline</label>
+          <input
+            id="prc-edit-subd"
+            className="prc-line"
+            type="datetime-local"
+            value={submissionDeadline}
+            onChange={(e) => setSubmissionDeadline(e.target.value)}
+          />
+          {fieldErrors.submission_deadline ? <p className="prc-reject">{fieldErrors.submission_deadline}</p> : null}
+        </div>
+        <div className="prc-field">
+          <label className="prc-label" htmlFor="prc-edit-qd">Questions close (optional)</label>
+          <input
+            id="prc-edit-qd"
+            className="prc-line"
+            type="datetime-local"
+            value={questionsDeadline}
+            onChange={(e) => setQuestionsDeadline(e.target.value)}
+          />
+        </div>
+        <div className="prc-field">
+          <label className="prc-label" htmlFor="prc-edit-vis">Visibility</label>
+          <select
+            id="prc-edit-vis"
+            className="prc-line"
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value as RfpVisibility)}
+          >
+            <option value="invite_only">Invite only</option>
+            <option value="open">Open (marketplace)</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="prc-actions">
+        <button type="button" className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
+        <button type="button" className="btn primary" disabled={busy || blocked !== null} onClick={save}>
+          {busy ? 'Saving…' : 'Save details'}
+        </button>
+        {blocked ? <span className="prc-quiet">{blocked}</span> : null}
+      </div>
+    </section>
+  );
+}
+
 /** The one-time personal link, revealed to the issuer until email delivery lands. */
 function TokenLink({ token }: { token: string }) {
   const [copied, setCopied] = useState(false);
@@ -571,6 +730,7 @@ function ProposalsInbox({
   const [busy, setBusy] = useState<null | string>(null);
   const [picked, setPicked] = useState<string | null>(rfp.awarded_proposal_id ?? null);
   const [confirmingAward, setConfirmingAward] = useState(false);
+  const [offlineFor, setOfflineFor] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -582,10 +742,15 @@ function ProposalsInbox({
   useEffect(() => { void reload(); }, [reload]);
 
   const lanes = useMemo(() => orderLanes(inbox?.lanes ?? []), [inbox]);
+  // A lane an emailed/online bid has actually landed on, vs one still only
+  // invited. The invited lanes are where an issuer records an emailed bid; the
+  // priced comparison and the award only ever consider the bids that are in.
+  const bids = useMemo(() => lanes.filter((l) => !isAwaiting(l)), [lanes]);
+  const awaiting = useMemo(() => lanes.filter(isAwaiting), [lanes]);
   const decided = rfp.status === 'awarded' || rfp.status === 'cancelled';
+  const receiving = rfp.status === 'published' || rfp.status === 'closed';
   const winner = lanes.find((l) => l.proposal_id === picked) ?? null;
   const awardBlocked = awardBlockedReason(rfp, lanes, winner);
-  const waiting = recipients.filter((r) => r.status === 'sent' || r.status === 'opened' || r.status === 'queued');
 
   const shortlist = async (proposalId: string) => {
     setBusy(`shortlist:${proposalId}`);
@@ -621,7 +786,7 @@ function ProposalsInbox({
     <section className="prc-inbox" aria-label="Proposals">
       <div className="prc-composer-hd">
         <h3 className="prc-h">Proposals</h3>
-        <span className="prc-count">{lanes.length} of {recipients.length} invited</span>
+        <span className="prc-count">{bids.length} in · {recipients.length} invited</span>
         {rfp.status === 'published' ? (
           <button type="button" className="btn" disabled={busy === 'close'} onClick={close}>
             {busy === 'close' ? 'Closing…' : 'Close tender'}
@@ -636,16 +801,17 @@ function ProposalsInbox({
         </p>
       ) : null}
 
+      {/* ── Bids that are in ─────────────────────────────────────────────── */}
       {loading ? (
         <p className="prc-quiet" role="status">Loading proposals…</p>
-      ) : lanes.length === 0 ? (
+      ) : bids.length === 0 ? (
         <p className="prc-quiet">
-          Nothing back yet. Each proposal appears here as it arrives; the invite list shows who has
-          opened their link.
+          Nothing back yet. Each proposal appears here as it arrives; the invite list below shows who
+          has opened their link.
         </p>
       ) : (
         <ul className="prc-proposals">
-          {lanes.map((lane) => (
+          {bids.map((lane) => (
             <LaneCard
               key={lane.proposal_id}
               lane={lane}
@@ -661,10 +827,10 @@ function ProposalsInbox({
       )}
 
       {inbox?.comparison && inbox.seesMoney ? (
-        <ComparisonMatrix comparison={inbox.comparison} lanes={lanes} />
+        <ComparisonMatrix comparison={inbox.comparison} lanes={bids} />
       ) : null}
 
-      {!decided && lanes.length > 0 ? (
+      {!decided && bids.length > 0 ? (
         <div className="prc-actions">
           {confirmingAward ? (
             <div className="prc-confirm" role="group" aria-label="Confirm the award">
@@ -693,10 +859,50 @@ function ProposalsInbox({
         </div>
       ) : null}
 
-      {waiting.length > 0 && !decided ? (
-        <p className="prc-quiet">
-          Still waiting on {waiting.length} {waiting.length === 1 ? 'contractor' : 'contractors'}.
-        </p>
+      {/* ── Still awaiting: invited lanes, each able to record an emailed bid ─ */}
+      {!loading && awaiting.length > 0 && !decided ? (
+        <div className="prc-awaiting">
+          <h4 className="prc-subh">
+            Awaiting {awaiting.length} {awaiting.length === 1 ? 'contractor' : 'contractors'}
+          </h4>
+          {receiving ? (
+            <p className="prc-quiet">
+              Got a bid by email or over the phone? Record it here so it sits in the comparison beside
+              the online ones.
+            </p>
+          ) : null}
+          <ul className="prc-awaiting-list">
+            {awaiting.map((lane) => (
+              <li key={lane.proposal_id} className="prc-awaiting-row">
+                <div className="prc-awaiting-hd">
+                  <span className="prc-email">{lane.bidder.name ?? lane.bidder.email}</span>
+                  <span className={`prc-badge ${proposalStatusBadge(lane.status).tone}`}>
+                    {proposalStatusBadge(lane.status).label}
+                  </span>
+                  {receiving ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => { onError(null); setOfflineFor(
+                        offlineFor === lane.proposal_id ? null : lane.proposal_id,
+                      ); }}
+                    >
+                      {offlineFor === lane.proposal_id ? 'Close' : 'Record an emailed bid'}
+                    </button>
+                  ) : null}
+                </div>
+                {offlineFor === lane.proposal_id ? (
+                  <RecordOfflineForm
+                    proposalId={lane.proposal_id}
+                    onCancel={() => setOfflineFor(null)}
+                    onRecorded={() => { setOfflineFor(null); void reload(); }}
+                    onError={onError}
+                  />
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       {rfp.status === 'awarded' ? (
@@ -707,6 +913,11 @@ function ProposalsInbox({
       ) : null}
     </section>
   );
+}
+
+/** A lane no bid has landed on yet — where the issuer records an emailed answer. */
+function isAwaiting(lane: Pick<V2ProposalLane, 'status'>): boolean {
+  return lane.status === 'invited' || lane.status === 'draft';
 }
 
 function LaneCard({
@@ -752,6 +963,195 @@ function LaneCard({
   );
 }
 
+// ── Record an emailed bid (issuer types in an off-platform answer) ───────────
+// The issuer logs a bid that arrived by email/phone against an invited lane. It
+// needs at least one document (the bidder's PDFs) — uploaded to R2 through the
+// reserve → PUT → complete protocol, scoped to this proposal — plus a total; the
+// duration, start, validity and conditions are optional. On success the lane
+// moves invited → submitted (channel = email) and joins the comparison.
+
+function RecordOfflineForm({
+  proposalId, onCancel, onRecorded, onError,
+}: {
+  proposalId: string;
+  onCancel: () => void;
+  onRecorded: () => void;
+  onError: (msg: string | null) => void;
+}) {
+  const [documents, setDocuments] = useState<{ id: string; name: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [totalEuros, setTotalEuros] = useState('');
+  const [durationWd, setDurationWd] = useState('');
+  const [start, setStart] = useState('');
+  const [validityUntil, setValidityUntil] = useState('');
+  const [conditions, setConditions] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const cents = eurosToCents(totalEuros);
+  const blocked = documents.length === 0
+    ? 'Attach at least one document from the bid.'
+    : cents === null ? 'Enter the total, e.g. 180000.'
+      : null;
+
+  const onFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setLocalError(null);
+    try {
+      for (const file of Array.from(files)) {
+        const mime = file.type || 'application/octet-stream';
+        const { hex, base64 } = await digestSha256(file);
+        const reserve = await reserveProposalDocumentAction(proposalId, {
+          name: file.name, mime, sizeBytes: file.size, sha256: hex,
+        });
+        if (!reserve.ok) { setLocalError(reserve.message); break; }
+        await putToTicket(reserve.data.uploadUrl, file, mime, base64);
+        const done = await completeProposalDocumentAction(reserve.data.versionRef);
+        if (!done.ok) { setLocalError(done.message); break; }
+        const { documentId } = reserve.data;
+        setDocuments((prev) => [...prev, { id: documentId, name: file.name }]);
+      }
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : 'That file did not upload. Try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const submit = async () => {
+    if (blocked || cents === null) { setLocalError(blocked); return; }
+    setBusy(true);
+    onError(null);
+    setLocalError(null);
+    const dur = durationWd.trim() ? Math.round(Number(durationWd)) : undefined;
+    const res = await recordOfflineAction(proposalId, {
+      documentIds: documents.map((d) => d.id),
+      totalCents: cents,
+      ...(dur !== undefined && Number.isFinite(dur) ? { durationWd: dur } : {}),
+      ...(start ? { start } : {}),
+      ...(validityUntil ? { validityUntil } : {}),
+      ...(conditions.trim() ? { conditions: conditions.trim() } : {}),
+    });
+    setBusy(false);
+    if (!res.ok) { onError(res.message); return; }
+    onRecorded();
+  };
+
+  return (
+    <div className="prc-offline" role="group" aria-label="Record an emailed bid">
+      {localError ? <p role="alert" className="prc-reject">{localError}</p> : null}
+
+      {/* ── Documents (at least one) ─────────────────────────────────────── */}
+      <div className="prc-field">
+        <span className="prc-label">The bid documents</span>
+        {documents.length > 0 ? (
+          <ul className="prc-doc-list">
+            {documents.map((d) => (
+              <li key={d.id} className="prc-doc">
+                <span className="prc-doc-name">{d.name}</span>
+                <button
+                  type="button"
+                  className="prc-remove"
+                  disabled={busy}
+                  onClick={() => setDocuments((prev) => prev.filter((x) => x.id !== d.id))}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="prc-quiet">The PDF or images the contractor sent. At least one.</p>
+        )}
+        <label className={`btn tws-upload${uploading ? ' is-busy' : ''}`}>
+          {uploading ? 'Uploading…' : 'Attach a file'}
+          <input
+            type="file"
+            multiple
+            className="prc-file-input"
+            disabled={uploading || busy}
+            onChange={(e) => { void onFiles(e.target.files); e.target.value = ''; }}
+          />
+        </label>
+      </div>
+
+      <div className="prc-row">
+        <div className="prc-field">
+          <label className="prc-label" htmlFor={`prc-off-total-${proposalId}`}>Total (EUR)</label>
+          <input
+            id={`prc-off-total-${proposalId}`}
+            className="prc-line"
+            inputMode="decimal"
+            placeholder="180000"
+            value={totalEuros}
+            onChange={(e) => setTotalEuros(e.target.value)}
+          />
+        </div>
+        <div className="prc-field">
+          <label className="prc-label" htmlFor={`prc-off-dur-${proposalId}`}>Duration (working days)</label>
+          <input
+            id={`prc-off-dur-${proposalId}`}
+            className="prc-line"
+            inputMode="numeric"
+            placeholder="optional"
+            value={durationWd}
+            onChange={(e) => setDurationWd(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="prc-row">
+        <div className="prc-field">
+          <label className="prc-label" htmlFor={`prc-off-start-${proposalId}`}>Can start</label>
+          <input
+            id={`prc-off-start-${proposalId}`}
+            className="prc-line"
+            type="date"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+          />
+        </div>
+        <div className="prc-field">
+          <label className="prc-label" htmlFor={`prc-off-val-${proposalId}`}>Valid until</label>
+          <input
+            id={`prc-off-val-${proposalId}`}
+            className="prc-line"
+            type="date"
+            value={validityUntil}
+            onChange={(e) => setValidityUntil(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="prc-field">
+        <label className="prc-label" htmlFor={`prc-off-cond-${proposalId}`}>Conditions (optional)</label>
+        <textarea
+          id={`prc-off-cond-${proposalId}`}
+          className="prc-input"
+          value={conditions}
+          maxLength={2000}
+          placeholder="Anything the contractor noted alongside the price."
+          onChange={(e) => setConditions(e.target.value)}
+        />
+      </div>
+
+      <div className="prc-actions">
+        <button type="button" className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={busy || uploading || blocked !== null}
+          onClick={submit}
+        >
+          {busy ? 'Recording…' : 'Record the bid'}
+        </button>
+        {blocked && !uploading ? <span className="prc-quiet">{blocked}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 // ── Comparison matrix (money-gated) ──────────────────────────────────────────
 
 function ComparisonMatrix({
@@ -761,10 +1161,14 @@ function ComparisonMatrix({
   lanes: V2ProposalLane[];
 }) {
   const byId = new Map(lanes.map((l) => [l.proposal_id, l]));
-  // Column order follows the ordered lanes so the matrix reads like the list.
-  const cols = lanes.map((l) => l.proposal_id).filter((id) => byId.has(id));
+  // Columns are the bids the server actually compares (submitted/shortlisted/
+  // awarded), in the ordered-lane order so the matrix reads like the list above.
+  // A declined or withdrawn lane still shows as a card but is not a column here —
+  // there is no live price to compare.
+  const compared = new Set(comparison.proposals.map((p) => p.proposal_id));
+  const cols = lanes.map((l) => l.proposal_id).filter((id) => byId.has(id) && compared.has(id));
 
-  if (comparison.items.length === 0) return null;
+  if (comparison.items.length === 0 || cols.length === 0) return null;
 
   return (
     <div className="prc-matrix-wrap">
@@ -807,4 +1211,24 @@ function toIso(local: string): string {
   if (!local) return '';
   const d = new Date(local);
   return Number.isNaN(d.getTime()) ? local : d.toISOString();
+}
+
+/** An ISO instant → a `datetime-local` value in the viewer's timezone, or ''. */
+function toLocalInput(iso: string | undefined | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  // Shift by the offset so the local wall-clock fields match what the input wants.
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+/** An ISO instant as a short human date-time, or an em dash when absent. */
+function formatWhen(iso: string | undefined | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return d.toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
 }
