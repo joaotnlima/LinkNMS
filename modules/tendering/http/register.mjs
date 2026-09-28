@@ -9,14 +9,17 @@ import {
   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
   getComparison, shortlistProposal, awardRfp,
   getRfpByToken, submitProposalByToken,
+  reserveProposalDocumentByToken, completeProposalDocumentByToken, downloadProposalDocument,
 } from '../application/use-cases.mjs';
 
 /**
- * @param {{ store: object, contractingAward: Function }} deps
+ * @param {{ store: object, storage: object, contractingAward: Function }} deps
+ *   storage — the object-store port (documents module's R2 adapter), shared so
+ *     token-scoped proposal attachments (LINA-370) live on the same bucket.
  *   contractingAward — the contracting module's award port
  *   (modules/contracting/application/award.mjs), run on the award transaction.
  */
-export function registerTendering(router, { store, contractingAward }) {
+export function registerTendering(router, { store, storage, contractingAward }) {
   // Public personal link (gap S1) — security: [], no viewer. The token is the
   // authority; the /api/v2 adapter lets these two through without a session
   // (path[0] === 'rfp-links'), exactly as it does the Clerk webhook.
@@ -25,6 +28,19 @@ export function registerTendering(router, { store, contractingAward }) {
 
   router.register('POST', '/rfp-links/{token}/proposal', 'submitProposalByToken', ({ params, body }) =>
     submitProposalByToken({ store, token: params.token, body }));
+
+  // Token-scoped portfolio-image upload (LINA-370) — also security: [], the
+  // token is the authority. Reserve a presigned PUT, then prove the bytes.
+  router.register('POST', '/rfp-links/{token}/documents', 'reserveProposalDocumentByToken', ({ params, body }) =>
+    reserveProposalDocumentByToken({ store, storage, token: params.token, body }));
+
+  router.register('POST', '/rfp-links/{token}/documents/{documentId}:complete', 'completeProposalDocumentByToken', ({ params }) =>
+    completeProposalDocumentByToken({ store, storage, token: params.token, documentId: params.documentId }));
+
+  // The authed read side of an attachment: issuer or bidder, 302 to a
+  // short-lived presigned GET (viewer required — path[0] !== 'rfp-links').
+  router.register('GET', '/proposals/{proposalId}/documents/{documentId}:download', 'downloadProposalDocument', ({ viewer, params }) =>
+    downloadProposalDocument({ viewer, store, storage, proposalId: params.proposalId, documentId: params.documentId }));
 
   router.register('POST', '/projects/{projectId}/rfps', 'createRfp', ({ viewer, params, body, headers }) =>
     createRfp({ viewer, store, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] }));

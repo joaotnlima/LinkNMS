@@ -71,6 +71,9 @@ function fakeStore(over = {}) {
       return { ...p, rfp_status: over.rfp_status ?? p.rfp_status };
     },
     async proposalDoc() { return { rows: [], links: [], lines: [] }; },
+    // The submit's document_ids must name `stored` attachments of this proposal
+    // (LINA-370). The goodBody references DOC, so it is stored by default.
+    async storedProposalDocumentIds() { return new Set(over.storedDocs ?? [DOC]); },
     async submitPublicProposal(args) {
       submitted.push(args);
       if (over.submitRace) return null;

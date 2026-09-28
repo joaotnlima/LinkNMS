@@ -358,6 +358,77 @@ export function createTenderingStore(pool) {
       return { rows, links, lines };
     },
 
+    // ── proposal attachments (token-scoped upload, LINA-370) ───────────────
+
+    /** Reserve a `pending` attachment row. No ledger — nothing is proven yet. */
+    async createProposalDocument({ id, proposalId, storageKey, file }) {
+      const { rows } = await pool.query(
+        `INSERT INTO tendering.proposal_document
+           (id, proposal_id, storage_key, file_name, mime, size_bytes, sha256)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [id, proposalId, storageKey, file.name, file.mime, file.size_bytes, file.sha256.toLowerCase()],
+      );
+      return rows[0];
+    },
+
+    async getProposalDocument(id) {
+      const { rows } = await pool.query(
+        'SELECT * FROM tendering.proposal_document WHERE id = $1', [id],
+      );
+      return rows[0] ?? null;
+    },
+
+    /**
+     * Flip a proven attachment to `stored`. Idempotent: a replay of complete on
+     * an already-stored row returns it unchanged (the `pending` guard misses,
+     * so re-read).
+     */
+    async completeProposalDocument(id) {
+      const { rows } = await pool.query(
+        `UPDATE tendering.proposal_document
+            SET status = 'stored', stored_at = coalesce(stored_at, now())
+          WHERE id = $1 AND status = 'pending' RETURNING *`,
+        [id],
+      );
+      if (rows.length) return rows[0];
+      return this.getProposalDocument(id);
+    },
+
+    /** How many attachments this proposal already holds (any status). */
+    async proposalDocumentCount(proposalId) {
+      const { rows } = await pool.query(
+        'SELECT count(*)::int AS n FROM tendering.proposal_document WHERE proposal_id = $1',
+        [proposalId],
+      );
+      return rows[0].n;
+    },
+
+    /** The set of `stored` attachment ids of one proposal — submit validation. */
+    async storedProposalDocumentIds(proposalId) {
+      const { rows } = await pool.query(
+        `SELECT id FROM tendering.proposal_document
+          WHERE proposal_id = $1 AND status = 'stored'`,
+        [proposalId],
+      );
+      return new Set(rows.map((r) => r.id));
+    },
+
+    /**
+     * One attachment with the rfp facts a download authorizes on: the issuer of
+     * the RFP and the bidder org of the proposal both read it; nobody else.
+     */
+    async proposalDocumentForDownload(id) {
+      const { rows } = await pool.query(
+        `SELECT d.*, p.bidder_org_id, r.issuer_org_id, p.rfp_id
+           FROM tendering.proposal_document d
+           JOIN tendering.proposal p ON p.id = d.proposal_id
+           JOIN tendering.rfp r ON r.id = p.rfp_id
+          WHERE d.id = $1`,
+        [id],
+      );
+      return rows[0] ?? null;
+    },
+
     async itemsOfRfp(rfpId, itemIds) {
       const { rows } = await pool.query(
         'SELECT id FROM tendering.rfp_item WHERE rfp_id = $1 AND id = ANY($2::uuid[])',

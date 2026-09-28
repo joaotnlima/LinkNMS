@@ -2,6 +2,26 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-09-28 — Token-scoped proposal attachments (LINA-370, additive)
+
+- **Three Tendering ops** let a tokened bidder attach portfolio files to the public RFP form, and
+  the issuer/bidder read them back (decision D-37):
+  - `reserveProposalDocumentByToken` — `POST /rfp-links/{token}/documents`, **security: []**. Reserve
+    one attachment and answer a presigned PUT whose signature pins the declared sha256 (storage
+    refuses other bytes). Bounded: an image/PDF mime whitelist, a 15 MB cap, and a per-proposal count
+    cap. Only a live link (proposal still `invited`/`draft`, RFP still `published`) may reserve.
+  - `completeProposalDocumentByToken` — `POST /rfp-links/{token}/documents/{documentId}:complete`,
+    **security: []**. Prove the bytes reached storage at the declared size, then mark the attachment
+    `stored`. Idempotent; confined to the token's own proposal (else 404).
+  - `downloadProposalDocument` — `GET /proposals/{proposalId}/documents/{documentId}:download`
+    (authed). A 302 to a short-lived presigned GET for the RFP issuer or the bidder org; anyone else,
+    or an id under another proposal, is existence-hidden (404).
+- **`submitProposalByToken` tightened (no wire change):** `document_ids` must now name `stored`
+  attachments of that same proposal — a well-formed but unknown/foreign id is `validation_failed`.
+- Storage is the Documents module's private R2 bucket, shared via the object-store port; a new owned
+  table `tendering.proposal_document` (migration `db/v2/0008`) holds the metadata. The Documents
+  module and its org+person `NOT NULL` invariants are untouched.
+
 ## 2026-09-26 — Billing live (phase 8, additive; no contract change)
 
 - **Billing module** (tag fully implemented, 7 ops): `listPlans` (the catalogue filtered by the
