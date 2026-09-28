@@ -16,10 +16,11 @@ import { revalidatePath } from 'next/cache';
 
 import {
   ApiError, PlanLimitError, type PlanLimit,
-  createProject, createBuildDraft, setOperatingModel, inviteCounterparty, acceptInvitation,
+  createProject, setOperatingModel, inviteCounterparty, acceptInvitation,
 } from '@/lib/api';
+import { createBuildDraftV2 } from '@/lib/v2/build';
 import { parseBudgetToCents } from '@/lib/format';
-import { OPERATING_MODELS, inviteRoleFor, isCreatorRole, type OperatingModel } from '@/lib/build-creation';
+import { OPERATING_MODELS, inviteRoleFor, type OperatingModel } from '@/lib/build-creation';
 
 export interface FormState {
   error?: string;
@@ -96,38 +97,40 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
   const name = String(form.get('name') ?? '').trim();
   if (!name) return { error: 'Give the build a name.' };
 
-  // Who the creator is on this build (LINA-227, ADR-0016). Set by the pre-Basics
-  // "Your role" screen and carried through Basics as a hidden field. Anything but
-  // the two valid values is dropped to undefined so the service default ('owner')
-  // applies — the service validates and is the authority regardless.
-  const creatorRoleRaw = String(form.get('creatorRole') ?? '');
-  const creatorRole = isCreatorRole(creatorRoleRaw) ? creatorRoleRaw : undefined;
+  // GAP-1 (LINA-365): the v2 project brief REQUIRES a municipality code. Basics
+  // now collects it (`required` on the field), but a mangled post could still
+  // arrive blank — the seam throws on blank rather than store a placeholder, so
+  // catch it here as a sentence beside the input, not a 400.
+  const municipalityCode = String(form.get('municipalityCode') ?? '').trim();
+  if (!municipalityCode) return { error: 'Enter the municipality code the build is filed under.' };
 
   // Optional Basics fields. Trimmed here and only forwarded when non-empty; the
-  // service is the authority on caps and stores null for blanks regardless.
+  // service stores null for blanks regardless.
   const siteAddress = String(form.get('siteAddress') ?? '').trim() || undefined;
   const buildType = String(form.get('buildType') ?? '').trim() || undefined;
-  const expectedStart = String(form.get('expectedStart') ?? '').trim() || undefined;
 
-  // "Do you already have a signed contractor?" (LINA-281, ADR-0023 §3). This
-  // shapes the seed-time phase state, nothing more: true → procurement is
-  // skipped and execution starts active; anything else → procurement starts
-  // active (run an RFP first), which is also the seeder's safe default. Only an
-  // explicit "yes" is forwarded as true; a blank radio stays false.
-  const hasSignedContractor = String(form.get('hasSignedContractor') ?? '') === 'yes';
+  // NOTE (LINA-365 / LINA-367 Option A): creation now writes to /api/v2, whose
+  // ProjectCreate carries only the brief. The v1 wizard's operating-model fields —
+  // creatorRole (ADR-0016), expectedStart (GAP-2, no v2 brief field), and
+  // hasSignedContractor (phase seeding, ADR-0023 §3) — are NOT part of the v2
+  // create; they belong to the participation/phase slices that follow, so they
+  // are deliberately not read here. The seam maps the rest (build-create.ts).
 
   let id: string;
   try {
-    // Draft baseline is 0; the plan establishes the authoritative figure.
-    ({ id } = await createBuildDraft({
-      name, baselineBudgetCents: 0, creatorRole, siteAddress, buildType, expectedStart, hasSignedContractor,
-    }));
+    // Draft baseline is 0; the accepted plan establishes the authoritative figure
+    // (LINA-219). The v2 draft carries no budget at all.
+    ({ id } = await createBuildDraftV2({ name, municipalityCode, siteAddress, buildType }));
   } catch (err) {
-    // The path that fires for real today: a founding seat runs one build, so the
-    // owner's SECOND trip through the wizard lands here (ADR-0013).
+    // A viewer with no active v2 org / lacking org:projects:create gets a V2Error
+    // here (the onboarding org-provisioning increment makes a fresh signup have
+    // one). Its problem+json message is already user-facing; `message()` surfaces
+    // it verbatim, so no v2-specific branch is needed.
     return refusal(err, 'Could not create the build.');
   }
-  redirect(`/projects/${id}/operating-model`);
+  // Straight to the v2 record (S2, /projects/{id}). Operating-model is a v1 wizard
+  // concept dropped on v2; invite is its own participation slice (LINA-367).
+  redirect(`/projects/${id}`);
 }
 
 /**

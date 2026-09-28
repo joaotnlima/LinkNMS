@@ -73,6 +73,22 @@ export function BasicsForm({
           />
         </label>
 
+        {/* Municipality code (GAP-1, LINA-365). REQUIRED by the v2 project brief
+            (`municipality_code`) — the build's filing jurisdiction. The v1 wizard
+            never collected it; v2 refuses a blank rather than store a placeholder,
+            so the field is `required` here and the server action validates again. */}
+        <label className="field">
+          <span className="metric-lbl">Municipality code</span>
+          <input
+            name="municipalityCode"
+            type="text"
+            required
+            maxLength={20}
+            autoComplete="off"
+            placeholder="1111"
+          />
+        </label>
+
         <div className="bwx-row2">
           <label className="field">
             <span className="metric-lbl">Build type</span>
