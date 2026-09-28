@@ -1,0 +1,366 @@
+// Pure v2-tendering wire → view transforms for the RFP composer and the
+// proposals inbox (LINA-361, S5 of the UI cutover, doc 22 §3). Split out of
+// `tendering.ts` (which does the I/O and imports `server-only`) so every mapping
+// is unit-testable without a Clerk session or a router — the same discipline as
+// `record-view.ts` / `profile-view.ts`, and as the v1 client this replaces kept
+// its pure helpers testable in `procurement.test.mjs`.
+//
+// ── WHY A NEW MODULE, NOT AN EDIT OF THE V1 ONE ──────────────────────────────
+// The v1 procurement client (`lib/procurement.ts`) modelled ONE RFP per
+// procurement phase, flat recipients, and flat proposals quoting a budget range.
+// v2 tendering (modules/tendering, live on /api/v2) is org-centric and far
+// richer: per-task RFPs over a packaged BoQ, proposal LANES with rows/lines, a
+// money-gated comparison matrix, and a shortlist/award/record-offline lifecycle.
+// The two share almost no shape, so this is a fresh projection rather than a
+// diff — the v1 file retires with the surface (LINA-361).
+//
+// ── THE RULES THIS FILE KEEPS ────────────────────────────────────────────────
+//  1. MONEY MAY BE ABSENT, NOT ZERO. `total`/`unit_price`/`median` are withheld
+//     from a viewer without `org:money:view` (wire invariant §6.5: withheld
+//     fields are ABSENT, never null). A missing figure prints as "—", never €0 —
+//     a zero would misdescribe a bid nobody is allowed to see.
+//  2. UNKNOWN ENUM VALUES READ AS THEMSELVES. A BE enum widening shows up on
+//     screen as the raw token rather than being silently coerced to a default,
+//     so drift is visible instead of hidden (same rule the v1 badges kept).
+//  3. NOTHING IS COMPUTED FROM A BID. The median and per-row prices come from
+//     the server's comparison projection; this file formats them, it never
+//     derives a total or a ranking. The issuer ranks bids, we do not.
+
+// ── Wire shapes (subset), verbatim against modules/tendering/domain/wire.mjs
+// and cowork/documentation/api/v2/openapi.yaml. Restated locally, the same
+// discipline as `record-view.ts`: a drift in the module's projection lands as a
+// type error here rather than as `undefined` under a bid.
+
+export interface V2Money {
+  amount_cents: number;
+  currency: string;
+}
+
+/** #/components/schemas/Rfp.status — the RFP lifecycle (lifecycle.mjs). */
+export type RfpStatus = 'draft' | 'published' | 'closed' | 'awarded' | 'cancelled';
+
+/** #/components/schemas/Proposal.status / ProposalLane.status. */
+export type ProposalStatus =
+  | 'invited' | 'draft' | 'submitted' | 'withdrawn' | 'shortlisted' | 'awarded' | 'declined';
+
+/** #/components/schemas/Recipient.status. */
+export type RecipientStatus =
+  | 'queued' | 'sent' | 'opened' | 'declined' | 'proposal_submitted' | 'bounced';
+
+export type Channel = 'platform' | 'email';
+
+export type RfpVisibility = 'invite_only' | 'open';
+
+export type RfpLevel = 'owner' | 'sub';
+
+/** One packaged BoQ item a bidder prices (packageBody.items). */
+export interface V2PackageItem {
+  rfp_item_id: string;
+  task_id: string;
+  code: string;
+  description: string;
+  unit: string;
+  quantity: string;
+  material_spec?: string;
+  specialty?: string;
+}
+
+/** One subtree row of the tendered package (packageBody.rows). */
+export interface V2PackageRow {
+  task_id: string;
+  parent_task_id?: string;
+  name: string;
+  scope_text?: string;
+  specialty?: string;
+  position: number;
+}
+
+export interface V2Package {
+  rows: V2PackageRow[];
+  items: V2PackageItem[];
+}
+
+/** #/components/schemas/Rfp (rfpBody). `package` is present only on getRfp. */
+export interface V2Rfp {
+  id: string;
+  project_id: string;
+  issuer_org_id: string;
+  level: RfpLevel;
+  parent_contract_id?: string;
+  root_task_ids: string[];
+  title: string;
+  scope_text?: string;
+  specialties: string[];
+  visibility: RfpVisibility;
+  questions_deadline?: string;
+  submission_deadline?: string;
+  package_version: number;
+  status: RfpStatus;
+  awarded_proposal_id?: string;
+  version: number;
+  package?: V2Package;
+}
+
+/** #/components/schemas/Recipient — issuer only. `token` returned ONCE on add. */
+export interface V2Recipient {
+  id: string;
+  org_id?: string;
+  email: string;
+  status: RecipientStatus;
+  sent_at?: string;
+  opened_at?: string;
+  token?: string;
+}
+
+/** #/components/schemas/ProposalLane — the dashed pseudo-row (D-36). */
+export interface V2ProposalLane {
+  proposal_id: string;
+  bidder: { org_id?: string; name?: string; email: string };
+  channel: Channel;
+  status: ProposalStatus;
+  /** Absent without `org:money:view`. */
+  total?: V2Money;
+  duration_wd?: number;
+  start?: string;
+  finish?: string;
+  missing_lines: number;
+  variant_lines: number;
+  document_count: number;
+  has_plan: boolean;
+  url: string;
+}
+
+/** #/components/schemas/Comparison — issuer only, behind `org:money:view`. */
+export interface V2Comparison {
+  proposals: V2ProposalLane[];
+  items: {
+    rfp_item_id: string;
+    description: string;
+    unit: string;
+    quantity: string;
+    /** proposal_id → unit price. Absent bidders simply have no key. */
+    prices: Record<string, V2Money>;
+    median?: V2Money;
+    /** proposal_ids that never priced this line. */
+    missing_in: string[];
+  }[];
+  durations: { packaged_task_id: string; by_proposal: Record<string, number> }[];
+}
+
+// ── Display helpers ──────────────────────────────────────────────────────────
+
+/**
+ * A wire Money as one phrase — "€180,000", or "—" when the figure is ABSENT.
+ *
+ * Absence is the money gate doing its job (rule 1): a viewer without
+ * `org:money:view` gets no `total`/`unit_price`, and printing "—" is the honest
+ * answer, never "€0". Whole euros, no cents — a bid is quoted in round money and
+ * the extra precision would read as false accuracy.
+ */
+export function formatMoney(m: V2Money | null | undefined): string {
+  if (!m || !Number.isFinite(m.amount_cents)) return '—';
+  const sign = m.amount_cents < 0 ? '-' : '';
+  const abs = Math.abs(m.amount_cents);
+  const symbol = m.currency === 'EUR' ? '€' : `${m.currency} `;
+  return `${sign}${symbol}${(abs / 100).toLocaleString('en-US', {
+    minimumFractionDigits: 0, maximumFractionDigits: 0,
+  })}`;
+}
+
+/** The tone a badge wears, shared vocabulary with the plan primitives. */
+export type BadgeTone = 'quiet' | 'live' | 'good' | 'off' | 'warn';
+
+export interface StatusBadge {
+  label: string;
+  tone: BadgeTone;
+}
+
+/**
+ * The RFP lifecycle in the issuer's words. `draft` is private; `published` is
+ * out for bids; `closed` is no-longer-receiving; `awarded` is decided;
+ * `cancelled` is abandoned. An unknown value reads as itself (rule 2).
+ */
+export function rfpStatusBadge(status: RfpStatus | string): StatusBadge {
+  switch (status) {
+    case 'draft': return { label: 'Draft — not sent', tone: 'quiet' };
+    case 'published': return { label: 'Out for bids', tone: 'live' };
+    case 'closed': return { label: 'Closed', tone: 'warn' };
+    case 'awarded': return { label: 'Awarded', tone: 'good' };
+    case 'cancelled': return { label: 'Cancelled', tone: 'off' };
+    default: return { label: String(status), tone: 'quiet' };
+  }
+}
+
+/** A bidder lane's status in the issuer's words. */
+export function proposalStatusBadge(status: ProposalStatus | string): StatusBadge {
+  switch (status) {
+    case 'invited': return { label: 'Invited', tone: 'quiet' };
+    case 'draft': return { label: 'Drafting', tone: 'quiet' };
+    case 'submitted': return { label: 'Proposal in', tone: 'good' };
+    case 'shortlisted': return { label: 'Shortlisted', tone: 'live' };
+    case 'awarded': return { label: 'Awarded', tone: 'good' };
+    case 'withdrawn': return { label: 'Withdrawn', tone: 'off' };
+    case 'declined': return { label: 'Declined', tone: 'off' };
+    default: return { label: String(status), tone: 'quiet' };
+  }
+}
+
+/** A recipient's delivery/engagement status, in the issuer's words. */
+export function recipientStatusBadge(status: RecipientStatus | string): StatusBadge {
+  switch (status) {
+    case 'queued': return { label: 'Queued', tone: 'quiet' };
+    case 'sent': return { label: 'Invited', tone: 'quiet' };
+    case 'opened': return { label: 'Viewed', tone: 'live' };
+    case 'proposal_submitted': return { label: 'Proposal in', tone: 'good' };
+    case 'declined': return { label: 'Declined', tone: 'off' };
+    case 'bounced': return { label: 'Bounced', tone: 'warn' };
+    default: return { label: String(status), tone: 'quiet' };
+  }
+}
+
+// ── Recipient parsing (carried over from the v1 client, unchanged intent) ────
+// People paste from a spreadsheet column, an email To: field, or a comma list,
+// so commas, semicolons, newlines and tabs all separate. Addresses are
+// lowercased because `Ana@Co.pt` and `ana@co.pt` are one contractor and
+// inviting them twice mints two personal links for one bid. The server
+// re-validates; a stricter regex here would reject valid addresses.
+
+export interface ParsedRecipients {
+  /** Well-formed, lowercased, de-duplicated, in first-seen order. */
+  valid: string[];
+  /** Kept verbatim so the person can see their own typo and fix it. */
+  invalid: string[];
+  /** Well-formed but already invited (or repeated in the paste). */
+  duplicates: string[];
+}
+
+const EMAIL = /^[^\s@,;]+@[^\s@,;.]+(\.[^\s@,;.]+)+$/;
+
+export function parseRecipients(
+  input: string, existing: readonly string[] = [],
+): ParsedRecipients {
+  const seen = new Set(existing.map((e) => e.trim().toLowerCase()));
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  const duplicates: string[] = [];
+
+  for (const raw of input.split(/[\s,;]+/)) {
+    const token = raw.trim().replace(/^<|>$/g, '');
+    if (!token) continue;
+    const email = token.toLowerCase();
+    if (!EMAIL.test(email)) { invalid.push(token); continue; }
+    if (seen.has(email)) { duplicates.push(email); continue; }
+    seen.add(email);
+    valid.push(email);
+  }
+
+  return { valid, invalid, duplicates };
+}
+
+// ── Composer gating ──────────────────────────────────────────────────────────
+
+/** The minimum a draft needs before it can be created against the API. */
+export interface RfpDraftInput {
+  title: string;
+  scopeText: string;
+  rootTaskIds: string[];
+  submissionDeadline: string; // ISO date-time
+  questionsDeadline?: string;
+  visibility: RfpVisibility;
+}
+
+/**
+ * Why "Create RFP" is off, or null when it is on.
+ *
+ * The three reasons are exactly the three createRfp will refuse on
+ * (validation_failed): no title, no tendered tasks, no submission deadline. A
+ * disabled button that will not say why is a dead end (rule kept from v1).
+ */
+export function createBlockedReason(draft: Pick<RfpDraftInput, 'title' | 'rootTaskIds' | 'submissionDeadline'>): string | null {
+  if (draft.title.trim().length === 0) return 'Give the tender a title.';
+  if (draft.rootTaskIds.length === 0) return 'Pick at least one task to put out to tender.';
+  if (!draft.submissionDeadline) return 'Set a submission deadline.';
+  return null;
+}
+
+/**
+ * Why "Publish" is off, or null when it is on.
+ *
+ * publishRfp requires status `draft` and at least one recipient (an RFP with no
+ * personal links minted reaches no bidder). The deadline being in the past is a
+ * softer warning the caller may still choose to surface separately.
+ */
+export function publishBlockedReason(
+  rfp: Pick<V2Rfp, 'status'> | null,
+  recipientCount: number,
+): string | null {
+  if (!rfp) return 'Create the RFP first.';
+  if (rfp.status !== 'draft') return 'This RFP has already been sent.';
+  if (recipientCount === 0) return 'Add at least one contractor to send it to.';
+  return null;
+}
+
+// ── Inbox ordering + award gating ────────────────────────────────────────────
+
+/**
+ * The lanes an issuer actually acts on, in the order the inbox reads them:
+ * a proposal that is in (submitted/shortlisted/awarded) sorts above one still
+ * out (invited/draft/withdrawn/declined), and within a group the most recently
+ * interesting — shortlisted then submitted — leads. Ties keep bidder-email order
+ * so the list is stable across reads (no server timestamp on a lane).
+ */
+const STATUS_RANK: Record<string, number> = {
+  awarded: 0, shortlisted: 1, submitted: 2, draft: 3, invited: 4, withdrawn: 5, declined: 6,
+};
+
+export function orderLanes(lanes: readonly V2ProposalLane[]): V2ProposalLane[] {
+  return [...lanes].sort((a, b) => {
+    const ra = STATUS_RANK[a.status] ?? 9;
+    const rb = STATUS_RANK[b.status] ?? 9;
+    if (ra !== rb) return ra - rb;
+    return a.bidder.email.localeCompare(b.bidder.email);
+  });
+}
+
+/** A lane the issuer can still act on with award/shortlist. */
+export function isLive(lane: Pick<V2ProposalLane, 'status'>): boolean {
+  return lane.status === 'submitted' || lane.status === 'shortlisted';
+}
+
+/**
+ * Why the RFP cannot be awarded yet, or null when it can.
+ *
+ * awardRfp guards (doc 09): the RFP must be `closed`, OR `published` with every
+ * invitee having responded; the winning lane must be live; and — the phase-3
+ * limitation — an email bidder must have an org on the platform before it can
+ * hold a contract. Restated here so the inbox can grey Award with its reason
+ * rather than let the click 4xx.
+ */
+export function awardBlockedReason(
+  rfp: Pick<V2Rfp, 'status'>,
+  lanes: readonly V2ProposalLane[],
+  winner: Pick<V2ProposalLane, 'status' | 'bidder'> | null,
+): string | null {
+  if (!winner) return 'Pick a proposal to award.';
+  if (!isLive(winner)) return 'This proposal is not live — only a submitted or shortlisted bid can win.';
+  if (!winner.bidder.org_id) {
+    return 'This bidder has no organisation on the platform yet — they must sign up before you can award.';
+  }
+  const allResponded = lanes.every((l) => l.status !== 'invited' && l.status !== 'draft');
+  if (rfp.status !== 'closed' && !(rfp.status === 'published' && allResponded)) {
+    return 'Close the RFP first (or wait for every invitee to respond).';
+  }
+  return null;
+}
+
+/**
+ * The specialties an RFP is tendering, for the composer's read-only chip row.
+ *
+ * v2 derives specialties from the tendered package (snapshotPackage), it is NOT
+ * a free-text tag editor as v1 was — so the composer shows what the chosen tasks
+ * imply rather than asking the issuer to retype it. Empty is a real, honest
+ * state (the tasks carried no specialty).
+ */
+export function packageSpecialties(rfp: Pick<V2Rfp, 'specialties'>): string[] {
+  return [...new Set(rfp.specialties ?? [])];
+}

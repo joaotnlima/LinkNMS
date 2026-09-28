@@ -1,522 +1,680 @@
 'use client';
 
-// The procurement section — the RFP that goes out, and the proposals that come
-// back (LINA-283). It renders INSIDE the Procurement accordion section of
-// `/projects/:id/plan` (ADR-0023 §4/§6; the accordion shell itself is LINA-281),
-// which is why this file owns no heading chrome, no route and no page shell: it
-// is a section body, mounted by the shell.
+// The tendering section — the RFP composer and the proposals inbox, on `/api/v2`
+// (LINA-361, S5 of the UI cutover). It renders inside the Procurement accordion
+// of `/projects/:id/plan` (ADR-0023 §4/§6; the shell is LINA-281), so it owns no
+// heading chrome, no route and no page frame: it is a section body.
 //
-// Brand-book: brand-book/src/components/Procurement.stories.js — the composer,
-// the recipient row, the proposal card and the four badges have one home there,
-// as every plan primitive does.
+// This replaces the v1 surface that talked to the schedule service through
+// `lib/procurement.ts`. v2 tendering is org-centric and richer: an RFP is raised
+// over chosen plan tasks (a packaged BoQ), bidders answer in LANES, and the
+// issuer compares (money-gated) and awards — which writes the winner's contract
+// in the same transaction. Every read/write goes through the server actions in
+// `./procurement-actions.ts`, which funnel to the ONE shared v2 client — the
+// browser never mints its own (LINA-309).
 //
 // ── WHAT THIS SURFACE PROMISES ───────────────────────────────────────────────
-// 1. THE SEND IS A DOOR, AND IT IS DRAWN AS ONE. Sending mints a live token per
-//    recipient and emails strangers on the owner's behalf; it cannot be undone
-//    from here. So it confirms first, and it says how many people it is about to
-//    write to — a one-click "Send" on an irreversible broadcast is a trap.
-// 2. A DRAFT IS PRIVATE UNTIL IT IS SENT. The composer says so in as many words,
-//    the same promise the plan draft makes (ADR-0011/LINA-230). Nothing about a
-//    draft RFP is visible to a recipient, because no token exists yet.
-// 3. NOTHING IS THROWN AWAY. Every proposal stays in the inbox after a
-//    constructor is chosen — the losing bids are the evidence behind the choice,
-//    and "who else did you ask, and what did they quote?" is precisely the
-//    lookup this product exists for.
-// 4. THE NUMBERS ARE QUOTED, NEVER COMPUTED. A bid's range and timeline are
-//    printed as submitted. No total, no average, no "best value" ranking — the
-//    owner ranks bids, we do not.
-// 5. DISABLED CONTROLS SAY WHY. Send, Select and Skip each carry their own
-//    reason when they are off, rather than sitting greyed out with no account of
-//    themselves.
+// 1. PUBLISH IS A DOOR, AND IT IS DRAWN AS ONE. Publishing mints a live personal
+//    link per recipient; it confirms first and says how many it is about to
+//    write to.
+// 2. A DRAFT IS PRIVATE UNTIL PUBLISHED. No token exists yet, and the composer
+//    says so.
+// 3. MONEY MAY BE WITHHELD, AND THE SURFACE SAYS SO. A viewer without
+//    `org:money:view` sees the lanes and who bid, but every figure reads "—" and
+//    the comparison matrix is replaced with an honest note — never a fake €0.
+// 4. AWARD IS ONE-WAY AND EXPLAINS ITSELF. It confirms, names the winner, and
+//    when it is off it carries its own reason (RFP not closed, bidder has no org,
+//    nothing picked).
+// 5. NOTHING IS COMPUTED FROM A BID. Totals, medians and per-line prices are the
+//    server's comparison projection; this surface formats them, never derives a
+//    ranking.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
-  addRecipients, budgetRange, canSkipToExecution, fetchProcurement, inboxRows,
-  parseRecipients, ProcurementError, recipientBadge, removeRecipient, saveRfpDraft,
-  selectProposal, sendBlockedReason, sendRfp, skipProcurement, timelineWords,
-  uploadRfpAttachment,
-  type FileRef, type ProcurementView,
-} from '@/lib/procurement';
+  loadMyRfpsAction, loadComposerAction, loadInboxAction,
+  createRfpAction, addRecipientsAction, publishRfpAction,
+  closeRfpAction, shortlistAction, awardAction,
+  type ComposerData,
+} from './procurement-actions';
+import {
+  formatMoney, rfpStatusBadge, proposalStatusBadge, recipientStatusBadge,
+  parseRecipients, createBlockedReason, publishBlockedReason,
+  orderLanes, isLive, awardBlockedReason, packageSpecialties,
+  type V2Rfp, type V2Recipient, type V2ProposalLane, type V2Comparison,
+  type RfpVisibility, type RfpDraftInput,
+} from '@/lib/v2/tendering-view';
+import type { Inbox } from '@/lib/v2/tendering';
 import './procurement.css';
 
+/** A plan task the composer can tender over — supplied by the mounting surface. */
+export interface TaskOption {
+  id: string;
+  name: string;
+}
+
 export function ProcurementSection({
-  projectId, initialView = null, onPhaseChanged,
+  projectId, tasks, hasActiveOrg = true, initialMyRfps = null,
 }: {
   projectId: string;
+  /** Candidate root tasks (from the plan) the composer can put out to tender. */
+  tasks: TaskOption[];
   /**
-   * The server's read, when the page already had one. The section still fetches
-   * on mount when this is null — the accordion may render a collapsed section
-   * whose body is only needed once opened.
+   * False when the viewer is signed in with no organisation selected — the v2
+   * tendering reads require an active org, so with none this renders the neutral
+   * "pick an organisation" state rather than an empty-looking inbox. The mounting
+   * server component resolves this from `/me`.
    */
-  initialView?: ProcurementView | null;
-  /**
-   * Called after a transition that ends procurement (a constructor selected, or
-   * Persona B skipping). The shell owns the accordion's expanded section and the
-   * Execution body, so it is told rather than reaching in here for it.
-   */
-  onPhaseChanged?: (view: ProcurementView) => void;
+  hasActiveOrg?: boolean;
+  /** The org's RFPs for this project, when the page already read them. */
+  initialMyRfps?: V2Rfp[] | null;
 }) {
-  const [view, setView] = useState<ProcurementView | null>(initialView);
-  const [loading, setLoading] = useState(initialView === null);
+  const [rfps, setRfps] = useState<V2Rfp[] | null>(initialMyRfps);
+  const [loading, setLoading] = useState(hasActiveOrg && initialMyRfps === null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<null | 'save' | 'upload' | 'recipients' | 'send' | 'select' | 'skip'>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    if (initialView !== null) return;
-    let live = true;
+  const refreshList = useCallback(async () => {
     setLoading(true);
-    fetchProcurement(projectId)
-      .then((v) => { if (live) setView(v); })
-      .catch((e) => {
-        if (!live) return;
-        setError(e instanceof ProcurementError ? e.message : 'Could not load procurement.');
-      })
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
-  }, [projectId, initialView]);
-
-  // One place where a call's refusal becomes a sentence, so every action in this
-  // section fails the same way instead of each inventing its own wording.
-  const run = useCallback(async <T,>(
-    kind: NonNullable<typeof busy>, fallback: string, call: () => Promise<T>,
-  ): Promise<T | null> => {
-    setBusy(kind);
-    setError(null);
     try {
-      return await call();
-    } catch (e) {
-      setError(e instanceof ProcurementError ? e.message : fallback);
-      return null;
+      const list = (await loadMyRfpsAction()).filter((r) => r.project_id === projectId);
+      setRfps(list);
+    } catch {
+      setError('Could not load your tenders.');
     } finally {
-      setBusy(null);
+      setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
-  if (loading) return <p className="prc-quiet" role="status">Loading procurement…</p>;
-
-  if (!view) {
-    return (
-      <p role="alert" className="prc-error">
-        {error ?? 'Could not load procurement.'}
-      </p>
-    );
-  }
-
-  const sent = view.rfp !== null && view.rfp.status !== 'draft';
-
-  return (
-    <div className="prc">
-      {error ? <p role="alert" className="prc-error">{error}</p> : null}
-
-      {/* Persona B's door, and the legacy-project fallback (ADR-0023 §3 Option
-          B). It sits at the top because it is the "this section is not for me"
-          answer — the owner who already has a contractor should not have to read
-          the RFP composer to find out they can leave. */}
-      {canSkipToExecution(view) ? (
-        <SkipToExecution
-          busy={busy === 'skip'}
-          hasDraft={view.rfp !== null}
-          onSkip={async () => {
-            const next = await run('skip', 'Could not start execution. Try again.',
-              () => skipProcurement(projectId));
-            if (next) { setView(next); onPhaseChanged?.(next); }
-          }}
-        />
-      ) : null}
-
-      <RfpComposer
-        view={view}
-        busy={busy}
-        locked={sent}
-        onSaveDraft={async (draft) => {
-          const rfp = await run('save', 'That did not save. Try again.',
-            () => saveRfpDraft(projectId, draft));
-          if (rfp) setView((prev) => (prev ? { ...prev, rfp } : prev));
-        }}
-        onUpload={async (file) => {
-          const attachment = await run('upload', 'That file did not upload. Try again.',
-            () => uploadRfpAttachment(projectId, file));
-          if (attachment) {
-            setView((prev) => (prev && prev.rfp
-              ? { ...prev, rfp: { ...prev.rfp, attachments: [...prev.rfp.attachments, attachment] } }
-              : prev));
-          }
-        }}
-        onAddRecipients={async (emails) => {
-          const recipients = await run('recipients', 'Those addresses did not save. Try again.',
-            () => addRecipients(projectId, emails));
-          // The server's rows, never our echo: the id and the status are ITS
-          // answer, and a locally-invented recipient could not be removed again.
-          if (recipients) setView((prev) => (prev ? { ...prev, recipients } : prev));
-        }}
-        onRemoveRecipient={async (recipientId) => {
-          const ok = await run('recipients', 'That did not come off the list. Try again.',
-            async () => { await removeRecipient(projectId, recipientId); return true; });
-          if (ok) {
-            setView((prev) => (prev
-              ? { ...prev, recipients: prev.recipients.filter((r) => r.id !== recipientId) }
-              : prev));
-          }
-        }}
-        onSend={async () => {
-          const next = await run('send', 'The RFP did not go out. Try again.',
-            () => sendRfp(projectId));
-          if (next) setView(next);
-        }}
-      />
-
-      {sent ? (
-        <ProposalsInbox
-          view={view}
-          busy={busy === 'select'}
-          onSelect={async (proposalId) => {
-            const next = await run('select', 'That selection did not go through. Try again.',
-              () => selectProposal(projectId, proposalId));
-            if (next) { setView(next); onPhaseChanged?.(next); }
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-// ── Skip to execution ────────────────────────────────────────────────────────
-
-function SkipToExecution({
-  busy, hasDraft, onSkip,
-}: {
-  busy: boolean;
-  hasDraft: boolean;
-  onSkip: () => void;
-}) {
-  const [confirming, setConfirming] = useState(false);
-  return (
-    <section className="prc-skip" aria-label="Skip procurement">
-      <div className="prc-skip-copy">
-        <p className="prc-skip-t">Already have a contractor?</p>
-        <p className="prc-quiet">
-          Skip the tender and go straight to the build plan. Procurement closes and this section
-          stays here, read-only, as part of the record.
-          {hasDraft ? ' Your draft RFP is kept — it is simply never sent.' : ''}
-        </p>
-      </div>
-      {confirming ? (
-        <div className="prc-confirm" role="group" aria-label="Confirm skipping procurement">
-          <button type="button" className="btn" onClick={() => setConfirming(false)}>Cancel</button>
-          <button type="button" className="btn primary" disabled={busy} onClick={onSkip}>
-            {busy ? 'Starting…' : 'Yes, start execution'}
-          </button>
-        </div>
-      ) : (
-        <button type="button" className="btn" onClick={() => setConfirming(true)}>
-          Skip to execution
-        </button>
-      )}
-    </section>
-  );
-}
-
-// ── The composer ─────────────────────────────────────────────────────────────
-
-function RfpComposer({
-  view, busy, locked, onSaveDraft, onUpload, onAddRecipients, onRemoveRecipient, onSend,
-}: {
-  view: ProcurementView;
-  busy: string | null;
-  locked: boolean;
-  onSaveDraft: (draft: { description: string; specialties: string[] }) => void;
-  onUpload: (file: File) => void;
-  onAddRecipients: (emails: string[]) => void;
-  onRemoveRecipient: (recipientId: string) => void;
-  onSend: () => void;
-}) {
-  const { rfp, recipients } = view;
-  const [started, setStarted] = useState(rfp !== null);
-  const [description, setDescription] = useState(rfp?.description ?? '');
-  const [specialties, setSpecialties] = useState<string[]>(rfp?.specialties ?? []);
-  const [tagDraft, setTagDraft] = useState('');
-  const [emailDraft, setEmailDraft] = useState('');
-  const [rejected, setRejected] = useState<{ invalid: string[]; duplicates: string[] } | null>(null);
-  const [confirmingSend, setConfirmingSend] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
-
-  // The server's copy wins whenever it lands (a save returns the stored row), so
-  // a normalised description or a de-duplicated tag list shows up here rather
-  // than leaving the box holding something the record does not.
   useEffect(() => {
-    if (!rfp) return;
-    setDescription(rfp.description);
-    setSpecialties(rfp.specialties);
-    setStarted(true);
-  }, [rfp]);
+    if (!hasActiveOrg || initialMyRfps !== null) return;
+    void refreshList();
+  }, [hasActiveOrg, initialMyRfps, refreshList]);
 
-  const blocked = sendBlockedReason(
-    rfp ? { description, status: rfp.status } : null, recipients,
-  );
-
-  const emails = useMemo(() => recipients.map((r) => r.email), [recipients]);
-
-  const addEmails = () => {
-    const parsed = parseRecipients(emailDraft, emails);
-    setRejected(
-      parsed.invalid.length || parsed.duplicates.length
-        ? { invalid: parsed.invalid, duplicates: parsed.duplicates }
-        : null,
-    );
-    if (parsed.valid.length === 0) return;
-    onAddRecipients(parsed.valid);
-    // Only what was accepted leaves the box: a typo stays visible to be fixed
-    // rather than being swallowed by a successful-looking clear.
-    setEmailDraft(parsed.invalid.join(', '));
-  };
-
-  const addTag = () => {
-    const tag = tagDraft.trim().toLowerCase();
-    if (!tag || specialties.includes(tag)) { setTagDraft(''); return; }
-    setSpecialties([...specialties, tag]);
-    setTagDraft('');
-  };
-
-  // ── Nothing started yet (pen: "[+ Create RFP]") ────────────────────────────
-  if (!started && !rfp) {
+  // ── No active org: the first-class "nothing to scope to" state ──────────────
+  if (!hasActiveOrg) {
     return (
-      <section className="prc-start" aria-label="Request for proposals">
-        <h3 className="prc-h">Ask contractors to bid</h3>
+      <section className="prc" aria-label="Tendering">
         <p className="prc-quiet">
-          Describe the work, attach the drawings, and send it to as many contractors as you like.
-          They reply with a price, a timeline and their portfolio — from a link, with no account to
-          create. Nothing is sent until you say so.
+          Select an organisation to run a tender. RFPs belong to the org that issues them, so there
+          is nothing to show until you are acting for one.
         </p>
-        <button type="button" className="btn primary" onClick={() => setStarted(true)}>
-          Create RFP
-        </button>
       </section>
     );
   }
 
+  if (loading && rfps === null) {
+    return <p className="prc-quiet" role="status">Loading tenders…</p>;
+  }
+
+  const list = (rfps ?? []).filter((r) => r.project_id === projectId);
+  const selected = list.find((r) => r.id === selectedId) ?? null;
+
+  // Selected → the composer (draft) or the inbox (published onward).
+  if (selected) {
+    return (
+      <RfpDetail
+        key={selected.id}
+        projectId={projectId}
+        rfp={selected}
+        onBack={() => { setSelectedId(null); void refreshList(); }}
+        onChanged={(next) => {
+          setRfps((prev) => (prev ? prev.map((r) => (r.id === next.id ? next : r)) : prev));
+        }}
+      />
+    );
+  }
+
+  if (creating) {
+    return (
+      <NewRfp
+        projectId={projectId}
+        tasks={tasks}
+        onCancel={() => setCreating(false)}
+        onCreated={(rfp) => {
+          setRfps((prev) => [rfp, ...(prev ?? [])]);
+          setCreating(false);
+          setSelectedId(rfp.id);
+        }}
+      />
+    );
+  }
+
+  // ── The list / empty state ─────────────────────────────────────────────────
   return (
-    <section className="prc-composer" aria-label="Request for proposals">
+    <div className="prc">
+      {error ? <p role="alert" className="prc-error">{error}</p> : null}
       <div className="prc-composer-hd">
-        <h3 className="prc-h">Request for proposals</h3>
-        {locked ? (
-          <span className="prc-badge good">Sent</span>
-        ) : (
-          <span className="prc-badge quiet">Draft — not sent</span>
-        )}
+        <h3 className="prc-h">Tenders</h3>
+        <button type="button" className="btn primary" onClick={() => setCreating(true)}>
+          New RFP
+        </button>
       </div>
 
-      {locked ? (
+      {list.length === 0 ? (
         <p className="prc-quiet">
-          This RFP is out with {recipients.length} {recipients.length === 1 ? 'contractor' : 'contractors'}.
-          The brief is frozen now: everyone must be bidding on the same words.
+          No tenders yet. Put a piece of the plan out to bid: pick the tasks, describe the scope,
+          invite contractors by email, and compare the proposals that come back — all on the shared
+          record.
         </p>
       ) : (
-        <p className="prc-quiet">
-          Private until you send it. No contractor can see this — the invitation links do not exist
-          yet.
-        </p>
+        <div className="prc-picker">
+          <ul className="prc-rfp-list">
+            {list.map((r) => {
+              const badge = rfpStatusBadge(r.status);
+              return (
+                <li key={r.id}>
+                  <button type="button" className="prc-rfp-item" onClick={() => setSelectedId(r.id)}>
+                    <span className="prc-rfp-title">{r.title}</span>
+                    <span className={`prc-badge ${badge.tone}`}>{badge.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
+    </div>
+  );
+}
 
-      {/* ── The brief ───────────────────────────────────────────────────── */}
+// ── Create ─────────────────────────────────────────────────────────────────
+
+function NewRfp({
+  projectId, tasks, onCancel, onCreated,
+}: {
+  projectId: string;
+  tasks: TaskOption[];
+  onCancel: () => void;
+  onCreated: (rfp: V2Rfp) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [scopeText, setScopeText] = useState('');
+  const [rootTaskIds, setRootTaskIds] = useState<string[]>([]);
+  const [submissionDeadline, setSubmissionDeadline] = useState('');
+  const [questionsDeadline, setQuestionsDeadline] = useState('');
+  const [visibility, setVisibility] = useState<RfpVisibility>('invite_only');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const blocked = createBlockedReason({ title, rootTaskIds, submissionDeadline });
+
+  const toggleTask = (id: string) => {
+    setRootTaskIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
+  };
+
+  const submit = async () => {
+    if (blocked) return;
+    setBusy(true);
+    setError(null);
+    setFieldErrors({});
+    const draft: RfpDraftInput = {
+      title, scopeText, rootTaskIds,
+      submissionDeadline: toIso(submissionDeadline),
+      ...(questionsDeadline ? { questionsDeadline: toIso(questionsDeadline) } : {}),
+      visibility,
+    };
+    const res = await createRfpAction(projectId, draft);
+    setBusy(false);
+    if (res.ok) { onCreated(res.data); return; }
+    setError(res.message);
+    if (res.fieldErrors) setFieldErrors(res.fieldErrors);
+  };
+
+  return (
+    <section className="prc-composer" aria-label="New request for proposals">
+      <div className="prc-composer-hd">
+        <h3 className="prc-h">New RFP</h3>
+        <span className="prc-badge quiet">Draft — not sent</span>
+      </div>
+      {error ? <p role="alert" className="prc-error">{error}</p> : null}
+
       <div className="prc-field">
-        <label className="prc-label" htmlFor="prc-description">The work</label>
+        <label className="prc-label" htmlFor="prc-title">Title</label>
+        <input
+          id="prc-title"
+          className="prc-line"
+          value={title}
+          maxLength={200}
+          placeholder="e.g. Groundworks & foundations"
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        {fieldErrors.title ? <p className="prc-reject">{fieldErrors.title}</p> : null}
+      </div>
+
+      <div className="prc-field">
+        <label className="prc-label" htmlFor="prc-scope">Scope</label>
         <textarea
-          id="prc-description"
+          id="prc-scope"
           className="prc-input"
-          value={description}
+          value={scopeText}
           maxLength={8000}
-          readOnly={locked}
-          aria-readonly={locked}
-          placeholder="What is being built, the site, the scope you want priced, and anything a contractor must know to quote honestly."
-          onChange={(e) => setDescription(e.target.value)}
+          placeholder="What is being built and what a contractor must know to price it honestly."
+          onChange={(e) => setScopeText(e.target.value)}
         />
       </div>
 
-      {/* ── Specialties ─────────────────────────────────────────────────── */}
+      {/* ── Which tasks go out to tender (root_task_ids) ────────────────── */}
       <div className="prc-field">
-        <span className="prc-label" id="prc-spec-label">Trades wanted</span>
-        <ul className="prc-tags" aria-labelledby="prc-spec-label">
-          {specialties.length === 0 ? (
-            <li className="prc-quiet">No trades tagged yet — the brief alone will have to say it.</li>
-          ) : specialties.map((tag) => (
-            <li key={tag} className="prc-tag">
-              {tag}
-              {locked ? null : (
-                <button
-                  type="button"
-                  className="prc-tag-x"
-                  aria-label={`Remove ${tag}`}
-                  onClick={() => setSpecialties(specialties.filter((t) => t !== tag))}
-                >
-                  ×
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-        {locked ? null : (
-          <div className="prc-row">
-            <input
-              className="prc-line"
-              value={tagDraft}
-              placeholder="groundworks, roofing, electrical…"
-              aria-label="Add a trade"
-              onChange={(e) => setTagDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
-            />
-            <button type="button" className="btn" onClick={addTag} disabled={!tagDraft.trim()}>
-              Add trade
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ── Attachments ─────────────────────────────────────────────────── */}
-      <div className="prc-field">
-        <div className="prc-field-hd">
-          <span className="prc-label">Drawings &amp; documents</span>
-          {locked ? null : (
-            <button
-              type="button"
-              className="btn"
-              disabled={busy === 'upload' || !rfp}
-              onClick={() => fileInput.current?.click()}
-            >
-              {busy === 'upload' ? 'Uploading…' : 'Attach a file'}
-            </button>
-          )}
-          <input
-            ref={fileInput}
-            type="file"
-            className="prc-fileinput"
-            aria-label="Attach a file to this RFP"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onUpload(file);
-              e.target.value = ''; // the same file twice must still fire
-            }}
-          />
-        </div>
-        {!rfp ? (
-          <p className="prc-quiet">Save the draft first — a file needs an RFP to hang on.</p>
-        ) : rfp.attachments.length === 0 ? (
+        <span className="prc-label" id="prc-tasks-label">Tasks to tender</span>
+        {tasks.length === 0 ? (
           <p className="prc-quiet">
-            No files yet. Plans, surveys and photos up to 10 MB — whatever a contractor needs to
-            price the job.
+            This plan has no tasks yet — author the plan first, then a tender can be raised over it.
           </p>
         ) : (
-          <ul className="prc-files">
-            {rfp.attachments.map((f) => <FileRow key={f.key} file={f} />)}
+          <ul className="prc-tasks" aria-labelledby="prc-tasks-label">
+            {tasks.map((t) => (
+              <li key={t.id} className="prc-task">
+                <label className="prc-task">
+                  <input
+                    type="checkbox"
+                    checked={rootTaskIds.includes(t.id)}
+                    onChange={() => toggleTask(t.id)}
+                  />
+                  {t.name}
+                </label>
+              </li>
+            ))}
           </ul>
         )}
+        {fieldErrors.root_task_ids ? <p className="prc-reject">{fieldErrors.root_task_ids}</p> : null}
       </div>
+
+      <div className="prc-row">
+        <div className="prc-field">
+          <label className="prc-label" htmlFor="prc-subd">Submission deadline</label>
+          <input
+            id="prc-subd"
+            className="prc-line"
+            type="datetime-local"
+            value={submissionDeadline}
+            onChange={(e) => setSubmissionDeadline(e.target.value)}
+          />
+        </div>
+        <div className="prc-field">
+          <label className="prc-label" htmlFor="prc-qd">Questions close (optional)</label>
+          <input
+            id="prc-qd"
+            className="prc-line"
+            type="datetime-local"
+            value={questionsDeadline}
+            onChange={(e) => setQuestionsDeadline(e.target.value)}
+          />
+        </div>
+        <div className="prc-field">
+          <label className="prc-label" htmlFor="prc-vis">Visibility</label>
+          <select
+            id="prc-vis"
+            className="prc-line"
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value as RfpVisibility)}
+          >
+            <option value="invite_only">Invite only</option>
+            <option value="open">Open (marketplace)</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="prc-actions">
+        <button type="button" className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
+        <button type="button" className="btn primary" disabled={busy || blocked !== null} onClick={submit}>
+          {busy ? 'Creating…' : 'Create draft'}
+        </button>
+        {blocked ? <span className="prc-quiet">{blocked}</span> : null}
+      </div>
+    </section>
+  );
+}
+
+// ── Detail: composer (draft) or inbox (published onward) ─────────────────────
+
+function RfpDetail({
+  projectId, rfp: initialRfp, onBack, onChanged,
+}: {
+  projectId: string;
+  rfp: V2Rfp;
+  onBack: () => void;
+  onChanged: (rfp: V2Rfp) => void;
+}) {
+  const [rfp, setRfp] = useState<V2Rfp>(initialRfp);
+  const [data, setData] = useState<ComposerData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const setBoth = useCallback((next: V2Rfp) => { setRfp(next); onChanged(next); }, [onChanged]);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    const composer = await loadComposerAction(initialRfp.id);
+    if (composer) { setData(composer); setRfp(composer.rfp); }
+    setLoading(false);
+  }, [initialRfp.id]);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const recipients = data?.recipients ?? [];
+  const specialties = packageSpecialties(rfp);
+
+  return (
+    <div className="prc">
+      <div className="prc-composer-hd">
+        <button type="button" className="btn" onClick={onBack}>← All tenders</button>
+        <h3 className="prc-h">{rfp.title}</h3>
+        <span className={`prc-badge ${rfpStatusBadge(rfp.status).tone}`}>{rfpStatusBadge(rfp.status).label}</span>
+      </div>
+      {error ? <p role="alert" className="prc-error">{error}</p> : null}
+
+      {specialties.length > 0 ? (
+        <ul className="prc-tags" aria-label="Trades">
+          {specialties.map((s) => <li key={s} className="prc-tag">{s}</li>)}
+        </ul>
+      ) : null}
+
+      {rfp.status === 'draft' ? (
+        <Composer
+          rfp={rfp}
+          recipients={recipients}
+          loading={loading}
+          onError={setError}
+          onRfpChanged={setBoth}
+          onRecipientsChanged={(next) => setData((prev) => (prev ? { ...prev, recipients: next } : prev))}
+        />
+      ) : (
+        <ProposalsInbox
+          key={`${rfp.id}:${rfp.status}`}
+          rfp={rfp}
+          recipients={recipients}
+          onError={setError}
+          onRfpChanged={setBoth}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Composer (draft only) ────────────────────────────────────────────────────
+
+function Composer({
+  rfp, recipients, loading, onError, onRfpChanged, onRecipientsChanged,
+}: {
+  rfp: V2Rfp;
+  recipients: V2Recipient[];
+  loading: boolean;
+  onError: (msg: string | null) => void;
+  onRfpChanged: (rfp: V2Rfp) => void;
+  onRecipientsChanged: (recipients: V2Recipient[]) => void;
+}) {
+  const [emailDraft, setEmailDraft] = useState('');
+  const [rejected, setRejected] = useState<{ invalid: string[]; duplicates: string[] } | null>(null);
+  const [busy, setBusy] = useState<null | 'recipients' | 'publish'>(null);
+  const [confirmingPublish, setConfirmingPublish] = useState(false);
+
+  const emails = useMemo(() => recipients.map((r) => r.email), [recipients]);
+  const blocked = publishBlockedReason(rfp, recipients.length);
+
+  const addEmails = async () => {
+    const parsed = parseRecipients(emailDraft, emails);
+    setRejected(
+      parsed.invalid.length || parsed.duplicates.length
+        ? { invalid: parsed.invalid, duplicates: parsed.duplicates } : null,
+    );
+    if (parsed.valid.length === 0) return;
+    setBusy('recipients');
+    onError(null);
+    const res = await addRecipientsAction(rfp.id, parsed.valid);
+    setBusy(null);
+    if (!res.ok) { onError(res.message); return; }
+    // The server's rows win (id, status, and the one-time token).
+    onRecipientsChanged([...recipients, ...res.data]);
+    setEmailDraft(parsed.invalid.join(', '));
+  };
+
+  const publish = async () => {
+    setBusy('publish');
+    onError(null);
+    const res = await publishRfpAction(rfp.id);
+    setBusy(null);
+    setConfirmingPublish(false);
+    if (!res.ok) { onError(res.message); return; }
+    onRfpChanged(res.data);
+  };
+
+  return (
+    <section className="prc-composer" aria-label="Request for proposals">
+      <p className="prc-quiet">
+        Private until you publish it. No contractor can see this — the personal links do not exist
+        yet. Title, scope and deadlines are set when the draft is created; publish sends it.
+      </p>
+
+      {rfp.scope_text ? <p className="prc-comment">{rfp.scope_text}</p> : null}
 
       {/* ── Recipients ──────────────────────────────────────────────────── */}
       <div className="prc-field">
         <span className="prc-label" id="prc-rcp-label">
-          Send to {recipients.length > 0 ? `(${recipients.length})` : ''}
+          Invite {recipients.length > 0 ? `(${recipients.length})` : ''}
         </span>
-
-        {recipients.length === 0 ? (
-          <p className="prc-quiet">
-            Nobody yet. Paste a whole column of addresses or add them one at a time.
-          </p>
+        {loading ? (
+          <p className="prc-quiet" role="status">Loading…</p>
+        ) : recipients.length === 0 ? (
+          <p className="prc-quiet">Nobody yet. Paste a column of addresses or add them one at a time.</p>
         ) : (
           <ul className="prc-recipients" aria-labelledby="prc-rcp-label">
             {recipients.map((r) => {
-              const badge = recipientBadge(r.status);
+              const badge = recipientStatusBadge(r.status);
               return (
                 <li key={r.id} className="prc-recipient">
                   <span className="prc-email">{r.email}</span>
+                  {r.token ? <TokenLink token={r.token} /> : null}
                   <span className={`prc-badge ${badge.tone}`}>{badge.label}</span>
-                  {/* Removable only while it is a draft: once a token is minted
-                      the invitation exists in someone's inbox, and quietly
-                      dropping the row here would not un-send it. */}
-                  {locked ? null : (
-                    <button
-                      type="button"
-                      className="prc-remove"
-                      aria-label={`Remove ${r.email}`}
-                      disabled={busy === 'recipients'}
-                      onClick={() => onRemoveRecipient(r.id)}
-                    >
-                      Remove
-                    </button>
-                  )}
                 </li>
               );
             })}
           </ul>
         )}
 
-        {locked ? null : (
-          <>
-            <textarea
-              className="prc-input prc-emails"
-              value={emailDraft}
-              aria-label="Contractor email addresses"
-              placeholder="ana@obra.pt, joao@construcoes.pt — or paste a column from a spreadsheet"
-              disabled={!rfp || busy === 'recipients'}
-              onChange={(e) => setEmailDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); addEmails(); }
-              }}
-            />
-            <div className="prc-row">
-              <button
-                type="button"
-                className="btn"
-                disabled={!rfp || busy === 'recipients' || emailDraft.trim().length === 0}
-                onClick={addEmails}
-              >
-                Add to list
-              </button>
-              {!rfp ? <span className="prc-quiet">Save the draft first.</span> : null}
-            </div>
-            {rejected ? (
-              <p className="prc-reject" role="status">
-                {rejected.invalid.length > 0
-                  ? `Not an email address: ${rejected.invalid.join(', ')}. `
-                  : ''}
-                {rejected.duplicates.length > 0
-                  ? `Already on the list: ${rejected.duplicates.join(', ')}.`
-                  : ''}
-              </p>
-            ) : null}
-          </>
-        )}
-      </div>
-
-      {/* ── The two buttons ─────────────────────────────────────────────── */}
-      {locked ? null : (
-        <div className="prc-actions">
+        <textarea
+          className="prc-input prc-emails"
+          value={emailDraft}
+          aria-label="Contractor email addresses"
+          placeholder="ana@obra.pt, joao@construcoes.pt — or paste a column from a spreadsheet"
+          disabled={busy === 'recipients'}
+          onChange={(e) => setEmailDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void addEmails(); }
+          }}
+        />
+        <div className="prc-row">
           <button
             type="button"
             className="btn"
-            disabled={busy === 'save'}
-            onClick={() => onSaveDraft({ description, specialties })}
+            disabled={busy === 'recipients' || emailDraft.trim().length === 0}
+            onClick={addEmails}
           >
-            {busy === 'save' ? 'Saving…' : 'Save draft'}
+            Add to list
           </button>
+        </div>
+        {rejected ? (
+          <p className="prc-reject" role="status">
+            {rejected.invalid.length > 0 ? `Not an email address: ${rejected.invalid.join(', ')}. ` : ''}
+            {rejected.duplicates.length > 0 ? `Already on the list: ${rejected.duplicates.join(', ')}.` : ''}
+          </p>
+        ) : null}
+      </div>
 
-          {confirmingSend ? (
-            <div className="prc-confirm" role="group" aria-label="Confirm sending the RFP">
+      {/* ── Publish ─────────────────────────────────────────────────────── */}
+      <div className="prc-actions">
+        {confirmingPublish ? (
+          <div className="prc-confirm" role="group" aria-label="Confirm publishing the RFP">
+            <p className="prc-quiet">
+              This mints a personal link for {recipients.length}{' '}
+              {recipients.length === 1 ? 'contractor' : 'contractors'} and opens the tender for bids.
+            </p>
+            <button type="button" className="btn" onClick={() => setConfirmingPublish(false)}>Not yet</button>
+            <button type="button" className="btn primary" disabled={busy === 'publish'} onClick={publish}>
+              {busy === 'publish' ? 'Publishing…' : 'Publish it'}
+            </button>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={blocked !== null}
+              onClick={() => setConfirmingPublish(true)}
+            >
+              Publish tender
+            </button>
+            {blocked ? <span className="prc-quiet">{blocked}</span> : null}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** The one-time personal link, revealed to the issuer until email delivery lands. */
+function TokenLink({ token }: { token: string }) {
+  const [copied, setCopied] = useState(false);
+  const url = `/rfp/${token}`;
+  return (
+    <button
+      type="button"
+      className="prc-remove"
+      title="Copy the bidder's personal link"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(`${window.location.origin}${url}`);
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        } catch { /* clipboard blocked — the link is still shown on hover */ }
+      }}
+    >
+      {copied ? 'Copied' : 'Copy link'}
+    </button>
+  );
+}
+
+// ── The inbox (published / closed / awarded) ─────────────────────────────────
+
+function ProposalsInbox({
+  rfp, recipients, onError, onRfpChanged,
+}: {
+  rfp: V2Rfp;
+  recipients: V2Recipient[];
+  onError: (msg: string | null) => void;
+  onRfpChanged: (rfp: V2Rfp) => void;
+}) {
+  const [inbox, setInbox] = useState<Inbox | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<null | string>(null);
+  const [picked, setPicked] = useState<string | null>(rfp.awarded_proposal_id ?? null);
+  const [confirmingAward, setConfirmingAward] = useState(false);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    const next = await loadInboxAction({ id: rfp.id, root_task_ids: rfp.root_task_ids });
+    setInbox(next);
+    setLoading(false);
+  }, [rfp.id, rfp.root_task_ids]);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const lanes = useMemo(() => orderLanes(inbox?.lanes ?? []), [inbox]);
+  const decided = rfp.status === 'awarded' || rfp.status === 'cancelled';
+  const winner = lanes.find((l) => l.proposal_id === picked) ?? null;
+  const awardBlocked = awardBlockedReason(rfp, lanes, winner);
+  const waiting = recipients.filter((r) => r.status === 'sent' || r.status === 'opened' || r.status === 'queued');
+
+  const shortlist = async (proposalId: string) => {
+    setBusy(`shortlist:${proposalId}`);
+    onError(null);
+    const res = await shortlistAction(proposalId);
+    setBusy(null);
+    if (!res.ok) { onError(res.message); return; }
+    void reload();
+  };
+
+  const close = async () => {
+    setBusy('close');
+    onError(null);
+    const res = await closeRfpAction(rfp.id);
+    setBusy(null);
+    if (!res.ok) { onError(res.message); return; }
+    onRfpChanged(res.data);
+  };
+
+  const award = async () => {
+    if (!picked) return;
+    setBusy('award');
+    onError(null);
+    const res = await awardAction(rfp.id, picked);
+    setBusy(null);
+    setConfirmingAward(false);
+    if (!res.ok) { onError(res.message); return; }
+    onRfpChanged(res.data);
+    void reload();
+  };
+
+  return (
+    <section className="prc-inbox" aria-label="Proposals">
+      <div className="prc-composer-hd">
+        <h3 className="prc-h">Proposals</h3>
+        <span className="prc-count">{lanes.length} of {recipients.length} invited</span>
+        {rfp.status === 'published' ? (
+          <button type="button" className="btn" disabled={busy === 'close'} onClick={close}>
+            {busy === 'close' ? 'Closing…' : 'Close tender'}
+          </button>
+        ) : null}
+      </div>
+
+      {inbox && !inbox.seesMoney ? (
+        <p className="prc-quiet">
+          You can see who bid, but not the amounts — that needs the money permission on this
+          organisation. Ask an owner to grant it to compare prices here.
+        </p>
+      ) : null}
+
+      {loading ? (
+        <p className="prc-quiet" role="status">Loading proposals…</p>
+      ) : lanes.length === 0 ? (
+        <p className="prc-quiet">
+          Nothing back yet. Each proposal appears here as it arrives; the invite list shows who has
+          opened their link.
+        </p>
+      ) : (
+        <ul className="prc-proposals">
+          {lanes.map((lane) => (
+            <LaneCard
+              key={lane.proposal_id}
+              lane={lane}
+              seesMoney={inbox?.seesMoney ?? false}
+              picked={picked === lane.proposal_id}
+              decided={decided}
+              busy={busy === `shortlist:${lane.proposal_id}`}
+              onPick={() => setPicked(lane.proposal_id)}
+              onShortlist={() => shortlist(lane.proposal_id)}
+            />
+          ))}
+        </ul>
+      )}
+
+      {inbox?.comparison && inbox.seesMoney ? (
+        <ComparisonMatrix comparison={inbox.comparison} lanes={lanes} />
+      ) : null}
+
+      {!decided && lanes.length > 0 ? (
+        <div className="prc-actions">
+          {confirmingAward ? (
+            <div className="prc-confirm" role="group" aria-label="Confirm the award">
               <p className="prc-quiet">
-                This emails {recipients.length}{' '}
-                {recipients.length === 1 ? 'contractor' : 'contractors'} a link to bid. The brief is
-                frozen once it goes, and the links stay live until you choose a constructor.
+                Awarding {winner?.bidder.name ?? winner?.bidder.email} closes the tender, declines every
+                other bid, and drafts their contract. It is recorded on the shared record.
               </p>
-              <button type="button" className="btn" onClick={() => setConfirmingSend(false)}>
-                Not yet
-              </button>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={busy === 'send'}
-                onClick={onSend}
-              >
-                {busy === 'send' ? 'Sending…' : 'Send it'}
+              <button type="button" className="btn" onClick={() => setConfirmingAward(false)}>Cancel</button>
+              <button type="button" className="btn primary" disabled={busy === 'award'} onClick={award}>
+                {busy === 'award' ? 'Awarding…' : 'Award it'}
               </button>
             </div>
           ) : (
@@ -524,195 +682,129 @@ function RfpComposer({
               <button
                 type="button"
                 className="btn primary"
-                disabled={blocked !== null}
-                onClick={() => setConfirmingSend(true)}
+                disabled={awardBlocked !== null}
+                onClick={() => setConfirmingAward(true)}
               >
-                Send to contractors
+                Award {winner ? `to ${winner.bidder.name ?? winner.bidder.email}` : 'the winner'}
               </button>
-              {/* A disabled button that will not say why is a dead end. */}
-              {blocked ? <span className="prc-quiet">{blocked}</span> : null}
+              {awardBlocked ? <span className="prc-quiet">{awardBlocked}</span> : null}
             </>
           )}
         </div>
-      )}
-    </section>
-  );
-}
-
-function FileRow({ file }: { file: FileRef }) {
-  return (
-    <li className="prc-file">
-      <a className="prc-filename" href={file.url} target="_blank" rel="noreferrer">
-        {file.filename}
-      </a>
-      <span className="prc-filemeta">{formatBytes(file.size)}</span>
-    </li>
-  );
-}
-
-/** "8 KB", "1.4 MB" — orientation beside a file name, not an accounting figure. */
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return '—';
-  if (bytes < 1000) return `${Math.round(bytes)} B`;
-  const units = ['KB', 'MB', 'GB'];
-  let value = bytes / 1000;
-  let unit = 0;
-  while (value >= 1000 && unit < units.length - 1) { value /= 1000; unit += 1; }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
-}
-
-// ── The inbox ────────────────────────────────────────────────────────────────
-
-function ProposalsInbox({
-  view, busy, onSelect,
-}: {
-  view: ProcurementView;
-  busy: boolean;
-  onSelect: (proposalId: string) => void;
-}) {
-  const rows = inboxRows(view);
-  const decided = view.selectedProposalId !== null;
-  const waiting = view.recipients.filter((r) => r.status === 'invited' || r.status === 'viewed');
-
-  return (
-    <section className="prc-inbox" aria-label="Proposals">
-      <div className="prc-composer-hd">
-        <h3 className="prc-h">Proposals</h3>
-        <span className="prc-count">
-          {rows.length} of {view.recipients.length} invited
-        </span>
-      </div>
-
-      {rows.length === 0 ? (
-        <p className="prc-quiet">
-          Nothing back yet. You will see each proposal here as it arrives — the list above shows who
-          has opened the invitation.
-        </p>
-      ) : (
-        <ul className="prc-proposals">
-          {rows.map(({ proposal, email, selected }) => (
-            <ProposalCard
-              key={proposal.id}
-              proposal={proposal}
-              email={email}
-              selected={selected}
-              /* Every bid stays selectable-looking only while nothing is chosen:
-                 the choice is one-way (it activates execution and kills every
-                 outstanding token), so a second Select would be a lie. */
-              canSelect={!decided}
-              busy={busy}
-              onSelect={() => onSelect(proposal.id)}
-            />
-          ))}
-        </ul>
-      )}
+      ) : null}
 
       {waiting.length > 0 && !decided ? (
         <p className="prc-quiet">
-          Still waiting on {waiting.length}{' '}
-          {waiting.length === 1 ? 'contractor' : 'contractors'}. Choosing now closes the tender and
-          their links stop working.
+          Still waiting on {waiting.length} {waiting.length === 1 ? 'contractor' : 'contractors'}.
         </p>
       ) : null}
 
-      {decided ? (
+      {rfp.status === 'awarded' ? (
         <p className="prc-quiet">
-          A constructor is selected and the build has moved to execution. Every proposal stays
-          here — including the ones not chosen — as the record of what was asked and what came back.
+          Awarded. Every proposal stays here — including the ones not chosen — as the record of what
+          was asked and what came back.
         </p>
       ) : null}
     </section>
   );
 }
 
-function ProposalCard({
-  proposal, email, selected, canSelect, busy, onSelect,
+function LaneCard({
+  lane, seesMoney, picked, decided, busy, onPick, onShortlist,
 }: {
-  proposal: ProcurementView['proposals'][number];
-  email: string | null;
-  selected: boolean;
-  canSelect: boolean;
+  lane: V2ProposalLane;
+  seesMoney: boolean;
+  picked: boolean;
+  decided: boolean;
   busy: boolean;
-  onSelect: () => void;
+  onPick: () => void;
+  onShortlist: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-
+  const badge = proposalStatusBadge(lane.status);
+  const name = lane.bidder.name ?? lane.bidder.email;
   return (
-    <li className={`prc-proposal${selected ? ' is-selected' : ''}`}>
+    <li className={`prc-proposal${picked ? ' is-selected' : ''}`}>
       <div className="prc-proposal-hd">
-        <button
-          type="button"
-          className="prc-disclose"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
-          <span className="prc-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
-          <span className="prc-company">{proposal.companyName}</span>
-        </button>
-        <span className="prc-figure">{budgetRange(proposal.budgetMinCents, proposal.budgetMaxCents)}</span>
-        <span className="prc-figure quiet">{timelineWords(proposal.timelineDays)}</span>
-        {selected ? <span className="prc-badge good">Selected</span> : null}
-      </div>
-
-      {open ? (
-        <div className="prc-proposal-body">
-          {email ? <p className="prc-quiet">Submitted by {email}</p> : null}
-          <p className="prc-quiet">
-            Received{' '}
-            <time dateTime={proposal.submittedAt} title={proposal.submittedAt}>
-              {new Date(proposal.submittedAt).toLocaleDateString('en-GB', {
-                day: 'numeric', month: 'short', year: 'numeric',
-              })}
-            </time>
-          </p>
-
-          {proposal.websiteUrl ? (
-            <p className="prc-web">
-              <a href={proposal.websiteUrl} target="_blank" rel="noreferrer noopener">
-                {proposal.websiteUrl}
-              </a>
-            </p>
-          ) : null}
-
-          {proposal.comment ? <p className="prc-comment">{proposal.comment}</p> : null}
-
-          {proposal.portfolioImages.length > 0 ? (
-            <ul className="prc-portfolio">
-              {proposal.portfolioImages.map((img) => (
-                <li key={img.key}>
-                  {/* Plain <img>: these are R2 URLs from an unauthenticated
-                      submission, not project assets, so they are not run through
-                      the image optimiser's allow-list. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img.url} alt={`${proposal.companyName} — ${img.filename}`} loading="lazy" />
-                </li>
-              ))}
-            </ul>
-          ) : null}
-
-          {canSelect ? (
-            confirming ? (
-              <div className="prc-confirm" role="group" aria-label="Confirm selecting this constructor">
-                <p className="prc-quiet">
-                  Choosing {proposal.companyName} closes the tender: execution starts, and every
-                  other invitation link stops working. It is recorded on the shared record.
-                </p>
-                <button type="button" className="btn" onClick={() => setConfirming(false)}>
-                  Cancel
-                </button>
-                <button type="button" className="btn primary" disabled={busy} onClick={onSelect}>
-                  {busy ? 'Selecting…' : `Select ${proposal.companyName}`}
-                </button>
-              </div>
-            ) : (
-              <button type="button" className="btn primary" onClick={() => setConfirming(true)}>
-                Select this constructor
+        <span className="prc-company">{name}</span>
+        <span className={`prc-badge ${badge.tone}`}>{badge.label}</span>
+        {seesMoney ? <span className="prc-figure">{formatMoney(lane.total)}</span> : null}
+        {lane.duration_wd != null ? (
+          <span className="prc-figure quiet">{lane.duration_wd} working days</span>
+        ) : null}
+        {lane.channel === 'email' ? <span className="prc-badge quiet">By email</span> : null}
+        {lane.missing_lines > 0 ? (
+          <span className="prc-badge warn">{lane.missing_lines} lines unpriced</span>
+        ) : null}
+        {!decided && isLive(lane) ? (
+          <>
+            {lane.status === 'submitted' ? (
+              <button type="button" className="btn" disabled={busy} onClick={onShortlist}>
+                {busy ? '…' : 'Shortlist'}
               </button>
-            )
-          ) : null}
-        </div>
-      ) : null}
+            ) : null}
+            <button type="button" className={`btn${picked ? ' primary' : ''}`} onClick={onPick}>
+              {picked ? 'Picked' : 'Pick to award'}
+            </button>
+          </>
+        ) : null}
+      </div>
     </li>
   );
+}
+
+// ── Comparison matrix (money-gated) ──────────────────────────────────────────
+
+function ComparisonMatrix({
+  comparison, lanes,
+}: {
+  comparison: V2Comparison;
+  lanes: V2ProposalLane[];
+}) {
+  const byId = new Map(lanes.map((l) => [l.proposal_id, l]));
+  // Column order follows the ordered lanes so the matrix reads like the list.
+  const cols = lanes.map((l) => l.proposal_id).filter((id) => byId.has(id));
+
+  if (comparison.items.length === 0) return null;
+
+  return (
+    <div className="prc-matrix-wrap">
+      <table className="prc-matrix">
+        <thead>
+          <tr>
+            <th>Line</th>
+            {cols.map((id) => (
+              <th key={id}>{byId.get(id)?.bidder.name ?? byId.get(id)?.bidder.email ?? id}</th>
+            ))}
+            <th className="prc-median">Median</th>
+          </tr>
+        </thead>
+        <tbody>
+          {comparison.items.map((item) => (
+            <tr key={item.rfp_item_id}>
+              <td>{item.description} <span className="prc-median">({item.quantity} {item.unit})</span></td>
+              {cols.map((id) => {
+                const price = item.prices[id];
+                const missing = item.missing_in.includes(id);
+                return (
+                  <td key={id} className={missing ? 'prc-missing' : undefined}>
+                    {missing ? '— not priced' : formatMoney(price)}
+                  </td>
+                );
+              })}
+              <td className="prc-median">{formatMoney(item.median)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+/** A `datetime-local` value ("2026-01-05T09:00") → an ISO instant for the wire. */
+function toIso(local: string): string {
+  if (!local) return '';
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? local : d.toISOString();
 }

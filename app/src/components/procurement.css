@@ -54,6 +54,33 @@
 .prc-badge.live { color: var(--owner-fg); background: var(--owner-muted); border-color: var(--plan-baseline-line); }
 .prc-badge.good { color: var(--ok-fg); background: var(--ok-bg); border-color: var(--ok-bd); }
 .prc-badge.off { color: var(--bad-fg); background: var(--bad-bg); border-color: var(--bad-bd); }
+.prc-badge.warn { color: var(--warn-fg); background: var(--warn-bg, var(--sunken)); border-color: var(--warn-bd, var(--outline)); }
+
+/* ── RFP picker (LINA-361, v2) ────────────────────────────────────────────── */
+.prc-picker { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--s3); }
+.prc-rfp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.prc-rfp-item {
+  display: flex; align-items: center; gap: var(--s2); width: 100%; text-align: left;
+  padding: 10px 12px; border: 1px solid var(--outline); border-radius: 10px;
+  background: var(--raised); color: inherit; cursor: pointer; font: inherit;
+}
+.prc-rfp-item:hover { border-color: var(--plan-baseline-line); }
+.prc-rfp-item.is-active { border-color: var(--owner-fg); background: var(--owner-muted); }
+.prc-rfp-title { font-weight: 600; flex: 1 1 auto; }
+
+/* ── Task picker (root_task_ids at create) ────────────────────────────────── */
+.prc-tasks { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.prc-task { display: flex; align-items: center; gap: 8px; font-size: var(--size-body); }
+.prc-task input { flex: 0 0 auto; }
+
+/* ── Comparison matrix (money-gated) ──────────────────────────────────────── */
+.prc-matrix-wrap { overflow-x: auto; margin-top: var(--s2); }
+.prc-matrix { border-collapse: collapse; width: 100%; font-size: var(--size-caption); }
+.prc-matrix th, .prc-matrix td { border: 1px solid var(--outline); padding: 6px 8px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.prc-matrix th:first-child, .prc-matrix td:first-child { text-align: left; white-space: normal; }
+.prc-matrix thead th { background: var(--sunken); font-weight: 650; }
+.prc-matrix .prc-median { color: var(--muted); }
+.prc-matrix .prc-missing { color: var(--warn-fg); }
 
 /* ── Start / skip ────────────────────────────────────────────────────────── */
 .prc-start, .prc-composer, .prc-inbox {
