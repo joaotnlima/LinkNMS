@@ -182,6 +182,41 @@
   border: 1px solid var(--outline); border-radius: 8px; background: var(--sunken);
 }
 
+/* ── Draft details (read + inline editor) ────────────────────────────────── */
+.prc-details { display: flex; flex-direction: column; gap: var(--s2); }
+.prc-meta { margin: 0; display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
+.prc-meta > div { display: flex; flex-direction: column; gap: 2px; }
+.prc-meta dt { margin: 0; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
+.prc-meta dd { margin: 0; font-size: 13px; color: var(--fg); font-variant-numeric: tabular-nums; }
+
+/* ── Awaiting (invited lanes; record-an-emailed-bid entry point) ──────────── */
+.prc-awaiting {
+  display: flex; flex-direction: column; gap: var(--s2);
+  margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--line);
+}
+.prc-subh { margin: 0; font-size: 13px; font-weight: 650; color: var(--fg); }
+.prc-awaiting-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.prc-awaiting-row { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.prc-awaiting-row:last-child { border-bottom: 0; }
+.prc-awaiting-hd { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+
+/* ── Record an emailed bid (the inline offline form + its uploader) ───────── */
+.prc-offline {
+  display: flex; flex-direction: column; gap: var(--s3);
+  margin-top: var(--s2); padding: var(--s3);
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl); background: var(--sunken);
+}
+.prc-doc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.prc-doc {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2);
+  border: 1px solid var(--outline); border-radius: 8px; background: var(--raised); padding: 6px 10px;
+}
+.prc-doc-name { font-size: 13px; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+/* The file picker is a styled label wrapping a hidden native input. */
+.tws-upload { position: relative; overflow: hidden; cursor: pointer; }
+.tws-upload.is-busy { opacity: .6; cursor: default; }
+.prc-file-input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: inherit; }
+
 /* ── Jobsite width ───────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .prc-skip { flex-direction: column; align-items: stretch; }
