@@ -59,8 +59,9 @@ import {
   setAssignee, setDependencyType, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
   setTaskDate, setTaskDates, setTaskDescription, setTrade,
   subtaskCount, taskCount, toggleDependency, toTemplateBody, toWire,
-  type DepType, type PhaseDraft, type PlanNodeRef, type StageStatus, type TemplatePhase,
+  type AuthoredNode, type DepType, type PhaseDraft, type PlanNodeRef, type StageStatus, type TemplatePhase,
 } from '@/lib/plan-authoring';
+import { rekeyDraft, rekeyWire, draftKeys } from '@/lib/v2/plan-rekey';
 import { PlanActionError, reportProgress } from '@/lib/plan-baseline';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
@@ -218,9 +219,28 @@ function rowOfKey(
   return null;
 }
 
+/**
+ * The v2 autosave door (LINA-369, S3b). When present, the editor writes the plan
+ * through `/api/v2` (the `savePlanV2` server action) instead of the v1
+ * `authorPlan` fetch, and the write is INCREMENTAL: it hands the last-saved tree
+ * (`prev`, null on the very first save of an empty build) and the tree it is
+ * saving now (`next`), and the action diffs them. On success it returns the v2
+ * ids the save minted for any rows it created (`stageIds`, by author-local key —
+ * the editor rekeys those rows so the next diff targets the real id) and whether
+ * a structural move needs a reload (`needsReload`). A refusal comes back as
+ * `{ ok: false }` rather than throwing, so the author keeps their edits.
+ */
+export type SaveV2 = (
+  prev: AuthoredNode[] | null,
+  next: AuthoredNode[],
+) => Promise<
+  | { ok: true; stageIds: Record<string, string>; needsReload: boolean }
+  | { ok: false; code: string; message: string }
+>;
+
 export function PlanBuildEditor({
   projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
-  importHref = null, initialStageIds = {},
+  importHref = null, initialStageIds = {}, saveV2,
 }: {
   projectId: string;
   /**
@@ -256,9 +276,19 @@ export function PlanBuildEditor({
   initialStageIds?: Record<string, string>;
   /** The task a permalink asked for, opened in the drawer on mount. */
   openStageKey?: string | null;
+  /**
+   * The v2 write door (LINA-369). Present → the editor autosaves through
+   * `/api/v2` incrementally; absent → the legacy v1 `authorPlan` whole-tree write.
+   */
+  saveV2?: SaveV2;
 }) {
   const router = useRouter();
   const resuming = initialPhases != null && initialPhases.length > 0;
+  // v2 mode (LINA-369): the save writes the build's live plan on the v2 record —
+  // NOT the v1 private-draft-then-propose flow. The copy below drops the "only you
+  // can see it" / "send for approval" framing accordingly (the v1 proposal /
+  // sign-off step is a separate v2 slice, S6). See the header, footer and actions.
+  const v2 = saveV2 != null;
 
   // The scaffold this editor starts from, and the one "Reset" returns to — the
   // two must be the same source or reset would quietly swap the author's default
@@ -288,6 +318,16 @@ export function PlanBuildEditor({
   const savingRef = useRef(false);   // a write is in flight
   const pendingRef = useRef(false);  // an edit landed mid-write — save again after
   const phasesRef = useRef(phases);  // the latest tree, read by the debounced flush
+
+  // The tree the LAST successful v2 save persisted — what the NEXT save diffs
+  // against (LINA-369, v2 mode only; v1 ignores it). Null on a fresh empty build,
+  // so the first save CREATES the whole tree (`applyPlanDraft`); seeded from a
+  // resumed draft otherwise so the first edit diffs against what is stored. Kept
+  // in sync on every save: rekeyed to the v2 ids the save minted for created rows,
+  // so a create followed by an edit does not re-create the same rows.
+  const lastSavedWireRef = useRef<AuthoredNode[] | null>(
+    resuming ? toWire(initialPhases!) : null,
+  );
 
   // "Save as my default" — a private preference write, tracked apart from the
   // plan save so its confirmation can never be mistaken for "the plan was sent".
@@ -428,6 +468,61 @@ export function PlanBuildEditor({
     if (savingRef.current) { pendingRef.current = true; return; }
     savingRef.current = true;
     setSaveState('saving');
+
+    // ── v2 write (LINA-369, S3b) ────────────────────────────────────────────────
+    // Incremental save through the session-bound server action: hand the
+    // last-saved tree (`prev`, null for a fresh build's first save) and the tree
+    // now (`stages`); the action diffs and fires the ordered v2 request set. On
+    // success, adopt the v2 ids the save minted for any CREATED rows — in the live
+    // tree and the last-saved snapshot both — so the next diff targets the stored
+    // id and never re-creates a row. Status is NOT set here: on a v2 draft it stays
+    // the honest all-grey meter (ADR-0019), and progress is a separate v2 flow.
+    if (saveV2) {
+      try {
+        const prev = lastSavedWireRef.current;
+        const res = await saveV2(prev, stages);
+        if (!res.ok) {
+          setError(res.message
+            || 'That did not save. Your edits are still here — they will retry on the next change.');
+          setSaveState('error');
+          return;
+        }
+        const idByKey = res.stageIds;
+        if (Object.keys(idByKey).length > 0) {
+          // Read the LATEST tree (an edit may have landed mid-write): rekey only
+          // the rows this save created; rows added since keep their local keys and
+          // are created on the next save. The last-saved snapshot is the SENT tree
+          // rekeyed — exactly what the server now holds, pending edits excluded.
+          const rekeyed = rekeyDraft(phasesRef.current, idByKey);
+          phasesRef.current = rekeyed;
+          setPhases(rekeyed);
+          lastSavedWireRef.current = rekeyWire(stages, idByKey);
+        } else {
+          // Nothing created — the tree we sent IS what the server now holds.
+          lastSavedWireRef.current = stages;
+        }
+        // Every row we just SENT now lives on the server (rekeyed to its stored
+        // id) — light up its workspace. Rows added since stay "save first".
+        setSavedKeys((prevKeys) => {
+          const nextKeys = new Set(prevKeys);
+          draftKeys(current).forEach((k) => nextKeys.add(idByKey[k] ?? k));
+          return nextKeys;
+        });
+        setSaveState('saved');
+        // A reparent/reorder is REPORTED but not persisted on v2 yet (the read seam
+        // does not project sibling positions — tracked past S3). Be honest that the
+        // move did not save while the rest did, and re-sync the read surfaces.
+        if (res.needsReload) {
+          setError('Moving a row to a new position isn’t saved on the new plan yet — your other changes were saved. Reload to see the plan as stored.');
+          router.refresh();
+        }
+        return;
+      } finally {
+        savingRef.current = false;
+        if (pendingRef.current) { pendingRef.current = false; void flushRef.current(); }
+      }
+    }
+
     try {
       const result = await authorPlan(projectId, stages);
       // Light up every current row's workspace: after this write the server holds
@@ -472,7 +567,7 @@ export function PlanBuildEditor({
       // An edit that landed mid-write is now unsaved — flush again for it.
       if (pendingRef.current) { pendingRef.current = false; void flushRef.current(); }
     }
-  }, [projectId, router]);
+  }, [projectId, router, saveV2]);
 
   useEffect(() => { flushRef.current = flush; }, [flush]);
   // Flush a still-pending debounce on unmount so the last edit is never lost when
@@ -627,12 +722,15 @@ export function PlanBuildEditor({
           <h1 className="pbx-title">Build the plan directly in LinkNMS</h1>
           <p className="pbx-lede">
             Compose phases and tasks, assign an accountable specialty and owner, and set the dates
-            by clicking and dragging the bars — or leave what you don’t know blank. Saving keeps
-            this as your private draft — only you can see it, and nothing is sent until you choose
-            to send it for approval.
+            by clicking and dragging the bars — or leave what you don’t know blank.{' '}
+            {v2
+              ? 'Your changes save automatically to this build’s plan.'
+              : 'Saving keeps this as your private draft — only you can see it, and nothing is sent until you choose to send it for approval.'}
           </p>
         </div>
-        <span className="pbx-draft">Draft — only you can see it</span>
+        {v2
+          ? <span className="pbx-draft">Saves automatically</span>
+          : <span className="pbx-draft">Draft — only you can see it</span>}
       </header>
 
       <div className="pbx-toolbar">
@@ -647,7 +745,7 @@ export function PlanBuildEditor({
               never blocks. */}
           <span role="status" className={`pbx-autosave is-${saveState}`}>
             {saveState === 'saving' ? 'Saving…'
-              : saveState === 'saved' ? 'All changes saved · draft only you can see'
+              : saveState === 'saved' ? (v2 ? 'All changes saved' : 'All changes saved · draft only you can see')
                 : saveState === 'error' ? 'Not saved — will retry on your next edit'
                   : 'Changes save automatically'}
           </span>
@@ -739,18 +837,29 @@ export function PlanBuildEditor({
 
       {error ? <p role="alert" className="pbx-open">{error}</p> : null}
 
-      {/* No Save, no Cancel (founder, LINA-306): every edit autosaves as your
-          private draft. "Send for approval" stays a separate act on the plan. */}
+      {/* No Save, no Cancel (founder, LINA-306): every edit autosaves. On v2 the
+          save writes the build's live plan; the v1 "send for approval" step is a
+          separate v2 slice (S6), so the link goes to the record, not a proposal. */}
       <div className="pbx-actions">
-        <Link className="btn" href={`/projects/${projectId}/plan`}>View plan &amp; send for approval →</Link>
+        {v2
+          ? <Link className="btn" href={`/projects/${projectId}/record`}>Open the record →</Link>
+          : <Link className="btn" href={`/projects/${projectId}/plan`}>View plan &amp; send for approval →</Link>}
       </div>
 
-      <p className="pbx-foot">
-        Your changes save automatically as a private draft — only you can see them, and each save
-        records one event on the shared record that the draft was saved. Nothing is sent to the other
-        party and no approval is requested until you choose <strong>Send for approval</strong> on the
-        plan page.
-      </p>
+      {v2 ? (
+        <p className="pbx-foot">
+          Your changes save automatically to this build’s plan, and each save records one attributed
+          event on the shared record. Requesting sign-off is a separate step that arrives with the
+          v2 record.
+        </p>
+      ) : (
+        <p className="pbx-foot">
+          Your changes save automatically as a private draft — only you can see them, and each save
+          records one event on the shared record that the draft was saved. Nothing is sent to the other
+          party and no approval is requested until you choose <strong>Send for approval</strong> on the
+          plan page.
+        </p>
+      )}
 
       {openRow && activePhase && (openRow.ti == null || active) ? (
         <div
