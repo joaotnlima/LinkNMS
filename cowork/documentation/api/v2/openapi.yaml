@@ -4352,6 +4352,59 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/change-orders:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Contracting
+      operationId: listChangeOrders
+      summary: 'Change orders of the project (projected: party full, linked-chain existence only)'
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant. Each row is projected
+        per viewer: a party of the change order''s contract sees the full body;
+        a party of a back-to-back linked contract sees existence only (ancestor
+        ruling 11); change orders the viewer is neither party nor linked to are
+        omitted from the page.
+
+
+        **MCP tool:** `list_change_orders`'
+      x-relationship: project.participant
+      x-mcp-tool: list_change_orders
+      x-mcp-mode: read
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ChangeOrder'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /change-orders/{changeOrderId}:
     parameters:
     - name: changeOrderId

@@ -390,6 +390,57 @@ export function createContractingStore(pool) {
       return loadChangeOrder(pool, changeOrderId);
     },
 
+    /**
+     * Every change order of a project's contracts, id-ordered for stable
+     * paging. Each item is a full loadChangeOrder bundle so the use-case can
+     * project per viewer (party → full, linked-chain → existence, else drop —
+     * ruling 11). Lines and time are bulk-loaded for the page, not per row.
+     */
+    async listProjectChangeOrders(projectId, { cursor, limit }) {
+      const { rows: cos } = await pool.query(
+        `SELECT co.*,
+                c.project_id, c.client_org_id, c.supplier_org_id,
+                c.status AS contract_status, c.payment_days, c.retention_bp
+           FROM contracting.change_order co
+           JOIN contracting.contract c ON c.id = co.contract_id
+          WHERE c.project_id = $1 AND ($2::uuid IS NULL OR co.id > $2::uuid)
+          ORDER BY co.id
+          LIMIT $3`,
+        [projectId, cursor, limit + 1],
+      );
+      const page = cos.slice(0, limit);
+      const ids = page.map((r) => r.id);
+      const [{ rows: lines }, { rows: time }] = ids.length
+        ? await Promise.all([
+          pool.query(
+            'SELECT change_order_id, op, boq_item_id, new_line FROM contracting.change_order_line WHERE change_order_id = ANY($1::uuid[]) ORDER BY id',
+            [ids],
+          ),
+          pool.query(
+            'SELECT change_order_id, task_id, new_baseline_start, new_baseline_finish FROM contracting.change_order_time WHERE change_order_id = ANY($1::uuid[]) ORDER BY task_id',
+            [ids],
+          ),
+        ])
+        : [{ rows: [] }, { rows: [] }];
+      const linesBy = new Map(ids.map((id) => [id, []]));
+      const timeBy = new Map(ids.map((id) => [id, []]));
+      for (const l of lines) linesBy.get(l.change_order_id).push(l);
+      for (const t of time) timeBy.get(t.change_order_id).push(t);
+      return {
+        items: page.map((r) => ({
+          changeOrder: r,
+          lines: linesBy.get(r.id),
+          time: timeBy.get(r.id),
+          contract: {
+            id: r.contract_id, project_id: r.project_id, status: r.contract_status,
+            client_org_id: r.client_org_id, supplier_org_id: r.supplier_org_id,
+            payment_days: r.payment_days, retention_bp: r.retention_bp,
+          },
+        })),
+        nextCursor: cos.length > limit ? page[page.length - 1].id : null,
+      };
+    },
+
     /** Contracts of the back-to-back chain (ruling 11), this CO's excluded. */
     async linkedChainParties(changeOrderId) {
       const { rows } = await pool.query(
