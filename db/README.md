@@ -11,8 +11,35 @@ db/
   roles.sql          # migrator (DDL owner) + one <service>_app role per service — idempotent
   0001_platform.sql  # platform.schema_migrations + the five service schemas + USAGE grants
   migrate.mjs        # forward-only runner (zero npm deps; drives psql)
+  reset-dev.mjs      # DEV-ONLY data reset: zero out test data, keep the catalogs
 services/<svc>/migrations/NNNN_*.sql   # per-service DDL + least-privilege table grants
 ```
+
+## Resetting the dev database (`db/reset-dev.mjs`)
+
+Zero out the transactional/test data so a flow (build creation, plan authoring,
+procurement, sign-off, …) can be re-run from a clean slate, while **preserving
+the reference/catalog tables and the migration ledger**. Data only — no DDL, no
+drop; sequences are reset.
+
+```
+MIGRATOR_DATABASE_URL=<neon dev migrator> node db/reset-dev.mjs           # dry run: prints the plan
+MIGRATOR_DATABASE_URL=<neon dev migrator> node db/reset-dev.mjs --yes     # execute
+node db/reset-dev.mjs --yes --scope=schedule   # only schedule.* (leaves specialty + plan_template)
+node db/reset-dev.mjs --yes --wipe-identity    # also clear the Clerk login mirror (re-mirrors on next sign-in)
+```
+
+**Always preserved:** `platform.schema_migrations`, `platform.holiday`,
+`billing.plan`/`add_on`, `directory.specialty`, `schedule.specialty`,
+`schedule.plan_template`, `planning.plan_template`(+`_row`,`_link`). The Clerk
+login mirror (`identity.organization`/`person`/`org_membership`) is kept by
+default so you stay signed in; `--wipe-identity` clears it too.
+
+**Dev-only by construction:** hardcoded to refuse the production compute
+endpoint (no override), defaults to the known dev endpoint (`--allow-any-host`
+for another dev/local db), does nothing without `--yes`, and truncates
+`RESTART IDENTITY` **without CASCADE** inside one transaction — so it can never
+silently wipe a preserved table through a foreign key.
 
 Five service schemas — `identity`, `decision`, `change_order`, `ledger`,
 `schedule` — one per service. No cross-schema SELECT: each `<service>_app` role
