@@ -112,7 +112,7 @@ client, adapt the view transform to the v2 wire shape, keep the screen's UX. Del
 | S3 | Plan grid + Gantt (`PlanGrid.tsx`, `lib/plan-baseline.ts`, `lib/plan-authoring.ts`) | Planning, Realtime | Largest; new delta/link/segment shapes (doc 05) |
 | S4 | Change orders (`RaiseChangeOrderForm.tsx`, `CoDecisionButtons.tsx`) | Contracting (change orders) | **Splits — see §3.2 (LINA-358).** DETAIL + DECIDE (list/read/gate) are blocked-by-S1-only and ready now; PROPOSE is **blocked-by-S2** (needs a signed contract + live BoQ to attach line ops to). Proposer-never-decides invariant (§6.1) |
 | S5 | Tendering / RFP public form (`rfp/[token]/*`, `lib/rfp-proposal.ts`, `lib/procurement.ts`) | Tendering | Public-token lifecycle gap S1 in [21](./21-gap-review.md) must be closed first |
-| S6 | Sign-off + phases (`SignOffPanel.tsx`) | Project (phases) | **Was blocked on a v2 backend that did not exist — see §3.3 (LINA-356, now DONE).** The "Project (phases), Collaboration" tag was aspirational: the LINA-308 pivot never carried phases/sign-off across. The enabling backend is now on `/api/v2` (phases + sign-off in **one** module, Project — ADR-0024); S6 is the FE cutover only |
+| S6 | Sign-off + phases (`SignOffPanel.tsx`) | Project (phases) | **Was blocked on a v2 backend that did not exist — see §3.4 (LINA-356, now DONE).** The "Project (phases), Collaboration" tag was aspirational: the LINA-308 pivot never carried phases/sign-off across. The enabling backend is now on `/api/v2` (phases + sign-off in **one** module, Project — ADR-0024); S6 is the FE cutover only |
 | S7 | Task workspace (`lib/task-workspace.ts`) | Collaboration, Documents | R2 downloads gated by V6 |
 
 **Build a shared v2 client first** (`app/src/lib/v2/client.ts`): the single place that talks to
@@ -225,7 +225,124 @@ scoped honestly; does not block LINA-321's DETAIL/DECIDE half.
 PROPOSE half behind S2 and build it as the BoQ-line form (Ruling 2), not a port of the free-cost
 form. Track PROPOSE as blocked-by-S2 rather than a separate estimate against S1.
 
-### 3.3 S6 enabling backend — phases + sign-off ported to /api/v2 (LINA-356, 2026-09-28)
+### 3.3 S2 record — v2-native Plan & Money tabs (LINA-364, 2026-09-28)
+
+§3.1 shipped Header/state + Schedule and left the Plan (materials) and Money (movements) tabs as
+honest empty panels because "the Slice-B3 materials/movements model was never ported to a v2 module."
+The CEO closed that open question on **LINA-362 (parent): re-conceive, do not port.** The v1 B3
+model (`materials:swap`, `MovementView`, `price_movement` vs `scope_change`) is **retired**; the
+record's Plan and Money tabs are re-drawn on v2's own contracting model — the same call §3.2 made for
+the change-order surface, for the same reason: the money surface must read from the model that
+*drives* contracting, not a parallel vocabulary that has to be kept in sync with it.
+
+This section is the design ruling. It defines what each tab shows, the v2 entity that backs every UI
+element, the one backend read that does not exist yet, and the honest B2 empty states. It creates no
+new vocabulary: every element below already exists in `db/v2/0001_schema.sql` and
+`cowork/documentation/api/v2/openapi.yaml`.
+
+**Guiding principle (unchanged from §3.1/§3.2): resolve, never invent.** A number on these tabs is
+shown only when a v2 read states it authoritatively. Money is never free-typed — it is Σ line ops
+(`contracting/domain/money.mjs`), exactly as the change order is (§3.2 Ruling 2). The budget moves
+**only** via an approved change order (v1 ADR-0014 carried into the v2 model by the
+`contracting.change_order` → `boq_item` supersession chain and the `boq_freeze_guard` trigger).
+
+#### The two questions the two tabs answer
+
+- **Plan tab = "what was agreed."** The priced scope of work as it stands now: the live Bill of
+  Quantities (BoQ). This is v1's "the line-by-line plan and the materials behind each price",
+  re-expressed as the contracted cost lines.
+- **Money tab = "what has happened to it, and what each move cost."** The budget as agreed, every
+  approved move against it, and what is drifting but not yet formalised. This is the product's core
+  promise ("who decided this, when, and how much did it move the budget") rendered as a surface.
+
+#### Plan tab — data model mapping
+
+The Plan tab renders the **live BoQ**, grouped by contract then by task/chapter. Every row is one
+`contracting.boq_item` (openapi `CostLine`).
+
+| Plan tab UI element | v2 entity / field | Notes |
+|---|---|---|
+| Priced-scope row | `contracting.boq_item` (`CostLine`) | `code`, `description`, `unit`, `quantity`, `unit_price`, `line_total` |
+| "The materials behind the price" | `boq_item.material_spec` (`CostLine.material_spec`) | **This is the clean home for v1 "materials".** No separate materials table, no `materials:swap` |
+| Which line of scope it belongs to | `boq_item.task_id` → `planning.task.name` | Group/label by the task the cost hangs on (and `chapter` where set) |
+| Row provenance badge | `boq_item.introduced_by_change_order_id` / `superseded_by_change_order_id` | "Added by CO-3" / struck-through superseded line. This replaces v1 `materials:swap` history — a material change is a `replace` line op on a change order, visible as supersede+add |
+| Group header (per contract) | `contracting.contract` `reference`, `value_cents`, `status` | The BoQ is contract-scoped; the owner sees the prime, a sub sees only its own |
+| Owner-estimate rows (pre-contract) | `boq_item` with `contract_id IS NULL`, `estimate_owner_org_id` set | A draft/tendering project's indicative BoQ, before any contract is signed |
+
+The Plan tab is **read-only** on the record surface (authoring the BoQ lives on the plan/contract
+surfaces — S3 plan grid and the S4 propose form, §3.2). The record simply shows the agreed result
+and its change history — the audit reading, not an editor.
+
+#### Money tab — data model mapping
+
+The Money tab has three registers, top to bottom: **the summary**, **the moves**, **the drift**.
+
+| Money tab UI element | v2 read / entity | Notes |
+|---|---|---|
+| Summary tiles: Value · Approved changes · Measured · Retention held · Paid · Outstanding | `GET /contracts/{id}/financials` → `Financials` | Server-derived, per contract. The project view aggregates across the contracts the viewer may see |
+| Movements list (the ledger of budget change) | approved `contracting.change_order` rows via `GET /projects/{id}/change-orders` | Each approved CO = one budget move: `amount_delta`, `kind` (`scope`\|`time`\|`scope_and_time`), `reason`, `decided_by`, `decided_at`, `number`. **This replaces v1 `MovementView`.** |
+| v1 `price_movement` vs `scope_change` distinction | **retired** → CO `kind` + variation `kind` | v2 does not split price vs scope on the movement; it carries `kind` on the CO and the finer `time`\|`cost`\|`material`\|`scope` on the variation |
+| "Who decided it, when" line | `change_order.decided_by` (`Actor`) + `decided_at` | Party name resolved at render time (§3.2 Ruling 3), never stamped on the CO body |
+| Drift list (not yet formalised) | open/acknowledged `planning.variation` via `GET /projects/{id}/variations` | `kind` (`time`\|`cost`\|`material`\|`scope`), `delta`, `status` (`open`\|`acknowledged`). The "pending money" that has deviated from baseline but has no change order yet — the early-warning half of the promise |
+| Cash-flow detail (measurements / payments) | `Measurement`, `PaymentRecord` (`GET /contracts/{id}/measurements`, payment endpoints) | **Out of scope for the record Money tab MVP.** The record answers "what was agreed and what moved it"; the billing/cash-flow detail is a contract-finance surface, tracked separately. Financials tiles (which already fold measured/retention/paid) are the record-level cash summary |
+
+#### The one gap: a project-scoped record read (moves scope → tracked BE task)
+
+The blocker §3.1 named is now precise. `Financials`, `CostLine` and `Measurement` are all
+**per-contract or per-task** reads; the record page is **project-scoped**. There is no project-level
+"record Plan" or "record Money" projection today. Two ways to close it:
+
+- **(A) Compose in the client** — list contracts (`GET /projects/{id}/contracts`), then fan out
+  financials + BoQ per contract. Rejected as the primary path: it re-implements per-viewer
+  **visibility** (which contracts/lines a party may see) in the UI, the exact class of logic §3.2
+  and ruling-11 keep server-side, and it is N+1 chatty.
+- **(B) A record-module projection (chosen).** Add two project-scoped, per-viewer-redacted reads the
+  record module owns, mirroring the shape `GET /projects/{id}/change-orders` (LINA-357) already
+  established — one projection, visibility applied once, server-side:
+  - `GET /projects/{id}/record/plan` → the live BoQ grouped by visible contract (with CO provenance).
+  - `GET /projects/{id}/record/money` → aggregated financials + approved-CO movements + open
+    variations, each register redacted to what the viewer may see.
+
+  This is consistent with how the ledger itself (`listRecord`) and the CO roll-up are already
+  designed: a project-scoped read that redacts out-of-scope entries rather than pushing visibility
+  into the client. **This is the scope this issue adds and the CEO's LINA-362 direction authorises**;
+  the FE wiring is a thin follow-on that swaps the two `PendingTab` panels for these reads through
+  pure `record-plan-view.ts` / `record-money-view.ts` transforms (the §3.1 file split discipline).
+
+`listRecord` (the History tab, still openapi-only per §3.1) is a **separate** backend register and
+stays tracked on its own — this ruling covers Plan and Money only.
+
+#### Honest B2 empty states (a fresh v2 project has no contract yet)
+
+Under B2 a brand-new build is `draft`/`tendering` with no signed contract, so both tabs have a
+truthful empty reading — never a stub, the §3.1 discipline:
+
+- **Plan (no contract):** show the owner-estimate BoQ if one exists (`contract_id IS NULL` lines),
+  else "No priced scope yet — nothing is agreed until a contract is signed." Optionally the
+  project's `indicative_budget_cents` as a single soft figure.
+- **Money (no contract):** the only honest number is `indicative_budget_cents` (the owner's target).
+  Value/measured/paid are zero and shown as "—"; the movements and drift lists are empty with
+  "No budget has moved — there is nothing agreed to move against yet." No "As agreed / deviation"
+  badge is asserted (same reasoning as `record-view.ts`: a deviation needs a recorded move).
+
+#### No references to v1 B3 entities (acceptance)
+
+`materials:swap`, `MovementView`, `getStageMaterials`, `price_movement` and `scope_change` appear in
+this design **only** as the retired thing being replaced. The v1 `record/[stageId]` materials detail
+and `MoneyMovement.tsx` remain on v1, unreachable from the v2 record page, and are dropped in
+phase 12 (§4) — unchanged from the §3.1 follow-up note.
+
+#### Net for LINA-364 → implementation split
+
+1. **BE (blocking):** the record-module projections `GET /projects/{id}/record/plan` and
+   `.../record/money` (option B), with per-viewer visibility redaction, registered + added to
+   openapi. Owns the money aggregation (Σ financials across visible contracts) and the CO/variation
+   folds. *Moves scope — the work this issue's design authorises.*
+2. **FE (blocked-by-BE):** pure `record-plan-view.ts` + `record-money-view.ts` transforms + wire the
+   two `PendingTab` panels on `projects/[id]/record/page.tsx`; keep the four-tab, four-URL shape.
+3. **Phase 12 (already tracked):** retire `record/[stageId]` + `MoneyMovement.tsx`.
+
+### 3.4 S6 enabling backend — phases + sign-off ported to /api/v2 (LINA-356, 2026-09-28)
 
 Same class of gap as §3.1/§3.2: the S6 row tagged the surface **"Project (phases), Collaboration"**
 as if a v2 phase + sign-off backend already existed. It did not. The LINA-308 fresh-start pivot
