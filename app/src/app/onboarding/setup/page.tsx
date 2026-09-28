@@ -16,9 +16,10 @@
 
 import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuth, useUser } from '@clerk/nextjs';
+import { useAuth, useClerk, useUser } from '@clerk/nextjs';
 
 import { submitProfile, type Language, type ProfileInput, type Role } from '@/lib/profile';
+import { provisionOnboardingOrg } from '../actions';
 import './onboarding-setup.css';
 
 // Where a completed setup lands: the first-time empty portal state (D1-new).
@@ -102,9 +103,12 @@ function personaRole(raw: string | null): Role | null {
   return null;
 }
 
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 function AccountSetupForm() {
   const router = useRouter();
   const { isLoaded, isSignedIn, getToken, signOut } = useAuth();
+  const { setActive } = useClerk();
   const { user } = useUser();
   const searchParams = useSearchParams();
 
@@ -142,6 +146,52 @@ function AccountSetupForm() {
     return null;
   }
 
+  /**
+   * Create the person's v2 org and activate it in the Clerk session (LINA-365).
+   *
+   * The `POST /organizations` response deliberately omits the Clerk org id, so we
+   * discover the freshly-created org by diffing the user's Clerk memberships
+   * (before vs after) — robust regardless of how many orgs the user already had —
+   * and `setActive` it. `getOrganizationMemberships()` / `reload()` are imperative
+   * (fresh API reads), so this does not depend on a stale hook resource.
+   *
+   * Two bounded retries: provisioning retries while the person mirror catches up
+   * (`mirror_lag`), and activation retries while the new Clerk org propagates to
+   * the membership list. Best-effort throughout — any dead end just returns.
+   */
+  async function ensureV2Org(orgRole: Role, displayName: string) {
+    if (!user || !setActive) return;
+
+    let before: Set<string>;
+    try {
+      before = new Set((await user.getOrganizationMemberships()).data.map((m) => m.organization.id));
+    } catch {
+      return;
+    }
+
+    let res = await provisionOnboardingOrg({ role: orgRole, displayName });
+    for (let i = 0; i < 3 && !res.ok && res.code === 'mirror_lag'; i++) {
+      await delay(1200);
+      res = await provisionOnboardingOrg({ role: orgRole, displayName });
+    }
+    if (!res.ok) return;
+
+    for (let i = 0; i < 5; i++) {
+      try {
+        await user.reload();
+        const memberships = await user.getOrganizationMemberships();
+        const fresh = memberships.data.find((m) => !before.has(m.organization.id));
+        if (fresh) {
+          await setActive({ organization: fresh.organization.id });
+          return;
+        }
+      } catch {
+        return;
+      }
+      await delay(600);
+    }
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return;
@@ -172,6 +222,11 @@ function AccountSetupForm() {
       const result = await submitProfile(token, { displayName: name, role, language });
       switch (result.kind) {
         case 'ok':
+          // Provision the person's v2 organization and make it active, so every
+          // later v2 write (build creation, plan authoring) resolves an org.
+          // Best-effort: a hiccup here must not strand a user whose v1 profile
+          // already saved — they land on the portal either way (LINA-365).
+          await ensureV2Org(role, name);
           router.replace(PORTAL_HOME);
           return;
         case 'field':
