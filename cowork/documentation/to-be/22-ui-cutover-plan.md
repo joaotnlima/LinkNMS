@@ -112,7 +112,7 @@ client, adapt the view transform to the v2 wire shape, keep the screen's UX. Del
 | S3 | Plan grid + Gantt (`PlanGrid.tsx`, `lib/plan-baseline.ts`, `lib/plan-authoring.ts`) | Planning, Realtime | Largest; new delta/link/segment shapes (doc 05) |
 | S4 | Change orders (`RaiseChangeOrderForm.tsx`, `CoDecisionButtons.tsx`) | Contracting (change orders) | **Splits — see §3.2 (LINA-358).** DETAIL + DECIDE (list/read/gate) are blocked-by-S1-only and ready now; PROPOSE is **blocked-by-S2** (needs a signed contract + live BoQ to attach line ops to). Proposer-never-decides invariant (§6.1) |
 | S5 | Tendering / RFP public form (`rfp/[token]/*`, `lib/rfp-proposal.ts`, `lib/procurement.ts`) | Tendering | Public-token lifecycle gap S1 in [21](./21-gap-review.md) must be closed first |
-| S6 | Sign-off + phases (`SignOffPanel.tsx`) | Project (phases), Collaboration | |
+| S6 | Sign-off + phases (`SignOffPanel.tsx`) | Project (phases) | **Was blocked on a v2 backend that did not exist — see §3.3 (LINA-356, now DONE).** The "Project (phases), Collaboration" tag was aspirational: the LINA-308 pivot never carried phases/sign-off across. The enabling backend is now on `/api/v2` (phases + sign-off in **one** module, Project — ADR-0024); S6 is the FE cutover only |
 | S7 | Task workspace (`lib/task-workspace.ts`) | Collaboration, Documents | R2 downloads gated by V6 |
 
 **Build a shared v2 client first** (`app/src/lib/v2/client.ts`): the single place that talks to
@@ -224,6 +224,49 @@ scoped honestly; does not block LINA-321's DETAIL/DECIDE half.
 **Net for LINA-321:** proceed now with the DETAIL/DECIDE/LIST wiring (Rulings 1 + 3). Hold the
 PROPOSE half behind S2 and build it as the BoQ-line form (Ruling 2), not a port of the free-cost
 form. Track PROPOSE as blocked-by-S2 rather than a separate estimate against S1.
+
+### 3.3 S6 enabling backend — phases + sign-off ported to /api/v2 (LINA-356, 2026-09-28)
+
+Same class of gap as §3.1/§3.2: the S6 row tagged the surface **"Project (phases), Collaboration"**
+as if a v2 phase + sign-off backend already existed. It did not. The LINA-308 fresh-start pivot
+(`db/v2`) never carried the surface across — as-built verification (2026-09-27): no `project_phase`
+and no `phase_sign_off_request` in `db/v2/0001`, no module registered any `/phases` or `/sign-off`
+route, and `openapi.yaml` v2 had neither path. The whole surface still lived in v1
+(`services/schedule/phases.mjs` + migrations 0012/0013). **S6 was a FE cutover with nothing to point
+the v2 client at**, so it was blocked on this enabling backend.
+
+**Shipped (LINA-356):** the v1 `createPhaseService` contract re-implemented on `/api/v2`:
+- **Schema** `db/v2/0008_project_phases_signoff.sql` (forward-only): `project.project_phase`
+  (UNIQUE `(project_id,kind)` + `(project_id,sequence)`; the **one-way `signed_off` trigger** ported
+  verbatim — the tamper-evident lock) and `project.phase_sign_off_request` (resolved in place;
+  partial UNIQUE `WHERE status='pending'` → one pending per phase; `CHECK ((status='pending') =
+  (resolved_at IS NULL))`).
+- **Routes** on the Project module: `GET /projects/{id}/phases` (both participants read; lazy-seeds
+  procurement=active + execution=pending on first read, each carrying `sign_off_requests[]`),
+  `POST …/phases/{phaseId}/sign-off` (request; 409 `phase_not_active`/`no_plan_tasks`/
+  `sign_off_already_pending`), `…/approve` (resolve + flip to `signed_off` in **one** transaction;
+  403 `two_sided_rule` `cannot_self_approve`), `…/reject` (frees the pending slot).
+- **Guard re-homed:** `assertPlanEditable` is now `store.isPlanLocked(projectId)` wired into every
+  **structural** planning write (`createTask`/`updateTask`/`applySchedule`/`create|update|deleteLink`/
+  `create|update|deleteCostLine`) — a signed-off execution phase returns `409 plan_locked`, and the
+  edit routes through the change-order ledger (ADR-0014). Execution *reporting* is deliberately not
+  gated.
+
+**Decision — ADR-0024 (Architect, atomicity call):** phases **and** sign-off stay in **one** module
+(**Project**), not split Project/Collaboration as the row loosely tagged. `approveSignOff` resolves
+the request **and** flips the phase to `signed_off` in one transaction — "the decision and the lock
+commit together" is the audit invariant; splitting across two module stores would break that
+atomicity. Sign-off is a project-lifecycle concern → Project is its home; Collaboration keeps
+comments/attachments only. The executable ADR-0024 record lives in the `db/v2/0008` header.
+
+**Audit-trail decision (ADR-0024):** v1's phase-anchored `plan_change_log` was **not** ported. v2
+already logs every plan-task field change to `planning.task_field_change` (append-only by DB trigger,
+`db/v2/0001`) — richer than the v1 phase-anchored log — and `assertPlanEditable` stops those writes
+at the lock, after which the change-order ledger takes over. No redundant phase-anchored log is added.
+
+**Net for S6 (LINA-323):** the backend dependency is closed. S6 is now the FE cutover only — point
+`getPhases` + `SignOffPanel` at a new `app/src/lib/v2/phases.ts` client seam (fail-closed empty on
+no active org, per the S1 pattern).
 
 ## 4. Phase 12 — deprecate v1 (only after every surface is on v2)
 

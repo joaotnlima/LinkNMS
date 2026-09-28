@@ -1311,6 +1311,210 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/phases:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Project
+      operationId: listPhases
+      summary: 'The project phases (procurement, execution) with sign-off history'
+      description: 'Both participants read. Lazy-seeds procurement (active) +
+        execution (pending) on first read for a project not yet seeded. Each
+        phase carries its `sign_off_requests[]` so the accordion renders in one
+        round-trip. (LINA-356 / ADR-0024.)
+
+
+        **Relationship (LinkNMS):** project.participant'
+      x-relationship: project.participant
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  phases:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Phase'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{projectId}/phases/{phaseId}/sign-off:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: phaseId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Project
+      operationId: requestSignOff
+      summary: Open a sign-off request against an active phase
+      description: 'Requires an `active` phase and ≥1 plan task. At most one
+        PENDING request per phase. A second pending request, an inactive phase,
+        or an empty plan all answer `409 invalid_transition` — the specific case
+        is in the `reason` extension member (`sign_off_already_pending`,
+        `phase_not_active`, `no_plan_tasks`). (LINA-356 / ADR-0024.)
+
+
+        **Relationship (LinkNMS):** project.participant'
+      x-relationship: project.participant
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sign_off_request:
+                    $ref: '#/components/schemas/SignOffRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /projects/{projectId}/phases/{phaseId}/sign-off/{requestId}/approve:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: phaseId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: requestId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Project
+      operationId: approveSignOff
+      summary: Approve a sign-off — resolves the request AND locks the phase
+      description: 'Resolves the request and flips the phase to `signed_off` in
+        ONE transaction (the decision and the lock commit together). `signed_off`
+        is a ONE-WAY terminal state (DB trigger). The person who REQUESTED the
+        sign-off may not approve it — that answers `403 two_sided_rule`
+        (`reason: cannot_self_approve`), the integrity floor. An already-resolved
+        request answers `409` (`reason: sign_off_already_resolved`). (LINA-356 /
+        ADR-0024.)
+
+
+        **Relationship (LinkNMS):** project.participant, not the requester'
+      x-relationship: project.participant (not requester)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignOffDecision'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sign_off_request:
+                    $ref: '#/components/schemas/SignOffRequest'
+                  phase:
+                    $ref: '#/components/schemas/Phase'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /projects/{projectId}/phases/{phaseId}/sign-off/{requestId}/reject:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: phaseId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: requestId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Project
+      operationId: rejectSignOff
+      summary: Reject a sign-off — phase stays active, pending slot freed
+      description: 'Declines the request; the phase stays `active` (still
+        editable) and the pending slot is freed so a fresh request can follow.
+        An already-resolved request answers `409` (`reason:
+        sign_off_already_resolved`). (LINA-356 / ADR-0024.)
+
+
+        **Relationship (LinkNMS):** project.participant'
+      x-relationship: project.participant
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignOffDecision'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sign_off_request:
+                    $ref: '#/components/schemas/SignOffRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /projects/{projectId}/schedule:
     parameters:
     - name: projectId
@@ -7578,6 +7782,70 @@ components:
           type: string
           format: uri
         expires_at: *id004
+    Phase:
+      type: object
+      description: 'A phase-sequencing layer on the project record (LINA-356 /
+        ADR-0024). `status` is the single source of truth for plan-edit gating;
+        `signed_off` is a one-way terminal state.'
+      properties:
+        id: *id001
+        project_id: *id001
+        kind:
+          type: string
+          enum:
+          - pre_design
+          - procurement
+          - execution
+          - close_out
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+          - pending
+          - active
+          - signed_off
+          - archived
+        sequence:
+          type: integer
+        responsible_party_ids:
+          type: array
+          items: *id001
+        created_at: *id004
+        updated_at: *id004
+        sign_off_requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignOffRequest'
+    SignOffRequest:
+      type: object
+      description: 'A sign-off request, resolved in place (approve/reject stamps
+        status + resolved_at + resolution_comment). One pending per phase.'
+      properties:
+        id: *id001
+        phase_id: *id001
+        requested_by: *id001
+        requested_at: *id004
+        status:
+          type: string
+          enum:
+          - pending
+          - approved
+          - rejected
+        resolved_at:
+          oneOf:
+          - *id004
+          - type: 'null'
+        resolution_comment:
+          oneOf:
+          - type: string
+          - type: 'null'
+    SignOffDecision:
+      type: object
+      description: Optional resolution comment carried on approve / reject.
+      properties:
+        comment:
+          type: string
     Segment:
       type: object
       properties:

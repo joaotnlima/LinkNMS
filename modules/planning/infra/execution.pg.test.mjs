@@ -56,7 +56,7 @@ describe('phase-5 planning over Postgres (v2 migrations)', { skip }, () => {
     await admin.query(`DROP DATABASE IF EXISTS ${DB}`);
     await admin.query(`CREATE DATABASE ${DB}`);
     pool = new pg.Pool({ connectionString: url.replace(/\/[^/]*$/, `/${DB}`), max: 3 });
-    for (const f of ['0001_schema.sql', '0002_platform_idempotency.sql', '0003_project_claim.sql', '0004_contracting_contract_root.sql']) {
+    for (const f of ['0001_schema.sql', '0002_platform_idempotency.sql', '0003_project_claim.sql', '0004_contracting_contract_root.sql', '0008_project_phases_signoff.sql']) {
       await pool.query(readFileSync(join(ROOT, 'db', 'v2', f), 'utf8'));
     }
     await pool.query(

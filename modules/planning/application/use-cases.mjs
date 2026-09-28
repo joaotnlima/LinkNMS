@@ -141,6 +141,7 @@ export async function getScheduleHealth({ viewer, store, projectId, query }) {
 /** operationId: createTask */
 export async function createTask({ viewer, store, projectId, body, idempotencyKey }) {
   const { actor } = await requireEditor({ viewer, store, projectId });
+  await assertPlanEditable(store, projectId);
   const errors = {};
   if (!UUID.test(body?.id ?? '')) errors.id = 'client-generated UUIDv7 required';
   if (!body?.name?.trim()) errors.name = 'required';
@@ -180,6 +181,7 @@ export async function updateTask({ viewer, store, taskId, body }) {
   if (!existing) throw new ProblemError('not_found');
   if (existing.deletedAt) throw new ProblemError('gone', 'this row was deleted meanwhile');
   const { actor } = await requireEditor({ viewer, store, projectId: existing.projectId, task: existing });
+  await assertPlanEditable(store, existing.projectId);
 
   if (!UUID.test(body?.client_change_id ?? '')) {
     throw new ProblemError('validation_failed', null, { errors: { client_change_id: 'required (uuid)' } });
@@ -335,6 +337,7 @@ export async function previewMove({ viewer, store, taskId, body }) {
 /** operationId: applySchedule */
 export async function applySchedule({ viewer, store, projectId, body, idempotencyKey }) {
   const { actor } = await requireEditor({ viewer, store, projectId });
+  await assertPlanEditable(store, projectId);
   const ops = body?.operations;
   if (!Array.isArray(ops) || !ops.length) {
     throw new ProblemError('validation_failed', null, { errors: { operations: 'a non-empty list' } });
@@ -485,6 +488,7 @@ export async function createLink({ viewer, store, taskId, body }) {
   const successor = await store.getTask(body.successor_id);
   if (!successor || successor.deletedAt) throw new ProblemError('not_found', 'successor not found');
   const { actor } = await requireEditor({ viewer, store, projectId: successor.projectId, task: successor });
+  await assertPlanEditable(store, successor.projectId);
 
   return store.withPlanTx(successor.projectId, async (plan) => {
     const link = addLink({ plan, spec: body, viewer, actor });
@@ -514,6 +518,7 @@ export async function updateLink({ viewer, store, linkId, body }) {
   if (!link) throw new ProblemError('not_found');
   const successor = await store.getTask(link.successorId);
   const { actor } = await requireEditor({ viewer, store, projectId: successor.projectId, task: successor });
+  await assertPlanEditable(store, successor.projectId);
   const errors = {};
   if (body?.from_anchor && !ANCHORS.has(body.from_anchor)) errors.from_anchor = 'start or end';
   if (body?.to_anchor && !ANCHORS.has(body.to_anchor)) errors.to_anchor = 'start or end';
@@ -549,6 +554,7 @@ export async function deleteLink({ viewer, store, linkId }) {
   if (!link) throw new ProblemError('not_found');
   const successor = await store.getTask(link.successorId);
   const { actor } = await requireEditor({ viewer, store, projectId: successor.projectId, task: successor });
+  await assertPlanEditable(store, successor.projectId);
   return store.withPlanTx(successor.projectId, async (plan) => {
     plan.write.removeLink(linkId);
     plan.links = plan.links.filter((l) => l.id !== linkId);
@@ -585,6 +591,7 @@ export async function createCostLine({ viewer, store, taskId, body }) {
   if (!task || task.deletedAt) throw new ProblemError('not_found');
   const { actor } = await requireParticipant({ viewer, store, projectId: task.projectId });
   if (!viewer.has('org:costs:edit')) throw new ProblemError('forbidden', null, { reason: 'role' });
+  await assertPlanEditable(store, task.projectId);
 
   const errors = {};
   if (!UUID.test(body?.id ?? '')) errors.id = 'client-generated UUIDv7 required';
@@ -643,6 +650,7 @@ export async function createCostLine({ viewer, store, taskId, body }) {
 /** operationId: updateCostLine — post-baseline changes refresh the variation. */
 export async function updateCostLine({ viewer, store, costLineId, body }) {
   const { line, task, actor } = await requireCostLine({ viewer, store, costLineId });
+  await assertPlanEditable(store, task.projectId);
   const errors = {};
   for (const f of ['code', 'description', 'unit']) {
     if (body?.[f] !== undefined && !body[f]?.trim()) errors[f] = 'must not be blank';
@@ -699,6 +707,7 @@ export async function updateCostLine({ viewer, store, costLineId, body }) {
 export async function deleteCostLine({ viewer, store, costLineId }) {
   const { line, task, actor } = await requireCostLine({ viewer, store, costLineId });
   void line;
+  await assertPlanEditable(store, task.projectId);
   return mapBoqTriggerErrors(() => store.withPlanTx(task.projectId, async (plan) => {
     const current = (plan.boqLines ?? []).find((l) => l.id === costLineId);
     if (!current) throw new ProblemError('not_found');
@@ -1030,6 +1039,27 @@ async function requireParticipant({ viewer, store, projectId }) {
 }
 
 /** permission org:plan:edit ∧ participant; per-row scope is checked in-tx. */
+/**
+ * The change-order lock (ADR-0024). A STRUCTURAL plan mutation calls this right
+ * after authorization: once the project's execution phase is signed_off the plan
+ * is immutable, and the edit must be raised as a change order (ADR-0014, the
+ * `plan_locked` reason). Execution REPORTING — recordActual, reportProgress —
+ * deliberately does NOT call this: recording what actually happened on a
+ * signed-off, executing plan is the whole point of the lock, not a violation of
+ * it. An unseeded / pre-execution project reads as unlocked (a legitimate
+ * pre-lock edit).
+ */
+async function assertPlanEditable(store, projectId) {
+  // `isPlanLocked` is optional so the pre-phase unit harnesses keep composing —
+  // a store without it simply enforces no lock (v1's null-phase-port semantics).
+  // The registry store (pg) always supplies it, so every live write is gated.
+  if (store.isPlanLocked && await store.isPlanLocked(projectId)) {
+    throw new ProblemError('invalid_transition',
+      'the execution plan is signed off — changes must be raised as a change order (ADR-0014)',
+      { reason: 'plan_locked' });
+  }
+}
+
 async function requireEditor({ viewer, store, projectId, task = null }) {
   const { project, actor } = await requireParticipant({ viewer, store, projectId });
   if (!viewer.has('org:plan:edit')) throw new ProblemError('forbidden', null, { reason: 'role' });
