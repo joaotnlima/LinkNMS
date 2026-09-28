@@ -91,13 +91,20 @@ for (const role of ROLES) {
     continue;
   }
 
+  // An existing role is a Clerk BUILT-IN (org:admin, org:member). Its permission
+  // set includes Clerk's own system permissions (org:sys_*), and the creator role
+  // (org:admin) is REQUIRED to keep org:sys_memberships:* and org:sys_profile:delete
+  // — a PATCH that sends only our matrix ids drops them and Clerk rejects it 422
+  // (organization_missing_creator_role_permissions). So we UNION our permissions
+  // onto whatever the role already holds rather than replacing them.
   const currentIds = new Set((existing.permissions ?? []).map((p) => (typeof p === 'string' ? p : p.id)));
-  const same = wantedIds.length === currentIds.size && wantedIds.every((id) => currentIds.has(id));
-  if (same) { log(`= role ${roleKey}`); continue; }
-  log(`~ role ${roleKey} → ${wanted.length} permissions`);
+  const missing = wantedIds.filter((id) => !currentIds.has(id));
+  if (missing.length === 0) { log(`= role ${roleKey}`); continue; }
+  const mergedIds = [...currentIds, ...missing];
+  log(`~ role ${roleKey} → +${missing.length} permissions (${mergedIds.length} total)`);
   if (dryRun) continue;
   await clerk('PATCH', `/organization_roles/${existing.id}`, {
-    name: role, key: roleKey, description: DESCRIPTIONS[role], permissions: wantedIds,
+    name: role, key: roleKey, description: DESCRIPTIONS[role], permissions: mergedIds,
   });
 }
 
