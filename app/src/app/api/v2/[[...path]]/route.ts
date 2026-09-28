@@ -68,6 +68,13 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path?: s
 }
 
 function respond(res: { status: number; body: unknown; headers: Record<string, string> }) {
+  // 204/205 are "null body status" codes (fetch spec): constructing a Response
+  // with a body throws, which surfaced as a 500 on every successful webhook and
+  // DELETE — Svix reads that 500 as a failed delivery, retries, and can disable
+  // the endpoint (LINA-366). Send those (and any null-body result) with no body.
+  if (res.status === 204 || res.status === 205 || res.body === null || res.body === undefined) {
+    return new NextResponse(null, { status: res.status, headers: res.headers });
+  }
   return NextResponse.json(res.body, { status: res.status, headers: res.headers });
 }
 
