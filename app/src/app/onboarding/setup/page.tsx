@@ -147,12 +147,19 @@ function AccountSetupForm() {
   }
 
   /**
-   * Create the person's v2 org and activate it in the Clerk session (LINA-365).
+   * Ensure the Clerk session has an ACTIVE v2 org, provisioning one only if the
+   * person has none (LINA-365).
    *
-   * The `POST /organizations` response deliberately omits the Clerk org id, so we
-   * discover the freshly-created org by diffing the user's Clerk memberships
-   * (before vs after) — robust regardless of how many orgs the user already had —
-   * and `setActive` it. `getOrganizationMemberships()` / `reload()` are imperative
+   * This is reached two ways: a fresh signup finishing setup (no org yet → mint
+   * one), and a PRE-EXISTING account bounced back here by the home org-gate
+   * (`app/page.tsx`) because it signed in with no active org. So the first move
+   * is idempotent: if the person is ALREADY a member of a v2 org, just `setActive`
+   * it and stop — never mint a second one for a returning account or a retried
+   * submit. Only when there is no membership at all do we provision.
+   *
+   * The `POST /organizations` response deliberately omits the Clerk org id, so a
+   * freshly-provisioned org is discovered by diffing memberships (before vs after)
+   * and `setActive`d. `getOrganizationMemberships()` / `reload()` are imperative
    * (fresh API reads), so this does not depend on a stale hook resource.
    *
    * Two bounded retries: provisioning retries while the person mirror catches up
@@ -164,7 +171,15 @@ function AccountSetupForm() {
 
     let before: Set<string>;
     try {
-      before = new Set((await user.getOrganizationMemberships()).data.map((m) => m.organization.id));
+      await user.reload();
+      const existing = (await user.getOrganizationMemberships()).data;
+      // Already in a v2 org — activate it, don't mint another. Covers the
+      // returning account the home gate sent here and any double-submit.
+      if (existing.length > 0) {
+        await setActive({ organization: existing[0].organization.id });
+        return;
+      }
+      before = new Set(existing.map((m) => m.organization.id));
     } catch {
       return;
     }
