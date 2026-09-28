@@ -6,7 +6,7 @@
 import {
   createContract, listContracts, getContract, updateContract, signContract,
   sponsorContract, receiveProvisionally, closeContract, terminateContract, getFinancials,
-  createChangeOrder, getChangeOrder, submitChangeOrder, approveChangeOrder, rejectChangeOrder, withdrawChangeOrder,
+  createChangeOrder, listChangeOrders, getChangeOrder, submitChangeOrder, approveChangeOrder, rejectChangeOrder, withdrawChangeOrder,
   suggestMeasurement, createMeasurement, approveMeasurement, disputeMeasurement,
   declarePaid, confirmPayment, disputePayment, getCashFlow,
 } from '../application/use-cases.mjs';
@@ -49,6 +49,9 @@ export function registerContracting(router, { store }) {
   // ── phase 5: change orders ────────────────────────────────────────────────
   router.register('POST', '/contracts/{contractId}/change-orders', 'createChangeOrder', ({ viewer, params, body, headers }) =>
     createChangeOrder({ viewer, store, contractId: params.contractId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
+
+  router.register('GET', '/projects/{projectId}/change-orders', 'listChangeOrders', ({ viewer, params, query }) =>
+    listChangeOrders({ viewer, store, projectId: params.projectId, query }));
 
   router.register('GET', '/change-orders/{changeOrderId}', 'getChangeOrder', ({ viewer, params }) =>
     getChangeOrder({ viewer, store, changeOrderId: params.changeOrderId }));

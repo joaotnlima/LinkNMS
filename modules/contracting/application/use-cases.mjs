@@ -431,6 +431,33 @@ export async function getChangeOrder({ viewer, store, changeOrderId }) {
   throw new ProblemError('not_found');
 }
 
+/**
+ * operationId: listChangeOrders — every change order of the project, projected
+ * per viewer. A party of the CO's contract sees the full body; a party of a
+ * linked (back-to-back) contract sees existence only (ruling 11); anyone else
+ * — though a project participant — does not learn the CO exists, so it is
+ * dropped from the page. Existence-only is resolved only for the non-party
+ * remainder, one linked-chain probe per such row.
+ */
+export async function listChangeOrders({ viewer, store, projectId, query }) {
+  await requireParticipant({ viewer, store, projectId });
+  const { items, nextCursor } = await store.listProjectChangeOrders(projectId, {
+    cursor: query?.cursor ?? null, limit: clampLimit(query?.limit),
+  });
+  const projected = [];
+  for (const found of items) {
+    if (isParty(found.contract, viewer.orgId)) {
+      projected.push(changeOrderBody(found));
+      continue;
+    }
+    const chain = await store.linkedChainParties(found.changeOrder.id);
+    if (chain.some((c) => isParty(c, viewer.orgId))) {
+      projected.push(changeOrderExistenceBody(found.changeOrder));
+    }
+  }
+  return { status: 200, body: { items: projected, next_cursor: nextCursor } };
+}
+
 /** operationId: submitChangeOrder — proposer only; note ledgered (ruling 10). */
 export async function submitChangeOrder({ viewer, store, changeOrderId, body, idempotencyKey }) {
   return moveChangeOrder({

@@ -136,6 +136,18 @@ function fakeStore() {
         .map((b) => [b.id, b]));
     },
     async getChangeOrder(id) { return coBundle(id); },
+    async listProjectChangeOrders(projectId, { cursor, limit }) {
+      const all = [...changeOrders.keys()]
+        .filter((id) => contracts.get(changeOrders.get(id).co.contract_id)?.project_id === projectId)
+        .sort();
+      const start = cursor ? all.findIndex((id) => id > cursor) : 0;
+      const window = start === -1 ? [] : all.slice(start, start + limit + 1);
+      const page = window.slice(0, limit);
+      return {
+        items: page.map((id) => coBundle(id)),
+        nextCursor: window.length > limit ? page[page.length - 1] : null,
+      };
+    },
     async linkedChainParties(id) {
       const chain = [];
       let cur = changeOrders.get(id);
@@ -496,6 +508,67 @@ describe('money flow over the /api/v2 router', () => {
       });
       // no linked chain: the owner is NOT a party and learns nothing
       assert.equal((await dispatch('GET', `/change-orders/${subCo.body.id}`, viewer(OWNER_ORG))).status, 404);
+    });
+  });
+
+  describe('change-order roll-up (listChangeOrders)', () => {
+    const coCreate = (over = {}) => ({
+      id: uuid(), kind: 'scope', reason: 'roll-up',
+      lines: [{ op: 'add', new_line: { id: uuid(), code: 'r.1', description: 'Extra', unit: 'un', quantity: '1.000', unit_price: { amount_cents: 1000, currency: 'EUR' } } }],
+      ...over,
+    });
+
+    test('a stranger to the project → 404 (does not learn it exists)', async () => {
+      assert.equal((await dispatch('GET', `/projects/${PROJECT}/change-orders`, viewer(STRANGER_ORG))).status, 404);
+    });
+
+    test('a party sees its contract\'s change orders whole', async () => {
+      await dispatch('POST', `/contracts/${PRIME}/change-orders`, viewer(GC_ORG), coCreate());
+      const res = await dispatch('GET', `/projects/${PROJECT}/change-orders`, viewer(GC_ORG));
+      assert.equal(res.status, 200);
+      assert.equal(res.body.items.length, 1);
+      assert.equal(res.body.items[0].contract_id, PRIME);
+      assert.ok('amount_delta' in res.body.items[0]); // full body
+      assert.equal(res.body.next_cursor, null);
+    });
+
+    test('projection per viewer: party-full, linked-chain existence-only, else omitted', async () => {
+      // a prime CO (owner↔GC) and a sub CO (GC↔sub) linked back-to-back
+      const primeCo = await dispatch('POST', `/contracts/${PRIME}/change-orders`, viewer(GC_ORG), coCreate());
+      const subCo = await dispatch('POST', `/contracts/${SUBK}/change-orders`, viewer(SUB_ORG),
+        coCreate({ linked_change_order_id: primeCo.body.id }));
+      assert.equal(subCo.status, 201);
+
+      // OWNER: party of the prime CO (full), linked-chain ancestor of the sub CO (existence only)
+      const asOwner = await dispatch('GET', `/projects/${PROJECT}/change-orders`, viewer(OWNER_ORG));
+      assert.equal(asOwner.status, 200);
+      const byId = new Map(asOwner.body.items.map((c) => [c.id, c]));
+      assert.equal(byId.size, 2);
+      assert.ok('amount_delta' in byId.get(primeCo.body.id)); // full
+      const ownerSubView = byId.get(subCo.body.id);
+      assert.equal('amount_delta' in ownerSubView, false); // existence only
+      assert.equal('lines' in ownerSubView, false);
+      assert.equal(ownerSubView._visibility.commercial, false);
+
+      // SUB: party of the sub CO (full); the prime CO is back-to-back linked to
+      // its contract, so it too is existence-only (linked chain is symmetric).
+      const asSub = await dispatch('GET', `/projects/${PROJECT}/change-orders`, viewer(SUB_ORG));
+      const subById = new Map(asSub.body.items.map((c) => [c.id, c]));
+      assert.equal(subById.size, 2);
+      assert.ok('lines' in subById.get(subCo.body.id)); // full for the party
+      assert.equal('amount_delta' in subById.get(primeCo.body.id), false); // existence only
+    });
+
+    test('paging honours the limit and returns a next_cursor', async () => {
+      await dispatch('POST', `/contracts/${PRIME}/change-orders`, viewer(GC_ORG), coCreate());
+      await dispatch('POST', `/contracts/${PRIME}/change-orders`, viewer(GC_ORG), coCreate());
+      const path = `/projects/${PROJECT}/change-orders`;
+      const first = await router.dispatch({ method: 'GET', path, viewer: viewer(GC_ORG), query: { limit: '1' } });
+      assert.equal(first.body.items.length, 1);
+      assert.ok(first.body.next_cursor);
+      const second = await router.dispatch({ method: 'GET', path, viewer: viewer(GC_ORG), query: { limit: '1', cursor: first.body.next_cursor } });
+      assert.equal(second.body.items.length, 1);
+      assert.notEqual(second.body.items[0].id, first.body.items[0].id);
     });
   });
 
