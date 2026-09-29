@@ -22,7 +22,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import {
-  signOffControls, signOffStamp, BADGE_LABEL,
+  signOffControls, signOffStamp,
   type ExecutionPhase, type SignOffRequest, type SignOffViewerContext,
 } from '@/lib/phase-signoff';
 import { Check, StatusIcon } from './icons';
@@ -330,28 +330,6 @@ function SignOffModal({
         </div>
       </div>
     </div>
-  );
-}
-
-/**
- * The accordion header's badge (ADR-0023 §6). Exported here so the shell
- * (LINA-281) renders the same word the panel does.
- */
-export function PhaseBadge({ phase }: { phase: ExecutionPhase | null }) {
-  const c = signOffControls(phase, { partyId: null, canDecide: false, canRequest: false }, 0);
-  const tone = c.badge === 'signed_off' ? 'ok' : c.badge === 'awaiting_sign_off' ? 'warn' : 'neutral';
-  const stamp = signOffStamp(c.approval);
-  return (
-    <span className="so-hdr">
-      <span className={`badge ${tone}`}>{BADGE_LABEL[c.badge]}</span>
-      {/* The collapsed signed-off header carries the stamp, so the section does
-          not have to be opened to answer "when, and by whom". */}
-      {c.approval && stamp ? (
-        <span className="cap so-hdr-stamp">
-          {stamp}{c.approval.resolvedByName ? ` · ${c.approval.resolvedByName}` : ''}
-        </span>
-      ) : null}
-    </span>
   );
 }
 
