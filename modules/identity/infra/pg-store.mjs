@@ -117,6 +117,22 @@ export function createIdentityStore(pool) {
       return rows[0];
     },
 
+    // ── self-service profile (onboarding account setup, LINA-385) ─────────
+    async updatePersonProfile({ clerkUserId, name, locale }) {
+      // A person editing their OWN account fields on first login: display name
+      // and language only. email/phone stay Clerk-owned and arrive via the
+      // mirror upsert above — never overwritten here. Returns null when no
+      // person row exists yet (the sign-up webhook has not landed), which the
+      // use case surfaces as a retryable conflict.
+      const { rows } = await pool.query(
+        `UPDATE identity.person SET name = $2, locale = $3
+          WHERE clerk_user_id = $1
+          RETURNING *`,
+        [clerkUserId, name, locale],
+      );
+      return rows[0] ?? null;
+    },
+
     async upsertOrganization({ clerkOrgId, orgKind, legalName, nif, approvalPolicy }) {
       const { rows } = await pool.query(
         `INSERT INTO identity.organization (id, clerk_org_id, kind, legal_name, nif, approval_policy)

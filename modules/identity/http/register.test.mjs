@@ -44,6 +44,14 @@ function fakeStore() {
     async orgHasSignedContracts() { return false; },
     async mirrorReady() { return true; },
     async upsertPerson(cmd) { calls.push(['upsertPerson', cmd]); return { id: 'new' }; },
+    async updatePersonProfile({ clerkUserId, name, locale }) {
+      calls.push(['updatePersonProfile', { clerkUserId, name, locale }]);
+      const p = people.get(clerkUserId);
+      if (!p) return null;
+      const updated = { ...p, name, locale };
+      people.set(clerkUserId, updated);
+      return updated;
+    },
     async upsertOrganization(cmd) { calls.push(['upsertOrganization', cmd]); return { id: 'org-new', kind: cmd.orgKind, legal_name: cmd.legalName, nif: cmd.nif, approval_policy: cmd.approvalPolicy }; },
     async upsertMembership(cmd) { calls.push(['upsertMembership', cmd]); return {}; },
     async removeMembership(cmd) { calls.push(['removeMembership', cmd]); return true; },
@@ -86,6 +94,38 @@ describe('identity over the v2 router', () => {
     const res = await router.dispatch({ method: 'GET', path: '/me', viewer: viewer({ clerkUserId: 'user_unknown' }) });
     assert.equal(res.status, 404);
     assert.equal(res.body.code, 'not_found');
+  });
+
+  test('PUT /me/profile updates the caller\'s own name + locale, 200 with the person', async () => {
+    const res = await router.dispatch({
+      method: 'PUT', path: '/me/profile', viewer: viewer(),
+      body: { name: '  Nuno Ferreira  ', locale: 'en' },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.name, 'Nuno Ferreira', 'name is trimmed');
+    assert.equal(res.body.locale, 'en');
+    const call = store.calls.find(([n]) => n === 'updatePersonProfile')[1];
+    assert.equal(call.clerkUserId, 'user_me', 'keyed on the session, never the body');
+    assert.equal(call.name, 'Nuno Ferreira');
+  });
+
+  test('PUT /me/profile rejects a blank name and a bad locale with a 422', async () => {
+    const res = await router.dispatch({
+      method: 'PUT', path: '/me/profile', viewer: viewer(),
+      body: { name: '   ', locale: 'fr' },
+    });
+    assert.equal(res.status, 422);
+    assert.ok(res.body.errors.name && res.body.errors.locale);
+    assert.equal(store.calls.some(([n]) => n === 'updatePersonProfile'), false, 'nothing written on a 422');
+  });
+
+  test('PUT /me/profile before the mirror caught up → 409, retryable', async () => {
+    const res = await router.dispatch({
+      method: 'PUT', path: '/me/profile', viewer: viewer({ clerkUserId: 'user_unknown' }),
+      body: { name: 'Nova Silva', locale: 'pt-PT' },
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, 'version_conflict');
   });
 
   test('POST /organizations creates in Clerk with kind metadata, mirrors, 201', async () => {
