@@ -10,6 +10,7 @@ import { commandFor } from '../domain/mirror.mjs';
 import { verifySvix } from '../infra/svix.mjs';
 
 const CREATABLE_KINDS = new Set(['household', 'contractor', 'consultant']);
+const PROFILE_LOCALES = new Set(['pt-PT', 'en', 'es']);
 
 /** operationId: getMe */
 export async function getMe({ viewer, store }) {
@@ -35,6 +36,28 @@ export async function getMe({ viewer, store }) {
       pending_project_invitations: [],
     },
   };
+}
+
+/** operationId: updateMyProfile — a person edits their OWN account fields on
+ * first login (onboarding, LINA-385): display name and language only. No Clerk
+ * permission beyond an authenticated session — you are only ever editing your
+ * own person row, so authorization is "you are that person", resolved from the
+ * verified session's clerk user id (never the body, ADR-0004 / doc 16). */
+export async function updateMyProfile({ viewer, store, body }) {
+  const errors = {};
+  const name = typeof body?.name === 'string' ? body.name.trim() : '';
+  if (!name) errors.name = 'required';
+  else if (name.length > 200) errors.name = 'at most 200 characters';
+  const locale = body?.locale;
+  if (!PROFILE_LOCALES.has(locale)) errors.locale = 'must be pt-PT, en or es';
+  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+
+  const updated = await store.updatePersonProfile({ clerkUserId: viewer.clerkUserId, name, locale });
+  if (!updated) {
+    // Sign-up webhook has not mirrored this person yet; the client retries.
+    throw new ProblemError('version_conflict', 'your identity mirror has not caught up yet — retry');
+  }
+  return { status: 200, body: personBody(updated) };
 }
 
 /** operationId: createOrganization */

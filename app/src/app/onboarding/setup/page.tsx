@@ -18,9 +18,13 @@ import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth, useClerk, useUser } from '@clerk/nextjs';
 
-import { submitProfile, type Language, type ProfileInput, type Role } from '@/lib/profile';
-import { provisionOnboardingOrg } from '../actions';
+import { type OnboardingRole as Role } from '@/lib/v2/org';
+import { type Language } from '@/lib/v2/profile-edit';
+import { provisionOnboardingOrg, saveOnboardingProfile, type SaveProfileResult } from '../actions';
 import './onboarding-setup.css';
+
+// The three fields the setup form owns — the key an inline field error hangs off.
+type ProfileField = 'displayName' | 'role' | 'language';
 
 // Where a completed setup lands: the first-time empty portal state (D1-new).
 const PORTAL_HOME = '/';
@@ -107,7 +111,7 @@ const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 function AccountSetupForm() {
   const router = useRouter();
-  const { isLoaded, isSignedIn, getToken, signOut } = useAuth();
+  const { isLoaded, isSignedIn, signOut } = useAuth();
   const { setActive } = useClerk();
   const { user } = useUser();
   const searchParams = useSearchParams();
@@ -123,7 +127,7 @@ function AccountSetupForm() {
   const [role, setRole] = useState<Role | null>(personaRole(searchParams.get('persona')));
   const [language, setLanguage] = useState<Language>('en');
 
-  const [fieldError, setFieldError] = useState<{ field: keyof ProfileInput; message: string } | null>(null);
+  const [fieldError, setFieldError] = useState<{ field: ProfileField; message: string } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -192,6 +196,24 @@ function AccountSetupForm() {
     }
   }
 
+  /**
+   * Save the display name + language on v2, retrying while the sign-up person
+   * mirror is still catching up. Same bounded back-off as `ensureV2Org`: a fresh
+   * signup can reach this screen SECONDS before the Clerk→v2 `user.created`
+   * webhook lands the person row, so `updateMyProfile` answers `mirror_lag`
+   * ("retry") — a transient state, not a failure to surface.
+   */
+  async function saveProfileWithRetry(
+    input: { displayName: string; language: Language },
+  ): Promise<SaveProfileResult> {
+    let res = await saveOnboardingProfile(input);
+    for (let i = 0; i < 3 && !res.ok && res.code === 'mirror_lag'; i++) {
+      await delay(1200);
+      res = await saveOnboardingProfile(input);
+    }
+    return res;
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return;
@@ -211,36 +233,37 @@ function AccountSetupForm() {
 
     setSubmitting(true);
     try {
-      const token = await getToken();
-      if (!token) {
-        // Session evaporated between load and submit — treat as signed out.
-        await signOut();
-        router.replace('/sign-in');
-        return;
+      // Save the profile (display name + language) on v2. Role does NOT travel
+      // here — on v2 it is the org kind, set by ensureV2Org below.
+      const saved = await saveProfileWithRetry({ displayName: name, language });
+      if (!saved.ok) {
+        switch (saved.code) {
+          case 'unauthenticated':
+            await signOut();
+            router.replace('/sign-in');
+            return;
+          case 'field':
+            setFieldError({ field: saved.field ?? 'displayName', message: saved.message ?? 'Please check this field.' });
+            return;
+          case 'mirror_lag':
+            // The mirror is still catching up after our retries. Do NOT strand
+            // the user: fall through to org provisioning (which retries the same
+            // mirror) and land them on the portal; their name/language save on a
+            // later visit once the mirror lands (LINA-365 fail-soft posture).
+            break;
+          default:
+            setFormError(saved.message ?? 'Something went wrong. Please try again.');
+            return;
+        }
       }
 
-      const result = await submitProfile(token, { displayName: name, role, language });
-      switch (result.kind) {
-        case 'ok':
-          // Provision the person's v2 organization and make it active, so every
-          // later v2 write (build creation, plan authoring) resolves an org.
-          // Best-effort: a hiccup here must not strand a user whose v1 profile
-          // already saved — they land on the portal either way (LINA-365).
-          await ensureV2Org(role, name);
-          router.replace(PORTAL_HOME);
-          return;
-        case 'field':
-          setFieldError({ field: result.field, message: result.message });
-          return;
-        case 'unauthenticated':
-          await signOut();
-          router.replace('/sign-in');
-          return;
-        case 'retry':
-        case 'error':
-          setFormError(result.message);
-          return;
-      }
+      // Provision the person's v2 organization and make it active, so every
+      // later v2 write (build creation, plan authoring) resolves an org.
+      // Best-effort: a hiccup here must not strand a user whose profile already
+      // saved — they land on the portal either way (LINA-365).
+      await ensureV2Org(role, name);
+      router.replace(PORTAL_HOME);
+      return;
     } catch {
       setFormError('Something went wrong. Please try again.');
     } finally {
