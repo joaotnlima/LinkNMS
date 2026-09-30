@@ -23,12 +23,13 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 
-import { getBuild, getPlan, getPlanTemplate, isSignedIn } from '@/lib/api';
+import { getBuild, getPlan, isSignedIn } from '@/lib/api';
+import { getDefaultTemplateBody } from '@/lib/v2/plan-template';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContext } from '@/server/portal-shell';
 import { TaskWorkspace } from '@/components/TaskWorkspace';
 import { PartyAvatar, TradeChip, UnassignedAvatar } from '@/components/PartyAvatar';
-import { hydrateDraft, type TemplatePhase } from '@/lib/plan-authoring';
+import { hydrateDraft } from '@/lib/plan-authoring';
 import { directoryOf } from '@/lib/view';
 import { formatDate } from '@/lib/format';
 import { partyOf, partyIndex, roleWord, UNKNOWN_PARTY, type PartyRef } from '@/lib/party-display';
@@ -78,7 +79,7 @@ export default async function TaskPermalinkPage({
         <PlanBuildEditor
           projectId={id}
           initialPhases={hydrateDraft(plan.current.stages)}
-          templateBody={await resolveTemplate()}
+          templateBody={await getDefaultTemplateBody()}
           parties={parties}
           savedStageKeys={[...stageKeysOf(plan.current.stages)]}
           openStageKey={stageKey}
@@ -135,13 +136,3 @@ export default async function TaskPermalinkPage({
   );
 }
 
-/** Same degradation as /plan/build: an unreachable template must still leave a usable editor. */
-async function resolveTemplate(): Promise<TemplatePhase[] | undefined> {
-  try {
-    const resolved = await getPlanTemplate();
-    return resolved.body?.length ? resolved.body : undefined;
-  } catch (err) {
-    console.warn('[plan/tasks] could not resolve the default plan template', err);
-    return undefined;
-  }
-}

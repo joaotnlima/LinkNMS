@@ -2843,6 +2843,56 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /me/plan-template:
+    get:
+      tags:
+      - Planning
+      operationId: getPlanTemplate
+      summary: The caller's default plan scaffold (names-only), resolved
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** none — a per-person preference, project-independent
+        (LINA-241, ADR-0018). Resolution ladder: the caller''s saved default → the
+        system (library) default. Names-only, exactly two levels; copied into a
+        fresh editor draft, never linked (copy-not-link).'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolvedPlanTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+    put:
+      tags:
+      - Planning
+      operationId: savePlanTemplate
+      summary: Save the caller's default plan scaffold ("save as my default")
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** none — upserts the caller''s single default (one
+        per person; a second save replaces the first). Entirely outside the project
+        record: no stage, version or ledger event.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanTemplateDefaultSave'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolvedPlanTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /plan-templates:
     get:
       tags:
@@ -8760,6 +8810,75 @@ components:
       - scope
       - name
       - construction_type
+    PlanTemplatePhase:
+      type: object
+      description: A names-only phase — exactly two levels (LINA-241, ADR-0018).
+      properties:
+        name:
+          type: string
+        tasks:
+          type: array
+          items:
+            type: string
+      required:
+      - name
+      - tasks
+    ResolvedPlanTemplate:
+      type: object
+      description: 'The caller''s applicable default plan scaffold plus its provenance
+        — the names-only default flow (LINA-241/242, ADR-0018), distinct from the
+        richer PlanTemplate library model: no dates, links, assignees or prices ever
+        cross this boundary (copy-not-link).'
+      properties:
+        source:
+          type: string
+          enum:
+          - user
+          - system
+        body:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanTemplatePhase'
+        template:
+          type: object
+          properties:
+            id: *id001
+            ownerScope:
+              type: string
+              enum:
+              - user
+              - org
+              - system
+            name:
+              type: string
+            isDefault:
+              type: boolean
+            updatedAt:
+              type: string
+              format: date-time
+          required:
+          - id
+          - ownerScope
+          - name
+          - isDefault
+          - updatedAt
+      required:
+      - source
+      - body
+      - template
+    PlanTemplateDefaultSave:
+      type: object
+      description: '"Save as my default" — a names-only two-level body; the owner is
+        stamped from the session, never sent.'
+      properties:
+        name:
+          type: string
+        body:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanTemplatePhase'
+      required:
+      - body
     ScheduleImport:
       type: object
       properties:
