@@ -78,6 +78,51 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /me/profile:
+    put:
+      tags:
+      - Identity & Access
+      operationId: updateMyProfile
+      summary: Edit my own display name and language (first-login account setup)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** none — you only ever edit your own person'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                locale:
+                  type: string
+                  enum:
+                  - pt-PT
+                  - en
+                  - es
+              required:
+              - name
+              - locale
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Person'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /organizations:
     post:
       tags:

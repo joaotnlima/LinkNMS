@@ -5,7 +5,7 @@
 // module that OWNS the mirror, so this is where the local person/org ids get
 // resolved — every other module will receive them already resolved once the
 // registry wires this module's resolver in front (phase 2+).
-import { getMe, createOrganization, listMembers, staffPerson, unstaffPerson, clerkWebhook } from '../application/use-cases.mjs';
+import { getMe, updateMyProfile, createOrganization, listMembers, staffPerson, unstaffPerson, clerkWebhook } from '../application/use-cases.mjs';
 
 /**
  * @param {{ store: object, clerk: { createOrganization: Function },
@@ -23,6 +23,12 @@ export function registerIdentity(router, { store, clerk, webhookSecret }) {
 
   router.register('GET', '/me', 'getMe', async ({ viewer }) =>
     getMe({ viewer: await resolved(viewer), store }));
+
+  // Self-service: a person editing their own display name + language on first
+  // login. No org resolution needed — the write is keyed on the viewer's clerk
+  // user id (identity.person), not on any active org.
+  router.register('PUT', '/me/profile', 'updateMyProfile', async ({ viewer, body }) =>
+    updateMyProfile({ viewer, store, body }));
 
   router.register('POST', '/organizations', 'createOrganization', async ({ viewer, body, headers }) =>
     createOrganization({
