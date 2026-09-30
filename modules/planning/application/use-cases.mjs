@@ -1627,3 +1627,42 @@ function dedupeById(bodies) {
   const seen = new Set();
   return bodies.filter((b) => (seen.has(b.id) ? false : (seen.add(b.id), true)));
 }
+
+// ── Specialty catalog (LINA-380) ─────────────────────────────────────────────
+// The picker in PlanGrid.tsx is enhancement-only; any failure here is silent
+// and the free-form input still stands. Auth: any signed-in org member.
+
+const SYSTEM_SPECIALTIES = [
+  'Architecture', 'Cabinetry & Millwork', 'Concrete & Foundations',
+  'Drywall & Plastering', 'Electrical', 'Flooring & Tiling', 'Framing & Carpentry',
+  'General Contractor', 'HVAC', 'Inspection', 'Landscaping', 'Masonry', 'Painting',
+  'Plumbing', 'Roofing', 'Site Preparation & Excavation', 'Structural Engineering',
+  'Surveying', 'Waterproofing & Insulation', 'Windows & Doors',
+];
+
+const MAX_LABEL = 120;
+
+export async function listSpecialties({ viewer, store }) {
+  if (!viewer.orgId) throw new ProblemError('unauthenticated', 'active org required');
+  const orgLabels = await store.listSpecialties(viewer.orgId);
+  const seen = new Set(SYSTEM_SPECIALTIES.map((s) => s.toLowerCase()));
+  const merged = [
+    ...SYSTEM_SPECIALTIES,
+    ...orgLabels.filter((l) => !seen.has(l.toLowerCase())),
+  ].sort((a, b) => a.localeCompare(b));
+  return { specialties: merged.map((label) => ({ label })) };
+}
+
+export async function createUserSpecialty({ viewer, store, body }) {
+  if (!viewer.orgId) throw new ProblemError('unauthenticated', 'active org required');
+  const raw = body?.label;
+  if (typeof raw !== 'string' || !raw.trim()) {
+    throw new ProblemError('validation_failed', null, { errors: { label: 'required non-empty string' } });
+  }
+  const label = raw.trim();
+  if (label.length > MAX_LABEL) {
+    throw new ProblemError('validation_failed', null, { errors: { label: `must be ≤ ${MAX_LABEL} chars` } });
+  }
+  const stored = await store.createUserSpecialty({ orgId: viewer.orgId, label });
+  return { specialty: { label: stored } };
+}
