@@ -895,6 +895,164 @@ export async function listProgress({ viewer, store, taskId }) {
   return { status: 200, body: { items: reports.map(progressBody), next_cursor: null } };
 }
 
+// ── plan template "my default" (LINA-383, ADR-0018) ──────────────────────────
+// Per-PERSON, project-independent, names-only two levels. NO ledger seam: a
+// template carries no audit weight (ADR-0002) — `resolvePlanTemplate` COPIES its
+// rows into a fresh editor draft, never links them (copy-not-link, LINA-241). The
+// ONLY gate is a resolved identity mirror (viewer.personId); org membership does
+// not apply, so this reads the same whether or not an org is active — a user
+// preference, not project data. Resolution ladder: personal default → library
+// (system) default.
+
+const TEMPLATE_MAX_NAME = 200;
+
+/** operationId: getPlanTemplate — GET /me/plan-template */
+export async function resolvePlanTemplate({ viewer, store }) {
+  if (!viewer?.personId) {
+    throw new ProblemError('unauthenticated', 'sign in to resolve your plan template');
+  }
+  const personal = await store.getPersonalDefaultTemplate(viewer.personId);
+  if (personal) return shapeTemplate(personal, 'user');
+  const library = await store.getLibraryDefaultTemplate();
+  if (library) return shapeTemplate(library, 'system');
+  // The migration seeds exactly one library default; its absence is a deploy
+  // fault, not an empty scaffold that would read as data loss.
+  throw new ProblemError('internal', 'no library default template is seeded — migration 0008 must run');
+}
+
+/** operationId: savePlanTemplate — PUT /me/plan-template ("save as my default") */
+export async function savePlanTemplate({ viewer, store, body }) {
+  if (!viewer?.personId) {
+    throw new ProblemError('unauthenticated', 'sign in to save your plan template');
+  }
+  const { name, body: phases } = body ?? {};
+  const cleanBody = validatePlanTemplateBody(phases);
+  const cleanName = validateTemplateName(name);
+  const saved = await store.upsertPersonalDefaultTemplate({
+    personId: viewer.personId,
+    name: cleanName,
+    rows: bodyToTemplateRows(cleanBody),
+  });
+  return shapeTemplate(saved, 'user');
+}
+
+// The v1-compatible API view (ResolvedPlanTemplate): the resolved body plus its
+// provenance. `body` is surfaced at the top level for the FE which copies it into
+// a draft, and again inside `template` alongside the metadata "Save as my default"
+// shows back. Scope maps to the v1 ownerScope vocabulary: personal→user,
+// library→system.
+function shapeTemplate({ template, rows }, source) {
+  return {
+    status: 200,
+    body: {
+      source,
+      body: templateRowsToBody(rows),
+      template: {
+        id: template.id,
+        ownerScope: source === 'system' ? 'system' : 'user',
+        name: template.name,
+        isDefault: true,
+        updatedAt: template.updatedAt,
+      },
+    },
+  };
+}
+
+const pad4 = (n) => String(n).padStart(4, '0');
+
+// body [{ name, tasks:[name,…] }] → normalised rows for planning.plan_template_row.
+// Phases are `summary` rows at the root; tasks are `task` rows under their phase.
+// Positions are ascending within each sibling group (templates regenerate whole
+// on every save, so positions never need to interoperate with an incremental
+// reorder — plain ascending text is enough).
+function bodyToTemplateRows(body) {
+  const rows = [];
+  body.forEach((phase, pi) => {
+    const phaseKey = `p${pad4(pi + 1)}`;
+    rows.push({ rowKey: phaseKey, parentRowKey: null, position: pad4(pi + 1), kind: 'summary', name: phase.name });
+    phase.tasks.forEach((task, ti) => {
+      rows.push({
+        rowKey: `${phaseKey}.t${pad4(ti + 1)}`,
+        parentRowKey: phaseKey,
+        position: pad4(ti + 1),
+        kind: 'task',
+        name: task,
+      });
+    });
+  });
+  return rows;
+}
+
+// The inverse: rows → the names-only two-level body. Group tasks under their
+// phase by parent_row_key; each group is ordered by position independently, so a
+// full-list position sort (which interleaves phases and tasks) is never relied on.
+function templateRowsToBody(rows) {
+  const byPosition = (a, b) => (a.position < b.position ? -1 : a.position > b.position ? 1 : 0);
+  return rows
+    .filter((r) => r.parentRowKey == null && r.kind === 'summary')
+    .sort(byPosition)
+    .map((phase) => ({
+      name: phase.name,
+      tasks: rows
+        .filter((r) => r.parentRowKey === phase.rowKey && r.kind === 'task')
+        .sort(byPosition)
+        .map((r) => r.name),
+    }));
+}
+
+function validateTemplateName(name) {
+  if (name == null) return 'My default';
+  if (typeof name !== 'string') throw new ProblemError('validation_failed', 'name must be a string');
+  const trimmed = name.trim();
+  if (!trimmed) return 'My default';
+  if (trimmed.length > TEMPLATE_MAX_NAME) {
+    throw new ProblemError('validation_failed', `a template name must be ≤ ${TEMPLATE_MAX_NAME} chars`);
+  }
+  return trimmed;
+}
+
+// The names-only two-level contract, enforced at the edge (not silently dropped):
+// a phase carries ONLY { name, tasks }; a task is a BARE STRING (a task-as-object
+// is `too_deep`); dates/owners/ids on a phase are refused, so a scaffold can never
+// smuggle plan data past the copy boundary. Returns the normalised body.
+export function validatePlanTemplateBody(body) {
+  if (!Array.isArray(body) || body.length === 0) {
+    throw new ProblemError('validation_failed', 'body must be a non-empty array of phases');
+  }
+  return body.map((phase) => {
+    if (!phase || typeof phase !== 'object' || Array.isArray(phase)) {
+      throw new ProblemError('validation_failed', 'each phase must be an object { name, tasks }');
+    }
+    const extra = Object.keys(phase).filter((k) => k !== 'name' && k !== 'tasks');
+    if (extra.length) {
+      throw new ProblemError('validation_failed',
+        `a template is names-only — a phase carries only { name, tasks } (rejected: ${extra.join(', ')})`);
+    }
+    const name = typeof phase.name === 'string' ? phase.name.trim() : '';
+    if (!name) throw new ProblemError('validation_failed', 'every phase needs a non-empty name');
+    if (name.length > TEMPLATE_MAX_NAME) {
+      throw new ProblemError('validation_failed', `a phase name must be ≤ ${TEMPLATE_MAX_NAME} chars`);
+    }
+    const rawTasks = phase.tasks ?? [];
+    if (!Array.isArray(rawTasks)) {
+      throw new ProblemError('validation_failed', 'tasks must be an array of names');
+    }
+    const tasks = rawTasks.map((t) => {
+      if (typeof t !== 'string') {
+        throw new ProblemError('too_deep',
+          'a task is a name only — no dates, owners, or sub-tasks (the template is two levels)');
+      }
+      const tn = t.trim();
+      if (!tn) throw new ProblemError('validation_failed', 'every task needs a non-empty name');
+      if (tn.length > TEMPLATE_MAX_NAME) {
+        throw new ProblemError('validation_failed', `a task name must be ≤ ${TEMPLATE_MAX_NAME} chars`);
+      }
+      return tn;
+    });
+    return { name, tasks };
+  });
+}
+
 // ── internals ──────────────────────────────────────────────────────────────
 
 function today() {

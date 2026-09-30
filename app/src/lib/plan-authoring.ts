@@ -1455,30 +1455,35 @@ export function toTemplateBody(phases: PhaseDraft[]): TemplatePhase[] {
 }
 
 /**
- * PUT /api/v1/me/plan-template — "save as my default" (LINA-242, ADR-0018).
+ * PUT /api/v2/me/plan-template — "save as my default" (LINA-383 cutover of
+ * LINA-242, ADR-0018). This runs from the client editor, so it goes over HTTP to
+ * the v2 catch-all route (the shared v2 client is server-only); the route
+ * re-verifies the Clerk session, so the transport grants nothing extra.
  *
- * Only `{ name?, body }` crosses the wire: `owner_id` is stamped from the
- * session, so there is no owner to send and a forged one would be inert (§0,
- * ADR-0004). A second save REPLACES the first — one default per user, guaranteed
- * by a partial unique index, so this is an upsert and never accumulates.
+ * Only `{ name?, body }` crosses the wire: the owner is stamped from the resolved
+ * identity mirror (viewer.personId), so there is no owner to send and a forged one
+ * would be inert. A second save REPLACES the first — one default per person,
+ * guaranteed by a partial unique index, so this is an upsert and never accumulates.
  *
  * This write is entirely OUTSIDE the project record: it touches no stage, no
  * version and no ledger event (templates COPY, never link). It is not a proposal
  * and nothing is sent to the other party.
  */
 export async function saveMyDefaultTemplate(body: TemplatePhase[]): Promise<ResolvedPlanTemplate> {
-  const res = await fetch('/api/v1/me/plan-template', {
+  const res = await fetch('/api/v2/me/plan-template', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ body }),
   });
   let payload: unknown = null;
-  try { payload = await res.json(); } catch { /* proxy error page */ }
+  try { payload = await res.json(); } catch { /* 204 / proxy error page */ }
   if (!res.ok) {
-    const err = (payload as { error?: { code?: string; message?: string } } | null)?.error;
+    // v2 speaks problem+json (RFC 9457): { code, title, detail, … }, not the v1
+    // `{ error: { code, message } }` envelope.
+    const p = (payload ?? {}) as { code?: string; title?: string; detail?: string | null };
     throw new PlanAuthorError(
-      err?.code ?? 'internal',
-      err?.message ?? 'That did not save. Try again.',
+      p.code ?? 'internal',
+      p.detail || p.title || 'That did not save. Try again.',
       res.status,
     );
   }

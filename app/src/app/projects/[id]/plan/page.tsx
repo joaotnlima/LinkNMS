@@ -38,7 +38,8 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 
-import { isSignedIn, getPlanTemplate } from '@/lib/api';
+import { isSignedIn } from '@/lib/api';
+import { getDefaultTemplateBody } from '@/lib/v2/plan-template';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContextV2 } from '@/lib/v2/shell';
 import { getPlanGrid } from '@/lib/v2/planning';
@@ -48,7 +49,6 @@ import { getRecordV2 } from '@/lib/v2/record';
 import { getPhasesV2, getViewerPersonId } from '@/lib/v2/phases';
 import { executionPhase, signOffViewer } from '@/lib/v2/phases-view';
 import { countPlanTasks, isPlanLocked } from '@/lib/phase-signoff';
-import type { TemplatePhase } from '@/lib/plan-authoring';
 import { PlanBuildEditor } from './build/PlanBuildEditor';
 import { V2PlanGridReadOnly } from './V2PlanGridReadOnly';
 import { SignOffPanel } from '@/components/SignOffPanel';
@@ -144,7 +144,7 @@ export default async function PlanPage({
           // for an empty build. `undefined` initialPhases is what makes the editor
           // seed rather than resume.
           initialPhases={hasPlan ? phases : undefined}
-          templateBody={hasPlan ? undefined : await resolveTemplate()}
+          templateBody={hasPlan ? undefined : await getDefaultTemplateBody()}
           // v2 authoring does not assign (v2 inherits from the branch, D-33) and
           // keeps status read-only on a draft (ADR-0019) — so no parties, no live
           // stage ids. Both arrive with their own v2 slices.
@@ -169,18 +169,3 @@ export default async function PlanPage({
   );
 }
 
-/**
- * The author's default plan scaffold (names only), fail-closed. Same degradation
- * as the v1 editor: an unreachable template still leaves a usable editor, seeded
- * from the built-in skeleton. It is a user preference, not project data, so
- * reading it over v1 while the plan reads over v2 is fine — it writes nothing.
- */
-async function resolveTemplate(): Promise<TemplatePhase[] | undefined> {
-  try {
-    const resolved = await getPlanTemplate();
-    return resolved.body?.length ? resolved.body : undefined;
-  } catch (err) {
-    console.warn('[plan] could not resolve the default plan template', err);
-    return undefined;
-  }
-}
