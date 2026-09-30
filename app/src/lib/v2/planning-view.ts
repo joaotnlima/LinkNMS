@@ -247,3 +247,52 @@ export function toPlanGridView(view: V2ScheduleView): PlanGridView {
     dependenciesBySuccessor: toDependencies(view.links ?? []),
   };
 }
+
+/** A row found by key, with the names above it — the task permalink's heading
+ *  (the v2 counterpart of `task-workspace.ts#StageHit`, over the grid tree). */
+export interface RowHit {
+  row: StageRow;
+  /** Ancestor names, outermost first (phase → task), excluding the row itself. */
+  trail: string[];
+  /** 0 = phase, 1 = task, 2 = sub-task. */
+  depth: number;
+}
+
+/**
+ * Resolve a task permalink's key against a grid tree, or null. In v2 a row's key
+ * IS its id (`toStageRows`: v2 ids are stable, no draft re-mint), so this matches
+ * on `row.id` — the same value the editor keys drafts on (`planning-hydrate.ts`)
+ * and the URL carries. Null is what the permalink page turns into `notFound()`: a
+ * key naming no row on this build's plan is a dead address, and rendering an empty
+ * task for it would invent work that does not exist — the v1 `findStageByKey` rule.
+ */
+export function findRowByKey(rows: StageRow[], key: string): RowHit | null {
+  const walk = (nodes: StageRow[], trail: string[]): RowHit | null => {
+    for (const n of nodes) {
+      if (n.id === key) return { row: n, trail, depth: trail.length };
+      const hit = n.children.length ? walk(n.children, [...trail, n.name]) : null;
+      if (hit) return hit;
+    }
+    return null;
+  };
+  return key ? walk(rows, []) : null;
+}
+
+/**
+ * Every row id in the grid tree, depth-first. These are the keys the SERVER holds
+ * — what the authoring editor seeds `savedStageKeys` from, so a permalinked task's
+ * workspace (comments/files) opens on mount rather than saying "save first". In v2
+ * every rendered row is persisted (it came from the read), so the whole tree is
+ * "saved" — unlike a v1 draft, which could carry not-yet-written local rows.
+ */
+export function collectRowKeys(rows: StageRow[]): string[] {
+  const out: string[] = [];
+  const walk = (nodes: StageRow[]): void => {
+    for (const n of nodes) {
+      out.push(n.id);
+      if (n.children.length) walk(n.children);
+    }
+  };
+  walk(rows);
+  return out;
+}
