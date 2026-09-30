@@ -6,15 +6,15 @@
 // answer at a glance — name, whether it is live yet, the acting party's role,
 // where the budget stands against its baseline, and how much has been recorded.
 //
-// Drafts are included and link BACK INTO the wizard, not to a half-built record:
-// an abandoned create flow is resumable from exactly the step it stalled on
-// (`stepFor` reads the same draft truth table the wizard routes on). A live
-// build links to its record at `/projects/{id}`.
+// Drafts are included and, like live builds, link to their record at
+// `/projects/{id}`. The v2 creation flow is a single step (Basics) that lands on
+// the record (LINA-367/386): there is no multi-step wizard to resume into, so a
+// draft opens where a live build does and the record is where it is carried
+// forward from.
 import Link from 'next/link';
 
 import type { ProjectSummary } from '@/lib/types';
 import { money, roleLabel, delta } from '@/lib/format';
-import { stepFor, hrefForStep } from '@/lib/build-creation';
 import { PortalShell, type PortalUser } from './PortalShell';
 import './portfolio.css';
 
@@ -42,8 +42,9 @@ export function PortfolioList({ projects, user }: { projects: ProjectSummary[]; 
 
 function PortfolioCard({ project: p }: { project: ProjectSummary }) {
   const isDraft = p.status === 'draft';
-  // A draft resumes at the step it stalled on; a live build opens its record.
-  const href = isDraft ? hrefForStep(p.id, stepFor(p)) : `/projects/${p.id}`;
+  // Draft or live, the card opens the build's record — v2 creation is one step
+  // and has no wizard to resume into (LINA-386).
+  const href = `/projects/${p.id}`;
   // Current vs baseline — the one number that says "has this moved". Baseline is
   // the figure every change is measured against, so we show the move explicitly.
   const moved = p.currentBudgetCents - p.baselineBudgetCents;

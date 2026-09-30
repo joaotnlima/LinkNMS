@@ -219,18 +219,11 @@ export const OWNER_INVITE_COPY = Object.freeze({
 
 // ── Steps ───────────────────────────────────────────────────────────────────
 //
-// Three steps, because three is what the owner is asked for. The pen's screen 05
-// ("Invite sent") is the RESULT of step 3, not a fourth thing to do, and counting
-// it would make the progress indicator read "3 of 4" on a finished wizard.
-
-export const WIZARD_STEPS = Object.freeze([
-  { key: 'basics', n: 1, label: 'Basics' },
-  { key: 'model', n: 2, label: 'Operating model' },
-  { key: 'invite', n: 3, label: 'Invite' },
-] as const);
-
-export type WizardStepKey = (typeof WIZARD_STEPS)[number]['key'];
-export const TOTAL_STEPS = WIZARD_STEPS.length;
+// v2 creation is a SINGLE step (Basics) that lands on the record: the
+// operating-model step is dropped and the counterparty invite is deferred to its
+// own participation slice (LINA-367/386). The old three-step rail — WIZARD_STEPS,
+// the step-resume `stepFor`/`hrefForStep` helpers and the WizardSteps rail — is
+// gone; there is no multi-step wizard to resume into.
 
 // ── Basics: build type (LINA-219) ────────────────────────────────────────────
 //
@@ -303,46 +296,6 @@ export function expectedStartOptions(
 export function buildTypeLabel(value: string | null | undefined): string | null {
   if (!value) return null;
   return BUILD_TYPES.find((t) => t.value === value)?.label ?? value;
-}
-
-/**
- * The step a build is on, derived from the server's projection alone.
- *
- * Truth table (ADR-0011 decisions 1–2):
- *   draft  + no model   → 'model'   — created, model not chosen
- *   draft  + model      → 'invite'  — model chosen, not yet committed
- *   active + any        → 'done'    — the first invite committed the build
- *
- * `undefined` status is a build read from an API that predates migration 0009.
- * Treated as 'done' rather than 'model': the conservative failure is to send the
- * owner to their existing build, not to re-run a wizard against a live record and
- * 409 on the operating-model PATCH.
- */
-export function stepFor(build: {
-  status?: BuildStatus;
-  operatingModel?: OperatingModel | null;
-}): WizardStepKey | 'done' {
-  if (build.status !== 'draft') return 'done';
-  return build.operatingModel ? 'invite' : 'model';
-}
-
-/** Where a resumed build should land. Pairs with `stepFor`, so a bookmarked step
- *  that no longer applies redirects instead of rendering a dead form. */
-export function hrefForStep(projectId: string, step: WizardStepKey | 'done'): string {
-  switch (step) {
-    case 'basics':
-      // The wizard entry `/projects/new` is now the pre-Basics "Your role"
-      // screen (LINA-227); Basics itself moved one level down. `stepFor` never
-      // returns 'basics' for a persisted build (a draft is already past it), so
-      // this case is only the theoretical start-of-wizard target.
-      return '/projects/new/basics';
-    case 'model':
-      return `/projects/${projectId}/operating-model`;
-    case 'invite':
-      return `/projects/${projectId}/invite`;
-    case 'done':
-      return `/projects/${projectId}`;
-  }
 }
 
 // ── GAPS against the pen, recorded not silently dropped ─────────────────────
