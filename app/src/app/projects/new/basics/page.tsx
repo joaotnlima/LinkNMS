@@ -32,7 +32,6 @@
 // same "YYYY-MM" string the column already stored.
 import { redirect } from 'next/navigation';
 import { WizardChrome } from '@/components/WizardChrome';
-import { WizardSteps } from '@/components/WizardSteps';
 import { isSignedIn } from '@/lib/api';
 import { expectedStartOptions, isCreatorRole } from '@/lib/build-creation';
 import { BasicsForm } from './BasicsForm';
@@ -61,9 +60,11 @@ export default async function NewBuildBasicsPage({
   // current month; the value is "YYYY-MM", the label is "March 2026".
   const months = expectedStartOptions(new Date());
 
+  // No step rail: v2 creation is a single step (Basics) that lands on the record
+  // — operating-model is dropped and invite deferred (LINA-367/386), so the old
+  // three-step Basics/Model/Invite rail would lie about what is left.
   return (
     <WizardChrome>
-      <WizardSteps current="basics" />
       <BasicsForm creatorRole={creatorRole} months={months} />
     </WizardChrome>
   );

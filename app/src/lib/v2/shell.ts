@@ -14,7 +14,6 @@
 // simply has nothing to show until the Clerk mirror lands their person row.
 import 'server-only';
 
-import { hrefForStep, stepFor } from '@/lib/build-creation';
 import type { BuildRef, PortalUser } from '@/components/PortalShell';
 import { getViewerProfile, listPortfolio } from './profile';
 
@@ -36,13 +35,13 @@ export async function buildShellContextV2(
   activeName: string,
 ): Promise<BuildShellContextV2> {
   const [user, projects] = await Promise.all([getViewerProfile(), listPortfolio()]);
-  // A draft still switches BACK INTO the wizard at the step it stalled on — the
-  // same routing the portfolio cards use — so the switcher never lands someone on
-  // a half-built record.
+  // Draft or live, a build opens its record — v2 creation is a single step and
+  // has no wizard to switch back into (LINA-386), the same routing the portfolio
+  // cards use.
   const builds: BuildRef[] = projects.map((p) => ({
     id: p.id,
     name: p.name,
-    href: hrefForStep(p.id, stepFor(p)),
+    href: `/projects/${p.id}`,
   }));
   if (!builds.some((b) => b.id === activeBuildId)) {
     builds.unshift({ id: activeBuildId, name: activeName, href: `/projects/${activeBuildId}` });

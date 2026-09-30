@@ -7,7 +7,6 @@
 // and every other build-scoped page stay identical chrome, one fetch shape.
 import { getMe, listProjects } from '@/lib/api';
 import { roleLabel } from '@/lib/format';
-import { stepFor, hrefForStep } from '@/lib/build-creation';
 import type { Role } from '@/lib/types';
 import type { BuildRef, PortalUser } from '@/components/PortalShell';
 
@@ -22,12 +21,13 @@ export async function buildShellContext(
 ): Promise<BuildShellContext> {
   const [me, projects] = await Promise.all([getMe(), listProjects()]);
   const user = { displayName: me.displayName, roleLabel: roleLabel(me.role as Role) };
-  // A draft switches BACK INTO the wizard at the step it stalled on, not to a
-  // half-built record — the same routing the portfolio cards use (PortfolioList).
+  // Draft or live, a build opens its record — v2 creation is a single step and
+  // has no wizard to switch back into (LINA-386), the same routing the portfolio
+  // cards use (PortfolioList).
   const builds: BuildRef[] = projects.map((p) => ({
     id: p.id,
     name: p.name,
-    href: hrefForStep(p.id, stepFor(p)),
+    href: `/projects/${p.id}`,
   }));
   if (!builds.some((b) => b.id === activeBuildId)) {
     builds.unshift({ id: activeBuildId, name: activeName, href: `/projects/${activeBuildId}` });

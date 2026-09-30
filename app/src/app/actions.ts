@@ -12,15 +12,12 @@
 // change order or an invalid budget is a NORMAL outcome that belongs beside the
 // input that caused it, not on an error page.
 import { redirect } from 'next/navigation';
-import { revalidatePath } from 'next/cache';
 
 import {
   ApiError, PlanLimitError, type PlanLimit,
-  createProject, setOperatingModel, inviteCounterparty, acceptInvitation,
+  acceptInvitation,
 } from '@/lib/api';
 import { createBuildDraftV2 } from '@/lib/v2/build';
-import { parseBudgetToCents } from '@/lib/format';
-import { OPERATING_MODELS, inviteRoleFor, type OperatingModel } from '@/lib/build-creation';
 
 export interface FormState {
   error?: string;
@@ -47,31 +44,16 @@ const refusal = (err: unknown, fallback: string): FormState => ({
   ...(err instanceof PlanLimitError ? { planLimit: err.entitlement } : {}),
 });
 
-// ── FR1: start a shared record ───────────────────────────────────────────────
-
-export async function createProjectAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const name = String(form.get('name') ?? '').trim();
-  if (!name) return { error: 'Give the project a name.' };
-
-  let baselineBudgetCents: number;
-  try {
-    baselineBudgetCents = parseBudgetToCents(String(form.get('baselineBudget') ?? ''));
-  } catch (err) {
-    return { error: message(err, 'That baseline budget is not a valid amount.') };
-  }
-
-  let id: string;
-  try {
-    ({ id } = await createProject({ name, baselineBudgetCents }));
-  } catch (err) {
-    return refusal(err, 'Could not create the project.');
-  }
-  // Straight to the invite step: a shared record with one party on it is not yet
-  // doing anything for anyone (FR1 is create AND invite).
-  redirect(`/projects/${id}/invite`);
-}
-
 // ── Band B: the build-creation wizard (LINA-179, ADR-0011) ──────────────────
+//
+// The wizard is a SINGLE creation step on v2 (LINA-386, realizing LINA-367
+// Option A): Basics creates the draft on `/api/v2` and lands on the record. The
+// v1 tail — the FR1 `createProjectAction`, the operating-model step
+// (`setOperatingModelAction`) and the counterparty invite (`inviteAction`) — is
+// gone: operating-model is DROPPED and invite is DEFERRED to its own v2
+// participation slice, so no wizard write touches `/api/v1` any more. Only the
+// invitee side (`acceptInviteAction`, below) still reads v1 identity, and that is
+// a separate flow tracked under the Phase-12 v1 deprecation.
 
 /**
  * Wizard step 1 (M2/D2). Creates the build as a DRAFT and moves to step 2.
@@ -129,108 +111,11 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
     return refusal(err, 'Could not create the build.');
   }
   // Straight to the v2 record (S2, /projects/{id}). Operating-model is a v1 wizard
-  // concept dropped on v2; invite is its own participation slice (LINA-367).
+  // concept dropped on v2; invite is its own participation slice (LINA-367/386).
   redirect(`/projects/${id}`);
 }
 
-/**
- * Wizard step 2 (M3/D3). Sets the operating model and moves to the invite step.
- *
- * The value is checked against the frozen list before the call — not as a
- * substitute for the service's own validation (it rejects anything outside the
- * three regardless) but so a mangled form post is a sentence beside the control
- * rather than a 400 the owner has to interpret.
- */
-export async function setOperatingModelAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const projectId = String(form.get('projectId') ?? '');
-  if (!projectId) return { error: 'Missing build.' };
-
-  const choice = String(form.get('operatingModel') ?? '');
-  if (!OPERATING_MODELS.includes(choice as OperatingModel)) {
-    return { error: 'Choose how this build is run.' };
-  }
-
-  try {
-    await setOperatingModel(projectId, choice as OperatingModel);
-  } catch (err) {
-    return { error: message(err, 'Could not save how this build is run.') };
-  }
-  redirect(`/projects/${projectId}/invite`);
-}
-
-// ── FR1: invite the GC ───────────────────────────────────────────────────────
-
-export interface InviteState extends FormState {
-  token?: string;
-  /** The address it was mailed to, echoed back for the confirmation copy. */
-  sentTo?: string;
-  /** True only when the server actually handed the message to the mailer. */
-  emailed?: boolean;
-}
-
-/**
- * ⚠️ The raw invitation token comes back exactly once and is NEVER persisted —
- * only its SHA-256 is. It is returned to the page so the owner can hand it over,
- * and it must not be logged, revalidated into a cache, or sent to analytics.
- *
- * The email is OPTIONAL (LINA-84). With one, the GC is mailed the accept link;
- * without one, this is the unchanged copy-the-code flow. The token is surfaced
- * in BOTH cases on purpose — if delivery fails the owner is not stranded, they
- * still have a link to send by hand.
- */
-export async function inviteAction(_prev: InviteState, form: FormData): Promise<InviteState> {
-  const projectId = String(form.get('projectId') ?? '');
-  if (!projectId) return { error: 'Missing project.' };
-  const email = String(form.get('email') ?? '').trim();
-
-  // Band B (ADR-0011 §4): which role this build may invite follows its operating
-  // model. The model is read from the hidden field the invite screen rendered
-  // from the SERVER's projection, and it is mapped through `inviteRoleFor` — the
-  // form never posts a role directly, so a tampered field can at worst name a
-  // different model, and the service then rejects a role that build does not
-  // admit. A legacy project (no model) falls through to `counterparty`, R0's
-  // behaviour, unchanged.
-  //
-  // The one exception (LINA-227, ADR-0016 §4): a GC-created build's first invite
-  // is the HOMEOWNER (role `owner`). The invite screen renders `inviteOwner` only
-  // when the server's projection says the build has no owner member yet and the
-  // acting party is its counterparty creator; the service still rules — it admits
-  // `owner` ONLY while no owner exists, so a tampered flag cannot mint a second
-  // owner.
-  //
-  // Hybrid is the one model with a REAL role choice (ADR-0011 OQ-3): the first
-  // invite is the GC OR a specialty, so the screen posts the picked `role`. Every
-  // other model derives its single role from the model and ignores any posted
-  // role. The service stays the authority — it 400s on a role the build's model
-  // doesn't admit — so honouring the posted role can only NARROW to what the model
-  // already allows, never widen access.
-  const model = String(form.get('operatingModel') ?? '') as OperatingModel;
-  const posted = String(form.get('role') ?? '');
-  const role = form.get('inviteOwner') === '1'
-    ? 'owner'
-    : model === 'hybrid' && (posted === 'counterparty' || posted === 'subcontractor')
-      ? posted
-      : inviteRoleFor(model);
-
-  // The pen's Invite screen descriptive fields (LINA-222). Optional free text; the
-  // service trims, caps and stores null for blanks, so an empty field drops to
-  // undefined here rather than posting a blank string.
-  const inviteeName = String(form.get('inviteeName') ?? '').trim() || undefined;
-  const scopeNote = String(form.get('scopeNote') ?? '').trim() || undefined;
-
-  try {
-    const { token, emailed } = await inviteCounterparty(
-      projectId, email || undefined, role, { inviteeName, scopeNote },
-    );
-    // This invite is what commits a draft build (draft→active). Revalidate the
-    // build's own route so the record the owner lands on is the committed one,
-    // not a cached draft.
-    revalidatePath(`/projects/${projectId}`);
-    return { token, emailed, ...(email ? { sentTo: email } : {}) };
-  } catch (err) {
-    return { error: message(err, 'Could not create an invitation.') };
-  }
-}
+// ── Invitee side: accept an invitation ───────────────────────────────────────
 
 export async function acceptInviteAction(_prev: FormState, form: FormData): Promise<FormState> {
   const token = String(form.get('token') ?? '').trim();
