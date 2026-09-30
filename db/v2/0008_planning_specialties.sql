@@ -13,9 +13,14 @@ CREATE TABLE IF NOT EXISTS planning.user_specialty (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id     uuid NOT NULL REFERENCES identity.organization(id) ON DELETE CASCADE,
   label      text NOT NULL CHECK (char_length(trim(label)) > 0 AND char_length(label) <= 120),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (org_id, lower(label))
+  created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Case-insensitive uniqueness per org. An expression is not allowed in an inline
+-- table UNIQUE constraint, so it lives in its own unique index — this also serves
+-- as the ON CONFLICT (org_id, lower(label)) arbiter used by the upsert.
+CREATE UNIQUE INDEX IF NOT EXISTS user_specialty_org_label_uidx
+  ON planning.user_specialty (org_id, lower(label));
 
 CREATE INDEX IF NOT EXISTS user_specialty_org_idx ON planning.user_specialty (org_id);
 
