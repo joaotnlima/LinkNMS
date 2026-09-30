@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import {
   toStageStatus, toDependencyType, toCostCents,
   toStageRows, isBaselined, toDependencies, toPlanGridView,
+  findRowByKey, collectRowKeys,
 } from './planning-view.ts';
 
 const task = (over = {}) => ({
@@ -126,4 +127,38 @@ test('toPlanGridView: tolerates missing tasks/links arrays', () => {
   const view = toPlanGridView({ project_id: 'proj' });
   assert.deepEqual(view.rows, []);
   assert.deepEqual(view.dependenciesBySuccessor, {});
+});
+
+// ── findRowByKey / collectRowKeys (LINA-396, the task permalink's resolver) ────
+
+const grid = () => toStageRows([
+  task({ id: 'phase', parent_id: null, position: 'a0', kind: 'summary', name: 'Foundations' }),
+  task({ id: 'taskA', parent_id: 'phase', position: 'a0', name: 'Excavate' }),
+  task({ id: 'sub', parent_id: 'taskA', position: 'a0', name: 'Mark out' }),
+]);
+
+test('findRowByKey: matches on the row id (= key in v2) with trail + depth', () => {
+  const rows = grid();
+  assert.equal(findRowByKey(rows, 'phase').depth, 0);
+  assert.deepEqual(findRowByKey(rows, 'phase').trail, []);
+
+  const taskHit = findRowByKey(rows, 'taskA');
+  assert.equal(taskHit.depth, 1);
+  assert.deepEqual(taskHit.trail, ['Foundations']);
+  assert.equal(taskHit.row.name, 'Excavate');
+
+  const subHit = findRowByKey(rows, 'sub');
+  assert.equal(subHit.depth, 2);
+  assert.deepEqual(subHit.trail, ['Foundations', 'Excavate']); // phase → task, outermost first
+});
+
+test('findRowByKey: an unknown or empty key is null (the permalink 404)', () => {
+  assert.equal(findRowByKey(grid(), 'nope'), null);
+  assert.equal(findRowByKey(grid(), ''), null);
+  assert.equal(findRowByKey([], 'phase'), null);
+});
+
+test('collectRowKeys: every row id, depth-first (the editor savedStageKeys seed)', () => {
+  assert.deepEqual(collectRowKeys(grid()), ['phase', 'taskA', 'sub']);
+  assert.deepEqual(collectRowKeys([]), []);
 });
