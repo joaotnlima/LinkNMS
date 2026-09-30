@@ -43,7 +43,7 @@ import { PortalShell } from '@/components/PortalShell';
 import { buildShellContextV2 } from '@/lib/v2/shell';
 import { getPlanGrid } from '@/lib/v2/planning';
 import { planGridToDraft } from '@/lib/v2/planning-hydrate';
-import { savePlanV2 } from '@/lib/v2/plan-write';
+import { savePlanV2, reportProgressV2 } from '@/lib/v2/plan-write';
 import { getRecordV2 } from '@/lib/v2/record';
 import { getPhasesV2, getViewerPersonId } from '@/lib/v2/phases';
 import { executionPhase, signOffViewer } from '@/lib/v2/phases-view';
@@ -150,6 +150,9 @@ export default async function PlanPage({
           // stage ids. Both arrive with their own v2 slices.
           parties={[]}
           saveV2={savePlanV2.bind(null, id)}
+          // The status picker's v2 progress-write door (LINA-384). Append-only,
+          // keyed on the stable v2 task id; refusals roll the picker back inline.
+          reportProgressV2={reportProgressV2}
           // The door to the plan's Procurement surface (its own page, LINA-371).
           procurementHref={`/projects/${id}/plan/procurement`}
         />
