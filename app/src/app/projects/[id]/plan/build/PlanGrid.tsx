@@ -479,7 +479,7 @@ export function PlanGrid(props: PlanGridProps) {
   const [specialties, setSpecialties] = useState<string[]>([]);
   useEffect(() => {
     let live = true;
-    fetch('/api/v1/specialties', { headers: { accept: 'application/json' } })
+    fetch('/api/v2/specialties', { headers: { accept: 'application/json' } })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { specialties?: Array<{ label: string }> } | null) => {
         if (live && d?.specialties) setSpecialties(d.specialties.map((s) => s.label));
@@ -499,7 +499,7 @@ export function PlanGrid(props: PlanGridProps) {
       if (prev.some((s) => s.toLowerCase() === label.toLowerCase())) return prev;
       return [...prev, label].sort((a, b) => a.localeCompare(b));
     });
-    fetch('/api/v1/specialties', {
+    fetch('/api/v2/specialties', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ label }),

@@ -950,6 +950,26 @@ export function createPlanningStore(pool) {
         return { recipients: members.length };
       });
     },
+
+    // ── Specialty catalog (LINA-380) ─────────────────────────────────────────
+    async listSpecialties(orgId) {
+      const { rows } = await pool.query(
+        `SELECT label FROM planning.user_specialty WHERE org_id = $1 ORDER BY lower(label)`,
+        [orgId],
+      );
+      return rows.map((r) => r.label);
+    },
+
+    async createUserSpecialty({ orgId, label }) {
+      const { rows } = await pool.query(
+        `INSERT INTO planning.user_specialty (org_id, label)
+         VALUES ($1, $2)
+         ON CONFLICT (org_id, lower(label)) DO UPDATE SET label = EXCLUDED.label
+         RETURNING label`,
+        [orgId, label],
+      );
+      return rows[0].label;
+    },
   };
 }
 

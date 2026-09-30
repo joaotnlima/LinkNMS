@@ -7,6 +7,7 @@ import {
   listCostLines, createCostLine, updateCostLine, deleteCostLine,
   listVariations, getVariation, acknowledgeVariation, questionVariation,
   reportProgress, listProgress,
+  listSpecialties, createUserSpecialty,
 } from '../application/use-cases.mjs';
 
 /**
@@ -76,4 +77,11 @@ export function registerPlanning(router, { store }) {
 
   router.register('GET', '/tasks/{taskId}/progress', 'listProgress', ({ viewer, params }) =>
     listProgress({ viewer, store, taskId: params.taskId }));
+
+  // ── Specialty catalog (LINA-380) ───────────────────────────────────────────
+  router.register('GET', '/specialties', 'listSpecialties', ({ viewer }) =>
+    listSpecialties({ viewer, store }));
+
+  router.register('POST', '/specialties', 'createUserSpecialty', ({ viewer, body }) =>
+    createUserSpecialty({ viewer, store, body }));
 }
