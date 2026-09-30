@@ -27,7 +27,7 @@ import {
 import { authoredToCreateBatch } from './plan-apply';
 import { diffPlanTrees } from './plan-diff';
 import { planEditRequests, isEmptyPlan } from './plan-edit-ops';
-import type { AuthoredNode } from '@/lib/plan-authoring';
+import type { AuthoredNode, StageStatus } from '@/lib/plan-authoring';
 
 /** The empty plan — a signed-in viewer with no readable schedule (no org / not a
  *  participant / nothing authored). Distinct object each call, never shared. */
@@ -186,6 +186,30 @@ export async function applyPlanEdits(
   }
 
   return { idByKey: plan.idByKey, needsReload: plan.movedKeys.length > 0 };
+}
+
+/**
+ * Report a task's execution status on v2 — the WRITE the plan editor's status
+ * picker reaches through (LINA-384, Phase 12b.5). Appends an attributed,
+ * append-only progress report via `POST /api/v2/tasks/{taskId}/progress`; the
+ * server stamps who reported from the session, so widening WHO may report never
+ * weakens the audit trail. `taskId` is the STABLE v2 row id — for a hydrated
+ * existing row that is the editor's node key itself (v2 ids are stable, id IS
+ * key — `planning-hydrate.ts`); for a row created this session it is the id the
+ * save minted. The four `StageStatus` words are exactly the v2 reportable set
+ * (`not_started|in_progress|blocked|done`); `verified` is Quality's word and is
+ * never reported here.
+ *
+ * Like every v2 WRITE (unlike the fail-closed read), this rethrows a `V2Error`:
+ * a viewer who may not report must see the refusal — the caller (`plan-write.ts`)
+ * maps it to the picker's inline rollback message, never a silent success.
+ */
+export async function reportTaskProgress(taskId: string, status: StageStatus): Promise<void> {
+  await v2<unknown>({
+    method: 'POST',
+    path: `/tasks/${taskId}/progress`,
+    body: { status },
+  });
 }
 
 export type { PlanGridView } from './planning-view';
