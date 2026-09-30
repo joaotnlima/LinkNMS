@@ -312,6 +312,20 @@ The blocker §3.1 named is now precise. `Financials`, `CostLine` and `Measuremen
 `listRecord` (the History tab, still openapi-only per §3.1) is a **separate** backend register and
 stays tracked on its own — this ruling covers Plan and Money only.
 
+> **Update (LINA-381, Phase 12b.2, 2026-09-30).** The standalone **Money surface**
+> (`/projects/{id}/budget`, PortalShell `section="money"`) is cut off v1 (`getBudgetMovement` +
+> `getPlan`) **without** waiting on the option-B `record/money` projection: every figure the Money
+> tab needs is already served, per-viewer-redacted, by reads that shipped in S1–S7 —
+> `GET /projects/{id}/contracts` + `GET /contracts/{id}/financials` (summary), the CO roll-up
+> `GET /projects/{id}/change-orders` (moves, LINA-357), and `GET /projects/{id}/variations` (drift).
+> The client composes them in `lib/v2/money.ts` (I/O) + `lib/v2/money-view.ts` (pure aggregation).
+> This does **not** re-open option A's rejection: option A was rejected for re-implementing
+> *visibility* in the client, whereas here each read is **already redacted server-side** and the
+> client only sums/sorts numbers the server released — no visibility decision is made in the UI. The
+> richer server-side `record/money` projection remains the chosen path for the *record page's* Money
+> **tab** (still a `PendingTab`) and stays tracked; the standalone surface no longer blocks the v1
+> drop on it.
+
 #### Honest B2 empty states (a fresh v2 project has no contract yet)
 
 Under B2 a brand-new build is `draft`/`tendering` with no signed contract, so both tabs have a
