@@ -22,7 +22,7 @@ import { v2, V2Error } from './client';
 import {
   toRecordHeader, toScheduleLines, toHistoryLines,
   type RecordHeaderV2, type V2Project, type V2Schedule,
-  type V2AuditEntry, type RecordHistoryLineV2,
+  type V2AuditEntry, type RecordHistoryLineV2, type V2ChainVerification,
 } from './record-view';
 import type { ScheduleLine } from '@/lib/record';
 
@@ -73,6 +73,84 @@ export async function getRecordV2(projectId: string): Promise<RecordV2 | null> {
       header: toRecordHeader(project, schedule.tasks),
       schedule: toScheduleLines(schedule.tasks),
       history: toHistoryLines(ledger.items),
+    };
+  } catch (err) {
+    if (err instanceof V2Error) return null; // not mirrored / no access — no leak
+    throw err;
+  }
+}
+
+// ── The Audit surface (LINA-382, Phase 12b.3) ─────────────────────────────────
+// `/projects/{id}/audit` is the History rail section: the WHOLE hash chain in
+// order, with the integrity verdict made tangible. It reads the same v2 ledger
+// as the record page's History tab (`listRecord`, LINA-359) but is the fuller
+// tamper-evidence view, so it (a) pages through the entire chain rather than the
+// first page, and (b) also calls `record:verify` for the chain verdict — v2's
+// split-out equivalent of the v1 `getAudit` response's inline `verified` field.
+
+/** Rows per `listRecord` page; capped so a pathologically long ledger cannot
+ *  loop unbounded. verifyRecord still reports the TRUE length/head over the whole
+ *  chain, so the banner stays accurate even when the displayed rows are capped. */
+const AUDIT_PAGE_LIMIT = 200;
+const AUDIT_MAX_PAGES = 25; // up to 5,000 displayed entries
+
+/** The Audit surface for one v2 build: the projected ledger + the chain verdict. */
+export interface AuditV2 {
+  projectId: string;
+  /** The chain, newest first, V7-redacted (the page re-sorts ascending). */
+  events: RecordHistoryLineV2[];
+  /** The whole-chain integrity verdict (from `record:verify`). */
+  verified: boolean;
+  /** The head hash of the whole chain, or null on an empty ledger. */
+  headHash: string | null;
+  /** The TRUE entry count over the whole chain (may exceed `events.length`). */
+  length: number;
+  /** The seq at which the chain first breaks, or null when it verifies. */
+  firstInvalidSeq: number | null;
+  /** True when the display was capped before the whole chain was fetched. */
+  truncated: boolean;
+}
+
+/**
+ * The Audit surface for a v2 project, or null when the viewer has no resolvable
+ * access to it (not mirrored, no active org, or not a participant → the backend
+ * 404s the whole surface). Fail-closed exactly as `getRecordV2`: a `V2Error`
+ * resolves to null and the page renders the neutral empty surface, never a leak
+ * and never a 500.
+ */
+export async function getAuditV2(projectId: string): Promise<AuditV2 | null> {
+  const enc = encodeURIComponent(projectId);
+  try {
+    // The verdict and the first page run together; the verdict covers the WHOLE
+    // chain server-side regardless of how many pages we then walk for display.
+    const [verify, firstPage] = await Promise.all([
+      v2<V2ChainVerification>({ method: 'POST', path: `/projects/${enc}/record:verify` }),
+      v2<RecordPageV2>({ method: 'GET', path: `/projects/${enc}/record`, query: { limit: AUDIT_PAGE_LIMIT } }),
+    ]);
+
+    const items: V2AuditEntry[] = [...firstPage.items];
+    let cursor = firstPage.next_cursor;
+    let pages = 1;
+    let truncated = false;
+    while (cursor) {
+      if (pages >= AUDIT_MAX_PAGES) { truncated = true; break; }
+      const page = await v2<RecordPageV2>({
+        method: 'GET', path: `/projects/${enc}/record`,
+        query: { limit: AUDIT_PAGE_LIMIT, cursor },
+      });
+      items.push(...page.items);
+      cursor = page.next_cursor;
+      pages += 1;
+    }
+
+    return {
+      projectId,
+      events: toHistoryLines(items),
+      verified: verify.valid,
+      headHash: verify.head || null,
+      length: verify.length,
+      firstInvalidSeq: verify.first_invalid_seq,
+      truncated,
     };
   } catch (err) {
     if (err instanceof V2Error) return null; // not mirrored / no access — no leak

@@ -165,6 +165,27 @@ export interface RecordHistoryLineV2 {
   sentence: string;
   actorOrgId: string | null;
   actorOrgRole: string | null;
+  /**
+   * The entry's hash. Kept on EVERY row including redacted ones (V7: an
+   * out-of-scope entry keeps its hashes so the chain still verifies) — the
+   * Audit surface prints it to make the tamper-evident chain tangible; the
+   * record History tab does not render it, but shares this one transform.
+   */
+  entryHash: string;
+}
+
+/**
+ * The `record:verify` result (OpenAPI `ChainVerification`) — the whole chain
+ * recomputed server-side. `valid` is the integrity verdict, `head` the final
+ * hash, `length` the entry count, and `first_invalid_seq` the seq at which the
+ * chain first breaks (null when valid). This is v2's split-out equivalent of the
+ * v1 `getAudit` response's inline `verified`/`headHash` fields.
+ */
+export interface V2ChainVerification {
+  valid: boolean;
+  length: number;
+  head: string;
+  first_invalid_seq: number | null;
 }
 
 /**
@@ -210,5 +231,6 @@ export function toHistoryLines(entries: V2AuditEntry[]): RecordHistoryLineV2[] {
       : eventSentenceV2(e.type ?? ''),
     actorOrgId: e.redacted ? null : (e.actor?.org_id ?? null),
     actorOrgRole: e.redacted ? null : (e.actor?.org_role ?? null),
+    entryHash: e.entry_hash,
   }));
 }

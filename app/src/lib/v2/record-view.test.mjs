@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { toRecordHeader, toScheduleLines } from './record-view.ts';
+import { toRecordHeader, toScheduleLines, toHistoryLines, eventSentenceV2 } from './record-view.ts';
 
 const task = (over = {}) => ({
   id: 't1', name: 'Groundworks', position: 'a', depth: 0,
@@ -67,4 +67,47 @@ test('toRecordHeader: a baseline with no dates is not a baseline', () => {
 test('toRecordHeader: always "accepted" — never a deviation from schedule status', () => {
   const h = toRecordHeader(project, [task({ status: 'blocked' }), task({ id: 't2', status: 'done' })]);
   assert.equal(h.state, 'accepted');
+});
+
+// ── History / audit-ledger transform (LINA-359 shape, LINA-382 audit surface) ──
+
+const entry = (over = {}) => ({
+  seq: 1, occurred_at: '2026-03-01T10:00:00.000Z', category: 'project',
+  type: 'project.created', redacted: false, entry_hash: 'abc123', prev_hash: null,
+  actor: { person_id: 'p1', org_id: 'o1', org_role: 'general_contractor' }, ...over,
+});
+
+test('toHistoryLines: an in-scope entry carries its sentence, actor org + hash', () => {
+  const [row] = toHistoryLines([entry()]);
+  assert.equal(row.seq, 1);
+  assert.equal(row.sentence, 'The build was created');
+  assert.equal(row.redacted, false);
+  assert.equal(row.actorOrgId, 'o1');
+  assert.equal(row.actorOrgRole, 'general_contractor');
+  assert.equal(row.entryHash, 'abc123');
+  assert.equal(row.occurredAt, '2026-03-01T10:00:00.000Z');
+});
+
+test('toHistoryLines: a redacted entry keeps seq/category/hash but no actor or type', () => {
+  const [row] = toHistoryLines([entry({ redacted: true, entry_hash: 'def456' })]);
+  assert.equal(row.redacted, true);
+  assert.equal(row.sentence, 'A change you do not have access to was recorded');
+  assert.equal(row.actorOrgId, null);
+  assert.equal(row.actorOrgRole, null);
+  // V7: the hash is kept on a redacted row so the chain still verifies.
+  assert.equal(row.entryHash, 'def456');
+});
+
+test('toHistoryLines: preserves the server order (newest first) it is given', () => {
+  const rows = toHistoryLines([entry({ seq: 9 }), entry({ seq: 4 }), entry({ seq: 2 })]);
+  assert.deepEqual(rows.map((r) => r.seq), [9, 4, 2]);
+});
+
+test('eventSentenceV2: a known type maps to its sentence', () => {
+  assert.equal(eventSentenceV2('contracting.change_order.approved'), 'A change order was approved');
+});
+
+test('eventSentenceV2: an unknown type humanises the tail rather than hiding it', () => {
+  assert.equal(eventSentenceV2('billing.invoice.settled'), 'Invoice settled');
+  assert.equal(eventSentenceV2(''), '');
 });
