@@ -20,9 +20,9 @@
 // outcome for this surface, not a crash: it comes back as `{ ok: false }` so the
 // editor renders the sentence beside the plan and keeps the author's edits, the
 // same shape `app/actions.ts` uses. Anything else rethrows to the error boundary.
-import { applyPlanDraft, applyPlanEdits } from './planning';
+import { applyPlanDraft, applyPlanEdits, reportTaskProgress } from './planning';
 import { V2Error } from './client';
-import type { AuthoredNode } from '@/lib/plan-authoring';
+import type { AuthoredNode, StageStatus } from '@/lib/plan-authoring';
 
 /** author-local key → the stable v2 row id the save minted, for rows it created. */
 export type SavePlanV2Result =
@@ -43,6 +43,37 @@ export async function savePlanV2(
     }
     const { idByKey, needsReload } = await applyPlanEdits(projectId, prev, next);
     return { ok: true, stageIds: idByKey, needsReload };
+  } catch (err) {
+    if (err instanceof V2Error) {
+      return { ok: false, code: err.code, message: err.message };
+    }
+    throw err;
+  }
+}
+
+/** The editor's status-picker outcome: `ok` on an appended report, or a typed
+ *  refusal the picker rolls back on and shows inline (never a thrown crash). */
+export type ReportProgressV2Result =
+  | { ok: true }
+  | { ok: false; code: string; message: string };
+
+/**
+ * The v2 progress-write door (LINA-384, Phase 12b.5): the plan editor's status
+ * picker POSTs an append-only progress report through `/api/v2` instead of the
+ * retired v1 `reportProgress` fetch. `taskId` is the stable v2 row id (for a
+ * hydrated row that is the editor's node key itself; for a session-created row
+ * it is the id the save minted). A `V2Error` — a role refusal, no active org,
+ * an out-of-scope row — is a NORMAL outcome for this surface, returned as
+ * `{ ok: false }` so the picker rolls back to the last recorded status and shows
+ * the reason inline. Anything else rethrows to the error boundary.
+ */
+export async function reportProgressV2(
+  taskId: string,
+  status: StageStatus,
+): Promise<ReportProgressV2Result> {
+  try {
+    await reportTaskProgress(taskId, status);
+    return { ok: true };
   } catch (err) {
     if (err instanceof V2Error) {
       return { ok: false, code: err.code, message: err.message };

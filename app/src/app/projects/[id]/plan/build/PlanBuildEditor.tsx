@@ -62,7 +62,6 @@ import {
   type AuthoredNode, type DepType, type PhaseDraft, type PlanNodeRef, type StageStatus, type TemplatePhase,
 } from '@/lib/plan-authoring';
 import { rekeyDraft, rekeyWire, draftKeys } from '@/lib/v2/plan-rekey';
-import { PlanActionError, reportProgress } from '@/lib/plan-baseline';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 import { TaskWorkspace } from '@/components/TaskWorkspace';
@@ -238,9 +237,21 @@ export type SaveV2 = (
   | { ok: false; code: string; message: string }
 >;
 
+/**
+ * The v2 progress-write door (LINA-384, Phase 12b.5). The status picker reports
+ * an append-only progress report through `/api/v2` (the `reportProgressV2` server
+ * action) instead of the retired v1 `reportProgress` fetch. `taskId` is the
+ * stable v2 row id. A refusal comes back as `{ ok: false }` — the picker rolls
+ * back and shows the reason inline — rather than throwing.
+ */
+export type ReportProgressV2 = (
+  taskId: string,
+  status: StageStatus,
+) => Promise<{ ok: true } | { ok: false; code: string; message: string }>;
+
 export function PlanBuildEditor({
   projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
-  importHref = null, procurementHref = null, initialStageIds = {}, saveV2,
+  importHref = null, procurementHref = null, initialStageIds = {}, saveV2, reportProgressV2,
 }: {
   projectId: string;
   /**
@@ -287,6 +298,12 @@ export function PlanBuildEditor({
    * `/api/v2` incrementally; absent → the legacy v1 `authorPlan` whole-tree write.
    */
   saveV2?: SaveV2;
+  /**
+   * The v2 progress-write door (LINA-384). Present → the status picker reports
+   * through `/api/v2`; absent → the picker is inert (a v1-only mount holds no
+   * live v2 stage ids, so no row is status-settable there anyway).
+   */
+  reportProgressV2?: ReportProgressV2;
 }) {
   const router = useRouter();
   const resuming = initialPhases != null && initialPhases.length > 0;
@@ -635,28 +652,27 @@ export function PlanBuildEditor({
   // Set a leaf task's status straight from the draft grid (LINA-307, founder ask
   // "I should always be able to move the status of a task"). Status is NOT part of
   // the authored draft — it is an append-only, attributed progress report — so
-  // this does NOT go through the debounced authorPlan write. It resolves the
-  // node's LIVE stage id (re-minted on each save, kept fresh in stageIdByKey) and
-  // POSTs a progress report, then refreshes so the server's derived status (and
-  // every parent meter that rolls it up) re-reads. A node with no live id yet
-  // (never saved) is read-only in the grid and never reaches here.
+  // this does NOT go through the debounced save. Since LINA-384 (Phase 12b.5) it
+  // POSTs through the v2 progress endpoint (`/api/v2/tasks/{taskId}/progress`), no
+  // longer the retired v1 `/stages/:id/progress`. The v2 TASK id is stable: for a
+  // hydrated existing row it IS the node key (v2 ids are keys — planning-hydrate);
+  // for a row created this session it is the id the save minted, kept in
+  // stageIdByKey. A node with no live id yet (never saved) is read-only in the
+  // grid and never reaches here. On success we refresh so the server's derived
+  // status — and every parent meter that rolls it up — re-reads.
   const setStatus = useCallback(async (nodeKey: string, status: StageStatus) => {
-    const stageId = stageIdByKey.get(nodeKey);
-    if (!stageId) return;
+    if (!reportProgressV2) return;
+    const taskId = stageIdByKey.get(nodeKey) ?? nodeKey;
     setError(null);
-    try {
-      // Pass the stable key so a stale (re-minted) stageId still resolves
-      // server-side rather than 404ing (LINA-306).
-      await reportProgress(stageId, status, { projectId, stageKey: nodeKey });
-      router.refresh();
-    } catch (e) {
-      // Re-throw a typed refusal so the grid's picker can roll itself back and
-      // show the reason inline; anything else becomes a page-level message.
-      if (e instanceof PlanActionError) throw e;
-      setError('That status did not save. Try again.');
-      throw e;
+    const res = await reportProgressV2(taskId, status);
+    if (!res.ok) {
+      // A typed refusal (role / no active org / out-of-scope) — throw so the
+      // grid's picker rolls itself back to the last recorded status and shows the
+      // reason inline, exactly as the v1 path surfaced a PlanActionError.
+      throw new Error(res.message);
     }
-  }, [stageIdByKey, router]);
+    router.refresh();
+  }, [reportProgressV2, stageIdByKey, router]);
 
   // Which leaf rows are settable: those the server holds a live id for. A Set so
   // the grid can test membership per row without re-deriving it.
