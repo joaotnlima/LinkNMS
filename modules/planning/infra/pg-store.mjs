@@ -970,6 +970,79 @@ export function createPlanningStore(pool) {
       );
       return rows[0].label;
     },
+
+    // ── Plan template "my default" (LINA-383, ADR-0018) ───────────────────────
+    // A names-only scaffold with NO audit weight: it never links to a project's
+    // tasks and appends no ledger event (ADR-0002). `resolvePlanTemplate` COPIES
+    // its rows into a fresh editor draft — the copy-not-link boundary (LINA-241).
+    // Mutable CRUD, deliberately unlike the append-only plan life.
+    async getPersonalDefaultTemplate(personId) {
+      const { rows } = await pool.query(
+        `SELECT id, scope, name, updated_at FROM planning.plan_template
+          WHERE scope = 'personal' AND owner_person_id = $1 AND is_default
+          LIMIT 1`,
+        [personId],
+      );
+      if (!rows[0]) return null;
+      return { template: templateN(rows[0]), rows: await loadTemplateRows(pool, rows[0].id) };
+    },
+
+    async getLibraryDefaultTemplate() {
+      const { rows } = await pool.query(
+        `SELECT id, scope, name, updated_at FROM planning.plan_template
+          WHERE scope = 'library' AND is_default
+          LIMIT 1`,
+      );
+      if (!rows[0]) return null;
+      return { template: templateN(rows[0]), rows: await loadTemplateRows(pool, rows[0].id) };
+    },
+
+    // Upsert the caller's single personal default from a names-only row set. The
+    // partial unique index (one default per owner) makes a second save REPLACE
+    // the first, never accumulate — so rows are cleared and re-inserted whole
+    // rather than diffed. Runs in one transaction: template + its rows are always
+    // consistent, and a concurrent save is serialized by the row-level lock.
+    async upsertPersonalDefaultTemplate({ personId, name, rows: templateRows }) {
+      return tx(async (client) => {
+        const { rows: existing } = await client.query(
+          `SELECT id FROM planning.plan_template
+            WHERE scope = 'personal' AND owner_person_id = $1 AND is_default
+            FOR UPDATE`,
+          [personId],
+        );
+        let tplId;
+        if (existing[0]) {
+          tplId = existing[0].id;
+          await client.query(
+            'UPDATE planning.plan_template SET name = $2, updated_at = now() WHERE id = $1',
+            [tplId, name],
+          );
+          await client.query('DELETE FROM planning.plan_template_row WHERE template_id = $1', [tplId]);
+        } else {
+          tplId = randomUUID();
+          await client.query(
+            `INSERT INTO planning.plan_template
+               (id, scope, owner_person_id, owner_org_id, name, description,
+                construction_type, phase_tags, is_default, updated_at)
+             VALUES ($1, 'personal', $2, NULL, $3, NULL, 'residential', '{}', true, now())`,
+            [tplId, personId, name],
+          );
+        }
+        for (const r of templateRows) {
+          await client.query(
+            `INSERT INTO planning.plan_template_row
+               (template_id, row_key, parent_row_key, position, kind, name, specialty)
+             VALUES ($1, $2, $3, $4, $5, $6, NULL)`,
+            [tplId, r.rowKey, r.parentRowKey, r.position, r.kind, r.name],
+          );
+        }
+        const { rows: tpl } = await client.query(
+          'SELECT id, scope, name, updated_at FROM planning.plan_template WHERE id = $1',
+          [tplId],
+        );
+        return { template: templateN(tpl[0]), rows: await loadTemplateRows(client, tplId) };
+      });
+    },
   };
 }
 
@@ -1080,6 +1153,32 @@ async function copyAwardedProposal(client, { contractId, projectId, roots, actor
     );
   }
   return { proposalId: proposal.id, inserted };
+}
+
+function templateN(r) {
+  return {
+    id: r.id,
+    scope: r.scope,
+    name: r.name,
+    updatedAt: r.updated_at?.toISOString?.() ?? r.updated_at,
+  };
+}
+
+async function loadTemplateRows(q, templateId) {
+  const { rows } = await q.query(
+    `SELECT row_key, parent_row_key, position, kind, name
+       FROM planning.plan_template_row
+      WHERE template_id = $1
+      ORDER BY position`,
+    [templateId],
+  );
+  return rows.map((r) => ({
+    rowKey: r.row_key,
+    parentRowKey: r.parent_row_key,
+    position: r.position,
+    kind: r.kind,
+    name: r.name,
+  }));
 }
 
 function progressN(r) {

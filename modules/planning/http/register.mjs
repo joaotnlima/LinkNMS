@@ -8,6 +8,7 @@ import {
   listVariations, getVariation, acknowledgeVariation, questionVariation,
   reportProgress, listProgress,
   listSpecialties, createUserSpecialty,
+  resolvePlanTemplate, savePlanTemplate,
 } from '../application/use-cases.mjs';
 
 /**
@@ -84,4 +85,13 @@ export function registerPlanning(router, { store }) {
 
   router.register('POST', '/specialties', 'createUserSpecialty', ({ viewer, body }) =>
     createUserSpecialty({ viewer, store, body }));
+
+  // Plan template "my default" (LINA-383) — per-person, project-independent,
+  // names-only (LINA-241, ADR-0018). Gated on the identity mirror only (no org),
+  // so it resolves the same whether or not an org is active.
+  router.register('GET', '/me/plan-template', 'getPlanTemplate', ({ viewer }) =>
+    resolvePlanTemplate({ viewer, store }));
+
+  router.register('PUT', '/me/plan-template', 'savePlanTemplate', ({ viewer, body }) =>
+    savePlanTemplate({ viewer, store, body }));
 }
