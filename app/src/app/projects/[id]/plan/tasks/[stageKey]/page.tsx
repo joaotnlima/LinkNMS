@@ -153,7 +153,8 @@ export default async function TaskPermalinkPage({
           <span>{hit.row.end ? formatDate(hit.row.end) : '—'}</span>
         </div>
 
-        <TaskWorkspace projectId={id} stageKey={stageKey} parties={[]} />
+        {/* The v2 task id IS the resolved row id (in v2 a row's id is its key). */}
+        <TaskWorkspace taskId={hit.row.id} parties={[]} />
       </main>
     </PortalShell>
   );

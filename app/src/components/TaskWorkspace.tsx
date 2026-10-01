@@ -1,48 +1,56 @@
 'use client';
 
-// The task workspace — the conversation and the files on one plan task
-// (LINA-250; API LINA-249, contract slice-task-workspace-contract.md).
+// The task workspace — the conversation and the files on one plan task, on
+// `/api/v2` (LINA-399, Phase 12b.9 of the UI cutover; data layer LINA-324; the v1
+// surface was LINA-250). It reaches the server-only v2 data layer through the
+// `task-workspace-actions.ts` server actions and does the direct browser → R2
+// upload PUT itself (`upload-client.ts`), the same split `plan-write.ts` uses.
 //
-// Brand-book: brand-book/src/components/TaskWorkspace.stories.js — the comment
-// row, the composer, the file row and the three quiet states have one home
-// there, as every plan primitive does.
+// ── KEYING (the shape change, doc 22 header) ──────────────────────────────────
+// v1 anchored on a stage's client `key` scoped to a project; v2 anchors on the v2
+// TASK id (a UUID — in v2 a row's id IS its key, LINA-396), and every read/write
+// is scoped by the viewer's active org server-side. The caller plumbs that task
+// id in; `null` is the unsaved-task state, which has no address to hang a thread
+// off and says so.
 //
-// ── WHAT THIS SURFACE PROMISES ───────────────────────────────────────────────
-// 1. APPEND-ONLY, AND IT LOOKS IT. There is no edit pencil and no delete on a
-//    comment or a file, because there is neither in the API — the tables carry
-//    no UPDATE/DELETE grant at all. Drawing an affordance that would 403 (or
-//    worse, look like it worked) would misdescribe the record.
-// 2. NAMES COME FROM THE PROJECT, NOT FROM THE ROW. A comment carries a party
-//    id; the name and the avatar are resolved here from the members the screen
-//    already holds (ADR-0006 §1), so a renamed party is renamed on every comment
-//    they ever left rather than leaving a frozen copy behind.
-// 3. NO LOCAL FAKES. A task that is not saved yet has no address to hang a
-//    thread off, so the section says so plainly instead of collecting comments
-//    in React state that the next reload would swallow.
-// 4. THE SERVER IS THE AUTHORITY ON A FILE. We do not gate on `file.type` or
-//    pre-check the size beyond telling the party what the limit is: the server
-//    sniffs magic bytes and answers 415/413, and its answer is what is shown.
+// ── WHAT THIS SURFACE PROMISES (unchanged from v1) ───────────────────────────
+// 1. APPEND-ONLY, AND IT LOOKS IT. No edit pencil, no delete — the v2 modules
+//    carry no such grant (only a tombstone). A correction is a new comment; a new
+//    file is a new version. Drawing an affordance that would 403 would misdescribe
+//    the record.
+// 2. NAMES COME FROM THE PROJECT, NOT THE ROW. A comment carries an author
+//    person/org id; the name is resolved here from the members the screen holds
+//    (empty on v2 plan surfaces today, D-33), so a renamed party is renamed on
+//    every comment they left rather than frozen into the row.
+// 3. NO LOCAL FAKES. A task not saved yet has no address, so the section says so
+//    instead of collecting comments in React state the next reload would swallow.
+// 4. THE SERVER IS THE AUTHORITY ON A FILE. The declared sha256 is pinned into the
+//    presigned PUT, so storage refuses different bytes; the server answers
+//    415/413 and its answer is what is shown. Downloads are a 302 behind a V6
+//    scope check (`downloadPath`), never a public URL we draw.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { PartyAvatar } from '@/components/PartyAvatar';
 import { partyIndex, roleWord, UNKNOWN_PARTY, type PartyRef } from '@/lib/party-display';
 import {
-  addComment, fetchWorkspace, formatBytes, relativeTime, uploadAttachment,
-  WorkspaceError,
-  type AttachmentView, type CommentView, type WorkspaceView,
-} from '@/lib/task-workspace';
+  completeDocumentAction, loadWorkspaceAction, postCommentAction, reserveDocumentAction,
+} from '@/lib/v2/task-workspace-actions';
+import { digestSha256, putToTicket } from '@/lib/v2/upload-client';
+import {
+  formatBytes, relativeTime,
+  type CommentView, type DocumentView, type WorkspaceView,
+} from '@/lib/v2/task-workspace-view';
 import './task-workspace.css';
 
 export function TaskWorkspace({
-  projectId, stageKey, parties = [], heading = 'Conversation & files',
+  taskId, parties = [], heading = 'Conversation & files',
 }: {
-  projectId: string;
   /**
-   * The task's PERSISTED key, or null when the task exists only in the unsaved
+   * The v2 TASK id (a UUID), or null when the task exists only in the unsaved
    * editor. Null is a real state with its own copy — not an empty thread.
    */
-  stageKey: string | null;
+  taskId: string | null;
   /** The build's members, for naming an author. */
   parties?: PartyRef[];
   heading?: string;
@@ -62,62 +70,81 @@ export function TaskWorkspace({
 
   const dir = partyIndex(parties);
 
-  // One read per task. The key IS the identity of the thread, so switching
-  // tasks in the drawer re-reads rather than reconciling — and a stale response
-  // from the task you just left is dropped (`live`), not painted over the new one.
+  // One read per task. The id IS the identity of the thread, so switching tasks in
+  // the drawer re-reads rather than reconciling — and a stale response from the
+  // task you just left is dropped (`live`), not painted over the new one.
   useEffect(() => {
-    if (!stageKey) { setView(null); setError(null); return; }
+    if (!taskId) { setView(null); setError(null); return; }
     let live = true;
     setLoading(true);
     setError(null);
     setView(null);
-    fetchWorkspace(projectId, stageKey)
-      .then((w) => { if (live) setView(w); })
-      .catch((e) => {
+    loadWorkspaceAction(taskId)
+      .then((res) => {
         if (!live) return;
-        setError(e instanceof WorkspaceError ? e.message : 'Could not load this task’s workspace.');
+        if (res.ok) setView(res.value);
+        else setError(res.message);
       })
+      .catch(() => { if (live) setError('Could not load this task’s workspace.'); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [projectId, stageKey]);
+  }, [taskId]);
 
   const send = useCallback(async () => {
-    if (!stageKey) return;
+    if (!taskId) return;
     const body = draft.trim();
     if (!body) return;
     setSending(true);
     setError(null);
     try {
-      const comment = await addComment(projectId, stageKey, body);
-      // Append the server's row, never our draft: `createdAt` and the author are
-      // ITS answer, and echoing our own copy would show a comment that differs
-      // from the one everyone else will read.
-      setView((prev) => (prev ? { ...prev, comments: [...prev.comments, comment] } : prev));
-      setDraft('');
-    } catch (e) {
-      setError(e instanceof WorkspaceError ? e.message : 'That comment did not go through. Try again.');
+      const res = await postCommentAction(taskId, body);
+      if (res.ok) {
+        // Append the server's row, never our draft: `createdAt` and the author are
+        // ITS answer, and echoing our own copy would show a comment that differs
+        // from the one everyone else will read.
+        setView((prev) => (prev ? { ...prev, comments: [...prev.comments, res.value] } : prev));
+        setDraft('');
+      } else {
+        setError(res.message);
+      }
+    } catch {
+      setError('That comment did not go through. Try again.');
     } finally {
       setSending(false);
     }
-  }, [draft, projectId, stageKey]);
+  }, [draft, taskId]);
 
   const upload = useCallback(async (file: File) => {
-    if (!stageKey) return;
+    if (!taskId) return;
     setUploading(true);
     setError(null);
+    const mime = file.type || 'application/octet-stream';
     try {
-      const attachment = await uploadAttachment(projectId, stageKey, file);
-      setView((prev) => (prev ? { ...prev, attachments: [...prev.attachments, attachment] } : prev));
-    } catch (e) {
-      setError(e instanceof WorkspaceError ? e.message : 'That file did not upload. Try again.');
+      // The three-step v2 upload: reserve a presigned PUT (sha256 pinned into the
+      // signature), PUT the bytes straight to R2 (never through us), then prove
+      // they landed. An error at any step aborts before `complete`, so an unproven
+      // version stays invisible everywhere.
+      const { hex, base64 } = await digestSha256(file);
+      const reserved = await reserveDocumentAction(taskId, {
+        name: file.name, mime, sizeBytes: file.size, sha256: hex,
+      });
+      if (!reserved.ok) { setError(reserved.message); return; }
+
+      await putToTicket(reserved.value.uploadUrl, file, mime, base64);
+
+      const completed = await completeDocumentAction(reserved.value.versionRef);
+      if (!completed.ok) { setError(completed.message); return; }
+      setView((prev) => (prev ? { ...prev, documents: [...prev.documents, completed.value] } : prev));
+    } catch {
+      setError('That file did not upload. Try again.');
     } finally {
       setUploading(false);
       if (fileInput.current) fileInput.current.value = ''; // same file twice must still fire
     }
-  }, [projectId, stageKey]);
+  }, [taskId]);
 
-  // ── The unsaved state (contract: the rails anchor on a PERSISTED key) ──────
-  if (!stageKey) {
+  // ── The unsaved state (the rails anchor on a PERSISTED task id) ────────────
+  if (!taskId) {
     return (
       <section className="tws" aria-label={heading}>
         <h3 className="tws-h">{heading}</h3>
@@ -203,14 +230,14 @@ export function TaskWorkspace({
               />
             </div>
 
-            {view.attachments.length === 0 ? (
+            {view.documents.length === 0 ? (
               <p className="tws-quiet">
                 No files yet. Images, PDFs and office documents up to 10 MB.
               </p>
             ) : (
               <ul className="tws-filelist">
-                {view.attachments.map((a) => (
-                  <FileRow key={a.id} attachment={a} dir={dir} nowMs={nowMs} />
+                {view.documents.map((d) => (
+                  <FileRow key={d.id} document={d} dir={dir} nowMs={nowMs} />
                 ))}
               </ul>
             )}
@@ -228,8 +255,8 @@ function CommentRow({
   dir: Map<string, PartyRef>;
   nowMs: number;
 }) {
-  const author = dir.get(comment.authorPartyId)
-    ?? { partyId: comment.authorPartyId, name: UNKNOWN_PARTY, role: null };
+  const author = dir.get(comment.authorPersonId)
+    ?? { partyId: comment.authorPersonId, name: UNKNOWN_PARTY, role: null };
   return (
     <li className="tws-comment">
       <PartyAvatar party={author} size="sm" />
@@ -243,32 +270,49 @@ function CommentRow({
             {relativeTime(comment.createdAt, nowMs)}
           </time>
         </p>
-        <p className="tws-comment-text">{comment.body}</p>
+        {/* A tombstoned comment keeps its slot but not its words — the record shows
+            that something was there, append-only, never a silent gap. */}
+        {comment.deleted ? (
+          <p className="tws-comment-text tws-quiet">This comment was removed.</p>
+        ) : (
+          <p className="tws-comment-text">{comment.body}</p>
+        )}
       </div>
     </li>
   );
 }
 
 function FileRow({
-  attachment, dir, nowMs,
+  document, dir, nowMs,
 }: {
-  attachment: AttachmentView;
+  document: DocumentView;
   dir: Map<string, PartyRef>;
   nowMs: number;
 }) {
-  const uploader = dir.get(attachment.uploaderPartyId)
-    ?? { partyId: attachment.uploaderPartyId, name: UNKNOWN_PARTY, role: null };
+  const { latest } = document;
+  const uploader = latest
+    ? dir.get(latest.uploaderPersonId)
+      ?? { partyId: latest.uploaderPersonId, name: UNKNOWN_PARTY, role: null }
+    : null;
   return (
     <li className="tws-file">
-      <a className="tws-filename" href={attachment.blobUrl} target="_blank" rel="noreferrer">
-        {attachment.fileName}
-      </a>
-      <span className="tws-filemeta">
-        {formatBytes(attachment.sizeBytes)} · {uploader.name} ·{' '}
-        <time dateTime={attachment.createdAt} title={attachment.createdAt}>
-          {relativeTime(attachment.createdAt, nowMs)}
-        </time>
-      </span>
+      {/* The download is a 302 behind a V6 scope check (`downloadPath`), not a
+          public URL — a plain navigation the browser follows. */}
+      {latest ? (
+        <a className="tws-filename" href={latest.downloadPath} target="_blank" rel="noreferrer">
+          {document.title}
+        </a>
+      ) : (
+        <span className="tws-filename">{document.title}</span>
+      )}
+      {latest ? (
+        <span className="tws-filemeta">
+          {formatBytes(latest.sizeBytes)} · {uploader?.name ?? UNKNOWN_PARTY} ·{' '}
+          <time dateTime={latest.uploadedAt} title={latest.uploadedAt}>
+            {relativeTime(latest.uploadedAt, nowMs)}
+          </time>
+        </span>
+      ) : null}
     </li>
   );
 }
