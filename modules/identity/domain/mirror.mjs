@@ -64,9 +64,19 @@ export function commandFor(event) {
 
     case 'organizationMembership.created':
     case 'organizationMembership.updated': {
-      const role = bareRole(data.role);
+      // Free tier (D-38 / LINA-402): Clerk can only attach `admin`/`member` to a
+      // membership without the B2B add-on, so a finer catalogue role (manager,
+      // representative, site_lead, finance, inspector) rides on the invitation's
+      // public_metadata.org_role — which Clerk copies onto the membership when
+      // the invite is accepted. We honour that override ONLY when Clerk's own
+      // role is the free-tier placeholder `member`; an explicit `admin` (or, on
+      // a provisioned dev instance, a finer Clerk role) always wins, so a later
+      // dashboard role change is never shadowed by stale invitation metadata.
+      const clerkRole = bareRole(data.role);
+      const metaRole = bareRole(data.public_metadata?.org_role);
+      const role = clerkRole === 'member' && metaRole ? metaRole : clerkRole;
       if (!MEMBERSHIP_ROLES.has(role)) {
-        return { kind: 'reject', reason: `membership role ${data.role} is not in the doc-16 §4 catalogue` };
+        return { kind: 'reject', reason: `membership role ${role} is not in the doc-16 §4 catalogue` };
       }
       return {
         kind: 'upsert_membership',
