@@ -400,6 +400,11 @@ export function PlanBuildEditor({
     () => new Map(Object.entries(initialStageIds)),
   );
   const workspaceKey = activeKey && saved.has(activeKey) ? activeKey : null;
+  // The v2 TASK id the workspace drawer reads/writes against (LINA-399). Same
+  // resolution as `setStatus`: a hydrated existing row's node key IS the v2 id
+  // (planning-hydrate), and a row created this session uses the id the save minted
+  // (kept in stageIdByKey). Null until the plan holds this row.
+  const workspaceTaskId = workspaceKey ? (stageIdByKey.get(workspaceKey) ?? workspaceKey) : null;
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -1039,7 +1044,7 @@ export function PlanBuildEditor({
                 this task. `workspaceKey` is null until the plan holds this row —
                 the section then says so rather than collecting comments locally
                 that no reload would bring back. */}
-            <TaskWorkspace projectId={projectId} stageKey={workspaceKey} parties={parties} />
+            <TaskWorkspace taskId={workspaceTaskId} parties={parties} />
 
             <div className="pbx-drawer-actions">
               <button type="button" className="btn primary"
