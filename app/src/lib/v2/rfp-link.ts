@@ -16,6 +16,13 @@ import type { BidBody, ProposalEcho, RfpLinkView } from './rfp-link-view';
 
 const base = (token: string) => `/rfp-links/${encodeURIComponent(token)}`;
 
+/** The presigned-PUT ticket the reserve step answers. */
+export interface ProposalUploadTicket {
+  documentId: string;
+  uploadUrl: string;
+  expiresAt: string;
+}
+
 /**
  * The three outcomes of the read, as a discriminated union rather than a throw,
  * so the server page renders a state instead of hitting an error boundary:
@@ -88,5 +95,100 @@ function bannerFor(e: V2Error): string {
       return 'Some of these answers did not go through. Check the form and try again.';
     default:
       return e.detail || 'That did not send. Try again.';
+  }
+}
+
+// ── Portfolio-attachment uploads (LINA-375; BE LINA-370) ─────────────────────
+// Steps 1 and 3 of the reserve → PUT → complete protocol. BOTH run here on the
+// server (they call the v2 tendering module in-process over the anonymous
+// `rfp-links` surface); only step 2 — the presigned PUT of the raw bytes — runs
+// in the browser (upload-client.ts), so the file never crosses our server. The
+// token in the path is the whole credential, re-supplied on every call.
+
+/** A reserved upload (step 1), or a refusal the widget renders per-file. */
+export type ReserveResult =
+  | { ok: true; ticket: ProposalUploadTicket }
+  | { ok: false; code: string; message: string };
+
+/** The wire the reserve endpoint answers: ids/urls in snake_case. */
+interface ReserveTicketWire {
+  document_id: string;
+  upload_url: string;
+  expires_at: string;
+}
+
+/**
+ * Step 1 — reserve one attachment and get a presigned PUT. The BE mints the
+ * document id, pins the declared sha256 into the signature (so the browser can
+ * only upload the bytes it declared), and enforces the type/size/count caps; a
+ * spent or closed link is `invalid_transition` (409), the same case the submit's
+ * closed-link banner covers.
+ */
+export async function reserveProposalDocument(
+  token: string,
+  file: { name: string; mime: string; sizeBytes: number; sha256: string },
+): Promise<ReserveResult> {
+  try {
+    const t = await v2<ReserveTicketWire>({
+      method: 'POST',
+      path: `${base(token)}/documents`,
+      body: {
+        file: {
+          name: file.name,
+          mime: file.mime,
+          size_bytes: file.sizeBytes,
+          sha256: file.sha256.toLowerCase(),
+        },
+      },
+      allowAnonymous: true,
+    });
+    return {
+      ok: true,
+      ticket: { documentId: t.document_id, uploadUrl: t.upload_url, expiresAt: t.expires_at },
+    };
+  } catch (e) {
+    if (e instanceof V2Error) return { ok: false, code: e.code, message: uploadBannerFor(e) };
+    return { ok: false, code: 'internal', message: 'That file did not upload. Try again.' };
+  }
+}
+
+/** The outcome of completing an upload (step 3). */
+export type CompleteResult =
+  | { ok: true }
+  | { ok: false; code: string; message: string };
+
+/**
+ * Step 3 — prove the bytes landed (the BE heads the object and checks the size;
+ * the sha256 was already pinned into the PUT) and mark the attachment `stored`.
+ * Idempotent. Only a `stored` id may then ride the submit's `document_ids`.
+ */
+export async function completeProposalDocument(
+  token: string,
+  documentId: string,
+): Promise<CompleteResult> {
+  try {
+    await v2<unknown>({
+      method: 'POST',
+      path: `${base(token)}/documents/${encodeURIComponent(documentId)}:complete`,
+      allowAnonymous: true,
+    });
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof V2Error) return { ok: false, code: e.code, message: uploadBannerFor(e) };
+    return { ok: false, code: 'internal', message: 'That file did not upload. Try again.' };
+  }
+}
+
+/** Per-file copy for the upload steps — distinct from the submit's sentences. */
+function uploadBannerFor(e: V2Error): string {
+  switch (e.code) {
+    case 'invalid_transition':
+      return 'This request is no longer accepting proposals, so files cannot be attached.';
+    case 'not_found':
+      return 'This link is not valid. Ask whoever invited you to send a new one.';
+    case 'validation_failed':
+      return e.detail || 'That file was not accepted. Check the type and size and try again.';
+    default:
+      return e.detail || 'That file did not upload. Try again.';
   }
 }

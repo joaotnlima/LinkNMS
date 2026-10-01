@@ -25,6 +25,7 @@ import {
 } from '@/lib/v2/rfp-link-view';
 
 import { submitBidAction } from './actions';
+import { PortfolioUpload } from './PortfolioUpload';
 
 export function ProposalForm({ token }: { token: string }) {
   const [draft, setDraft] = useState<BidDraft>(EMPTY_DRAFT);
@@ -32,6 +33,11 @@ export function ProposalForm({ token }: { token: string }) {
   const [banner, setBanner] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const bannerRef = useRef<HTMLParagraphElement | null>(null);
+  // Proven portfolio ids and whether an upload is still running — the tray owns
+  // the rest. A bid cannot be sent mid-upload (the BE would reject an unfinished
+  // id as validation_failed), so the submit waits for the tray to settle.
+  const [documentIds, setDocumentIds] = useState<string[]>([]);
+  const [uploadsBusy, setUploadsBusy] = useState(false);
 
   const set = useCallback(<K extends keyof BidDraft>(key: K, value: BidDraft[K]) => {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -44,7 +50,12 @@ export function ProposalForm({ token }: { token: string }) {
     (event: React.FormEvent) => {
       event.preventDefault();
       if (pending) return;
-      const checked = validateBid(draft, new Date());
+      if (uploadsBusy) {
+        setBanner('Hold on — a file is still uploading.');
+        bannerRef.current?.scrollIntoView({ block: 'center' });
+        return;
+      }
+      const checked = validateBid(draft, new Date(), documentIds);
       if (!checked.ok) {
         setErrors(checked.errors);
         setBanner('Some answers need a look before this can be sent.');
@@ -56,7 +67,7 @@ export function ProposalForm({ token }: { token: string }) {
       startTransition(async () => {
         // On success the action redirects and this never resolves with a value;
         // a returned state is always a refusal to render in place.
-        const res = await submitBidAction(token, draft);
+        const res = await submitBidAction(token, draft, documentIds);
         if (res?.error) {
           setBanner(res.error);
           if (res.fieldErrors) setErrors(res.fieldErrors);
@@ -64,7 +75,7 @@ export function ProposalForm({ token }: { token: string }) {
         }
       });
     },
-    [draft, pending, token],
+    [draft, pending, token, documentIds, uploadsBusy],
   );
 
   return (
@@ -137,12 +148,19 @@ export function ProposalForm({ token }: { token: string }) {
           />
           <FieldNote id="conditions-note" text={errors.conditions} />
         </div>
+
+        <PortfolioUpload
+          token={token}
+          onChange={setDocumentIds}
+          onBusyChange={setUploadsBusy}
+          disabled={pending}
+        />
       </div>
 
       <div className="rfp-submit">
         <span className="rfp-submit-note">You can send one proposal for this request.</span>
-        <button className="btn primary" type="submit" disabled={pending}>
-          {pending ? 'Sending…' : 'Send proposal'}
+        <button className="btn primary" type="submit" disabled={pending || uploadsBusy}>
+          {pending ? 'Sending…' : uploadsBusy ? 'Uploading…' : 'Send proposal'}
         </button>
       </div>
     </form>

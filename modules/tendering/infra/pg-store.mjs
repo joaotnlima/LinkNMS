@@ -319,6 +319,23 @@ export function createTenderingStore(pool) {
       return rows[0].n;
     },
 
+    /**
+     * One recipient with its lane status — the re-issue guard (LINA-373) needs
+     * to tell an unknown recipient (404) from a spent link (invalid_transition),
+     * and the store's rotate is the atomic authority on the latter. `lane_status`
+     * is the recipient's own proposal state (one per recipient, D-36).
+     */
+    async getRecipient(rfpId, recipientId) {
+      const { rows } = await pool.query(
+        `SELECT rec.*, p.status AS lane_status
+           FROM tendering.rfp_recipient rec
+           LEFT JOIN tendering.proposal p ON p.recipient_id = rec.id
+          WHERE rec.id = $1 AND rec.rfp_id = $2`,
+        [recipientId, rfpId],
+      );
+      return rows[0] ?? null;
+    },
+
     async listRecipients(rfpId, { cursor, limit }) {
       const { rows } = await pool.query(
         `SELECT * FROM tendering.rfp_recipient
@@ -657,6 +674,61 @@ export function createTenderingStore(pool) {
           channel: actor.channel,
         });
         return out;
+      });
+    },
+
+    /**
+     * Rotate a recipient's personal link (gap S1, LINA-373). A token can leak —
+     * the email it rode in on gets forwarded, a screenshot is shared, a proxy
+     * logs the page URL — and until now there was no way to kill one (the
+     * /rfp page comment lamented exactly this). Re-issue mints a fresh 32-byte
+     * token and overwrites `token_hash` in place: the OLD hash no longer matches
+     * anything, so the old link dies the instant this commits (a single row per
+     * (rfp,email), so there is nothing to leave revoked). `revoked_at` is cleared
+     * and `expires_at` is refreshed from the RFP's current deadline, so a
+     * re-issue after an addendum extension carries the new window. Delivery
+     * breadcrumbs (`status`, `sent_at`, `opened_at`) reset — this is a new link,
+     * not the old one's history.
+     *
+     * Guarded on the recipient's lane: a SPENT link (proposal already left
+     * invited/draft) is NOT rotated — reissuing it would hand a second,
+     * single-use submission, breaking the single-use invariant. The caller
+     * (use-case) checks the lane and answers invalid_transition; this returns
+     * null if the row raced to spent between the check and here.
+     */
+    async reissueRecipientLink({ rfpId, recipientId, projectId, actor }) {
+      return tx(async (client) => {
+        const token = randomBytes(32).toString('hex');
+        const { rows } = await client.query(
+          `UPDATE tendering.rfp_recipient rec SET
+             token_hash = $3,
+             revoked_at = NULL,
+             status     = 'queued',
+             sent_at    = NULL,
+             opened_at  = NULL,
+             expires_at = (SELECT submission_deadline + interval '14 days'
+                             FROM tendering.rfp WHERE id = $1)
+           WHERE rec.id = $2 AND rec.rfp_id = $1
+             -- Never rotate a spent link: its lane must still be open to a bid.
+             AND EXISTS (SELECT 1 FROM tendering.proposal p
+                          WHERE p.recipient_id = rec.id
+                            AND p.status IN ('invited','draft'))
+           RETURNING *`,
+          [rfpId, recipientId, sha256(token)],
+        );
+        if (!rows.length) return null;
+        await appendAuditEvent(client, {
+          projectId, actor,
+          category: 'tendering',
+          type: 'tendering.rfp.link_reissued',
+          scope: { type: 'project', id: projectId },
+          object: { type: 'rfp', id: rfpId },
+          // The old link is now dead and a fresh one minted. Who is in
+          // tendering.*; the ledger records that a recipient's link rotated.
+          payload: { recipient_id: recipientId },
+          channel: actor.channel,
+        });
+        return { recipient: rows[0], token };
       });
     },
 

@@ -3608,6 +3608,57 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /rfps/{rfpId}/recipients/{recipientId}:reissue:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: recipientId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Tendering
+      operationId: reissueRecipientLink
+      summary: 'Rotate a recipient''s personal link (gap S1): mint a fresh token, kill the old'
+      description: 'A personal RFP link is an anonymous bearer credential, so a leak — a forwarded
+        email, a screenshot, a logged page URL — hands a stranger the bidder''s access. This rotates
+        it: a fresh 32-byte token is minted and the old `token_hash` is overwritten in place, so the
+        old link stops resolving the instant this commits (`findRecipientByToken` no longer matches
+        it). `expires_at` is refreshed from the RFP''s current deadline and `revoked_at` is cleared.
+        The new raw token is returned ONCE (same as addRecipients) so the issuer can re-send a clean
+        link. Refused on a cancelled/awarded/closed RFP, and on a SPENT link (the recipient''s lane
+        has left `invited`/`draft`) — rotating a submitted lane would reopen a single-use submission
+        (`409 invalid_transition`). Issuer-only.
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** issuer'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: issuer
+      responses:
+        '200':
+          description: 'OK — the rotated recipient, carrying the fresh `token` once.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recipient'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /rfps/{rfpId}:publish:
     parameters:
     - name: rfpId
@@ -9076,10 +9127,23 @@ components:
           - bounced
         sent_at: *id004
         opened_at: *id004
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 'When this personal link lapses (gap S1, LINA-373): the RFP''s
+            submission deadline plus a 14-day proposal-validity window. Past this, the
+            token resolves to a uniform 404. A re-issue refreshes it.'
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 'Set when the link was explicitly killed; a re-issue clears it. A
+            revoked or expired token answers the same 404 as an unknown one (no oracle).'
         token:
           type: string
-          description: 'Response-only, ONCE, in the addRecipients 201: the raw
-            personal-link token (only its SHA-256 is stored). Returned to the
+          description: 'Response-only, ONCE, in the addRecipients 201 and the reissue 200:
+            the raw personal-link token (only its SHA-256 is stored). Returned to the
             issuer until the notifications module owns email delivery — same
             rationale as ProjectInvitation.token.'
       description: Visible to the issuer only.
