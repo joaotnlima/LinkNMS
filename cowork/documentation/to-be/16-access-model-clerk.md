@@ -1,9 +1,19 @@
 # 16 — Access model: RBAC in Clerk, relationships in LinkNMS
 
-**Status:** Proposed (D-34). How authentication, organisation roles and permissions are anchored in
-Clerk, and where Clerk stops. Rules of visibility and edit scope stay in
-[04](./04-visibility-and-access.md) and [05 §12](./05-planning-and-execution.md); this document says
-**which system holds which part of the decision**.
+**Status:** Proposed (D-34), **amended by D-38 (2026-10-01, Accepted).** How authentication,
+organisation roles and permissions are anchored, and where Clerk stops. Rules of visibility and edit
+scope stay in [04](./04-visibility-and-access.md) and [05 §12](./05-planning-and-execution.md); this
+document says **which system holds which part of the decision**.
+
+> **Amendment D-38 — role + permissions resolved in-house (no Clerk B2B add-on).** The original D-34
+> split put the role catalogue *and* the custom-permission check inside Clerk, which makes custom org
+> roles/permissions a **paid B2B add-on** in production (§2). The founder declined that spend
+> (LINA-368). We keep Clerk for **authentication and organisation membership only (free tier)** and
+> resolve both the **role** (from our Neon mirror, `identity.org_membership.org_role`) and the
+> **permissions** (from the in-repo matrix `modules/identity/domain/access.mjs`,
+> `permissionsForRole()`) in our own code. The runtime access rule is unchanged in spirit — only its
+> *first factor* now reads from our DB instead of the Clerk session token. See §2 note and
+> `app/src/server/v2/viewer.ts`.
 
 ## 1. The principle: two questions, two systems
 
@@ -47,8 +57,16 @@ allow = clerk.permission(org role, action)          // may this person do this k
 | Inviting colleagues into your company | Organization invitations | Clerk sends and tracks them. |
 | Platform staff (LinkNMS support/admin) | User `public_metadata.platform_role` | Never a member of customer orgs. Read-only by default; every access is ledgered. |
 
+> **D-38 note (2026-10-01):** The two "role" and "custom permissions" rows above describe the
+> *original* D-34 design. As amended, LinkNMS does **not** store the domain role or the custom
+> permission catalogue in Clerk in production — that would require the paid B2B add-on. Clerk holds
+> only its built-in `org:admin` / `org:member` membership roles (free tier); the finer catalogue roles
+> (doc 16 §4) and the `has({permission})` answer are resolved from our Neon mirror + in-repo matrix.
+> Clerk's `has()` is no longer on the request path. See the amendment banner at the top.
+
 Clerk constraints to design within (checked 2026-09-24):
-- **At most 10 custom organisation roles per instance**; custom roles need the **B2B add-on** in production.
+- **At most 10 custom organisation roles per instance**; custom roles need the **B2B add-on** in
+  production — which is why, per D-38, we do not provision them to the live instance.
 - **System permissions are not in session claims.** Every check that runs from the token must use a
   custom permission, so we define custom equivalents (e.g. `org:members:manage`).
 - **Only the active organisation** is in the token.

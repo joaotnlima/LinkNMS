@@ -2,10 +2,19 @@
 // (to-be doc 16). This is the ONLY file on the v2 surface that touches Clerk;
 // everything below the http layer receives the pure context object and stays
 // testable without a session.
+//
+// ACCESS MODEL IS RESOLVED IN-HOUSE (ADR-0026). Permissions are NOT read from
+// Clerk's session token (`session.has({permission})`) — that would require
+// custom org permissions/roles to be provisioned into Clerk, which is a paid
+// B2B add-on. Instead we own the access model: the role lives in our Neon
+// mirror (`identity.org_membership.org_role`) and the role→permission matrix is
+// pure code (`@modules/identity/domain/access.mjs`). Clerk is used for
+// AUTHENTICATION and org membership only — all on its free tier.
 import { auth } from '@clerk/nextjs/server';
 
 import { createViewerContext } from '@platform/viewer-context.mjs';
 import { createIdentityStore } from '@modules/identity/infra/pg-store.mjs';
+import { ROLES, permissionsForRole } from '@modules/identity/domain/access.mjs';
 
 import { getPool } from './registry';
 
@@ -16,24 +25,6 @@ function store() {
   if (!identityStore) identityStore = createIdentityStore(getPool());
   return identityStore;
 }
-
-// Doc 16 §5 — the custom-permission catalogue, spelled out. Clerk's `has()`
-// answers from the session token; we materialise the answers once per request
-// so the context stays a value, not a live closure over the session.
-const PERMISSIONS = [
-  'org:projects:create', 'org:projects:staff',
-  'org:plan:edit', 'org:progress:report',
-  'org:quality:verify', 'org:quality:inspect',
-  'org:money:view', 'org:costs:edit',
-  'org:variations:acknowledge',
-  'org:changes:propose', 'org:changes:decide',
-  'org:tendering:issue', 'org:tendering:bid',
-  'org:contracts:sign',
-  'org:measurements:submit', 'org:measurements:approve',
-  'org:payments:declare', 'org:payments:confirm',
-  'org:profile:manage', 'org:reviews:write', 'org:templates:publish',
-  'org:members:manage', 'org:billing:manage',
-] as const;
 
 export type ViewerContext = ReturnType<typeof createViewerContext>;
 
@@ -57,6 +48,27 @@ export async function viewerFromClerk(): Promise<ViewerContext | null> {
     clerkOrgId ? store().getOrgByClerkId(clerkOrgId) : Promise.resolve(null),
   ]);
 
+  // The DOMAIN role is the source of truth in our own DB, not Clerk. Clerk's
+  // free tier can only carry its built-in `org:admin` / `org:member` on the
+  // session; the finer catalogue roles (manager, representative, site_lead,
+  // finance, inspector — doc 16 §4) live only in our mirror. So we read the
+  // active membership's role and FALL BACK to the session's built-in role only
+  // when the mirror has no active row yet (webhook race). Prefer the mirror.
+  const membership =
+    org && person ? await store().getActiveMembership(org.id, person.id) : null;
+  const mirrorRole = membership?.org_role ?? null;
+  const sessionRole = session.orgRole ? session.orgRole.replace(/^org:/, '') : null;
+  const orgRole = mirrorRole ?? sessionRole;
+
+  // Resolve permissions from the role via the in-repo matrix. `permissionsForRole`
+  // throws on an unknown role, so guard with the catalogue first — an org with a
+  // role outside doc 16 §4 (should never happen; the mirror rejects those) gets
+  // no permissions rather than a 500.
+  const permissions =
+    clerkOrgId && orgRole && (ROLES as readonly string[]).includes(orgRole)
+      ? permissionsForRole(orgRole)
+      : [];
+
   return createViewerContext({
     clerkUserId: session.userId,
     personId: person?.id ?? null,
@@ -65,10 +77,8 @@ export async function viewerFromClerk(): Promise<ViewerContext | null> {
     orgKind: org?.kind ?? null,
     // Clerk spells roles `org:admin`; the domain vocabulary (doc 16 §4, the
     // ledger's actor_org_role column) uses the bare key.
-    orgRole: session.orgRole ? session.orgRole.replace(/^org:/, '') : null,
-    permissions: session.orgId
-      ? PERMISSIONS.filter((p) => session.has({ permission: p }))
-      : [],
+    orgRole,
+    permissions,
     channel: 'ui',
   });
 }

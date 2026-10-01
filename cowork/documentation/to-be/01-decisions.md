@@ -280,3 +280,33 @@ whitelist, a 15 MB cap, and a per-proposal count cap — and `submitProposalByTo
 `stored` ids of that same proposal, so a bid cannot smuggle a reference the download side would reject.
 The authed read (`GET /proposals/{id}/documents/{id}:download`) is a 302 to a short-lived presigned GET
 for the issuer or the bidder org, existence-hidden to everyone else. Migration `db/v2/0008`.
+
+## Session 2026-10-01 — access model stays off Clerk's paid tier (LINA-368)
+
+### D-38 — Role + permissions resolved in-house; Clerk free tier only (amends D-34)
+**Status: Accepted** (founder declined the Clerk B2B add-on spend on LINA-368).
+
+D-34 put both the organisation **role** and the **custom-permission** check inside Clerk. In production
+that makes custom org roles/permissions a **paid B2B add-on** (doc 16 §2) — and it was the reason every
+v2 write returned `forbidden` ("Not allowed") on prod: the live Clerk instance's `org:admin` carried
+only Clerk's built-in `org:sys_*` perms, not our 23.
+
+Rather than pay, we move the **first factor** of the access rule into our own stack, which is where it
+arguably belongs (the access model is core product, not a rented concern):
+
+- **Permissions** are computed from the role via the in-repo matrix
+  (`modules/identity/domain/access.mjs` → `permissionsForRole()`), not Clerk's `has({permission})`.
+- **Role** is read from our Neon mirror (`identity.org_membership.org_role`, already populated on every
+  login via the webhook), preferred over the session's built-in role.
+- **Clerk** keeps authentication, organisations and membership — all on the **free tier**. Its built-in
+  `org:admin` / `org:member` are the only roles it needs to carry.
+
+The runtime rule `allow = permission ∧ relationship ∧ staffing ∧ entitlement` is unchanged; only the
+source of `permission` moves from the token to our DB. `app/src/server/v2/viewer.ts` is the single edge
+that changed. The `provision-clerk.mjs` script stays for dev parity but the live instance is **not**
+provisioned and needs no add-on.
+
+**Follow-up:** Clerk's free tier can only carry `admin` / `member` on an *invitation*. Assigning the
+finer catalogue roles (manager, representative, site_lead, finance, inspector) to invited members
+without the add-on requires our invite-accept flow to write the domain role to the mirror directly,
+rather than relying on the Clerk membership role. Tracked separately (see LINA-368 children).
