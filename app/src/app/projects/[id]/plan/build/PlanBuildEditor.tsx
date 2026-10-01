@@ -51,7 +51,7 @@ import Link from 'next/link';
 
 import {
   DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
-  addPhase, addSubtask, addTask, authorPlan, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, enforceLink, nodeIndex,
+  addPhase, addSubtask, addTask, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, enforceLink, nodeIndex,
   promoteNode,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
   reorderPhase, reorderSubtask, reorderTask,
@@ -551,50 +551,14 @@ export function PlanBuildEditor({
       }
     }
 
-    try {
-      const result = await authorPlan(projectId, stages);
-      // Light up every current row's workspace: after this write the server holds
-      // them all, so a freshly-added task can collect comments/files immediately.
-      setSavedKeys((prev) => {
-        const nextKeys = new Set(prev);
-        const eat = (k: string) => nextKeys.add(k);
-        current.forEach((p) => {
-          eat(p.key);
-          p.tasks.forEach((t) => { eat(t.key); (t.children ?? []).forEach((s) => eat(s.key)); });
-        });
-        return nextKeys;
-      });
-      // Refresh the key→id lookup from THIS save (LINA-307): the re-save re-minted
-      // every stage id, so a status POST must target the ids this response names,
-      // not the ones the page loaded with. Replace wholesale — a key dropped from
-      // the plan should drop from the map too.
-      if (result.stageIds) setStageIdByKey(new Map(Object.entries(result.stageIds)));
-      setSaveState('saved');
-    } catch (e) {
-      if (e instanceof PlanAuthorError && (e.code === 'open_plan_exists' || e.code === 'draft_exists')) {
-        // The draft is not this screen's to write anymore — send the author to
-        // the live plan rather than autosave into a wall.
-        router.push(`/projects/${projectId}/plan`);
-        return;
-      }
-      if (e instanceof PlanAuthorError && e.code === 'dependency_cycle') {
-        const stagesOnCycle = e.details?.stages ?? [];
-        setServerCycle(stagesOnCycle);
-        setError(stagesOnCycle.length
-          ? `These stages depend on each other in a loop: ${stagesOnCycle.map((s) => s.name).join(' → ')} → ${stagesOnCycle[0].name}. Remove one of the links to save.`
-          : e.message);
-      } else if (e instanceof PlanAuthorError
-        && (e.code === 'unknown_assignee' || e.code === 'invalid_assignee')) {
-        setError('One of the owners on this plan is no longer on this build. Reload the page and pick again.');
-      } else {
-        setError(e instanceof PlanAuthorError ? e.message : 'That did not save. Your edits are still here — they will retry on the next change.');
-      }
-      setSaveState('error');
-    } finally {
-      savingRef.current = false;
-      // An edit that landed mid-write is now unsaved — flush again for it.
-      if (pendingRef.current) { pendingRef.current = false; void flushRef.current(); }
-    }
+    // The v1 whole-tree fallback (authorPlan → POST /api/v1/…:author) was removed
+    // in LINA-387 (Phase 12c). Every mount passes `saveV2`, so the block above is
+    // the only save path. Reaching here means the editor was mounted without a
+    // saver — fail safe by releasing the lock rather than hanging on 'saving'.
+    savingRef.current = false;
+    pendingRef.current = false;
+    setSaveState('error');
+    setError('This editor is misconfigured — reload the page to try again.');
   }, [projectId, router, saveV2]);
 
   useEffect(() => { flushRef.current = flush; }, [flush]);
