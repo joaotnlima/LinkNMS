@@ -51,6 +51,13 @@
   --plan-closed-fg: #1f5b41;
   --plan-closed-line: #b5d6c4;
   --plan-closed-on-dark: #4e9074;
+  /* Critical path (LINA-404): a violet accent reserved for the overlay that
+     lights the finish-driving chain — the one hue not claimed by baseline,
+     actual, closed, warning or danger, so it reads unambiguously. */
+  --plan-critical: #6d4bd6;
+  --plan-critical-muted: #ece6fb;
+  --plan-critical-fg: #4c2ea8;
+  --plan-critical-line: #c7b8ef;
   --plan-track-line: #888883;
   --fade: #9a9a9a;
   --fade-dark: #8c8c8c;
@@ -141,6 +148,10 @@
     --plan-closed-muted: #1e2922;
     --plan-closed-fg: #6dc99a;
     --plan-closed-line: #2b4438;
+    --plan-critical: #a78bfa;
+    --plan-critical-muted: #241b33;
+    --plan-critical-fg: #c9b8fb;
+    --plan-critical-line: #4a3a6b;
     --plan-track-line: #727168;
   }
 }
