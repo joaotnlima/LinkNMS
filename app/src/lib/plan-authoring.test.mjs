@@ -22,8 +22,8 @@ import {
   // Dependencies (LINA-233), typed by ADR-0020 / LINA-253.
   planNodes, dependencyChoices, dependsOnOf, setDependsOn, toggleDependency, detectCycle,
   setDependencyType, planLinks, DEP_TYPES, DEP_LABELS, DEFAULT_DEP_TYPE, isDepType,
-  // Dependency-date enforcement (LINA-306).
-  enforceDependencies, enforceLink,
+  // Dependency-date enforcement (LINA-306) + parent end roll-up (LINA-404).
+  enforceDependencies, enforceLink, enforceParentRollup,
   // The third level (LINA-243).
   addSubtask, renameSubtask, setSubtaskDate, setSubtaskDates, setSubtaskDescription, removeSubtask,
   moveSubtask, reorderSubtask, subtaskCount,
@@ -1230,4 +1230,74 @@ test('criticalPathKeys: a cyclic graph bails to an empty set rather than guess',
     ],
   }];
   assert.equal(criticalPathKeys(phases).size, 0);
+});
+
+// ── Parent end-date roll-up (LINA-404, founder's ask) ─────────────────────────
+// "The parent should have an end date not before any of its descendants. A child
+// that fits the window changes nothing; a later child (or a parent with no end
+// yet) pushes the parent's end out." It only extends an end, never a start, and
+// never pulls one in. A sub-task is a leaf, so a parent task is the only rung
+// that rolls up — a phase derives its envelope and stores no end.
+
+// A task that carries sub-tasks, for the roll-up cases.
+const Twith = (key, start, end, children) =>
+  ({ key, name: key.toUpperCase(), start, end, description: '', trade: '', assigneePartyId: null, dependsOn: [], children });
+
+test('enforceParentRollup: a child ending later pushes the parent end out', () => {
+  const phases = [P('p1', [
+    Twith('t1', '2026-03-01', '2026-03-10', [
+      T('s1', '2026-03-02', '2026-03-08'),   // fits
+      T('s2', '2026-03-05', '2026-03-20'),   // ends AFTER the parent's 03-10
+    ]),
+  ])];
+  const out = enforceParentRollup(phases);
+  assert.equal(out[0].tasks[0].end, '2026-03-20', 'parent end rolled out to the latest child');
+  assert.equal(out[0].tasks[0].start, '2026-03-01', 'start is never touched');
+  assert.equal(out[0].tasks[0].children[1].end, '2026-03-20', 'the child is untouched');
+});
+
+test('enforceParentRollup: a child that fits the window changes nothing (identity)', () => {
+  const phases = [P('p1', [
+    Twith('t1', '2026-03-01', '2026-03-31', [
+      T('s1', '2026-03-02', '2026-03-08'),
+      T('s2', '2026-03-05', '2026-03-20'),
+    ]),
+  ])];
+  assert.equal(enforceParentRollup(phases), phases, 'already satisfied → same ref, no fabricated edit');
+});
+
+test('enforceParentRollup: a parent with no end yet takes the latest child end', () => {
+  const phases = [P('p1', [
+    Twith('t1', '', '', [
+      T('s1', '2026-04-01', '2026-04-03'),
+      T('s2', '2026-04-02', '2026-04-10'),
+    ]),
+  ])];
+  const out = enforceParentRollup(phases);
+  assert.equal(out[0].tasks[0].end, '2026-04-10', 'unset end becomes the latest child end');
+  assert.equal(out[0].tasks[0].start, '', 'start stays unset — only the end is set');
+});
+
+test('enforceParentRollup: a parent with no dated child is left alone', () => {
+  const phases = [P('p1', [
+    Twith('t1', '2026-03-01', '2026-03-10', [
+      T('s1', '', ''),
+      T('s2', '', ''),
+    ]),
+  ])];
+  assert.equal(enforceParentRollup(phases), phases, 'nothing to cover → identity');
+});
+
+test('enforceParentRollup: a leaf task (no children) is never touched', () => {
+  const phases = [P('p1', [T('t1', '2026-03-01', '2026-03-10')])];
+  assert.equal(enforceParentRollup(phases), phases, 'no children → identity');
+});
+
+test('enforceParentRollup: pure — the input tree is never mutated', () => {
+  const phases = [P('p1', [
+    Twith('t1', '2026-03-01', '2026-03-10', [T('s1', '2026-03-05', '2026-03-25')]),
+  ])];
+  const snapshot = JSON.stringify(phases);
+  enforceParentRollup(phases);
+  assert.equal(JSON.stringify(phases), snapshot, 'input unchanged');
 });

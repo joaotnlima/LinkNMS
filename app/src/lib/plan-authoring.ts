@@ -1202,6 +1202,68 @@ export function enforceLink(phases: PhaseDraft[], dependent: string): PhaseDraft
   return withDates(phases, dates);
 }
 
+// ── Parent end-date ROLL-UP (LINA-404, founder's ask) ────────────────────────
+// The founder's rule, verbatim: "whenever there is hierarchy the parent should
+// follow a simple rule — have an end date not before any of its descendants. So
+// if a user sets a date in the future and I add a task that does not break that
+// end date — do nothing. But if it changes, or if the parent doesn't have a date
+// yet, it sets as final date the end date of the current task."
+//
+// So the invariant is: a parent's END is never earlier than any descendant's end.
+//   • A descendant that fits inside the parent's existing window changes nothing.
+//   • A descendant that ends LATER than the parent (or a parent with no end yet)
+//     pushes the parent's end out to cover it.
+// It only ever extends an end; it never pulls one in, and it never touches a
+// start — a parent keeps the start the author gave it (or none), exactly as the
+// `ends_with` link resizes rather than slides. A parent carrying no descendant
+// end is left alone (nothing to cover).
+//
+// Only the SECOND level stores a date and holds children, so that is the only
+// rung this moves: an L2 task rolls up to cover its L3 sub-tasks. A phase carries
+// no stored end — its bar is already the children's envelope (see spanMs) — so it
+// is correct by construction and nothing here writes to it.
+
+/**
+ * The latest END across a task's children, in ms, or null when none is dated.
+ * Children are leaves (the 3-level cap), but a deeper tree would still resolve
+ * right: `kids(c).length` is always 0 here, so the max is over the direct ends.
+ */
+function latestChildEnd(task: TaskDraft): number | null {
+  let hi: number | null = null;
+  for (const c of kids(task)) {
+    const e = parseDay(c.end);
+    if (e === null) continue;
+    hi = hi === null || e > hi ? e : hi;
+  }
+  return hi;
+}
+
+/**
+ * Extend every parent task's end to cover its latest-ending descendant, so the
+ * founder's invariant holds after any edit. Pure and idempotent: a draft that
+ * already satisfies it comes back unchanged (same ref), so this can sit on the
+ * universal edit funnel without re-triggering a save on its own. Duration-blind:
+ * it moves the end alone and never the start, and only ever outward.
+ */
+export function enforceParentRollup(phases: PhaseDraft[]): PhaseDraft[] {
+  let changed = false;
+  const next = phases.map((p) => {
+    let touched = false;
+    const tasks = p.tasks.map((t) => {
+      const hi = latestChildEnd(t);
+      if (hi === null) return t;                       // no dated descendant to cover
+      const cur = parseDay(t.end);
+      if (cur !== null && cur >= hi) return t;          // the child already fits the window
+      touched = true;
+      return { ...t, end: formatDay(hi) };              // unset, or earlier than a child → cover it
+    });
+    if (!touched) return p;
+    changed = true;
+    return { ...p, tasks };
+  });
+  return changed ? next : phases;
+}
+
 /**
  * A cycle in the draft's graph, in cycle order, or null.
  *

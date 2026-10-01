@@ -51,7 +51,7 @@ import Link from 'next/link';
 
 import {
   DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
-  addPhase, addSubtask, addTask, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, enforceLink, nodeIndex,
+  addPhase, addSubtask, addTask, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, enforceLink, enforceParentRollup, nodeIndex,
   promoteNode,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
   reorderPhase, reorderSubtask, reorderTask,
@@ -446,7 +446,14 @@ export function PlanBuildEditor({
   // Every mutation goes through here so a fresh edit always clears a stale error
   // — and a stale "saved as your default", which described a structure the author
   // has since changed and would otherwise read as though the edit was saved too.
-  const apply = useCallback((next: PhaseDraft[]) => {
+  const apply = useCallback((raw: PhaseDraft[]) => {
+    // Roll a parent's end out to cover its latest-ending child before anything
+    // else (LINA-404, founder's ask): a parent's end is never before a
+    // descendant's. Pure and idempotent — a draft that already holds the
+    // invariant comes back the same ref, so this never fabricates an edit — and
+    // it sits here, on the universal funnel, so EVERY gesture keeps the rule
+    // (adding a sub-task, dating one, dragging a bar), not just date edits.
+    const next = enforceParentRollup(raw);
     setPhases(next);
     phasesRef.current = next;
     setError(null);
