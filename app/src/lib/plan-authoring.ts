@@ -1507,38 +1507,7 @@ export interface AuthorResult {
   stageIds?: Record<string, string>;
 }
 
-/**
- * POST /api/v1/projects/:id/plan-versions:author — save the authored plan as a
- * private DRAFT (LINA-230; contract §0–§3). Only `{ stages }` crosses the wire;
- * the actor is the session. Saving is NOT sending for approval — the draft is
- * invisible to the other party until `:propose`. Re-saving replaces the single
- * draft in place. A refusal comes back as a typed PlanAuthorError so the editor
- * can react to the KIND (open_plan_exists / draft_exists send the author to the
- * live plan).
- */
-export async function authorPlan(projectId: string, stages: AuthoredNode[]): Promise<AuthorResult> {
-  const res = await fetch(
-    `/api/v1/projects/${encodeURIComponent(projectId)}/plan-versions:author`,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ stages }),
-    },
-  );
-  let payload: unknown = null;
-  try { payload = await res.json(); } catch { /* proxy error page */ }
-  if (!res.ok) {
-    const err = (payload as {
-      error?: { code?: string; message?: string; details?: PlanAuthorErrorDetails }
-    } | null)?.error;
-    // `details` carries the cycle's stages / the unknown key — the editor
-    // highlights the offending rows from it (contract §3).
-    throw new PlanAuthorError(
-      err?.code ?? 'internal',
-      err?.message ?? 'That did not go through. Try again.',
-      res.status,
-      err?.details ?? null,
-    );
-  }
-  return payload as AuthorResult;
-}
+// `authorPlan` (POST /api/v1/…:author) was removed in LINA-387 (Phase 12c). The
+// editor saves drafts through the v2 writer (lib/v2/plan-write.ts); the types
+// above (AuthorResult / AuthoredNode / PlanAuthorError) are retained because the
+// v2 apply/diff path and the editor still build against them.
