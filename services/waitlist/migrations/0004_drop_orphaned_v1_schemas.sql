@@ -1,0 +1,46 @@
+-- LINA-400 (Phase 12c tail) — forward-only drop of the data-orphaned v1 schemas.
+--
+-- After the v2 cutover (Phase 11/12) the ONLY live reader of the old service
+-- graph is the retained auth bridge (app/src/server/seat-gate.ts), and it reads
+-- the `identity` schema ONLY (seat gate + email→party). Nothing — not the v2
+-- `@modules`, not the retained auth path — reads `decision`, `change_order`,
+-- `schedule` or `ledger` any more (the v1 API surface + client fetchers were
+-- deleted in LINA-387/PR #267; v1 invitations moved to v2 in LINA-398; the auth
+-- path left the v1 container in LINA-400 part-1 / PR #275). This migration
+-- destroys those four schemas and everything they own.
+--
+-- CEO SIGN-OFF: this is irreversible and touches the product promise (the
+-- historical audit trail lives in `ledger`). Authorised on the LINA-400 issue
+-- thread (request_confirmation "Authorize irreversible drop of v1 ledger +
+-- sibling schemas", accepted 2026-10-01 by the issue's responsible founder) —
+-- prod v1 held no customer ledger data worth preserving, and the v1 API that
+-- once fronted it as read-only/archived was already deleted.
+--
+-- WHY THIS FILE LIVES UNDER services/waitlist:
+--   The forward-only runner (db/migrate.mjs) applies service migrations sorted by
+--   (service dir, filename). `waitlist` sorts last of all service dirs, so a
+--   migration here runs AFTER every migration that creates/uses the dropped
+--   schemas — the ordering a fresh-database replay requires (0001_platform.sql
+--   still CREATEs these schemas, the service migrations still populate/grant
+--   them, and only then are they dropped). waitlist is a retained schema, so its
+--   migrations dir is a durable home.
+--
+-- WHY THE SCHEMA FILES + ROLES STAY:
+--   db/0001_platform.sql and the services/{decision,change_order,ledger,schedule}
+--   migrations are applied + recorded + immutable (byte-checksum guard). Deleting
+--   them would trip the drift checker (orphan rows) AND break fresh replay (they
+--   CREATE the schemas + GRANT to the *_app roles this drop then removes). They
+--   remain as the recorded history; only the schemas they built are destroyed
+--   here. The now-inert `*_app` roles (created idempotently by db/roles.sql) are
+--   left in place for the same fresh-replay reason — the historical migrations
+--   GRANT to them. They are NOLOGIN and, after this drop, hold no privileges.
+--
+-- DROP SCHEMA ... CASCADE is deliberate: it removes each schema's tables,
+-- functions (incl. ledger.append_event) and the cross-schema grants that other
+-- dropped schemas held on the ledger. No RETAINED schema has a FK/trigger into
+-- these (verified: identity's ledger coupling is app-level, never a DB object),
+-- so the cascade cannot reach identity/auth/waitlist/platform or any v2 schema.
+DROP SCHEMA IF EXISTS change_order CASCADE;
+DROP SCHEMA IF EXISTS decision CASCADE;
+DROP SCHEMA IF EXISTS schedule CASCADE;
+DROP SCHEMA IF EXISTS ledger CASCADE;

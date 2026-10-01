@@ -153,6 +153,7 @@ export async function listDocuments({ viewer, store, query }) {
   const { items, nextCursor } = await store.listDocuments({
     scopeType: query.scope_type,
     scopeId: query.scope_id,
+    orgId: viewer.orgId,
     cursor: query.cursor ?? null,
     limit: clampLimit(query?.limit),
   });
@@ -210,6 +211,12 @@ async function requireReadableDocument({ viewer, store, documentId }) {
     shareWithAncestors: doc.share_with_ancestors,
   });
   if (!readable) throw new ProblemError('not_found');
+  // A private document (a record export) narrows READ to its owning org ON TOP
+  // of the V6 scope check — a co-participant who could read the scope still
+  // must not download another org's viewer-redacted export.
+  if (doc.private_to_org_id && doc.private_to_org_id !== viewer.orgId) {
+    throw new ProblemError('not_found');
+  }
   return doc;
 }
 

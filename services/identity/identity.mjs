@@ -20,7 +20,16 @@ import { can, ACTION } from './authz.mjs';
 import {
   IdentityError, alreadySetup, badRequest, conflict, fieldError, forbidden, notFound, unauthenticated,
 } from './errors.mjs';
-import { createNoopAnalytics } from '../analytics/analytics.mjs';
+// LINA-400 (Phase 12c tail): the analytics module was pruned with the rest of
+// the v1 service graph. It had no schema — a pure PostHog facade whose instrumented
+// Group-A events fired from Decision / Change Order / this Identity service — and
+// after those services were removed, this dead-but-retained identity service was
+// its only remaining constructor. The three events this service emits are no-oped
+// inline (telemetry is best-effort by design — composition.mjs's old default sink
+// was a no-op too) so the identity module carries no dependency on the removed sink.
+function createNoopAnalytics() {
+  return { projectCreated() {}, gcInvited() {}, gcJoined() {} };
+}
 // The SAME normaliser every Identity path uses, so an address typed into the
 // invite form and the same address arriving from anywhere else are one key
 // (LINA-84). It moved out of the deleted sign-in service in LINA-124.

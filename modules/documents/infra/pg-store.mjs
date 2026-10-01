@@ -243,26 +243,32 @@ export function createDocumentsStore(pool) {
       return rows;
     },
 
-    /** Documents of one scope with at least one proven version. Keyset on id. */
-    async listDocuments({ scopeType, scopeId, cursor, limit }) {
+    /**
+     * Documents of one scope with at least one proven version. Keyset on id.
+     * A private document (private_to_org_id set — e.g. a record export) lists
+     * only for its owning org; NULL (every ordinary document) lists for every
+     * reader of the scope, as before.
+     */
+    async listDocuments({ scopeType, scopeId, orgId, cursor, limit }) {
       const { rows } = await pool.query(
         `SELECT * FROM documents.document
           WHERE scope_type = $1 AND scope_id = $2 AND current_version > 0
             AND ($3::uuid IS NULL OR id > $3)
+            AND (private_to_org_id IS NULL OR private_to_org_id = $5)
           ORDER BY id LIMIT $4`,
-        [scopeType, scopeId, cursor, limit + 1],
+        [scopeType, scopeId, cursor, limit + 1, orgId],
       );
       const page = rows.slice(0, limit);
       return { items: page, nextCursor: rows.length > limit ? page[page.length - 1].id : null };
     },
 
     /** Reserve document + version 1. No ledger yet — nothing proven uploaded. */
-    async createDocument({ id, projectId, scopeType, scopeId, kind, title, shareWithAncestors, file, storageKey, actor }) {
+    async createDocument({ id, projectId, scopeType, scopeId, kind, title, shareWithAncestors, file, storageKey, actor, privateToOrgId = null }) {
       return tx(async (client) => {
         await client.query(
-          `INSERT INTO documents.document (id, project_id, scope_type, scope_id, kind, title, share_with_ancestors)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [id, projectId, scopeType, scopeId, kind, title, shareWithAncestors],
+          `INSERT INTO documents.document (id, project_id, scope_type, scope_id, kind, title, share_with_ancestors, private_to_org_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [id, projectId, scopeType, scopeId, kind, title, shareWithAncestors, privateToOrgId],
         );
         const { rows } = await client.query(
           `INSERT INTO documents.document_version

@@ -56,96 +56,23 @@ jobs:
           MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
         run: node scripts/check-prod-schema.mjs
 
-  ledger-tests:
-    name: Ledger — trust-anchor tests (Postgres)
+  services-tests:
+    name: Services — retained unit suites
     runs-on: ubuntu-latest
 
-    # Superuser role in a throwaway container: the ledger suite applies its own
-    # schema migration and creates a least-privilege app role for the write-guard
-    # test, so it needs CREATE ROLE / CREATE EXTENSION on a disposable DB.
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: migrator
-          POSTGRES_PASSWORD: ci
-          POSTGRES_DB: linknms_ci
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-        ports:
-          - 5432:5432
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: services/package-lock.json
-
-      # `npm ci`, not `npm install`: Vercel deploys with `npm ci`, which fails
-      # hard on a package.json/package-lock.json mismatch while `npm install`
-      # silently repairs it. Using `npm install` here made CI structurally
-      # incapable of catching lockfile drift — green checks, red deploy
-      # (proven on PR #18, LINA-66). `--ignore-scripts` is a deliberate
-      # supply-chain choice; keep it.
-      - name: Install dependencies
-        working-directory: services
-        run: npm ci --ignore-scripts
-
-      # The ledger reader now goes through the `ledger.project_audit` VIEW rather
-      # than selecting ledger.audit_event directly (app roles hold no SELECT on
-      # the table — LINA-56). That view is created by 0002_ledger_roles.sql and
-      # granted to roles that db/roles.sql owns, so the suite can no longer get by
-      # on applying 0001 to a bare database: the full platform migration has to
-      # run first.
-      - name: Apply all migrations
-        env:
-          MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
-        run: node db/migrate.mjs
-
-      # Pure hash-chain core + Postgres adversarial suite (tamper/delete/forge/
-      # reorder detected at exact seq, budget math, four-pillar status, audit
-      # ETag/304, write-guard). Local PG speaks no TLS — the suite detects the
-      # localhost target and connects without SSL (LINA-36 done criteria).
-      - name: Run ledger tests
-        working-directory: services
-        env:
-          DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
-        run: npm run test:ledger
-
-  gateway-integration:
-    name: API surface — mounted endpoints over Postgres
-    runs-on: ubuntu-latest
-
-    # The R0 acceptance walk (FR1–FR9) driven through the SAME handlers the Next
-    # routes call, against a real database and — crucially — with each service
-    # connected as its own least-privilege `<service>_app` role.
+    # LINA-400 (Phase 12c tail): the v1 service graph (Decision, Change Order,
+    # Schedule, the Ledger audit machinery, Analytics) was pruned and its schemas
+    # dropped (services/waitlist/migrations/0004). What remains under services/ is
+    # the Identity module (the live seat gate + email->party bridge used by
+    # app/src/server/seat-gate.ts), Email, Auth, Waitlist, and the pure Ledger
+    # utilities (the pg pool + the hash-chain trust anchor) the identity module
+    # still imports. These suites are in-memory / pure and need no database.
     #
-    # This is the only job that can catch a missing GRANT. Every other suite runs
-    # either in memory or as the table-owning migrator, which holds every
-    # privilege and therefore cannot observe a missing one. LINA-37, LINA-51 and
-    # LINA-56 each shipped a grant gap that unit tests could not see; three of
-    # them were found by this suite on the day it was written.
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: migrator
-          POSTGRES_PASSWORD: ci
-          POSTGRES_DB: linknms_ci
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-        ports:
-          - 5432:5432
-
+    # The Postgres integration walk that used to live here (the v1 FR1-FR9
+    # acceptance over least-privilege roles, the grant matrix, the golden-record
+    # export) retired WITH v1 — there is no v1 mounted surface left to exercise.
+    # The forward-only schema gate (the drop migration, idempotency, and the
+    # production drift + grant checker) is the `migrations` job above.
     steps:
       - uses: actions/checkout@v4
 
@@ -155,82 +82,19 @@ jobs:
           cache: npm
           cache-dependency-path: services/package-lock.json
 
-      # For the live trust-invariant gate below: the checker is stack-agnostic
-      # Python 3 (same one quality-gate.yml runs against the static fixture).
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      # See the ledger job: `npm ci` mirrors the Vercel deploy install exactly,
-      # so lockfile drift fails here instead of at deploy time (LINA-66).
+      # `npm ci` mirrors the Vercel deploy install exactly, so lockfile drift
+      # fails here instead of at deploy time (LINA-66). `--ignore-scripts` is a
+      # deliberate supply-chain choice; keep it.
       - name: Install dependencies
         working-directory: services
         run: npm ci --ignore-scripts
 
-      # Full platform migration: roles, the five service schemas, and every
-      # per-service migration — including the grant matrix the suite asserts.
-      - name: Apply all migrations
-        env:
-          MIGRATOR_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
-        run: node db/migrate.mjs
-
-      - name: Run mounted-surface integration tests
+      # No DATABASE_URL: the remaining identity pg suites (seat / invite reads)
+      # skip by convention, exactly as they do on a dev machine with no database.
+      # Everything else runs in memory or over pure functions.
+      - name: Run retained service unit tests
         working-directory: services
-        env:
-          # The suite connects as this login role and then SET ROLEs into each
-          # `<service>_app` role, exactly as the deployed API does.
-          VERIFY_DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
-          DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
-        run: npm run test:gateway
-
-      # LINA-64 — graduate the trust-invariant gate from fixture to LIVE data.
-      # The exporter seeds the golden homeowner+GC build through the SAME mounted
-      # handlers exercised above and reads it back over Postgres, normalising the
-      # live field names to the checker's canonical shape (the fixture is left
-      # untouched — run_gate.py's tamper mutators key off its field names). The
-      # checker then runs against BOTH the live export AND the static fixture, so
-      # the gate proves the real system upholds the invariants, not only the seed.
-      # Budget math is the load-bearing one: `expected` is sourced from the live
-      # ledger's status endpoint, so any drift between the CO projection and the
-      # authoritative ledger total fails this step.
-      - name: Export live golden record + run trust-invariant checker
-        working-directory: services
-        env:
-          DATABASE_URL: postgres://migrator:ci@localhost:5432/linknms_ci
-        run: |
-          node gateway/export-live-record.mjs "$RUNNER_TEMP/live_record.json"
-          echo "== checker against the LIVE export =="
-          python3 ../qa/checks/audit_budget_invariants.py "$RUNNER_TEMP/live_record.json"
-          echo "== checker against the static golden fixture (regression anchor) =="
-          python3 ../qa/checks/audit_budget_invariants.py ../qa/fixtures/r0_shared_record.json
-
-  analytics-tests:
-    name: Analytics — event contract + composition root
-    runs-on: ubuntu-latest
-
-    # No database and no network: the suites run the real Identity / Decision /
-    # Change Order services over in-memory ports and assert against a memory
-    # sink. They are the Product Analytics Lead's LINA-28 acceptance gate
-    # (8 Group-A events, project group, distinct_id == party_id, is_self_approval,
-    # the no-PII guard) plus the LINA-58 composition root — analytics injected
-    # into every service, and a flush before every response returns.
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: services/package-lock.json
-
-      # `npm ci` everywhere (LINA-66) — see the ledger job.
-      - name: Install dependencies
-        working-directory: services
-        run: npm ci --ignore-scripts
-
-      - name: Run analytics + composition tests
-        working-directory: services
-        run: npm run test:analytics
+        run: npm test
 
   openapi-lint:
     name: API v2 — contract lint

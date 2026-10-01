@@ -221,4 +221,29 @@ describe('documents over the /api/v2 router', () => {
       assert.equal(res.status, 404);
     });
   });
+
+  describe('private documents (record exports) narrow READ to their owning org', () => {
+    // A document private to GC_ORG — a record export GC produced. OWNER can read
+    // the task scope, but must not download GC's private export.
+    beforeEach(() => {
+      store.docs.set(DOC, baseDoc({ private_to_org_id: GC_ORG }));
+    });
+
+    test('the owning org still downloads it (302)', async () => {
+      const res = await dispatch('GET', `/document-versions/${DOC}.1:download`, viewer(GC_ORG));
+      assert.equal(res.status, 302);
+    });
+
+    test('a co-participant who can read the scope is refused (404)', async () => {
+      const res = await dispatch('GET', `/document-versions/${DOC}.1:download`, viewer(OWNER_ORG));
+      assert.equal(res.status, 404);
+    });
+
+    test('the viewer org is passed to listDocuments for the private-row filter', async () => {
+      let seenOrg;
+      store.listDocuments = async ({ orgId }) => { seenOrg = orgId; return { items: [], nextCursor: null }; };
+      await dispatch('GET', '/documents', viewer(GC_ORG), null, { scope_type: 'task', scope_id: TASK });
+      assert.equal(seenOrg, GC_ORG);
+    });
+  });
 });

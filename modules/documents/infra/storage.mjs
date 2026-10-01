@@ -91,6 +91,26 @@ export function createR2ObjectStorage({
         throw err;
       }
     },
+
+    /**
+     * Server-side upload — for artefacts the SERVER generates (a record export),
+     * not a client PUT to a presigned ticket. The declared sha256 is pinned as
+     * `x-amz-checksum-sha256`, so R2 itself rejects bytes that do not match.
+     *
+     * @param {{ key: string, body: Buffer|Uint8Array|string, mime: string, sha256Hex: string }} o
+     */
+    async put({ key, body, mime, sha256Hex }) {
+      assertConfigured();
+      const { client, s3 } = await sdk();
+      await client.send(new s3.PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: body,
+        ContentType: mime,
+        ChecksumSHA256: Buffer.from(sha256Hex, 'hex').toString('base64'),
+      }));
+      return { sizeBytes: Buffer.byteLength(body) };
+    },
   };
 }
 
@@ -111,6 +131,11 @@ export function createInMemoryObjectStorage() {
     async head({ key }) {
       const obj = objects.get(key);
       return obj ? { sizeBytes: obj.sizeBytes } : null;
+    },
+    async put({ key, body }) {
+      const sizeBytes = Buffer.byteLength(body);
+      objects.set(key, { sizeBytes, body });
+      return { sizeBytes };
     },
   };
 }
