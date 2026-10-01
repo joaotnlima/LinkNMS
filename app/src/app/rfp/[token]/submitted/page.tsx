@@ -92,6 +92,16 @@ function Details({ proposal }: { proposal: ProposalEcho }) {
           {proposal.conditions ? (
             <Fact label="Conditions" multiline>{proposal.conditions}</Fact>
           ) : null}
+
+          {proposal.document_ids.length > 0 ? (
+            <Fact label="Portfolio">
+              {/* The echo carries ids, not names — the homeowner opens the files
+                  from the proposal itself, so a count is the honest thing here. */}
+              {proposal.document_ids.length === 1
+                ? '1 file attached'
+                : `${proposal.document_ids.length} files attached`}
+            </Fact>
+          ) : null}
         </dl>
       </div>
       <p className="hint">

@@ -176,6 +176,32 @@
 .rfp-add input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .rfp-add[data-busy='true'], .rfp-add[data-full='true'] { opacity: .5; cursor: not-allowed; }
 
+/* A non-image tile (PDF) or a rejected file: a glyph over a truncated name. */
+.rfp-thumb-face {
+  width: 100%; height: 100%; padding: 8px 6px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  color: var(--muted); text-align: center;
+}
+.rfp-thumb-face svg { width: 24px; height: 24px; stroke: currentColor; stroke-width: 1.6; fill: none; flex: none; }
+.rfp-thumb-name {
+  font-size: 10px; line-height: 1.25; font-weight: 600;
+  width: 100%; overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.rfp-thumb[data-status='error'] { border-color: var(--danger); background: var(--danger-wash, var(--sunken)); }
+.rfp-thumb[data-status='error'] .rfp-thumb-face { color: var(--danger); }
+
+/* The uploading veil: a dim overlay with a spinner while the bytes are in flight. */
+.rfp-thumb-veil {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--paper) 62%, transparent);
+}
+.rfp-thumb-veil svg { width: 24px; height: 24px; stroke: var(--accent); stroke-width: 2; fill: none; }
+.rfp-spin { animation: rfp-spin 0.8s linear infinite; }
+@keyframes rfp-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rfp-spin { animation: none; } }
+
 /* ---- submit row ---- */
 .rfp-submit {
   display: flex; align-items: center; gap: var(--s3);

@@ -14,7 +14,9 @@ import {
   formatEuro,
   formatWorkingDays,
   formatDateOnly,
+  validateAttachmentFile,
   validateBid,
+  MAX_ATTACHMENT_SIZE_BYTES,
   WORKING_DAYS_PER_WEEK,
 } from './rfp-link-view.ts';
 
@@ -48,6 +50,22 @@ test('a clean draft maps to the exact v2 submit body', () => {
     duration_wd: 60,
     document_ids: [],
   });
+});
+
+test('proven portfolio ids are threaded onto the submit body (LINA-375)', () => {
+  const r = validateBid(goodDraft, NOW, ['11111111-1111-1111-1111-111111111111']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.body.document_ids, ['11111111-1111-1111-1111-111111111111']);
+});
+
+test('validateAttachmentFile mirrors the BE envelope (LINA-375)', () => {
+  // Accepted: a portfolio-shaped type under the cap.
+  assert.equal(validateAttachmentFile({ type: 'image/jpeg', size: 1_000 }), null);
+  assert.equal(validateAttachmentFile({ type: 'application/pdf', size: MAX_ATTACHMENT_SIZE_BYTES }), null);
+  // Refused: wrong type, empty, over the cap.
+  assert.match(validateAttachmentFile({ type: 'text/plain', size: 10 }), /not accepted/);
+  assert.match(validateAttachmentFile({ type: 'image/png', size: 0 }), /empty/);
+  assert.match(validateAttachmentFile({ type: 'image/png', size: MAX_ATTACHMENT_SIZE_BYTES + 1 }), /15 MB/);
 });
 
 test('optional conditions and validity are carried when present', () => {
