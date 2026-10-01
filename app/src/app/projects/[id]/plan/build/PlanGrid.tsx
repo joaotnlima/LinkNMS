@@ -68,7 +68,7 @@ import {
   type ConnectorEnd, type DragMode, type GanttWindow, type TimeBase,
 } from '@/lib/plan-gantt';
 import {
-  DEP_LABELS, childStatusCounts, nodeIndex, nodeStatus, planLinks,
+  DEP_LABELS, childStatusCounts, criticalPathKeys, nodeIndex, nodeStatus, planLinks,
   type DepType, type PhaseDraft, type StageStatus, type StatusCounts, type TaskDraft,
 } from '@/lib/plan-authoring';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
@@ -563,6 +563,19 @@ export function PlanGrid(props: PlanGridProps) {
   const clearFilters = useCallback(() => {
     setSearch(''); setOwnerFilter(''); setStatusFilter(''); setOverdueOnly(false); setBlockedOnly(false);
   }, []);
+
+  // ── Critical-path overlay (LINA-404) ────────────────────────────────────────
+  // A view OVERLAY, not a row filter: it never hides a row (so the plan's shape
+  // stays whole) — it dims every bar to a wash and lights the stages on the
+  // critical path, the chain whose dates set the project's finish. Pure CPM over
+  // the draft's dates + links (criticalPathKeys); recomputed only while the
+  // toggle is on. An undated or cyclic plan yields an empty set, so the toggle
+  // simply lights nothing rather than guessing.
+  const [criticalOnly, setCriticalOnly] = useState(false);
+  const criticalKeys = useMemo(
+    () => (criticalOnly ? criticalPathKeys(phases) : EMPTY_KEYS),
+    [criticalOnly, phases],
+  );
 
   const isOverdue = useCallback((n: TaskDraft): boolean => {
     if (!n.end) return false;
@@ -1417,6 +1430,16 @@ export function PlanGrid(props: PlanGridProps) {
           >
             <span className="pgd-ftoggle-dot" aria-hidden />Blocked
           </button>
+          <span className="pgd-fdiv" aria-hidden />
+          <button
+            type="button"
+            className={`pgd-ftoggle is-accent${criticalOnly ? ' is-on' : ''}`}
+            aria-pressed={criticalOnly}
+            title="Dim every task and highlight the critical path — the chain of linked tasks that sets the project's finish date"
+            onClick={() => setCriticalOnly((v) => !v)}
+          >
+            <span className="pgd-ftoggle-dot" aria-hidden />Critical path
+          </button>
           {filterActive ? (
             <button type="button" className="pgd-fclear" onClick={clearFilters}>Clear</button>
           ) : null}
@@ -1690,7 +1713,9 @@ export function PlanGrid(props: PlanGridProps) {
                   return (
                     <div key={`tp-${r.pi}`} className="pgt-band" style={{ height: H.phase }}>
                       {box ? (
-                        <div className="pgd-envbar" aria-hidden
+                        <div
+                          className={`pgd-envbar${criticalOnly && !criticalKeys.has(r.key) ? ' is-dimmed' : ''}`}
+                          aria-hidden
                           style={{ left: box.x, width: box.width }} />
                       ) : null}
                     </div>
@@ -1714,7 +1739,7 @@ export function PlanGrid(props: PlanGridProps) {
                     ) : null}
                     {bar && box ? (
                       <div
-                        className={`pgt-bar${r.si != null ? ' is-sub' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}`}
+                        className={`pgt-bar${r.si != null ? ' is-sub' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}${criticalOnly ? (criticalKeys.has(r.key) ? ' is-critical' : ' is-dimmed') : ''}`}
                         style={{ left: box.x, width: box.width }}
                         role="button" tabIndex={-1}
                         aria-label={
@@ -1815,11 +1840,18 @@ export function PlanGrid(props: PlanGridProps) {
                       <path d="M0 0 L5 2.5 L0 5 z" className="pgt-arrowhead" />
                     </marker>
                   </defs>
-                  {connectors.map((c) => (
-                    <path key={c.id} className="pgt-link" d={c.d} markerEnd="url(#pgt-arrow)">
-                      <title>{c.title}</title>
-                    </path>
-                  ))}
+                  {connectors.map((c) => {
+                    // A link rides the critical path only when BOTH stages it
+                    // joins are on it — a critical stage linked to a slack one is
+                    // itself slack at that edge, so the arrow stays dimmed.
+                    const crit = criticalOnly && criticalKeys.has(c.from) && criticalKeys.has(c.to);
+                    const cls = criticalOnly ? (crit ? ' is-critical' : ' is-dimmed') : '';
+                    return (
+                      <path key={c.id} className={`pgt-link${cls}`} d={c.d} markerEnd="url(#pgt-arrow)">
+                        <title>{c.title}</title>
+                      </path>
+                    );
+                  })}
                 </svg>
               ) : null}
 

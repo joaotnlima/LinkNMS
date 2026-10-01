@@ -456,6 +456,9 @@
 .pgd-ftoggle.is-danger.is-on {
   color: var(--state-danger); background: var(--state-danger-muted); border-color: var(--state-danger-line);
 }
+.pgd-ftoggle.is-accent.is-on {
+  color: var(--plan-critical-fg); background: var(--plan-critical-muted); border-color: var(--plan-critical-line);
+}
 .pgd-fclear {
   font: inherit; font-size: 12px; font-weight: 600; color: var(--muted);
   background: transparent; border: none; cursor: pointer; padding: 4px 6px;
@@ -768,6 +771,24 @@ select.pgd-tradesel:not(:disabled) { cursor: pointer; }
   border-color: color-mix(in srgb, var(--plan-baseline) 55%, transparent);
 }
 .pgt-bar.is-sub .pgt-bar-lbl { font-size: 11px; font-weight: 500; padding: 0 6px; }
+
+/* Critical-path overlay (LINA-404): when the toggle is on, every bar washes out
+   to a faint ghost and the stages on the finish-driving chain light up in the
+   critical violet with a lifted ring — so the eye lands on the path that moves
+   the end date and nothing else. A dimmed bar keeps its own fill, just quieted,
+   so the plan's shape still reads underneath. */
+.pgt-bar.is-dimmed { opacity: 0.28; filter: saturate(0.5); }
+.pgt-bar.is-critical {
+  opacity: 1;
+  background: color-mix(in srgb, var(--plan-critical) 24%, var(--paper));
+  border-color: var(--plan-critical);
+  box-shadow: 0 0 0 1px var(--plan-critical), 0 1px 4px color-mix(in srgb, var(--plan-critical) 35%, transparent);
+}
+.pgt-bar.is-critical.is-sub {
+  background: color-mix(in srgb, var(--plan-critical) 16%, var(--paper));
+  border-color: color-mix(in srgb, var(--plan-critical) 70%, transparent);
+}
+.pgd-envbar.is-dimmed { opacity: 0.3; }
 .pgt-bar-lbl {
   flex: 1 1 auto; min-width: 0; padding: 0 8px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 600; pointer-events: none;
@@ -856,6 +877,11 @@ select.pgd-tradesel:not(:disabled) { cursor: pointer; }
 .pgt-links { position: absolute; inset: 0; z-index: 6; pointer-events: none; overflow: visible; }
 .pgt-link { fill: none; stroke: var(--plan-baseline-line); stroke-width: 1.25; }
 .pgt-arrowhead { fill: var(--plan-baseline-line); stroke: none; }
+/* Critical-path overlay (LINA-404): the arrows between two on-path stages draw
+   in the critical violet, a touch heavier; every other link fades back with the
+   bars it joins. */
+.pgt-link.is-critical { stroke: var(--plan-critical); stroke-width: 1.75; }
+.pgt-link.is-dimmed { stroke: var(--plan-baseline-line); opacity: 0.25; }
 @media (prefers-contrast: more) {
   .pgt-link { stroke: var(--plan-baseline); }
   .pgt-arrowhead { fill: var(--plan-baseline); }

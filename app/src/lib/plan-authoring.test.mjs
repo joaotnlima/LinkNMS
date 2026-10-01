@@ -31,6 +31,8 @@ import {
   setAssignee, setTrade, stageMeta,
   // Child-status meter + WBS promote/demote (LINA-259).
   childStatusCounts, promoteNode, demoteNode,
+  // Critical path overlay (LINA-404).
+  criticalPathKeys,
 } from './plan-authoring.ts';
 
 test('skeleton: three phases, names only, no dates or sub-tasks (the issue scope)', () => {
@@ -1167,4 +1169,65 @@ test('enforceDependencies: pure — the input tree is never mutated', () => {
   const snapshot = JSON.parse(JSON.stringify(phases));
   enforceDependencies(phases);
   assert.deepEqual(phases, snapshot, 'original untouched');
+});
+
+// ── Critical path overlay (LINA-404) ─────────────────────────────────────────
+// The toggle dims every bar and lights the chain whose dates set the project's
+// finish. The logic is `criticalPathKeys`: pure CPM (zero total float) over the
+// draft's dates + typed links.
+
+test('criticalPathKeys: lights the finish-driving chain, leaves slack stages dark', () => {
+  // A → B is the long chain that ends the project (Mar 20); C → D runs parallel
+  // and finishes early (Mar 9), so both carry slack and stay dark.
+  const phases = [{
+    key: 'p1', name: 'Phase', dependsOn: [], assigneePartyId: null, trade: null,
+    tasks: [
+      { key: 'a', name: 'A', start: '2026-03-01', end: '2026-03-10', dependsOn: [], children: [] },
+      { key: 'b', name: 'B', start: '2026-03-11', end: '2026-03-20',
+        dependsOn: [{ on: 'a', type: 'starts_after' }], children: [] },
+      { key: 'c', name: 'C', start: '2026-03-01', end: '2026-03-05', dependsOn: [], children: [] },
+      { key: 'd', name: 'D', start: '2026-03-06', end: '2026-03-09',
+        dependsOn: [{ on: 'c', type: 'starts_after' }], children: [] },
+    ],
+  }];
+  const crit = criticalPathKeys(phases);
+  assert.ok(crit.has('a'), 'A is on the critical path');
+  assert.ok(crit.has('b'), 'B is on the critical path');
+  assert.ok(!crit.has('c'), 'C has slack — not critical');
+  assert.ok(!crit.has('d'), 'D has slack — not critical');
+});
+
+test('criticalPathKeys: ends_with keeps the shorter leg critical to the shared finish', () => {
+  // B finishes WITH A (both end Mar 20). A is the long leg; because B is pinned
+  // to A's finish, both land on the path to the project end.
+  const phases = [{
+    key: 'p1', name: 'Phase', dependsOn: [], tasks: [
+      { key: 'a', name: 'A', start: '2026-03-01', end: '2026-03-20', dependsOn: [], children: [] },
+      { key: 'b', name: 'B', start: '2026-03-15', end: '2026-03-20',
+        dependsOn: [{ on: 'a', type: 'ends_with' }], children: [] },
+    ],
+  }];
+  const crit = criticalPathKeys(phases);
+  assert.ok(crit.has('a') && crit.has('b'), 'both ends_with legs reach the finish');
+});
+
+test('criticalPathKeys: an undated plan lights nothing', () => {
+  const phases = [{
+    key: 'p1', name: 'P', dependsOn: [], tasks: [
+      { key: 't1', name: 'T1', start: '', end: '', dependsOn: [], children: [] },
+    ],
+  }];
+  assert.equal(criticalPathKeys(phases).size, 0);
+});
+
+test('criticalPathKeys: a cyclic graph bails to an empty set rather than guess', () => {
+  const phases = [{
+    key: 'p1', name: 'P', dependsOn: [], tasks: [
+      { key: 't1', name: 'T1', start: '2026-03-01', end: '2026-03-05',
+        dependsOn: [{ on: 't2', type: 'starts_after' }], children: [] },
+      { key: 't2', name: 'T2', start: '2026-03-06', end: '2026-03-10',
+        dependsOn: [{ on: 't1', type: 'starts_after' }], children: [] },
+    ],
+  }];
+  assert.equal(criticalPathKeys(phases).size, 0);
 });

@@ -886,6 +886,104 @@ export function planLinks(phases: PhaseDraft[]): PlanLink[] {
   return out;
 }
 
+// ── The CRITICAL PATH (LINA-404, founder's ask) ──────────────────────────────
+// "The filter which puts opacity in all tasks and highlights the ones in the
+// critical path of the project." The critical path is the chain of linked
+// stages whose timing SETS the project's finish — the stages with no slack to
+// slip without moving that finish. Classic CPM: zero total float.
+//
+// This reads only the draft's dates and typed links and returns a Set of local
+// keys; it is pure and presentational — the overlay toggle in PlanGrid dims
+// every bar and lights these. A stage's duration is derived from its
+// [start, end]; a parent/phase resolves to its children's envelope, the same
+// rule the bars (and enforceDependencies) use, so a task may key off a whole
+// phase. The three link types constrain the dependent exactly as
+// enforceDependencies moves it:
+//   starts_after — dependent starts the day AFTER the predecessor finishes
+//   starts_with  — dependent starts WITH the predecessor
+//   ends_with    — dependent finishes WITH the predecessor
+//
+// Returns an EMPTY set when the plan is undated or the graph is momentarily
+// cyclic — there is nothing honest to light, so every bar stays at full
+// strength rather than guessing a path.
+
+const MS_PER_DAY = 86_400_000;
+
+export function criticalPathKeys(phases: PhaseDraft[]): Set<string> {
+  // 1. Resolve every stage's [start, end] in ms — a leaf from its own dates, a
+  //    parent/phase from its descendants' envelope (undated stages drop out).
+  const { phaseKeys, phaseChildren, dates } = dateMaps(phases);
+  const span = new Map<string, { s: number; e: number }>();
+  for (const n of planNodes(phases)) {
+    const sp = spanMs(n.key, dates, phaseKeys, phaseChildren);
+    if (sp) span.set(n.key, { s: sp.start, e: sp.end });
+  }
+  if (span.size === 0) return new Set();
+
+  // 2. The predecessor → dependent graph, over dated stages only. A link
+  //    touching an undated stage anchors no bar and schedules nothing, so it is
+  //    not an ordering edge here (same as the Gantt leaves it undrawn).
+  const succ = new Map<string, Array<{ to: string; type: DepType }>>();
+  const indeg = new Map<string, number>();
+  for (const k of span.keys()) indeg.set(k, 0);
+  for (const l of planLinks(phases)) {
+    if (!span.has(l.from) || !span.has(l.to)) continue;
+    let arr = succ.get(l.to);
+    if (!arr) { arr = []; succ.set(l.to, arr); }
+    arr.push({ to: l.from, type: l.type });
+    indeg.set(l.from, (indeg.get(l.from) ?? 0) + 1);
+  }
+
+  // 3. Topological order (Kahn). A leftover node means a cycle — bail honestly
+  //    rather than light a path a longest-walk can't trust.
+  const deg = new Map(indeg);
+  const queue = [...deg].filter(([, d]) => d === 0).map(([k]) => k);
+  const order: string[] = [];
+  while (queue.length > 0) {
+    const k = queue.shift()!;
+    order.push(k);
+    for (const e of succ.get(k) ?? []) {
+      const d = (deg.get(e.to) ?? 0) - 1;
+      deg.set(e.to, d);
+      if (d === 0) queue.push(e.to);
+    }
+  }
+  if (order.length !== span.size) return new Set();
+
+  // 4. Project finish = the latest end across every dated stage.
+  let projectEnd = -Infinity;
+  for (const { e } of span.values()) if (e > projectEnd) projectEnd = e;
+
+  // 5. Backward pass in REVERSE topological order: each stage's LATEST finish is
+  //    bounded by every dependent it feeds (a dependent read before its
+  //    predecessor, so its latest times are already final). A stage's actual
+  //    dates are its earliest schedule (enforceDependencies snapped them
+  //    forward), so float = latestFinish − actualEnd ≥ 0; a day or less of
+  //    float ⇒ on the critical path.
+  const lf = new Map<string, number>();                 // latest finish, ms
+  for (const k of span.keys()) lf.set(k, projectEnd);
+  for (let i = order.length - 1; i >= 0; i--) {
+    const k = order[i];
+    const me = span.get(k)!;
+    const dur = me.e - me.s;
+    for (const e of succ.get(k) ?? []) {
+      const dep = span.get(e.to)!;
+      const depLatestStart = lf.get(e.to)! - (dep.e - dep.s);
+      const cand =
+        e.type === 'starts_after' ? depLatestStart - MS_PER_DAY  // finish a day before dep starts
+          : e.type === 'starts_with' ? depLatestStart + dur       // start with dep ⇒ finish = start + my duration
+            : lf.get(e.to)!;                                      // ends_with ⇒ finish when dep finishes
+      if (cand < lf.get(k)!) lf.set(k, cand);
+    }
+  }
+
+  const critical = new Set<string>();
+  for (const [k, { e }] of span) {
+    if (Math.abs(lf.get(k)! - e) < MS_PER_DAY) critical.add(k);
+  }
+  return critical;
+}
+
 // ── Dependency-date ENFORCEMENT (LINA-306) ───────────────────────────────────
 // The founder's ask: "whenever I add a dependency of the task starts when
 // another one ends, the dates of that task need to be enforced following that
