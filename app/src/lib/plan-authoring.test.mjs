@@ -1243,30 +1243,44 @@ test('criticalPathKeys: a cyclic graph bails to an empty set rather than guess',
 const Twith = (key, start, end, children) =>
   ({ key, name: key.toUpperCase(), start, end, description: '', trade: '', assigneePartyId: null, dependsOn: [], children });
 
-test('enforceParentRollup: a child ending later pushes the parent end out', () => {
+test('enforceParentRollup: a container task derives BOTH edges from its children', () => {
   const phases = [P('p1', [
     Twith('t1', '2026-03-01', '2026-03-10', [
-      T('s1', '2026-03-02', '2026-03-08'),   // fits
-      T('s2', '2026-03-05', '2026-03-20'),   // ends AFTER the parent's 03-10
+      T('s1', '2026-03-02', '2026-03-08'),   // earliest start
+      T('s2', '2026-03-05', '2026-03-20'),   // latest end
     ]),
   ])];
   const out = enforceParentRollup(phases);
-  assert.equal(out[0].tasks[0].end, '2026-03-20', 'parent end rolled out to the latest child');
-  assert.equal(out[0].tasks[0].start, '2026-03-01', 'start is never touched');
+  assert.equal(out[0].tasks[0].start, '2026-03-02', 'parent start pulled in to the earliest child');
+  assert.equal(out[0].tasks[0].end, '2026-03-20', 'parent end pushed out to the latest child');
   assert.equal(out[0].tasks[0].children[1].end, '2026-03-20', 'the child is untouched');
 });
 
-test('enforceParentRollup: a child that fits the window changes nothing (identity)', () => {
+test('enforceParentRollup: a parent wider than its children shrinks to the envelope', () => {
+  // A phase has no own window to keep, so a container task mustn't either: its
+  // dates ARE its children's span, pulling in when the children sit inside it.
   const phases = [P('p1', [
     Twith('t1', '2026-03-01', '2026-03-31', [
+      T('s1', '2026-03-10', '2026-03-12'),
+      T('s2', '2026-03-11', '2026-03-20'),
+    ]),
+  ])];
+  const out = enforceParentRollup(phases);
+  assert.equal(out[0].tasks[0].start, '2026-03-10', 'start pulled forward to the earliest child');
+  assert.equal(out[0].tasks[0].end, '2026-03-20', 'end pulled back to the latest child');
+});
+
+test('enforceParentRollup: a parent already equal to its envelope is identity', () => {
+  const phases = [P('p1', [
+    Twith('t1', '2026-03-02', '2026-03-20', [
       T('s1', '2026-03-02', '2026-03-08'),
       T('s2', '2026-03-05', '2026-03-20'),
     ]),
   ])];
-  assert.equal(enforceParentRollup(phases), phases, 'already satisfied → same ref, no fabricated edit');
+  assert.equal(enforceParentRollup(phases), phases, 'already the envelope → same ref, no fabricated edit');
 });
 
-test('enforceParentRollup: a parent with no end yet takes the latest child end', () => {
+test('enforceParentRollup: an undated parent takes its children whole envelope', () => {
   const phases = [P('p1', [
     Twith('t1', '', '', [
       T('s1', '2026-04-01', '2026-04-03'),
@@ -1274,8 +1288,8 @@ test('enforceParentRollup: a parent with no end yet takes the latest child end',
     ]),
   ])];
   const out = enforceParentRollup(phases);
-  assert.equal(out[0].tasks[0].end, '2026-04-10', 'unset end becomes the latest child end');
-  assert.equal(out[0].tasks[0].start, '', 'start stays unset — only the end is set');
+  assert.equal(out[0].tasks[0].start, '2026-04-01', 'start becomes the earliest child start');
+  assert.equal(out[0].tasks[0].end, '2026-04-10', 'end becomes the latest child end');
 });
 
 test('enforceParentRollup: a parent with no dated child is left alone', () => {
@@ -1285,7 +1299,7 @@ test('enforceParentRollup: a parent with no dated child is left alone', () => {
       T('s2', '', ''),
     ]),
   ])];
-  assert.equal(enforceParentRollup(phases), phases, 'nothing to cover → identity');
+  assert.equal(enforceParentRollup(phases), phases, 'nothing to derive from → identity');
 });
 
 test('enforceParentRollup: a leaf task (no children) is never touched', () => {
@@ -1302,17 +1316,18 @@ test('enforceParentRollup: pure — the input tree is never mutated', () => {
   assert.equal(JSON.stringify(phases), snapshot, 'input unchanged');
 });
 
-test('enforceParentRollup: the founder screenshot — 1.1 rolls out to cover 1.1.1', () => {
-  // The exact shape the founder flagged (LINA-404): task 1.1 ends 16 Oct while its
-  // sub-task 1.1.1 "test" ends 28 Oct and 1.1.2 "test2" ends 15 Oct. Rolling up on
-  // open must push 1.1's end to 28 Oct (the latest descendant), untouched start.
+test('enforceParentRollup: the founder screenshot — 1.1 becomes its sub-tasks envelope', () => {
+  // The exact shape the founder flagged (LINA-404): task 1.1 reads 09–16 Oct while
+  // its sub-task 1.1.1 "test" ends 28 Oct and 1.1.2 "test2" runs 08–15 Oct. Deriving
+  // must make 1.1 span the whole of its children — 08 Oct (earliest) → 28 Oct
+  // (latest) — so the parent bar auto-covers them exactly as the founder asked.
   const phases = [P('p1', [
     Twith('t1', '2026-10-09', '2026-10-16', [
       T('s1', '2026-10-21', '2026-10-28'),   // 1.1.1 "test" — ends after 1.1
-      T('s2', '2026-10-08', '2026-10-15'),   // 1.1.2 "test2" — fits
+      T('s2', '2026-10-08', '2026-10-15'),   // 1.1.2 "test2" — starts before 1.1
     ]),
   ])];
   const out = enforceParentRollup(phases);
-  assert.equal(out[0].tasks[0].end, '2026-10-28', '1.1 end rolled out to cover 1.1.1');
-  assert.equal(out[0].tasks[0].start, '2026-10-09', '1.1 start untouched');
+  assert.equal(out[0].tasks[0].start, '2026-10-08', '1.1 start pulled back to cover 1.1.2');
+  assert.equal(out[0].tasks[0].end, '2026-10-28', '1.1 end pushed out to cover 1.1.1');
 });

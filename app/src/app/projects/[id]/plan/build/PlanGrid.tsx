@@ -934,7 +934,9 @@ export function PlanGrid(props: PlanGridProps) {
   const onBarDown = useCallback((
     e: React.PointerEvent, r: Extract<Row, { kind: 'task' }>, mode: DragMode,
   ) => {
-    if (disabled || e.button !== 0) return;
+    // A summary task's bar is its children's derived envelope (LINA-404) — you
+    // move the sub-tasks, not the summary, exactly as a phase bar is not draggable.
+    if (disabled || e.button !== 0 || (r.si == null && (r.node.children ?? []).length > 0)) return;
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -1556,6 +1558,11 @@ export function PlanGrid(props: PlanGridProps) {
             const isTaskDrag = !sub && dragTask?.pi === r.pi;
             const isSubDrag = sub && dragSub?.pi === r.pi && dragSub.ti === r.ti;
             const counts = sub ? null : childStatusCounts(r.node);
+            // A task that carries sub-tasks is a SUMMARY: like a phase, its bar is
+            // the children's envelope and its dates derive from them (LINA-404,
+            // founder's ask). So its date cell is read-only — the author schedules
+            // the sub-tasks and the parent follows — and its bar is not draggable.
+            const isSummary = !sub && (r.node.children ?? []).length > 0;
             const cellFor = (c: ColKey) => {
               if (c === 'trade') {
                 return (
@@ -1574,18 +1581,21 @@ export function PlanGrid(props: PlanGridProps) {
                 return <Fragment key="owner">{owner(r.key, r.node.assigneePartyId, `${what} ${id}`)}</Fragment>;
               }
               // Start and finish share ONE column (founder follow-up): two inputs
-              // around a dash, reading as "start – finish".
+              // around a dash, reading as "start – finish". A summary task's dates
+              // are derived from its sub-tasks, so its inputs are read-only.
               return (
-                <span key="dates" className="pgd-datecell pgd-dates">
+                <span key="dates" className={`pgd-datecell pgd-dates${isSummary ? ' is-derived' : ''}`}>
                   <input
                     type="date" className="pgd-date" value={r.node.start}
-                    aria-label={`${what} ${id} start date`} disabled={disabled}
+                    aria-label={`${what} ${id} start date`} disabled={disabled || isSummary}
+                    title={isSummary ? 'Derived from the sub-tasks' : undefined}
                     onChange={(e) => props.onSetDate('start', e.target.value, r.pi, r.ti, r.si)}
                   />
                   <span className="pgd-datesep" aria-hidden>–</span>
                   <input
                     type="date" className="pgd-date" value={r.node.end}
-                    aria-label={`${what} ${id} finish date`} disabled={disabled}
+                    aria-label={`${what} ${id} finish date`} disabled={disabled || isSummary}
+                    title={isSummary ? 'Derived from the sub-tasks' : undefined}
                     onChange={(e) => props.onSetDate('end', e.target.value, r.pi, r.ti, r.si)}
                   />
                 </span>

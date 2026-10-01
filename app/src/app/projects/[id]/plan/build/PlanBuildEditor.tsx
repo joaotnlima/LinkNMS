@@ -985,20 +985,29 @@ export function PlanBuildEditor({
               />
 
               {openRow.ti != null && active ? (
-                <>
-                  <span className="pbx-drawer-label">Start</span>
-                  <input
-                    type="date" className="pbx-date" value={active.start}
-                    aria-label="Start date" disabled={false}
-                    onChange={(e) => setDate('start', e.target.value, openRow.pi, openRow.ti!, openRow.si)}
-                  />
-                  <span className="pbx-drawer-label">Finish</span>
-                  <input
-                    type="date" className="pbx-date" value={active.end}
-                    aria-label="Finish date" disabled={false}
-                    onChange={(e) => setDate('end', e.target.value, openRow.pi, openRow.ti!, openRow.si)}
-                  />
-                </>
+                // A summary task (one with sub-tasks) derives its dates from its
+                // children (LINA-404), so its date fields are read-only here too.
+                (() => {
+                  const derived = openRow.si == null && (active.children ?? []).length > 0;
+                  return (
+                    <>
+                      <span className="pbx-drawer-label">Start</span>
+                      <input
+                        type="date" className="pbx-date" value={active.start}
+                        aria-label="Start date" disabled={derived}
+                        title={derived ? 'Derived from the sub-tasks' : undefined}
+                        onChange={(e) => setDate('start', e.target.value, openRow.pi, openRow.ti!, openRow.si)}
+                      />
+                      <span className="pbx-drawer-label">Finish</span>
+                      <input
+                        type="date" className="pbx-date" value={active.end}
+                        aria-label="Finish date" disabled={derived}
+                        title={derived ? 'Derived from the sub-tasks' : undefined}
+                        onChange={(e) => setDate('end', e.target.value, openRow.pi, openRow.ti!, openRow.si)}
+                      />
+                    </>
+                  );
+                })()
               ) : null}
 
               <span className="pbx-drawer-label">Scheduling links</span>
