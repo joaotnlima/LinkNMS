@@ -1224,38 +1224,49 @@ export function enforceLink(phases: PhaseDraft[], dependent: string): PhaseDraft
 // is correct by construction and nothing here writes to it.
 
 /**
- * The latest END across a task's children, in ms, or null when none is dated.
- * Children are leaves (the 3-level cap), but a deeper tree would still resolve
- * right: `kids(c).length` is always 0 here, so the max is over the direct ends.
+ * A task's children's envelope — [earliest start, latest end] in ms — or null
+ * when no child carries a date to derive from. Start and end are taken
+ * independently, so a child dated on only one edge still contributes that edge
+ * (mirrors `phaseEnvelope` in the grid). Children are leaves (the 3-level cap).
  */
-function latestChildEnd(task: TaskDraft): number | null {
+function childSpan(task: TaskDraft): { lo: number; hi: number } | null {
+  let lo: number | null = null;
   let hi: number | null = null;
   for (const c of kids(task)) {
+    const s = parseDay(c.start);
     const e = parseDay(c.end);
-    if (e === null) continue;
-    hi = hi === null || e > hi ? e : hi;
+    if (s !== null) lo = lo === null || s < lo ? s : lo;
+    if (e !== null) hi = hi === null || e > hi ? e : hi;
   }
-  return hi;
+  return lo === null || hi === null ? null : { lo, hi };
 }
 
 /**
- * Extend every parent task's end to cover its latest-ending descendant, so the
- * founder's invariant holds after any edit. Pure and idempotent: a draft that
- * already satisfies it comes back unchanged (same ref), so this can sit on the
- * universal edit funnel without re-triggering a save on its own. Duration-blind:
- * it moves the end alone and never the start, and only ever outward.
+ * Derive every container task's dates FROM its children, so a task with sub-tasks
+ * behaves like a phase (LINA-404, the founder's ask: "its bar auto-covers its
+ * children and its dates derive from them"). The parent's start becomes the
+ * earliest sub-task start and its end the latest sub-task end — it both grows to
+ * cover a child that runs past it AND pulls back in when the children shrink,
+ * deriving in both directions rather than only extending one edge. A task with no
+ * dated sub-task is left alone (there is nothing to derive from); a leaf task is
+ * never touched. Phases hold no stored dates — their bar is already the children's
+ * envelope — so this only ever rewrites the one rung that stores dates and holds
+ * children (an L2 task over its L3 sub-tasks). Pure and idempotent: a draft that
+ * already equals its envelope comes back the same ref, so this sits on the
+ * universal edit funnel without fabricating a save of its own.
  */
 export function enforceParentRollup(phases: PhaseDraft[]): PhaseDraft[] {
   let changed = false;
   const next = phases.map((p) => {
     let touched = false;
     const tasks = p.tasks.map((t) => {
-      const hi = latestChildEnd(t);
-      if (hi === null) return t;                       // no dated descendant to cover
-      const cur = parseDay(t.end);
-      if (cur !== null && cur >= hi) return t;          // the child already fits the window
+      const span = childSpan(t);
+      if (span === null) return t;                     // no dated sub-task to derive from
+      const start = formatDay(span.lo);
+      const end = formatDay(span.hi);
+      if (t.start === start && t.end === end) return t; // already the envelope → identity
       touched = true;
-      return { ...t, end: formatDay(hi) };              // unset, or earlier than a child → cover it
+      return { ...t, start, end };                     // derive both edges from the children
     });
     if (!touched) return p;
     changed = true;
