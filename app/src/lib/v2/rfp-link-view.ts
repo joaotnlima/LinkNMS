@@ -37,9 +37,9 @@
 // the proposal detail, the decide flow, the money view — is built on ONE total.
 // A range on the public bid alone would fork the just-landed v2 wire. So the
 // public bid COLLAPSES to a single total (EUR) + a working-day duration, with an
-// optional conditions note and an optional validity date. Portfolio images need
-// the token-scoped upload route, which does not exist yet (tracked as a
-// follow-up); until then `document_ids` is always empty.
+// optional conditions note and an optional validity date. Portfolio images ride
+// the token-scoped upload route (LINA-370 BE / LINA-375 FE): the form uploads
+// each file and carries the proven ids in `document_ids`.
 
 import { parseAmountToCents } from '../format.ts';
 
@@ -142,7 +142,12 @@ export interface BidBody {
   duration_wd: number;
   conditions?: string;
   validity_until?: string;
-  /** Always empty until the token-scoped upload route lands (see file header). */
+  /**
+   * Ids of portfolio attachments uploaded via the token-scoped upload route
+   * (LINA-375), each already proven `stored`. The BE refuses any id that is not
+   * a stored attachment of this proposal, so the form only ever puts completed
+   * uploads here.
+   */
   document_ids: string[];
 }
 
@@ -180,6 +185,38 @@ export const WORKING_DAYS_PER_WEEK = 5;
 export const MAX_CONDITIONS_CHARS = 4000;
 /** Ten working years. Past that it is a typo, not an estimate. */
 const MAX_WORKING_DAYS = 2600;
+
+// ── Portfolio attachments (LINA-375) ─────────────────────────────────────────
+// A client-side mirror of `modules/tendering/domain/attachment.mjs`: the same
+// mime whitelist, size cap and per-proposal count the BE enforces, restated here
+// so the form can refuse a file BEFORE spending a reserve round-trip — and so a
+// drift in the BE envelope surfaces as a diff on this list, not as a 422 under a
+// contractor's upload. The BE remains the authority; this is a courtesy.
+
+/** Portfolio-shaped types: images a bidder shows work with, plus PDF. */
+export const ALLOWED_ATTACHMENT_MIME = [
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'application/pdf',
+] as const;
+
+/** 15 MB — generous for a site photo or a short PDF, small enough to bound abuse. */
+export const MAX_ATTACHMENT_SIZE_BYTES = 15 * 1024 * 1024;
+
+/** A single link cannot attach an unbounded pile of files. */
+export const MAX_PROPOSAL_ATTACHMENTS = 10;
+
+/**
+ * Pre-flight guard for one picked file: returns a display sentence when the file
+ * is a type or size the BE would refuse, or `null` when it is worth reserving.
+ * Mirrors `validateAttachmentFile` — same decisions, framed for a person.
+ */
+export function validateAttachmentFile(file: { type: string; size: number }): string | null {
+  if (!(ALLOWED_ATTACHMENT_MIME as readonly string[]).includes(file.type)) {
+    return 'That file type is not accepted. Use a JPEG, PNG, WebP, GIF, HEIC or PDF.';
+  }
+  if (file.size <= 0) return 'That file looks empty.';
+  if (file.size > MAX_ATTACHMENT_SIZE_BYTES) return 'That file is larger than 15 MB.';
+  return null;
+}
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -224,6 +261,7 @@ export function durationToWorkingDays(value: string, unit: DurationUnit): number
 export function validateBid(
   draft: BidDraft,
   now: Date,
+  documentIds: string[] = [],
 ): { ok: true; body: BidBody } | { ok: false; errors: BidErrors } {
   const errors: BidErrors = {};
 
@@ -271,7 +309,7 @@ export function validateBid(
       duration_wd: durationWd,
       ...(conditions ? { conditions } : {}),
       ...(validityUntil ? { validity_until: validityUntil } : {}),
-      document_ids: [],
+      document_ids: documentIds,
     },
   };
 }
