@@ -222,6 +222,74 @@ test('a rename-and-reparent in one save keeps the rename AND reports the move', 
   assert.deepEqual(diff.updates, [{ taskId: 'T', changes: { name: { value: 'New', base: 'Old' } } }]);
 });
 
+// ── REORDERS (LINA-404) ──────────────────────────────────────────────────────
+
+test('reordering existing siblings emits one reorder_children in target order', () => {
+  const prev = [node({ key: 'P', children: [
+    node({ key: 'A' }), node({ key: 'B' }), node({ key: 'C' }),
+  ] })];
+  const next = [node({ key: 'P', children: [
+    node({ key: 'C' }), node({ key: 'A' }), node({ key: 'B' }),
+  ] })];
+  const diff = diffPlanTrees(prev, next, counter());
+  assert.deepEqual(diff.reorders, [{ parentKey: 'P', orderedChildIds: ['C', 'A', 'B'] }]);
+  assert.equal(diff.updates.length, 0);
+  assert.equal(diff.movedKeys.length, 0); // same parent — a reorder, not a reparent
+  assert.ok(!isEmptyDiff(diff));
+});
+
+test('reordering top-level phases emits a reorder with parentKey null', () => {
+  const prev = [node({ key: 'P1' }), node({ key: 'P2' })];
+  const next = [node({ key: 'P2' }), node({ key: 'P1' })];
+  const diff = diffPlanTrees(prev, next, counter());
+  assert.deepEqual(diff.reorders, [{ parentKey: null, orderedChildIds: ['P2', 'P1'] }]);
+});
+
+test('unchanged sibling order emits no reorder', () => {
+  const prev = [node({ key: 'P', children: [node({ key: 'A' }), node({ key: 'B' })] })];
+  const next = [node({ key: 'P', children: [node({ key: 'A' }), node({ key: 'B' })] })];
+  const diff = diffPlanTrees(prev, next, counter());
+  assert.deepEqual(diff.reorders, []);
+  assert.ok(isEmptyDiff(diff));
+});
+
+test('inserting a new row mid-list reorders (a create appends, so order diverges)', () => {
+  const prev = [node({ key: 'P', children: [node({ key: 'A' }), node({ key: 'B' })] })];
+  const next = [node({ key: 'P', children: [
+    node({ key: 'A' }), node({ key: 'kNew', name: 'Fresh' }), node({ key: 'B' }),
+  ] })];
+  const diff = diffPlanTrees(prev, next, counter());
+  const mintedId = diff.idByKey['kNew'];
+  // create_rows would append the new row after B → [A,B,new]; the target is
+  // [A,new,B], so a reorder with the minted id in the middle is emitted.
+  assert.deepEqual(diff.reorders, [{ parentKey: 'P', orderedChildIds: ['A', mintedId, 'B'] }]);
+});
+
+test('appending a new row at the END does not reorder (create order already matches)', () => {
+  const prev = [node({ key: 'P', children: [node({ key: 'A' }), node({ key: 'B' })] })];
+  const next = [node({ key: 'P', children: [
+    node({ key: 'A' }), node({ key: 'B' }), node({ key: 'kNew', name: 'Fresh' }),
+  ] })];
+  const diff = diffPlanTrees(prev, next, counter());
+  assert.deepEqual(diff.reorders, []);
+});
+
+test('a wholly new plan emits no reorder (create_rows order IS the target)', () => {
+  const next = [node({ key: 'P', children: [node({ key: 'A' }), node({ key: 'B' })] })];
+  const diff = diffPlanTrees([], next, counter());
+  assert.deepEqual(diff.reorders, []);
+});
+
+test('deleting a sibling does not by itself reorder the survivors', () => {
+  const prev = [node({ key: 'P', children: [
+    node({ key: 'A' }), node({ key: 'B' }), node({ key: 'C' }),
+  ] })];
+  const next = [node({ key: 'P', children: [node({ key: 'A' }), node({ key: 'C' })] })];
+  const diff = diffPlanTrees(prev, next, counter());
+  assert.deepEqual(diff.deletes, ['B']);
+  assert.deepEqual(diff.reorders, []); // A before C in both — survivors keep their order
+});
+
 // ── COMBINED ─────────────────────────────────────────────────────────────────
 
 test('add + delete + update + link in one save each land in their own bucket', () => {

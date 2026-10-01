@@ -27,6 +27,7 @@ const diff = (over = {}) => ({
   updates: [],
   linkAdds: [],
   linkRemoves: [],
+  reorders: [],
   idByKey: {},
   movedKeys: [],
   ...over,
@@ -51,6 +52,29 @@ test('creates and deletes ride ONE schedule:apply — createOp first, delete_sub
   assert.deepEqual(plan.scheduleApply.operations[1], { op: 'delete_subtree', task_id: 'd1' });
   assert.deepEqual(plan.scheduleApply.operations[2], { op: 'delete_subtree', task_id: 'd2' });
   assert.equal(isEmptyPlan(plan), false);
+});
+
+test('reorders ride the apply batch LAST — after createOp and deletes', () => {
+  const createOp = { op: 'create_rows', rows: [{ id: 'r1', parent_id: 'P', name: 'New' }], links: [] };
+  const reorders = [{ parentKey: 'P', orderedChildIds: ['A', 'r1', 'B'] }];
+  const plan = planEditRequests(diff({ createOp, deletes: ['d1'], reorders }), [], minter(), 'ccid');
+  assert.equal(plan.scheduleApply.operations.length, 3);
+  assert.equal(plan.scheduleApply.operations[0], createOp);
+  assert.deepEqual(plan.scheduleApply.operations[1], { op: 'delete_subtree', task_id: 'd1' });
+  assert.deepEqual(plan.scheduleApply.operations[2], {
+    op: 'reorder_children', parent_id: 'P', ordered_child_ids: ['A', 'r1', 'B'],
+  });
+});
+
+test('a reorder alone produces a schedule:apply (parent_id null at the top level)', () => {
+  const plan = planEditRequests(
+    diff({ reorders: [{ parentKey: null, orderedChildIds: ['P2', 'P1'] }] }), [], minter(), 'ccid',
+  );
+  assert.ok(plan.scheduleApply);
+  assert.equal(isEmptyPlan(plan), false);
+  assert.deepEqual(plan.scheduleApply.operations[0], {
+    op: 'reorder_children', parent_id: null, ordered_child_ids: ['P2', 'P1'],
+  });
 });
 
 test('deletes alone still produce a schedule:apply (no create op)', () => {

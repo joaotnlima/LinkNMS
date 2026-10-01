@@ -385,6 +385,11 @@ export async function applySchedule({ viewer, store, projectId, body, idempotenc
           out.changed.push(...moved);
           break;
         }
+        case 'reorder_children': {
+          const moved = reorderChildren({ plan, op, viewer });
+          out.changed.push(...moved);
+          break;
+        }
         case 'delete_subtree': {
           const task = mustTask(plan, op.task_id);
           const ids = [op.task_id, ...descendantIds(plan.tasks, op.task_id)];
@@ -1701,6 +1706,61 @@ function moveSubtree({ plan, op, viewer }) {
     plan.tasks.set(id, next);
     changed.push(next);
   }
+  return changed;
+}
+
+/**
+ * Reorder a parent's children into an ABSOLUTE given order — the primitive the
+ * plan editor's drag-reorder (`reorderPhase`/`reorderTask`/`reorderSubtask`) saves
+ * through (LINA-404). Unlike `move_subtree`, which is RELATIVE ("after row X") and
+ * so breaks when several reordered rows anchor on each other mid-batch, this op
+ * takes the whole sibling set in its target order and lets the server assign fresh
+ * fractional keys in one shot — the position algorithm stays entirely server-side
+ * (doc 05 §2), the single source of truth, and the client never mints a key.
+ *
+ * `ordered_child_ids` MUST list every current child of `parent_id` exactly once:
+ * an absolute reorder of the whole set, never a partial/ambiguous reshuffle. The
+ * parent is `null` at the top level. Only position changes — no reparent, no date
+ * move — so the batch's propagation pass (`applySchedule`) no-ops on these seeds.
+ */
+function reorderChildren({ plan, op, viewer }) {
+  const parentId = op.parent_id ?? null;
+  if (parentId) {
+    const parent = plan.tasks.get(parentId);
+    if (!parent || parent.deletedAt) {
+      throw new ProblemError('validation_failed', null, { errors: { parent_id: 'not a row of this plan' } });
+    }
+  }
+  const ids = op.ordered_child_ids;
+  if (!Array.isArray(ids) || !ids.length) {
+    throw new ProblemError('validation_failed', null, { errors: { ordered_child_ids: 'a non-empty list' } });
+  }
+  const current = [...plan.tasks.values()]
+    .filter((t) => (t.parentId ?? null) === parentId && !t.deletedAt)
+    .map((t) => t.id);
+  const currentSet = new Set(current);
+  if (ids.length !== current.length || new Set(ids).size !== ids.length || ids.some((id) => !currentSet.has(id))) {
+    throw new ProblemError('validation_failed', null, {
+      errors: { ordered_child_ids: 'must list each current child of the parent exactly once' },
+    });
+  }
+  for (const id of ids) {
+    if (!inEditScope(world(plan), plan.tasks.get(id), viewer.orgId)) {
+      throw new ProblemError('out_of_scope', 'a row is outside your branch scope');
+    }
+  }
+  // Fresh, strictly-increasing keys in the requested order — a whole-set reassign,
+  // so no key can collide with a sibling we are not also repositioning.
+  const positions = keysBetween(null, null, ids.length);
+  const changed = [];
+  ids.forEach((id, i) => {
+    const t = plan.tasks.get(id);
+    if (t.position === positions[i]) return; // already correct — no write, no churn
+    plan.write.patchTask(id, { position: positions[i] });
+    const next = { ...t, position: positions[i] };
+    plan.tasks.set(id, next);
+    changed.push(next);
+  });
   return changed;
 }
 

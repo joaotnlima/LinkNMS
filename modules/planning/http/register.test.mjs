@@ -513,6 +513,34 @@ describe('planning over the /api/v2 router', () => {
       });
       assert.equal(res.status, 409);
     });
+
+    test('reorder_children reorders a sibling set by absolute order (LINA-404)', async () => {
+      // GC_ROOT's children seed as [TASK_A, TASK_B, SUB_ROOT] (positions ma<mb<mc).
+      const res = await dispatch('POST', `/projects/${PROJECT}/schedule:apply`, viewer(GC_ORG), {
+        operations: [{ op: 'reorder_children', parent_id: GC_ROOT, ordered_child_ids: [SUB_ROOT, TASK_A, TASK_B] }],
+      });
+      assert.equal(res.status, 200);
+      const order = [...store.state.tasks.values()]
+        .filter((t) => t.parentId === GC_ROOT && !t.deletedAt)
+        .sort((a, b) => (a.position < b.position ? -1 : 1))
+        .map((t) => t.id);
+      assert.deepEqual(order, [SUB_ROOT, TASK_A, TASK_B]);
+    });
+
+    test('reorder_children rejects a list that is not exactly the current children → 422', async () => {
+      const res = await dispatch('POST', `/projects/${PROJECT}/schedule:apply`, viewer(GC_ORG), {
+        operations: [{ op: 'reorder_children', parent_id: GC_ROOT, ordered_child_ids: [TASK_A, TASK_B] }],
+      });
+      assert.equal(res.status, 422); // SUB_ROOT missing — must list every child exactly once
+    });
+
+    test('reorder_children needs edit scope on every listed row → 403', async () => {
+      // SUB_ORG cannot reorder PRIME-branch rows (TASK_A/TASK_B) it does not own.
+      const res = await dispatch('POST', `/projects/${PROJECT}/schedule:apply`, viewer(SUB_ORG), {
+        operations: [{ op: 'reorder_children', parent_id: GC_ROOT, ordered_child_ids: [SUB_ROOT, TASK_A, TASK_B] }],
+      });
+      assert.equal(res.status, 403);
+    });
   });
 
   describe('getTask', () => {
