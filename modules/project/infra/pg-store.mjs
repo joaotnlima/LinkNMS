@@ -172,6 +172,26 @@ export function createProjectStore(pool) {
       return rows[0] ?? null;
     },
 
+    // The unauthenticated accept-deep-link preview (LINA-398, M6/D6). One join so
+    // a signed-out visitor holding only the token learns which build they were
+    // invited to, who invited them and in what capacity — and nothing else. The
+    // use case decides the anti-oracle 404 (unknown ⇄ spent ⇄ expired all look the
+    // same); this only reads. The token hash is already a bearer credential, so
+    // revealing the build name to its holder is no new disclosure.
+    async getInvitationPreviewByTokenHash(tokenHash) {
+      const { rows } = await pool.query(
+        `SELECT i.status, i.expires_at, i.capacity,
+                p.name       AS project_name,
+                o.legal_name AS invited_by_name
+           FROM project.project_invitation i
+           JOIN project.project       p ON p.id = i.project_id
+           JOIN identity.organization o ON o.id = i.invited_by_org_id
+          WHERE i.token_hash = $1`,
+        [tokenHash],
+      );
+      return rows[0] ?? null;
+    },
+
     async getCalendar(projectId) {
       const { rows } = await pool.query('SELECT * FROM project.calendar WHERE project_id = $1', [projectId]);
       if (!rows.length) return null;

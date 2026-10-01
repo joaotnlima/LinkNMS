@@ -21,11 +21,18 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path?: s
   const { path = [] } = await params;
 
   // Anonymous callers (`security: []` in the contract): the Clerk webhook
-  // (svix signature over the raw body) and the RFP personal link, whose token
-  // in the path IS the credential (gap S1) — the tendering handler hashes it,
-  // checks expiry/revocation, and never leaks whether it exists. Neither
-  // authenticates with a session, so both bypass the viewer resolution below.
-  const machineCaller = path[0] === 'webhooks' || path[0] === 'rfp-links';
+  // (svix signature over the raw body); the RFP personal link, whose token in
+  // the path IS the credential (gap S1); and the invitation-accept deep-link
+  // PREVIEW (LINA-398) — a GET on `/project-invitations/{token}`, whose token is
+  // likewise the credential and whose handler is anti-oracle. The invitation
+  // :accept POST is deliberately NOT anonymous: it still needs a verified
+  // session (ADR-0004), so it falls through to viewer resolution and a clean 401.
+  // Each handler hashes the token, checks expiry/revocation, and never leaks
+  // whether it exists.
+  const machineCaller =
+    path[0] === 'webhooks'
+    || path[0] === 'rfp-links'
+    || (req.method === 'GET' && path[0] === 'project-invitations');
 
   const viewer = machineCaller ? null : await viewerFromClerk();
   if (!viewer && !machineCaller) {

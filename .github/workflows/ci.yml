@@ -463,23 +463,30 @@ jobs:
         working-directory: app
         run: npm ci --ignore-scripts
 
-      # LINA-387 (Phase 12c): the v1 API is deleted. Only the retained auth +
-      # invitation slice may reference `/api/v1` or `@services` — everything else
-      # is on `/api/v2` / `@modules`. This gate fails the build if any NEW
-      # executable (non-comment) reference creeps back outside that whitelist, so
-      # v1 cannot silently return. Historical references in comments (migration
-      # notes explaining why v2 differs) are allowed on purpose.
-      - name: v1 deprecation gate (no /api/v1 or @services outside the retained slice)
+      # LINA-387 (Phase 12c) + LINA-398: the v1 API is deleted, and the invitation
+      # accept deep link now runs on /api/v2 (lib/v2/invitations.ts), so the whole
+      # invitation slice — the /api/v1/invitations routes, server/gateway.ts and the
+      # v1 transport in lib/api.ts — is gone. The ONLY remaining `@services`
+      # reference app/src is allowed to carry is `app/src/server/session.ts`: the
+      # live Clerk → identity.party mapping and the ADR-0008 seat gate still read
+      # the @services container (there is no /api/v1 here — it is the running auth
+      # substrate, not a v1 route). Migrating that last dependency onto @modules so
+      # this gate can be fully whitelist-free is tracked separately (LINA-401).
+      # Everything else is on `/api/v2` / `@modules`. This gate fails the build if
+      # any NEW executable (non-comment) reference creeps back outside that one
+      # line, so v1 cannot silently return. Historical references in comments
+      # (migration notes explaining why v2 differs) are allowed on purpose.
+      - name: v1 deprecation gate (no /api/v1 or @services outside the live auth bridge)
         run: |
           hits=$(grep -rnE "@services|/api/v1" app/src --include='*.ts' --include='*.tsx' \
-            | grep -vE 'app/src/app/api/v1/invitations/|app/src/server/session\.ts|app/src/server/gateway\.ts|app/src/lib/api\.ts' \
+            | grep -vE 'app/src/server/session\.ts' \
             | grep -vE ':[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
           if [ -n "$hits" ]; then
-            echo "::error::v1 API / @services referenced outside the retained auth+invitation slice (LINA-387 Phase 12c):"
+            echo "::error::v1 API / @services referenced outside the live Clerk auth bridge (server/session.ts) — LINA-387/398:"
             echo "$hits"
             exit 1
           fi
-          echo "v1 deprecation gate: clean — no executable v1 references outside the retained slice."
+          echo "v1 deprecation gate: clean — no executable v1 references outside server/session.ts."
 
       - name: Type-check
         working-directory: app

@@ -1202,6 +1202,35 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /project-invitations/{token}:
+    parameters:
+    - name: token
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      tags:
+      - Project
+      operationId: previewProjectInvitation
+      summary: Preview an invitation (unauthenticated accept deep link)
+      description: '**Clerk permission:** none (token-authenticated)
+
+
+        **Relationship (LinkNMS):** the invited recipient — the token in the path
+        IS the credential. Anti-oracle: an unknown, spent (accepted/revoked) or
+        expired token all return the IDENTICAL 404, so this cannot probe token
+        validity. Rate-limited.'
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPreview'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /project-invitations/{token}:accept:
     parameters:
     - name: token
@@ -1226,7 +1255,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Participant'
+                allOf:
+                - $ref: '#/components/schemas/Participant'
+                - type: object
+                  description: The joined project (project_id) is carried so the
+                    accept deep link can redirect straight into the record (LINA-398).
+                  required: [project_id]
+                  properties:
+                    project_id:
+                      type: string
+                      format: uuid
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -8037,6 +8075,26 @@ components:
         expires_at: &id004
           type: string
           format: date-time
+    InvitationPreview:
+      type: object
+      description: The unauthenticated accept-deep-link preview (LINA-398). Carries
+        only what a signed-out visitor holding the token may see — build name,
+        inviter and capacity — never the invited email or any third-party data.
+      required: [project_name, invited_by_name, capacity]
+      properties:
+        project_name:
+          type: string
+          nullable: true
+        invited_by_name:
+          type: string
+          nullable: true
+        capacity:
+          type: string
+          enum:
+          - design
+          - inspection
+          - safety
+          - other
     Calendar:
       type: object
       properties:
