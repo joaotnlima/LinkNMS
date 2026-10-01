@@ -55,9 +55,11 @@ import type { V2Link } from './planning-view';
 
 // ── The request shapes the I/O layer fires (one per endpoint) ─────────────────
 
-/** `POST /projects/{projectId}/schedule:apply` — creates + deletes in one batch. */
+/** `POST /projects/{projectId}/schedule:apply` — creates + deletes + reorders in
+ *  one batch. Ordered createOp → deletes → reorders, so a reorder names the FINAL
+ *  child set: created rows already exist, deleted rows are already gone. */
 export interface ScheduleApplyRequest {
-  operations: Array<V2CreateRowsOp | DeleteSubtreeOp>;
+  operations: Array<V2CreateRowsOp | DeleteSubtreeOp | ReorderChildrenOp>;
   client_change_id: string;
 }
 
@@ -65,6 +67,14 @@ export interface ScheduleApplyRequest {
 export interface DeleteSubtreeOp {
   op: 'delete_subtree';
   task_id: string;
+}
+
+/** A `reorder_children` op — the server reassigns the whole sibling set's position
+ *  keys to match `ordered_child_ids` (LINA-404). `parent_id` is null at the top. */
+export interface ReorderChildrenOp {
+  op: 'reorder_children';
+  parent_id: string | null;
+  ordered_child_ids: string[];
 }
 
 /** `PATCH /tasks/{taskId}` — the changed fields on one existing row. */
@@ -147,10 +157,15 @@ export function planEditRequests(
   mint: () => string,
   clientChangeId: string,
 ): PlanEditPlan {
-  // ── Structure: create_rows (if any) then a delete_subtree per removed root ────
-  const operations: Array<V2CreateRowsOp | DeleteSubtreeOp> = [];
+  // ── Structure: create_rows → delete_subtree per removed root → reorder_children
+  // per reordered parent. Reorders go LAST so they name the final child set (created
+  // rows exist, deleted rows are gone). ─────────────────────────────────────────
+  const operations: Array<V2CreateRowsOp | DeleteSubtreeOp | ReorderChildrenOp> = [];
   if (diff.createOp) operations.push(diff.createOp);
   for (const taskId of diff.deletes) operations.push({ op: 'delete_subtree', task_id: taskId });
+  for (const r of diff.reorders) {
+    operations.push({ op: 'reorder_children', parent_id: r.parentKey, ordered_child_ids: r.orderedChildIds });
+  }
   const scheduleApply: ScheduleApplyRequest | null = operations.length
     ? { operations, client_change_id: clientChangeId }
     : null;

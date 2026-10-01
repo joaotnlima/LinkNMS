@@ -8457,6 +8457,22 @@ components:
                 op:
                   type: string
                   enum:
+                  - reorder_children
+                parent_id:
+                  oneOf:
+                  - *id001
+                  - type: 'null'
+                ordered_child_ids:
+                  type: array
+                  items: *id001
+              required:
+              - op
+              - ordered_child_ids
+            - type: object
+              properties:
+                op:
+                  type: string
+                  enum:
                   - indent
                   - outdent
                 task_id: *id001

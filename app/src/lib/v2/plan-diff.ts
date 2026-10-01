@@ -93,6 +93,20 @@ export interface V2TaskUpdate {
   changes: V2TaskChanges;
 }
 
+/** One parent whose children must be reordered to an ABSOLUTE target order — the
+ *  editor's drag-reorder saved through the v2 `reorder_children` op (LINA-404).
+ *  `parentKey` is null at the top level (phases). `orderedChildIds` lists EVERY
+ *  child of that parent in the target order, already RESOLVED to v2 ids — an
+ *  existing child's key IS its v2 id; a child created THIS save is its minted id —
+ *  so the server sees real ids by the time the reorder op runs (it rides the same
+ *  batch, after `create_rows`). Emitted only when the target order differs from the
+ *  order the plan would otherwise have — a create appends to the end, so inserting
+ *  a row mid-list reorders too. */
+export interface V2ReorderChildren {
+  parentKey: string | null;
+  orderedChildIds: string[];
+}
+
 /** One edge removed from an existing successor — the caller resolves it to a
  *  link id (`DELETE /links/{id}`) from the plan's live links; we name the pair so
  *  the resolution is unambiguous and the anchors let it distinguish typed edges. */
@@ -123,6 +137,8 @@ export interface PlanDiff {
   linkAdds: V2CreateLinkSpec[];
   /** Edges removed from an EXISTING successor. */
   linkRemoves: V2LinkRemoval[];
+  /** Parents whose child order changed → one `reorder_children` op each. */
+  reorders: V2ReorderChildren[];
   /** New local key → minted v2 id, for the created rows (the LINA-307 refresh). */
   idByKey: Record<string, string>;
   /** Existing rows whose PARENT changed between prev and next — reported, not
@@ -334,6 +350,43 @@ export function diffPlanTrees(
     }
   }
 
+  // ── REORDERS: a parent whose child order changed → one absolute reorder op. The
+  // editor represents order by array position (no position key in the draft), so we
+  // compare the TARGET child order against the order the plan would otherwise have:
+  // existing children keep their prev order, a newly-created child is appended
+  // (create_rows adds it at the end). When they differ — a drag, or a row inserted
+  // mid-list — emit the whole sibling set in target order, resolved to v2 ids. A
+  // pure create at the end, or an all-new parent (its create order is already the
+  // target), emits nothing. See V2ReorderChildren. ───────────────────────────────
+  const resolve = (key: string): string => idByKey.get(key) ?? key;
+  const nextChildrenOf = new Map<string | null, string[]>();
+  for (const [key, { parentKey }] of nextFlat) {
+    const arr = nextChildrenOf.get(parentKey) ?? [];
+    arr.push(key);
+    nextChildrenOf.set(parentKey, arr);
+  }
+  const prevChildrenOf = new Map<string | null, string[]>();
+  for (const [key, { parentKey }] of prevFlat) {
+    const arr = prevChildrenOf.get(parentKey) ?? [];
+    arr.push(key);
+    prevChildrenOf.set(parentKey, arr);
+  }
+  const reorders: V2ReorderChildren[] = [];
+  for (const [parentKey, childKeys] of nextChildrenOf) {
+    if (childKeys.length < 2) continue; // nothing to order
+    const targetIds = childKeys.map(resolve);
+    // Natural order absent a reorder: existing children of THIS parent (still under
+    // it in next — a deleted or reparented-away row drops out) in their prev order,
+    // then the rows this save created under it, in create (next) order.
+    const stillUnderParent = (prevChildrenOf.get(parentKey) ?? [])
+      .filter((k) => nextFlat.get(k)?.parentKey === parentKey);
+    const createdHere = childKeys.filter((k) => !prevFlat.has(k));
+    const naturalIds = [...stillUnderParent, ...createdHere].map(resolve);
+    const same = targetIds.length === naturalIds.length
+      && targetIds.every((id, i) => id === naturalIds[i]);
+    if (!same) reorders.push({ parentKey, orderedChildIds: targetIds });
+  }
+
   const createOp: V2CreateRowsOp | null = createRows.length
     ? { op: 'create_rows', rows: createRows, links: createLinks }
     : null;
@@ -344,6 +397,7 @@ export function diffPlanTrees(
     updates,
     linkAdds,
     linkRemoves,
+    reorders,
     idByKey: Object.fromEntries(idByKey),
     movedKeys,
   };
@@ -358,6 +412,7 @@ export function isEmptyDiff(diff: PlanDiff): boolean {
     diff.updates.length === 0 &&
     diff.linkAdds.length === 0 &&
     diff.linkRemoves.length === 0 &&
+    diff.reorders.length === 0 &&
     diff.movedKeys.length === 0
   );
 }
