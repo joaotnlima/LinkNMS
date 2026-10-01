@@ -62,16 +62,29 @@ import type { GridDependencyType } from './planning-view';
 // endpoints consume — openapi `UpdateTaskRequest` / `CreateLinkRequest`. Restating
 // locally means a projection drift shows up as a type error here, not a 400.) ────
 
+/** One field's delta on the wire — the openapi `FieldChange` the `updateTask`
+ *  endpoint consumes (`modules/.../use-cases.mjs#applyDelta` reads `change.value`,
+ *  never a bare scalar). `base` is the value the client last saw; the server uses
+ *  it for last-writer-wins overwrite detection (D-26), reporting — never blocking —
+ *  when the live row drifted from `base` since the editor loaded it. A flat scalar
+ *  here is the LINA-404 regression: the server read `undefined.value → null` and
+ *  rejected every edit (e.g. `dating_mode: null` → `validation_failed`). */
+export interface V2FieldChange<T> {
+  value: T;
+  base: T;
+}
+
 /** The subset of `DELTA_FIELDS` (use-cases.mjs) the editor can change on an
  *  existing row. Dates carry `dating_mode` alongside so an undated→dated edit is
- *  stored as dated rather than inferred. Assignment is inherited, not diffed. */
+ *  stored as dated rather than inferred. Assignment is inherited, not diffed.
+ *  Every field is a `FieldChange` envelope, never a bare value — see above. */
 export interface V2TaskChanges {
-  name?: string;
-  description?: string | null;
-  specialty?: string | null;
-  dating_mode?: 'dated' | 'undated';
-  start?: string | null;
-  finish?: string | null;
+  name?: V2FieldChange<string>;
+  description?: V2FieldChange<string | null>;
+  specialty?: V2FieldChange<string | null>;
+  dating_mode?: V2FieldChange<'dated' | 'undated'>;
+  start?: V2FieldChange<string | null>;
+  finish?: V2FieldChange<string | null>;
 }
 
 /** One `PATCH /api/v2/tasks/{taskId}` — the changed fields on an existing row. */
@@ -167,27 +180,31 @@ function createSpec(node: AuthoredNode, parentId: string | null): V2CreateRowSpe
 export function diffFields(prev: AuthoredNode, next: AuthoredNode): V2TaskChanges | null {
   const changes: V2TaskChanges = {};
 
-  if (prev.name !== next.name) changes.name = next.name;
+  if (prev.name !== next.name) changes.name = { value: next.name, base: prev.name };
 
   const prevDesc = prev.description ?? null;
   const nextDesc = next.description ?? null;
-  if (prevDesc !== nextDesc) changes.description = nextDesc;
+  if (prevDesc !== nextDesc) changes.description = { value: nextDesc, base: prevDesc };
 
   const prevTrade = prev.trade ?? null;
   const nextTrade = next.trade ?? null;
-  if (prevTrade !== nextTrade) changes.specialty = nextTrade;
+  if (prevTrade !== nextTrade) changes.specialty = { value: nextTrade, base: prevTrade };
 
   const prevStart = prev.plannedStartDate ?? null;
   const nextStart = next.plannedStartDate ?? null;
   const prevFinish = prev.plannedEndDate ?? null;
   const nextFinish = next.plannedEndDate ?? null;
-  if (prevStart !== nextStart) changes.start = nextStart;
-  if (prevFinish !== nextFinish) changes.finish = nextFinish;
+  if (prevStart !== nextStart) changes.start = { value: nextStart, base: prevStart };
+  if (prevFinish !== nextFinish) changes.finish = { value: nextFinish, base: prevFinish };
   // The date's PRESENCE flipped → the row's dating mode changed with it. Send it
   // explicitly so an undated→dated edit is stored dated (and the reverse undated),
-  // never inferred from a null the server might read either way.
+  // never inferred from a null the server might read either way. `base` mirrors the
+  // prior presence so the server's overwrite check sees no drift on a clean edit.
   if ((prevStart === null) !== (nextStart === null)) {
-    changes.dating_mode = nextStart === null ? 'undated' : 'dated';
+    changes.dating_mode = {
+      value: nextStart === null ? 'undated' : 'dated',
+      base: prevStart === null ? 'undated' : 'dated',
+    };
   }
 
   return Object.keys(changes).length ? changes : null;
