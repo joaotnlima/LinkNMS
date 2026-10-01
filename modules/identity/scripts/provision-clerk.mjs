@@ -60,7 +60,20 @@ async function listAll(path) {
 const existingPerms = await listAll('/organization_permissions');
 const existingRoles = await listAll('/organization_roles');
 const permByKey = new Map(existingPerms.map((p) => [p.key, p]));
+const permKeyById = new Map(existingPerms.map((p) => [p.id, p.key]));
 const roleByKey = new Map(existingRoles.map((r) => [r.key, r]));
+
+// Clerk's built-in system permissions (`org:sys_*`) are not in our matrix and
+// must never be stripped. In particular the creator role (org:admin) is
+// REQUIRED to keep org:sys_memberships:read/manage and org:sys_profile:delete
+// or Clerk rejects the PATCH (422 organization_missing_creator_role_permissions).
+const sysPermIds = (role) => {
+  const existing = roleByKey.get(`org:${role}`);
+  if (!existing) return [];
+  return (existing.permissions ?? [])
+    .map((p) => (typeof p === 'string' ? p : p.id))
+    .filter((id) => (permKeyById.get(id) ?? '').startsWith('org:sys_'));
+};
 
 // 1. Permissions (§5 rows). Clerk keys them `org:<feature>:<action>` — ours already are.
 for (const permission of PERMISSIONS) {
@@ -76,39 +89,57 @@ for (const permission of PERMISSIONS) {
 }
 
 // 2. Roles (§4) with exactly the matrix's permissions.
+const skippedRoles = [];
 for (const role of ROLES) {
   const roleKey = `org:${role}`;
   const wanted = permissionsForRole(role);
-  const wantedIds = wanted.map((p) => permByKey.get(p)?.id).filter(Boolean);
+  // Union our matrix perms with the built-in system perms already on the role,
+  // so we add our catalogue without stripping Clerk's required creator perms.
+  const wantedIds = [...new Set([
+    ...wanted.map((p) => permByKey.get(p)?.id).filter(Boolean),
+    ...sysPermIds(role),
+  ])];
   const existing = roleByKey.get(roleKey);
 
   if (!existing) {
     log(`+ role ${roleKey} (${wanted.length} permissions)`);
     if (dryRun) continue;
-    await clerk('POST', '/organization_roles', {
-      name: role, key: roleKey, description: DESCRIPTIONS[role], permissions: wantedIds,
-    });
+    try {
+      await clerk('POST', '/organization_roles', {
+        name: role, key: roleKey, description: DESCRIPTIONS[role], permissions: wantedIds,
+      });
+    } catch (err) {
+      // Creating custom roles needs Clerk's B2B add-on (feature `org:roles`).
+      // Without it the API returns 402 unsupported_subscription_plan_features.
+      // Permissions and edits to built-in roles (admin/member) still apply, so
+      // skip-and-report rather than abort — re-run once the add-on is enabled.
+      if (/402|unsupported_subscription_plan_features|org:roles/.test(err.message)) {
+        log(`! role ${roleKey} SKIPPED — needs Clerk B2B add-on (feature org:roles)`);
+        skippedRoles.push(role);
+        continue;
+      }
+      throw err;
+    }
     continue;
   }
 
-  // An existing role is a Clerk BUILT-IN (org:admin, org:member). Its permission
-  // set includes Clerk's own system permissions (org:sys_*), and the creator role
-  // (org:admin) is REQUIRED to keep org:sys_memberships:* and org:sys_profile:delete
-  // — a PATCH that sends only our matrix ids drops them and Clerk rejects it 422
-  // (organization_missing_creator_role_permissions). So we UNION our permissions
-  // onto whatever the role already holds rather than replacing them.
   const currentIds = new Set((existing.permissions ?? []).map((p) => (typeof p === 'string' ? p : p.id)));
-  const missing = wantedIds.filter((id) => !currentIds.has(id));
-  if (missing.length === 0) { log(`= role ${roleKey}`); continue; }
-  const mergedIds = [...currentIds, ...missing];
-  log(`~ role ${roleKey} → +${missing.length} permissions (${mergedIds.length} total)`);
+  const same = wantedIds.length === currentIds.size && wantedIds.every((id) => currentIds.has(id));
+  if (same) { log(`= role ${roleKey}`); continue; }
+  log(`~ role ${roleKey} → ${wanted.length} matrix + ${wantedIds.length - wanted.length} system permissions`);
   if (dryRun) continue;
   await clerk('PATCH', `/organization_roles/${existing.id}`, {
-    name: role, key: roleKey, description: DESCRIPTIONS[role], permissions: mergedIds,
+    name: role, key: roleKey, description: DESCRIPTIONS[role], permissions: wantedIds,
   });
 }
 
-log(dryRun ? 'dry run — nothing written' : 'done');
+if (skippedRoles.length) {
+  log(`done — but ${skippedRoles.length} role(s) SKIPPED pending Clerk B2B add-on: ${skippedRoles.join(', ')}`);
+  log('  enable the add-on (custom org roles) on the instance, then re-run to finish.');
+  process.exitCode = 2;
+} else {
+  log(dryRun ? 'dry run — nothing written' : 'done');
+}
 
 function log(line) { console.log(line); }
 function fail(msg) { console.error(msg); process.exit(1); }
