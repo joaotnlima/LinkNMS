@@ -1301,3 +1301,18 @@ test('enforceParentRollup: pure — the input tree is never mutated', () => {
   enforceParentRollup(phases);
   assert.equal(JSON.stringify(phases), snapshot, 'input unchanged');
 });
+
+test('enforceParentRollup: the founder screenshot — 1.1 rolls out to cover 1.1.1', () => {
+  // The exact shape the founder flagged (LINA-404): task 1.1 ends 16 Oct while its
+  // sub-task 1.1.1 "test" ends 28 Oct and 1.1.2 "test2" ends 15 Oct. Rolling up on
+  // open must push 1.1's end to 28 Oct (the latest descendant), untouched start.
+  const phases = [P('p1', [
+    Twith('t1', '2026-10-09', '2026-10-16', [
+      T('s1', '2026-10-21', '2026-10-28'),   // 1.1.1 "test" — ends after 1.1
+      T('s2', '2026-10-08', '2026-10-15'),   // 1.1.2 "test2" — fits
+    ]),
+  ])];
+  const out = enforceParentRollup(phases);
+  assert.equal(out[0].tasks[0].end, '2026-10-28', '1.1 end rolled out to cover 1.1.1');
+  assert.equal(out[0].tasks[0].start, '2026-10-09', '1.1 start untouched');
+});
