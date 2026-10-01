@@ -41,25 +41,21 @@ If any of these can silently break, LinkNMS has no reason to exist:
 
 ## Live-data gate (graduated — LINA-64)
 
-The checker reads a JSON document. It now runs against **two** of them on every
-PR:
+The checker reads a JSON document.
+
+> **LINA-400 (Phase 12c tail):** the **live export** half of this gate retired
+> with the v1 service graph. The exporter (`services/gateway/export-live-record.mjs`),
+> the `gateway-integration` CI job that ran it, and the Decision / Change Order /
+> Ledger schemas it read back have all been removed — v1 has no mounted surface or
+> ledger left to export. The checker now runs against the **static fixture only**,
+> which remains valuable as a regression anchor for the invariant logic itself.
+> The v2 audit trail (`modules/record`) carries its own trust tests.
 
 - the **static fixture** — proves the checker catches tampering
-  (`quality-gate.yml`, via `run_gate.py`);
-- a **live export** — proves the *real system* upholds the invariants. The
-  `gateway-integration` job in `ci.yml` seeds the golden homeowner+GC build
-  through the mounted HTTP surface (LINA-56) over Postgres and reads it back,
-  then points the checker at the export **and** the fixture.
-
-The exporter is `services/gateway/export-live-record.mjs`. It drives the same
-composition-root handlers the Next routes call, so what the gate checks is the
-deployed path, not a rehearsal of it. Run it locally against a throwaway,
-already-migrated database:
+  (`quality-gate.yml`, via `run_gate.py`). Run it locally:
 
 ```bash
-cd services
-DATABASE_URL=postgres://…  node gateway/export-live-record.mjs /tmp/live.json
-python3 ../qa/checks/audit_budget_invariants.py /tmp/live.json
+python3 qa/checks/audit_budget_invariants.py qa/fixtures/r0_shared_record.json
 ```
 
 **Budget math is the load-bearing assertion.** The export's `expected` block is
