@@ -21,7 +21,7 @@
 import { cache } from 'react';
 import { auth, currentUser } from '@clerk/nextjs/server';
 
-import { getContainer } from '@services/gateway/container.mjs';
+import { getSeatStore, getPartyStore } from './seat-gate';
 import { failClosed } from './fail-closed';
 
 export interface Session {
@@ -108,10 +108,9 @@ async function resolveSessionState(): Promise<SessionState> {
   // registration on a trust product, which is precisely what 0004_identity.sql
   // was written to prevent. It is checked BEFORE findOrCreateByEmail so an
   // unseated visitor leaves no row behind.
-  const container = getContainer();
-  if (!(await container.seats.hasActiveSeat(email))) return { kind: 'unseated', email };
+  if (!(await getSeatStore().hasActiveSeat(email))) return { kind: 'unseated', email };
 
-  const party = await container.parties.findOrCreateByEmail({
+  const party = await getPartyStore().findOrCreateByEmail({
     email,
     displayName: user?.fullName ?? undefined,
   });
