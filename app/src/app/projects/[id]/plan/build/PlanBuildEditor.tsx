@@ -323,7 +323,16 @@ export function PlanBuildEditor({
 
   // Resume an existing draft, else scaffold from the resolved default. Both mint
   // fresh React keys, so this must run in a lazy initialiser, not every render.
-  const [phases, setPhases] = useState<PhaseDraft[]>(() => initialPhases ?? seed());
+  // A resumed draft is rolled up FIRST (LINA-404, founder's ask): a plan authored
+  // before the roll-up rule — or stored with a parent end behind a descendant's
+  // (e.g. a sub-task dated later than its parent task) — opens ALREADY consistent,
+  // so p1.1 covers its sub-tasks the moment the page loads, not only after the
+  // next edit. Pure + idempotent: a plan that already holds the invariant comes
+  // back the same ref, so a healthy draft is untouched (and the mount-heal below
+  // stays a no-op, never fabricating a save on open).
+  const [phases, setPhases] = useState<PhaseDraft[]>(
+    () => (initialPhases ? enforceParentRollup(initialPhases) : seed()),
+  );
   const [error, setError] = useState<string | null>(null);
 
   // ── Autosave (LINA-306) ─────────────────────────────────────────────────────
@@ -574,6 +583,24 @@ export function PlanBuildEditor({
   useEffect(() => () => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); void flushRef.current(); }
   }, []);
+
+  // Heal stored data once on open (LINA-404). If resuming rolled a parent's end
+  // out — its stored end was behind a descendant's (a plan authored before the
+  // rule, or a sub-task dated past its parent) — persist that correction so EVERY
+  // surface agrees: the read /plan view and record projection read the stored
+  // ends, not this editor's in-memory tree, so a display-only fix would leave
+  // them showing the stale parent end. `lastSavedWireRef` holds the STORED tree,
+  // so the write diffs against storage and sends just the moved end. Gated on a
+  // real change (rollup returns the same ref when already consistent), so a
+  // healthy plan never writes — no fabricated save, no spurious ledger entry.
+  const healedOnMount = useRef(false);
+  useEffect(() => {
+    if (healedOnMount.current) return;
+    healedOnMount.current = true;
+    if (!resuming || phasesRef.current === initialPhases) return;  // nothing to heal
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { flushRef.current(); }, 900);
+  }, [resuming, initialPhases]);
 
   // Adding a link snaps its dependent (`nodeKey`) and nothing else; removing one
   // moves nothing (a released stage keeps its last dates). Either way the rest of
