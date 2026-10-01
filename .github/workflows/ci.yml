@@ -330,32 +330,25 @@ jobs:
       # LINA-387 (Phase 12c) + LINA-398: the v1 API is deleted, and the invitation
       # accept deep link now runs on /api/v2 (lib/v2/invitations.ts), so the whole
       # invitation slice — the /api/v1/invitations routes, server/gateway.ts and the
-      # v1 transport in lib/api.ts — is gone. The ONLY remaining `@services`
-      # references app/src is allowed to carry are the live Clerk auth bridge:
-      # `app/src/server/session.ts` (the Clerk → identity.party mapping + the
-      # ADR-0008 seat gate) and `app/src/server/seat-gate.ts` (LINA-400), the slim
-      # seat-store/party-store pair session.ts now delegates to. LINA-400 split the
-      # two identity reads out of @services/gateway/container.mjs so getContainer()
-      # — which built the WHOLE v1 service graph — is no longer pulled in by the
-      # request path; those two files still read @services/identity + the shared
-      # @services/ledger/db.mjs pool helper (no /api/v1 — it is the running auth
-      # substrate, not a v1 route). Migrating that last dependency onto @modules so
-      # this gate can be fully whitelist-free is tracked separately (LINA-401).
-      # Everything else is on `/api/v2` / `@modules`. This gate fails the build if
-      # any NEW executable (non-comment) reference creeps back outside those two
-      # files, so v1 cannot silently return. Historical references in comments
-      # (migration notes explaining why v2 differs) are allowed on purpose.
-      - name: v1 deprecation gate (no /api/v1 or @services outside the live auth bridge)
+      # v1 transport in lib/api.ts — is gone. LINA-401 then migrated the last
+      # executable `@services` dependency — the Clerk auth bridge's seat gate +
+      # email→party reads (server/seat-gate.ts) — onto @modules/identity's
+      # auth-bridge, run over the shared v2 pool like every other v2 read. So
+      # there is NO `@services` or `/api/v1` import left anywhere in app/src and
+      # this gate runs WHITELIST-FREE: any executable (non-comment) reference that
+      # creeps back fails the build, so v1 cannot silently return. Historical
+      # references in comments (migration notes explaining why v2 differs) are
+      # allowed on purpose.
+      - name: v1 deprecation gate (no /api/v1 or @services anywhere in app/src)
         run: |
           hits=$(grep -rnE "@services|/api/v1" app/src --include='*.ts' --include='*.tsx' \
-            | grep -vE 'app/src/server/(session|seat-gate)\.ts' \
             | grep -vE ':[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
           if [ -n "$hits" ]; then
-            echo "::error::v1 API / @services referenced outside the live Clerk auth bridge (server/session.ts) — LINA-387/398:"
+            echo "::error::v1 API / @services referenced in app/src — the v2 surface must not import v1 (LINA-387/398/401):"
             echo "$hits"
             exit 1
           fi
-          echo "v1 deprecation gate: clean — no executable v1 references outside server/session.ts."
+          echo "v1 deprecation gate: clean — no executable v1 references in app/src."
 
       - name: Type-check
         working-directory: app
