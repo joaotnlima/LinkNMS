@@ -42,7 +42,7 @@ function fakeStore() {
     async getPersonByClerkId(id) { return id === 'user_me' ? { id: ME } : null; },
     async getProject(id) {
       return id === PROJECT
-        ? { id: PROJECT, owner_org_id: OWNER_ORG, created_by_org_id: OWNER_ORG }
+        ? { id: PROJECT, owner_org_id: OWNER_ORG, created_by_org_id: OWNER_ORG, name: 'Casa Silva' }
         : null;
     },
     async isParticipant(projectId, orgId) { return participants.has(`${projectId}:${orgId}`); },
@@ -54,8 +54,50 @@ function fakeStore() {
       const nextCursor = out.length > limit ? String(out[limit - 1].seq) : null;
       return { rows: out.slice(0, limit), nextCursor };
     },
+    // Whole ledger in chain order (seq ASC), each row still tagged `visible`.
+    async listAllEvents() { return rows.slice().sort((a, b) => Number(a.seq) - Number(b.seq)); },
     async verifyChain() { return { valid: true, length: 2, head: 'cc'.repeat(32), first_invalid_seq: null }; },
   };
+}
+
+// A documents module double: records what the export persisted so the test can
+// assert the bytes went to storage and the Document descriptor came back.
+function fakeDocuments() {
+  const storage = {
+    puts: [],
+    async put({ key, body, mime, sha256Hex }) {
+      this.puts.push({ key, body, mime, sha256Hex });
+      return { sizeBytes: Buffer.byteLength(body) };
+    },
+  };
+  const docs = new Map();
+  const versions = new Map();
+  const store = {
+    creates: [],
+    async createDocument(cmd) {
+      this.creates.push(cmd);
+      docs.set(cmd.id, {
+        id: cmd.id, scope_type: cmd.scopeType, scope_id: cmd.scopeId, kind: cmd.kind,
+        title: cmd.title, share_with_ancestors: cmd.shareWithAncestors, current_version: 0,
+        private_to_org_id: cmd.privateToOrgId ?? null,
+      });
+      versions.set(`${cmd.id}.1`, {
+        document_id: cmd.id, version_no: 1, mime: cmd.file.mime, size_bytes: cmd.file.size_bytes,
+        sha256: cmd.file.sha256, storage_key: cmd.storageKey,
+        uploaded_by_person_id: cmd.actor.personId, uploaded_by_org_id: cmd.actor.orgId,
+        uploaded_at: '2026-10-01T09:00:00Z',
+      });
+    },
+    async completeUpload({ documentId, versionNo }) {
+      const doc = { ...docs.get(documentId), current_version: versionNo };
+      docs.set(documentId, doc);
+      return { doc };
+    },
+    async listVersions(documentId, upTo) {
+      return [...versions.values()].filter((v) => v.document_id === documentId && v.version_no <= upTo);
+    },
+  };
+  return { store, storage };
 }
 
 const owner = (over = {}) => createViewerContext({
@@ -65,14 +107,15 @@ const owner = (over = {}) => createViewerContext({
 const stranger = () => owner({ orgId: STRANGER_ORG, clerkOrgId: 'org_x' });
 
 describe('record over the v2 router', () => {
-  let router, store;
+  let router, store, documents;
   const call = (method, path, { viewer = owner(), query = {} } = {}) =>
     router.dispatch({ method, path, viewer, query });
 
   beforeEach(() => {
     router = createRouter();
     store = fakeStore();
-    registerRecord(router, { store });
+    documents = fakeDocuments();
+    registerRecord(router, { store, documents });
   });
 
   describe('listRecord', () => {
@@ -128,6 +171,58 @@ describe('record over the v2 router', () => {
 
     test('404 for a non-participant', async () => {
       assert.equal((await call('POST', `/projects/${PROJECT}/record:verify`, { viewer: stranger() })).status, 404);
+    });
+  });
+
+  describe('exportRecord', () => {
+    test('202 → Document; bytes land in storage, document is private to the viewer org', async () => {
+      const res = await call('POST', `/projects/${PROJECT}/record:export`);
+      assert.equal(res.status, 202);
+      // The 202 body is the Document descriptor (completed version 1).
+      assert.equal(res.body.scope_type, 'project');
+      assert.equal(res.body.scope_id, PROJECT);
+      assert.equal(res.body.kind, 'other');
+      assert.equal(res.body.current_version, 1);
+      assert.equal(res.body.versions.length, 1);
+      assert.equal(res.body.versions[0].mime, 'application/json');
+
+      // Persisted through the documents module, private to the exporting org.
+      assert.equal(documents.store.creates.length, 1);
+      const create = documents.store.creates[0];
+      assert.equal(create.privateToOrgId, OWNER_ORG);
+      assert.equal(create.scopeType, 'project');
+
+      // The bytes went to R2 with a pinned sha256 that matches what was declared.
+      assert.equal(documents.storage.puts.length, 1);
+      const put = documents.storage.puts[0];
+      assert.equal(put.sha256Hex, create.file.sha256);
+      assert.equal(put.key, create.storageKey);
+
+      // The artefact is the self-proving projection: header + the whole ledger.
+      const artefact = JSON.parse(put.body.toString('utf8'));
+      assert.equal(artefact.export.project_id, PROJECT);
+      assert.deepEqual(artefact.export.verification, { valid: true, length: 2, head: 'cc'.repeat(32), first_invalid_seq: null });
+      assert.equal(artefact.entries.length, 2);
+      assert.equal(artefact.entries[0].seq, 1); // chain order
+    });
+
+    test('404 for a non-participant: the project is not theirs to export', async () => {
+      const res = await call('POST', `/projects/${PROJECT}/record:export`, { viewer: stranger() });
+      assert.equal(res.status, 404);
+      assert.equal(documents.store.creates.length, 0);
+      assert.equal(documents.storage.puts.length, 0);
+    });
+
+    test('403 (no active org) when the viewer has not picked an org', async () => {
+      const res = await call('POST', `/projects/${PROJECT}/record:export`, { viewer: owner({ orgId: null }) });
+      assert.equal(res.status, 403);
+    });
+
+    test('unstaffed non-manager cannot export (403); a staffed one can (202)', async () => {
+      const member = owner({ orgRole: 'member' });
+      assert.equal((await call('POST', `/projects/${PROJECT}/record:export`, { viewer: member })).status, 403);
+      store.staffed.add(`${PROJECT}:${OWNER_ORG}:${ME}`);
+      assert.equal((await call('POST', `/projects/${PROJECT}/record:export`, { viewer: member })).status, 202);
     });
   });
 });

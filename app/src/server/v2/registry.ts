@@ -107,8 +107,10 @@ export function getRouter() {
 
   // Phase 7 — Documents (versioned files on R2 behind presigned tickets,
   // sha256 proven in the ledger, downloads gated by V6 scope visibility).
+  // Shared with Record below, which persists its export artefact through it.
+  const documentsStore = createDocumentsStore(getPool());
   registerDocuments(router, {
-    store: createDocumentsStore(getPool()),
+    store: documentsStore,
     storage: objectStorage,
   });
 
@@ -125,12 +127,15 @@ export function getRouter() {
   // /billing/webhooks/{provider} answers 404 for every provider name.
   registerBilling(router, { store: createBillingStore(getPool()) });
 
-  // Record — the audit ledger, read side (LINA-359). Writers live in every
-  // producing module (they ledger inside their own transaction, invariant
-  // §6.4); this only projects (V7-redacted) and verifies the hash chain.
-  // `record:export` (a Document artefact) is a separate slice, tracked, not
-  // registered here.
-  registerRecord(router, { store: createRecordStore(getPool()) });
+  // Record — the audit ledger, read side (LINA-359/LINA-374). Writers live in
+  // every producing module (they ledger inside their own transaction, invariant
+  // §6.4); this projects (V7-redacted), verifies the hash chain, and exports a
+  // self-proving Document artefact. The export persists through the Documents
+  // module above (createDocument + the shared R2 bucket).
+  registerRecord(router, {
+    store: createRecordStore(getPool()),
+    documents: { store: documentsStore, storage: objectStorage },
+  });
 
   // Module registrations land phase by phase (AGENT-INDEX §5): directory …
 
