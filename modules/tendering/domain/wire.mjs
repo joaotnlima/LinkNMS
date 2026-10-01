@@ -66,6 +66,11 @@ export function recipientBody(row, { token } = {}) {
     status: row.status,
     sent_at: iso(row.sent_at),
     opened_at: iso(row.opened_at),
+    // Link lifecycle (gap S1, LINA-373), issuer-visible so the recipients list
+    // can show when a personal link lapses and whether it was rotated. A
+    // re-issue clears revoked_at and refreshes expires_at on the same row.
+    expires_at: iso(row.expires_at),
+    revoked_at: iso(row.revoked_at),
     // Response-only, once, to the issuer in the 201 — the notifications
     // module (email delivery) is a later phase; without the raw token the
     // personal link would be unreachable (same rationale as

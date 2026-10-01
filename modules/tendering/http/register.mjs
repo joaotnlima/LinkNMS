@@ -3,7 +3,7 @@
 // Phase 6 surface: the whole Tendering tag — RFP lifecycle, recipients,
 // clarifications, proposal lanes, comparison, award.
 import {
-  createRfp, getRfp, updateRfp, addRecipients, listRecipients, publishRfp,
+  createRfp, getRfp, updateRfp, addRecipients, listRecipients, reissueRecipientLink, publishRfp,
   addAddendum, closeRfp, cancelRfp, browseOpenRfps, listMyRfps,
   askClarification, answerClarification, listProposalLanes, getProposal,
   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
@@ -56,6 +56,13 @@ export function registerTendering(router, { store, storage, contractingAward }) 
 
   router.register('GET', '/rfps/{rfpId}/recipients', 'listRecipients', ({ viewer, params, query }) =>
     listRecipients({ viewer, store, rfpId: params.rfpId, query }));
+
+  // Rotate a recipient's leaked/forwarded personal link: mint a fresh token,
+  // kill the old (gap S1, LINA-373). Issuer-only; the token is in the response
+  // ONCE, never the path.
+  router.register('POST', '/rfps/{rfpId}/recipients/{recipientId}:reissue', 'reissueRecipientLink',
+    ({ viewer, params }) =>
+      reissueRecipientLink({ viewer, store, rfpId: params.rfpId, recipientId: params.recipientId }));
 
   router.register('POST', '/rfps/{rfpId}:publish', 'publishRfp', ({ viewer, params }) =>
     publishRfp({ viewer, store, rfpId: params.rfpId }));

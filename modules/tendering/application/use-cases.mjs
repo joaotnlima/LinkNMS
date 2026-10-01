@@ -460,6 +460,40 @@ export async function listRecipients({ viewer, store, rfpId, query }) {
   return { status: 200, body: { items: items.map((r) => recipientBody(r)), next_cursor: nextCursor } };
 }
 
+/**
+ * operationId: reissueRecipientLink — rotate a recipient's personal link (gap
+ * S1, LINA-373). A token can leak once it leaves our hands (a forwarded email,
+ * a screenshot, a logged page URL); until now there was no way to kill one. This
+ * mints a fresh token and invalidates the old in one step, so the issuer can
+ * re-send a clean link. Issuer-only, same gate as addRecipients. Refused on a
+ * cancelled/closed RFP (nothing left to bid on) and on a SPENT link (a submitted
+ * lane) — rotating a spent link would hand a second single-use submission.
+ */
+export async function reissueRecipientLink({ viewer, store, rfpId, recipientId }) {
+  const { rfp } = await requireIssuer({ viewer, store, rfpId });
+  if (!UUID.test(recipientId ?? '')) throw new ProblemError('not_found', 'no such recipient');
+  if (!['draft', 'published'].includes(rfp.status)) {
+    throw new ProblemError('invalid_transition', `cannot re-issue a link on a ${rfp.status} RFP`);
+  }
+  const rec = await store.getRecipient(rfpId, recipientId);
+  if (!rec) throw new ProblemError('not_found', 'no such recipient');
+  // Single-use is the invariant the public submit guards on (invited/draft ==
+  // open). A link whose lane has left those states is spent; rotating it would
+  // reopen a used submission, so refuse here with the same vocabulary the submit
+  // uses for a spent link.
+  if (!['invited', 'draft'].includes(rec.lane_status)) {
+    throw new ProblemError('invalid_transition', 'this recipient has already submitted — their link cannot be re-issued');
+  }
+  const actor = await requireActor(store, viewer);
+  const rotated = await store.reissueRecipientLink({
+    rfpId, recipientId, projectId: rfp.project_id, actor: actorOf(actor, viewer),
+  });
+  // Null means the lane raced to spent between the read and the rotate; answer
+  // the same refusal the pre-check would have.
+  if (!rotated) throw new ProblemError('invalid_transition', 'this recipient has already submitted — their link cannot be re-issued');
+  return { status: 200, body: recipientBody(rotated.recipient, { token: rotated.token }) };
+}
+
 /** operationId: publishRfp — human-only; one individual email per recipient. */
 export async function publishRfp({ viewer, store, rfpId }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId, humanOnly: 'publishing an RFP' });

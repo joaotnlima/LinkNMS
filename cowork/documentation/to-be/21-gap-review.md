@@ -22,7 +22,44 @@ At the end: the top 10 gaps ranked by risk.
 
 ## A. Security
 
-### S1 — Public-token lifecycle (RFP personal links, share links, project invitations) — **gap**
+### S1 — Public-token lifecycle (RFP personal links, share links, project invitations) — **mostly resolved** (LINA-373)
+
+> **Resolution — ADR-0025 (Architect, LINA-373).** The RFP personal-link lifecycle is now defined and
+> enforced; the remaining two bullets are handed to their rightful owners with recorded constraints.
+> The executable record lives in `db/v2/0007_tendering_public_link.sql` (columns + back-fill),
+> `modules/tendering` (enforcement, re-issue), the `/rfp-links/*` and `:reissue` specs in `openapi.yaml`,
+> and `app/next.config.mjs` (`Referrer-Policy`).
+>
+> **Shipped (LINA-322 + LINA-373):**
+> - `rfp_recipient.expires_at` + `revoked_at` (mig 0007); `findRecipientByToken` filters
+>   `revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`; hashed at rest (sha256);
+>   single-use (a spent lane refuses a second submit); **uniform 404** for unknown/expired/revoked
+>   (no existence oracle); narrow projection (package only, no issuer/other lanes).
+> - **Re-issue / revoke** (`POST /rfps/{rfpId}/recipients/{recipientId}:reissue`, LINA-373): mints a
+>   fresh token and overwrites the hash in place, so a leaked link dies on commit — the operator
+>   control the surface previously lacked. Refused on a spent lane (single-use preserved) and a
+>   cancelled/closed RFP. Audited as `tendering.rfp.link_reissued`.
+> - **`Referrer-Policy: no-referrer`** on `/rfp/:path*` (already `noindex,nofollow,nosnippet,noarchive`).
+>
+> **Decision on "token never in the URL path" (proposal bullets 2–3).** The intent is "a live bearer
+> token must not leak into logs/proxies/history/Referer." The v2 public RFP pages are **server
+> components** that dispatch `/rfp-links/{token}` **in-process** (`lib/v2/rfp-link.ts` →
+> `callInProcess`), so that API path is **never a wire URL or an access-log line** — the only
+> token-bearing URL a browser ever holds is the page route `/rfp/{token}`, which is the emailed link
+> itself. Against that single real surface, `noindex` + `no-referrer` + expiry + revoke + single-use +
+> hash-at-rest is the proportionate closure. A one-time cookie exchange that strips the token from the
+> page URL is the gold standard but is a live-surface FE cutover with real failure modes (multi-tab,
+> refresh, bookmarking) for marginal gain here; **deferred** unless a future surface puts a token on
+> the wire. The `{token}`-in-path API contract is retained as an internal dispatch key.
+>
+> **Deferred, with owners:**
+> - **Invitation accept token-in-body** (bullet 3) — project invitations are still on v1 (retained by
+>   LINA-387; the v2 `/project-invitations/{token}:accept` is specced but unimplemented). The
+>   token-in-body constraint is handed to **LINA-398** (v2 invitations), which owns the move. Same
+>   `no-referrer` posture applies to the invite-accept page when it lands on v2.
+> - **`share_link_access` logging** (bullet 4) — there is a `createShareLink` write but **no public
+>   share-link READ surface yet**, so there is nothing to log an access against. The access-log table
+>   ships with that read surface, not before. Tracked under the share-link read work (post-MVP).
 
 **Why it matters.** Three unauthenticated token surfaces exist and each is missing part of its
 lifecycle:

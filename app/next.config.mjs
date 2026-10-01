@@ -91,6 +91,28 @@ const nextConfig = {
   // single-use token in a query param (LINA-76, ADR-0007 §2); Clerk's flow never
   // puts a credential in a URL this app renders, so there is no token left to
   // leak in a Referer header.
+  //
+  // ── Public token surfaces: no-referrer (LINA-373, gap S1, ADR-0025) ──────────
+  // `/rfp/{token}` is the one page this app renders whose URL IS a live
+  // credential (the anonymous RFP personal link, LINA-322). It is already
+  // `noindex,nofollow,nosnippet,noarchive` (page metadata), but that governs
+  // crawlers, not the Referer header: any outbound navigation or sub-resource
+  // request from that page would otherwise ship the full URL — token and all —
+  // to a third party in `Referer`. `no-referrer` strips it. The default
+  // `strict-origin-when-cross-origin` is NOT enough: it still keeps the path
+  // (where the token lives) on same-origin requests. The API `/rfp-links/{token}`
+  // calls never reach the wire (the public pages are server components
+  // dispatching in-process — see lib/v2/rfp-link.ts), so the page route is the
+  // only token-bearing URL a browser ever holds, and this closes its one leak
+  // path.
+  async headers() {
+    return [
+      {
+        source: '/rfp/:path*',
+        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
