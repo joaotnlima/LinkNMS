@@ -28,8 +28,8 @@ import Link from 'next/link';
 
 import { ActionForm } from '@/components/ActionForm';
 import { acceptInviteAction } from '@/app/actions';
-import { isSignedIn, getInvitationPreview } from '@/lib/api';
-import { roleLabel } from '@/lib/format';
+import { isSignedIn } from '@/server/session';
+import { getInvitationPreview, capacityLabel } from '@/lib/v2/invitations';
 import { AcceptInviteAuth } from './AcceptInviteAuth';
 import '../../../build-wizard.css';
 
@@ -41,10 +41,11 @@ export default async function AcceptDeepLinkPage({ params }: { params: Promise<{
   const signedIn = await isSignedIn();
 
   // D6 — show what you're joining (LINA-198). The preview endpoint now exists
-  // (GET /invitations/:token, LINA-182), so the screen no longer has to be
-  // vague about the build. Unknown/spent tokens are a 404 and rate-limiting is a
-  // 429; either way we fall back to the generic copy rather than 500 the page —
-  // the accept POST below re-verifies the token regardless.
+  // (GET /api/v2/project-invitations/:token, LINA-398, succeeding the retired v1
+  // read), so the screen no longer has to be vague about the build. Unknown/spent
+  // tokens are a 404 and rate-limiting is a 429; either way we fall back to the
+  // generic copy rather than 500 the page — the accept POST below re-verifies the
+  // token regardless.
   const preview = await getInvitationPreview(token).catch(() => null);
   const buildName = preview?.projectName?.trim() || null;
   const ownerName = preview?.invitedByName?.trim() || null;
@@ -69,7 +70,7 @@ export default async function AcceptDeepLinkPage({ params }: { params: Promise<{
         </p>
 
         {/* D6 — what you're joining. Only rendered when the token previews; the
-            role is always known for a real invitation, name/owner may be null
+            capacity is always known for a real invitation, name/owner may be null
             while the store has no display name yet. */}
         {preview && (
           <dl className="bw-invite-preview">
@@ -88,9 +89,9 @@ export default async function AcceptDeepLinkPage({ params }: { params: Promise<{
             <div className="bw-invite-row">
               <dt>Your role</dt>
               <dd>
-                <span className={`tag ${preview.role}`}>
+                <span className={`tag ${preview.capacity}`}>
                   <span className="pd" />
-                  {roleLabel(preview.role)}
+                  {capacityLabel(preview.capacity)}
                 </span>
               </dd>
             </div>

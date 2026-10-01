@@ -15,15 +15,16 @@
 // on this one route. Without it Clerk wants path segments under the mount point,
 // which here would mean a catch-all route swallowing `[token]`.
 //
-// EMAIL PRE-FILL IS NOT WIRED, and that is a contract gap, not an omission. The
-// issue asks for the email to be pre-filled from the invitation; doing that needs
-// an UNAUTHENTICATED read of the invitation by token, and no such endpoint
-// exists — `identity.invitation` is only ever read inside `acceptInvitation`,
-// which requires a session. The alternative (putting the email in the link) would
-// put a personal address in every message and URL bar the link is pasted into, to
-// save one field. Flagged on LINA-179 for the Back-End/Architect; the screen is
-// written so that a future `initialValues={{ emailAddress }}` is a one-line
-// change here and nothing else.
+// EMAIL PRE-FILL IS NOT WIRED, and that is a deliberate scope line, not an
+// omission. An unauthenticated read of the invitation by token now EXISTS
+// (GET /api/v2/project-invitations/:token, LINA-398), but it deliberately returns
+// only build name, inviter and capacity — not the invited email — to keep a
+// personal address off a preview a bearer-token holder can fetch. Pre-fill would
+// need that field added back to the preview body; until the team decides to, the
+// alternative (putting the email in the link) stays rejected — it would put a
+// personal address in every message and URL bar the link is pasted into, to save
+// one field. The screen is written so a future `initialValues={{ emailAddress }}`
+// is a one-line change here once the preview carries the email.
 import { SignUp } from '@clerk/nextjs';
 
 import { clerkAppearance } from '@/components/clerkAppearance';

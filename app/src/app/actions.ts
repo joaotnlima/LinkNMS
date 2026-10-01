@@ -15,9 +15,9 @@ import { redirect } from 'next/navigation';
 
 import {
   ApiError, PlanLimitError, type PlanLimit,
-  acceptInvitation,
 } from '@/lib/api';
 import { createBuildDraftV2 } from '@/lib/v2/build';
+import { acceptInvitation } from '@/lib/v2/invitations';
 
 export interface FormState {
   error?: string;
@@ -51,9 +51,9 @@ const refusal = (err: unknown, fallback: string): FormState => ({
 // v1 tail — the FR1 `createProjectAction`, the operating-model step
 // (`setOperatingModelAction`) and the counterparty invite (`inviteAction`) — is
 // gone: operating-model is DROPPED and invite is DEFERRED to its own v2
-// participation slice, so no wizard write touches `/api/v1` any more. Only the
-// invitee side (`acceptInviteAction`, below) still reads v1 identity, and that is
-// a separate flow tracked under the Phase-12 v1 deprecation.
+// participation slice, so no wizard write touches `/api/v1` any more. The invitee
+// side (`acceptInviteAction`, below) is now on `/api/v2` too (LINA-398) — the v1
+// identity invitation slice is retired.
 
 /**
  * Wizard step 1 (M2/D2). Creates the build as a DRAFT and moves to step 2.

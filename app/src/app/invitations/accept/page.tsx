@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation';
 import { TopBar } from '@/components/chrome';
 import { ActionForm } from '@/components/ActionForm';
 import { acceptInviteAction } from '@/app/actions';
-import { isSignedIn } from '@/lib/api';
+import { isSignedIn } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
 

@@ -278,6 +278,36 @@ export async function inviteToProject({ viewer, store, projectId, body }) {
   return { status: 201, body: { ...invitationBody(invitation), token } };
 }
 
+/**
+ * operationId: previewProjectInvitation — the ONE unauthenticated read on the v2
+ * surface besides the RFP personal link (LINA-398, replacing the retired v1
+ * `GET /invitations/:token`). It powers the Band B accept deep link (M6/D6): a
+ * signed-out visitor holding only the token learns which build they were invited
+ * to, who invited them, and in what capacity, so the inline Clerk sign-up has
+ * context. There is deliberately NO viewer — the token IS the credential for
+ * this read; requiring a session would defeat the deep link, and acceptance
+ * below still re-verifies the session (ADR-0004).
+ *
+ * ANTI-ORACLE: an unknown token, an already-accepted (spent) token, a revoked
+ * one and an expired one all return the IDENTICAL `not_found` 404, so this
+ * endpoint cannot be used to probe whether an arbitrary string is a live token.
+ * Only a `pending`, unexpired invitation is ever revealed. (Transport-layer
+ * rate limiting is the route's concern — this handler carries no headers.)
+ */
+export async function previewProjectInvitation({ store, token }) {
+  const inv = await store.getInvitationPreviewByTokenHash(sha256(token ?? ''));
+  if (!inv || inv.status !== 'pending') throw new ProblemError('not_found');
+  if (new Date(inv.expires_at).getTime() < Date.now()) throw new ProblemError('not_found');
+  return {
+    status: 200,
+    body: {
+      project_name: inv.project_name ?? null,
+      invited_by_name: inv.invited_by_name ?? null,
+      capacity: inv.capacity,
+    },
+  };
+}
+
 /** operationId: acceptProjectInvitation */
 export async function acceptProjectInvitation({ viewer, store, token }) {
   requireActiveOrg(viewer);
@@ -294,7 +324,10 @@ export async function acceptProjectInvitation({ viewer, store, token }) {
     inviteCapacity: invitation.capacity,
     actor: actorOf(actor, viewer),
   });
-  return { status: 200, body: participantBody(participant) };
+  // `project_id` is carried alongside the participation so the accept deep link
+  // can redirect straight to the record (LINA-398); the participation row itself
+  // is keyed on (project, org, capacity) and does not echo it.
+  return { status: 200, body: { ...participantBody(participant), project_id: invitation.project_id } };
 }
 
 // ── Calendar & share links ───────────────────────────────────────────────
