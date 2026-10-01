@@ -62,12 +62,12 @@ test('deletes alone still produce a schedule:apply (no create op)', () => {
 
 test('each update becomes a PATCH carrying the shared client_change_id', () => {
   const updates = [
-    { taskId: 't1', changes: { name: 'Renamed' } },
-    { taskId: 't2', changes: { start: '2026-01-01', dating_mode: 'dated' } },
+    { taskId: 't1', changes: { name: { value: 'Renamed', base: 'Old' } } },
+    { taskId: 't2', changes: { start: { value: '2026-01-01', base: null }, dating_mode: { value: 'dated', base: 'undated' } } },
   ];
   const plan = planEditRequests(diff({ updates }), [], minter(), 'the-ccid');
   assert.equal(plan.patches.length, 2);
-  assert.deepEqual(plan.patches[0], { taskId: 't1', changes: { name: 'Renamed' }, client_change_id: 'the-ccid' });
+  assert.deepEqual(plan.patches[0], { taskId: 't1', changes: { name: { value: 'Renamed', base: 'Old' } }, client_change_id: 'the-ccid' });
   assert.equal(plan.patches[1].client_change_id, 'the-ccid');
 });
 

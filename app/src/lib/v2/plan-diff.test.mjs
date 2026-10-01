@@ -105,7 +105,7 @@ test('a rename on an existing row is one updateTask with only the changed field'
   const prev = [node({ key: 'T', name: 'Old' })];
   const next = [node({ key: 'T', name: 'New' })];
   const diff = diffPlanTrees(prev, next, counter());
-  assert.deepEqual(diff.updates, [{ taskId: 'T', changes: { name: 'New' } }]);
+  assert.deepEqual(diff.updates, [{ taskId: 'T', changes: { name: { value: 'New', base: 'Old' } } }]);
 });
 
 test('no change yields an empty diff (a debounce that fired on a selection)', () => {
@@ -119,25 +119,26 @@ test('setting a date on an undated row flips dating_mode to dated', () => {
   const prev = [node({ key: 'T', plannedStartDate: null, plannedEndDate: null })];
   const next = [node({ key: 'T', plannedStartDate: '2026-02-01', plannedEndDate: '2026-02-03' })];
   const c = diffFields(prev[0], next[0]);
-  assert.equal(c.start, '2026-02-01');
-  assert.equal(c.finish, '2026-02-03');
-  assert.equal(c.dating_mode, 'dated');
+  // FieldChange envelopes (openapi `FieldChange`): value + the base the client saw.
+  assert.deepEqual(c.start, { value: '2026-02-01', base: null });
+  assert.deepEqual(c.finish, { value: '2026-02-03', base: null });
+  assert.deepEqual(c.dating_mode, { value: 'dated', base: 'undated' });
 });
 
 test('clearing a date flips dating_mode to undated', () => {
   const prev = [node({ key: 'T', plannedStartDate: '2026-02-01' })];
   const next = [node({ key: 'T', plannedStartDate: null })];
   const c = diffFields(prev[0], next[0]);
-  assert.equal(c.start, null);
-  assert.equal(c.dating_mode, 'undated');
+  assert.deepEqual(c.start, { value: null, base: '2026-02-01' });
+  assert.deepEqual(c.dating_mode, { value: 'undated', base: 'dated' });
 });
 
 test('clearing specialty/description sends null, not omitted', () => {
   const prev = [node({ key: 'T', trade: 'Framing', description: 'x' })];
   const next = [node({ key: 'T', trade: null, description: null })];
   const c = diffFields(prev[0], next[0]);
-  assert.equal(c.specialty, null);
-  assert.equal(c.description, null);
+  assert.deepEqual(c.specialty, { value: null, base: 'Framing' });
+  assert.deepEqual(c.description, { value: null, base: 'x' });
 });
 
 test('assignment is never diffed (v2 inherits it from the branch contract)', () => {
@@ -218,7 +219,7 @@ test('a rename-and-reparent in one save keeps the rename AND reports the move', 
   const next = [node({ key: 'P1' }), node({ key: 'P2', children: [node({ key: 'T', name: 'New' })] })];
   const diff = diffPlanTrees(prev, next, counter());
   assert.deepEqual(diff.movedKeys, ['T']);
-  assert.deepEqual(diff.updates, [{ taskId: 'T', changes: { name: 'New' } }]);
+  assert.deepEqual(diff.updates, [{ taskId: 'T', changes: { name: { value: 'New', base: 'Old' } } }]);
 });
 
 // ── COMBINED ─────────────────────────────────────────────────────────────────
@@ -240,7 +241,7 @@ test('add + delete + update + link in one save each land in their own bucket', (
   assert.deepEqual(diff.deletes, ['T2']);
   assert.equal(diff.createOp.rows.length, 1);
   assert.equal(diff.createOp.rows[0].name, 'Added');
-  assert.deepEqual(diff.updates, [{ taskId: 'T1', changes: { name: 'Renamed' } }]);
+  assert.deepEqual(diff.updates, [{ taskId: 'T1', changes: { name: { value: 'Renamed', base: 'Keep' } } }]);
   // T1 (existing) now depends on kAdd (new) → linkAdd with the minted predecessor id.
   assert.equal(diff.linkAdds.length, 1);
   assert.equal(diff.linkAdds[0].successor_id, 'T1');
