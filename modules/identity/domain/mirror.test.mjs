@@ -78,6 +78,37 @@ test('membership events strip the org: prefix and check the role catalogue', () 
   });
 });
 
+test('free-tier invite: public_metadata.org_role upgrades the placeholder member role (LINA-402)', () => {
+  // Clerk free tier can only carry `member` on the membership; the finer role
+  // rides on the invitation metadata Clerk copies onto the membership on accept.
+  const base = { organization: { id: 'org_1' }, public_user_data: { user_id: 'user_1' } };
+  assert.deepEqual(
+    commandFor({ type: 'organizationMembership.created', data: { ...base, role: 'org:member', public_metadata: { org_role: 'site_lead' } } }),
+    { kind: 'upsert_membership', clerkOrgId: 'org_1', clerkUserId: 'user_1', orgRole: 'site_lead' },
+  );
+  // The `org:` prefix is tolerated on the metadata override too.
+  assert.equal(
+    commandFor({ type: 'organizationMembership.created', data: { ...base, role: 'org:member', public_metadata: { org_role: 'org:finance' } } }).orgRole,
+    'finance',
+  );
+  // A plain member invite (no override) stays a member.
+  assert.equal(
+    commandFor({ type: 'organizationMembership.created', data: { ...base, role: 'org:member' } }).orgRole,
+    'member',
+  );
+  // An explicit non-member Clerk role always wins — a later dashboard promotion
+  // to admin is never shadowed by stale invitation metadata.
+  assert.equal(
+    commandFor({ type: 'organizationMembership.updated', data: { ...base, role: 'org:admin', public_metadata: { org_role: 'site_lead' } } }).orgRole,
+    'admin',
+  );
+  // A garbage override is rejected, not silently downgraded to member.
+  assert.equal(
+    commandFor({ type: 'organizationMembership.created', data: { ...base, role: 'org:member', public_metadata: { org_role: 'cfo' } } }).kind,
+    'reject',
+  );
+});
+
 test('unknown or malformed events are ignored', () => {
   assert.equal(commandFor({ type: 'session.created', data: {} }).kind, 'ignore');
   assert.equal(commandFor({}).kind, 'ignore');
