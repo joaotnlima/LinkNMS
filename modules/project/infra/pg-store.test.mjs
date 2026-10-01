@@ -129,12 +129,22 @@ describe('project store over Postgres (v2 migrations)', { skip }, () => {
       capacity: 'inspection', tokenHash,
       expiresAt: new Date(Date.now() + 86400000).toISOString(), actor: ACTOR,
     });
+    // LINA-398 — the unauthenticated preview joins build + inviter before accept.
+    const preview = await store.getInvitationPreviewByTokenHash(tokenHash);
+    assert.equal(preview.status, 'pending');
+    assert.equal(preview.capacity, 'inspection');
+    assert.equal(preview.project_name, 'Inv');
+    assert.equal(preview.invited_by_name, 'Família Silva');
+    assert.equal(await store.getInvitationPreviewByTokenHash('deadbeef'), null);
+
     const participant = await store.acceptInvitation({
       invitationId: inv.id, projectId: id, orgId: GC_ORG, inviteCapacity: 'inspection', actor: ACTOR,
     });
     assert.equal(participant.capacity, 'consultant');
     assert.equal(participant.invite_capacity, 'inspection');
     assert.equal((await store.getInvitationByTokenHash(tokenHash)).status, 'accepted');
+    // Spent token: the preview now reads 'accepted', which the use case 404s.
+    assert.equal((await store.getInvitationPreviewByTokenHash(tokenHash)).status, 'accepted');
     await assert.rejects(() => store.acceptInvitation({
       invitationId: inv.id, projectId: id, orgId: GC_ORG, inviteCapacity: 'inspection', actor: ACTOR,
     }));

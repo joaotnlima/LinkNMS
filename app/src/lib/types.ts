@@ -42,16 +42,9 @@ export interface MeProfile {
   role: string;
 }
 
-// GET /invitations/:token — the unauthenticated preview behind the Band B
-// accept deep link (LINA-182). Returned to a signed-out visitor who holds only
-// the token; unknown and spent tokens are an indistinguishable 404.
-export interface InvitationPreview {
-  projectName: string | null;
-  invitedByName: string | null;
-  role: Role;
-  email: string | null;
-  status: 'pending';
-}
+// The accept-deep-link preview type moved to lib/v2/invitations.ts (LINA-398)
+// when the invitation flow was cut onto /api/v2: it now carries the v2
+// participation `capacity`, not the v1 `Role` this file-level `Role` type served.
 
 export interface Pillar {
   pillar: PillarKey;

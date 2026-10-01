@@ -4,7 +4,7 @@ import {
   createProject, listProjects, getProject, updateProject,
   claimProject, cancelProject, closeProject, getProjectOverview,
   listLocations, createLocation, updateLocation, deleteLocation,
-  listParticipants, inviteToProject, acceptProjectInvitation,
+  listParticipants, inviteToProject, previewProjectInvitation, acceptProjectInvitation,
   getCalendar, putCalendar, createShareLink,
 } from '../application/use-cases.mjs';
 import {
@@ -56,6 +56,14 @@ export function registerProject(router, { store, shareBaseUrl }) {
 
   router.register('POST', '/projects/{projectId}/invitations', 'inviteToProject', ({ viewer, params, body }) =>
     inviteToProject({ viewer, store, projectId: params.projectId, body }));
+
+  // Unauthenticated preview (security: [], LINA-398): the token in the path IS
+  // the credential, exactly like the RFP personal link. The /api/v2 edge lets a
+  // GET on this prefix through with a null viewer; the handler takes no viewer
+  // and the store read is anti-oracle. The :accept POST below still requires a
+  // session.
+  router.register('GET', '/project-invitations/{token}', 'previewProjectInvitation', ({ params }) =>
+    previewProjectInvitation({ store, token: params.token }));
 
   router.register('POST', '/project-invitations/{token}:accept', 'acceptProjectInvitation', ({ viewer, params }) =>
     acceptProjectInvitation({ viewer, store, token: params.token }));

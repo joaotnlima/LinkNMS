@@ -83,6 +83,17 @@ function fakeStore() {
     async getInvitationByTokenHash(hash) {
       return [...invitations.values()].find((i) => i.token_hash === hash) ?? null;
     },
+    async getInvitationPreviewByTokenHash(hash) {
+      const inv = [...invitations.values()].find((i) => i.token_hash === hash);
+      if (!inv) return null;
+      return {
+        status: inv.status,
+        expires_at: inv.expires_at,
+        capacity: inv.capacity,
+        project_name: projects.get(inv.project_id)?.name ?? 'Casa Verde',
+        invited_by_name: 'Dona Ana Lda',
+      };
+    },
     async getCalendar() { return state.calendar; },
     async listHolidays() { return [{ date: '2026-12-08', name: 'Imaculada Conceição' }]; },
 
@@ -330,17 +341,44 @@ describe('project over the v2 router', () => {
       assert.equal((await call('POST', `/projects/${PROJECT}/invitations`, { body: { email: 'x@y.pt', capacity: 'owner' } })).status, 422);
     });
 
-    test('accept: pending → participant; expired → 410; unknown token → 404', async () => {
+    test('accept: pending → participant + project_id; expired → 410; unknown token → 404', async () => {
       const sent = await call('POST', `/projects/${PROJECT}/invitations`, { body: { email: 'f@i.pt', capacity: 'inspection' } });
       const accepted = await call('POST', `/project-invitations/${sent.body.token}:accept`, { viewer: stranger() });
       assert.equal(accepted.status, 200);
       assert.equal(accepted.body.capacity, 'consultant');
       assert.equal(accepted.body.invite_capacity, 'inspection');
+      // LINA-398: accept carries project_id so the deep link can redirect in.
+      assert.equal(accepted.body.project_id, PROJECT);
 
       const sent2 = await call('POST', `/projects/${PROJECT}/invitations`, { body: { email: 'g@i.pt', capacity: 'other' } });
       [...store.invitations.values()].at(-1).expires_at = new Date(Date.now() - 1000).toISOString();
       assert.equal((await call('POST', `/project-invitations/${sent2.body.token}:accept`, { viewer: stranger() })).status, 410);
       assert.equal((await call('POST', '/project-invitations/deadbeef:accept', { viewer: stranger() })).status, 404);
+    });
+
+    test('preview: anonymous read returns build/inviter/capacity; spent & expired & unknown all 404 (anti-oracle)', async () => {
+      const sent = await call('POST', `/projects/${PROJECT}/invitations`, { body: { email: 'f@i.pt', capacity: 'inspection' } });
+
+      // No viewer: the token is the credential (security: []).
+      const preview = await call('GET', `/project-invitations/${sent.body.token}`, { viewer: null });
+      assert.equal(preview.status, 200);
+      assert.equal(preview.body.capacity, 'inspection');
+      assert.equal(preview.body.project_name, 'Casa da Maia');
+      assert.equal(preview.body.invited_by_name, 'Dona Ana Lda');
+      // Never leaks the invited email on the preview.
+      assert.equal(preview.body.email, undefined);
+
+      // Spent token → 404, indistinguishable from unknown.
+      await call('POST', `/project-invitations/${sent.body.token}:accept`, { viewer: stranger() });
+      assert.equal((await call('GET', `/project-invitations/${sent.body.token}`, { viewer: null })).status, 404);
+
+      // Expired → 404 (not 410, so it cannot be told apart from unknown).
+      const sent2 = await call('POST', `/projects/${PROJECT}/invitations`, { body: { email: 'g@i.pt', capacity: 'other' } });
+      [...store.invitations.values()].at(-1).expires_at = new Date(Date.now() - 1000).toISOString();
+      assert.equal((await call('GET', `/project-invitations/${sent2.body.token}`, { viewer: null })).status, 404);
+
+      // Unknown → 404.
+      assert.equal((await call('GET', '/project-invitations/deadbeef', { viewer: null })).status, 404);
     });
   });
 
