@@ -4,7 +4,7 @@
 // seated app. The founder's report ("i cannot logout") is that gap.
 //
 // It is a native <details> popover — the same server-friendly pattern the record
-// bottom-nav "More" menu uses (components/chrome.tsx) — so the shell stays a
+// bottom-nav "More" menu used before LINA-224 retired it — so the shell stays a
 // server component and only this leaf is a client island. The one thing that
 // genuinely needs the client is Clerk's `signOut()`: it ends the session
 // everywhere it is known, including the refresh token (see SignOutLink), which a

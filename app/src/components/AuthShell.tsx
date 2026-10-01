@@ -56,9 +56,16 @@ export type AuthShellProps = {
   promiseShort: string;
   /** The Clerk card, or the keyless-preview notice. */
   children: ReactNode;
+  /**
+   * Replaces the default legal line (LINA-225). The default names Clerk because
+   * the two doors hand the credential step to Clerk; the invitation-accept
+   * surface does not — the visitor is already signed in and is posting a code to
+   * our own action — so crediting Clerk there would be decoration, not a fact.
+   */
+  legal?: ReactNode;
 };
 
-export function AuthShell({ title, description, promise, promiseShort, children }: AuthShellProps) {
+export function AuthShell({ title, description, promise, promiseShort, children, legal }: AuthShellProps) {
   return (
     <main className="au">
       <aside className="au-brand">
@@ -118,7 +125,7 @@ export function AuthShell({ title, description, promise, promiseShort, children 
               worse than a legal line that does not pretend to be one. Flagged on
               LINA-191 — swap the spans for anchors the day the pages ship. */}
           <p className="au-legal">
-            By continuing you agree to the Terms and Privacy Policy. Secured by Clerk.
+            {legal ?? 'By continuing you agree to the Terms and Privacy Policy. Secured by Clerk.'}
           </p>
         </div>
       </section>
