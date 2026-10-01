@@ -152,6 +152,19 @@ describe('record store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(rows[0].type, 'contracting.change_order.approved');
   });
 
+  test('listAllEvents: whole ledger in chain order (seq ASC) with the same visibility', async () => {
+    const rows = await store.listAllEvents({ projectId: PROJECT, orgId: OWNER });
+    assert.deepEqual(rows.map((r) => Number(r.seq)), [1, 2, 3, 4]); // ASC, nothing dropped
+    const v = Object.fromEntries(rows.map((r) => [r.category, r.visible]));
+    // Identical projection to listEvents for the same org (OWNER).
+    assert.deepEqual(v, { project: true, contracting: true, planning: false, tendering: true });
+  });
+
+  test('listAllEvents: an empty project yields no rows', async () => {
+    const rows = await store.listAllEvents({ projectId: randomUUID(), orgId: OWNER });
+    assert.deepEqual(rows, []);
+  });
+
   test('verifyChain: valid over the untouched chain', async () => {
     const v = await store.verifyChain(PROJECT);
     assert.equal(v.valid, true);

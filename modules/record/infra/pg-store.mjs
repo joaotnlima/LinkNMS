@@ -20,6 +20,32 @@
 // project store so listRecord can enforce the same project.participant ∧
 // staffing conjunction without importing another module's store.
 
+// The V7 scope-visibility join and the projected column list, once. `$2` is
+// always the viewer's active org. Shared by the paged read (listEvents) and the
+// full-ledger scan the export projects (listAllEvents), so the two can never
+// disagree on what a viewer may see.
+const EVENT_COLUMNS = `ae.seq, ae.occurred_at, ae.category, ae.type,
+                ae.actor_person_id, ae.actor_org_id, ae.actor_org_role,
+                ae.object_type, ae.object_id, ae.payload,
+                encode(ae.entry_hash, 'hex') AS entry_hash,
+                encode(ae.prev_hash,  'hex') AS prev_hash`;
+
+const VISIBLE_CASE = `CASE ae.scope_type
+                  WHEN 'project'     THEN true
+                  WHEN 'org_private' THEN ae.scope_id = $2
+                  WHEN 'contract'    THEN EXISTS (
+                     SELECT 1 FROM contracting.contract c
+                      WHERE c.id = ae.scope_id
+                        AND $2 IN (c.client_org_id, c.supplier_org_id, c.sponsored_by_org_id))
+                  WHEN 'rfp_private' THEN (
+                     EXISTS (SELECT 1 FROM tendering.proposal p
+                               JOIN tendering.rfp r ON r.id = p.rfp_id
+                              WHERE p.id = ae.scope_id AND $2 IN (p.bidder_org_id, r.issuer_org_id))
+                     OR EXISTS (SELECT 1 FROM tendering.rfp r
+                                 WHERE r.id = ae.scope_id AND r.issuer_org_id = $2))
+                  ELSE false
+                END AS visible`;
+
 /** @param {import('pg').Pool} pool */
 export function createRecordStore(pool) {
   return {
@@ -68,26 +94,7 @@ export function createRecordStore(pool) {
       params.push(limit + 1); // fetch one extra to know whether a next page exists
 
       const { rows } = await pool.query(
-        `SELECT ae.seq, ae.occurred_at, ae.category, ae.type,
-                ae.actor_person_id, ae.actor_org_id, ae.actor_org_role,
-                ae.object_type, ae.object_id, ae.payload,
-                encode(ae.entry_hash, 'hex') AS entry_hash,
-                encode(ae.prev_hash,  'hex') AS prev_hash,
-                CASE ae.scope_type
-                  WHEN 'project'     THEN true
-                  WHEN 'org_private' THEN ae.scope_id = $2
-                  WHEN 'contract'    THEN EXISTS (
-                     SELECT 1 FROM contracting.contract c
-                      WHERE c.id = ae.scope_id
-                        AND $2 IN (c.client_org_id, c.supplier_org_id, c.sponsored_by_org_id))
-                  WHEN 'rfp_private' THEN (
-                     EXISTS (SELECT 1 FROM tendering.proposal p
-                               JOIN tendering.rfp r ON r.id = p.rfp_id
-                              WHERE p.id = ae.scope_id AND $2 IN (p.bidder_org_id, r.issuer_org_id))
-                     OR EXISTS (SELECT 1 FROM tendering.rfp r
-                                 WHERE r.id = ae.scope_id AND r.issuer_org_id = $2))
-                  ELSE false
-                END AS visible
+        `SELECT ${EVENT_COLUMNS}, ${VISIBLE_CASE}
            FROM record.audit_event ae
           WHERE ${where}
           ORDER BY ae.seq DESC
@@ -100,6 +107,24 @@ export function createRecordStore(pool) {
         nextCursor = String(rows[rows.length - 1].seq);
       }
       return { rows, nextCursor };
+    },
+
+    /**
+     * The WHOLE project ledger in chain order (seq ASC), each row carrying the
+     * same V7 `visible` flag as listEvents — the projection a record export
+     * serialises. Chain order so the exported entries read top-to-bottom like
+     * the hash chain the verification report proves.
+     *
+     * @returns {Promise<object[]>}
+     */
+    async listAllEvents({ projectId, orgId }) {
+      const { rows } = await pool.query(
+        `SELECT ${EVENT_COLUMNS}, ${VISIBLE_CASE}
+           FROM record.audit_event ae
+          WHERE ae.project_id = $1
+          ORDER BY ae.seq ASC`,
+        [projectId, orgId]);
+      return rows;
     },
 
     /**
