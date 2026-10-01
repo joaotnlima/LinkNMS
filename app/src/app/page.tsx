@@ -20,6 +20,7 @@
 // Clerk seat/setup gate below is unchanged: it is authentication, not a v1 domain
 // read, and stays until phase 12 retires v1.
 import { redirect } from 'next/navigation';
+import { auth } from '@clerk/nextjs/server';
 import { EmptyPortal } from '@/components/EmptyPortal';
 import { PortfolioList } from '@/components/PortfolioList';
 import type { PortalUser } from '@/components/PortalShell';
@@ -49,6 +50,23 @@ export default async function Home() {
   // of having the screen; it is idempotent (the setup write refuses a second
   // run) and terminates, because completing it flips the flag that got them here.
   if (!state.session.setupComplete) redirect('/onboarding/setup');
+
+  // ── THE FIFTH STATE: SET UP ON v1 BUT NO ACTIVE v2 ORG (LINA-365) ───────────
+  // The v2 write cutover (creation, plan authoring) resolves the acting org from
+  // the ACTIVE Clerk organisation (`server/v2/viewer.ts`); with none, every v2
+  // write is `forbidden` ("Not allowed") before it reads the form. A FRESH signup
+  // is fine — /onboarding/setup provisions AND `setActive`s an org on the way in.
+  // But a PRE-EXISTING account signs IN, is already `setupComplete`, and so was
+  // never routed through that screen: it has a v1 party but no v2 org, and lands
+  // here able to SEE an empty portfolio yet unable to create anything.
+  //
+  // Send it back through onboarding once to self-heal. That screen now activates
+  // an existing membership if there is one and only mints an org when there is
+  // none (idempotent, never a duplicate), then `setActive`s it — so the next
+  // render arrives with `orgId` set and falls through. Gated on `setupComplete`
+  // above, so this only ever fires for a real returning account, never mid-signup.
+  const { orgId: activeOrgId } = await auth();
+  if (!activeOrgId) redirect('/onboarding/setup');
 
   // Seated and set up: branch on the portfolio, now read from v2 (S1). Empty
   // renders the first-time screen inside the portal shell (LINA-216); non-empty
