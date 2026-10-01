@@ -146,6 +146,20 @@ function fakeStore() {
         token: `raw-token-${i}`,
       }));
     },
+    // REC1's lane is submitted (spent); REC2's is invited (open to rotate).
+    async getRecipient(rfpId, recipientId) {
+      if (rfpId !== RFP) return null;
+      if (recipientId === REC1) return { id: REC1, rfp_id: RFP, org_id: BIDDER_ORG, email: 'norte@canal.pt', lane_status: 'submitted' };
+      if (recipientId === REC2) return { id: REC2, rfp_id: RFP, org_id: BIDDER2_ORG, email: 'maia@hidro.pt', lane_status: 'invited' };
+      return null;
+    },
+    async reissueRecipientLink({ recipientId }) {
+      ledger.push('tendering.rfp.link_reissued');
+      return {
+        recipient: { id: recipientId, org_id: BIDDER2_ORG, email: 'maia@hidro.pt', status: 'queued', sent_at: null, opened_at: null, expires_at: FUTURE, revoked_at: null },
+        token: 'raw-token-reissued',
+      };
+    },
     async createRfp(cmd) {
       const row = baseRfp({
         id: cmd.id, issuer_org_id: cmd.issuerOrgId, level: cmd.level,
@@ -425,6 +439,37 @@ describe('tendering over the /api/v2 router', () => {
     test('listRecipients is issuer-only: a bidder → 404', async () => {
       const res = await dispatch('GET', `/rfps/${RFP}/recipients`, viewer(BIDDER_ORG));
       assert.equal(res.status, 404);
+    });
+
+    test('reissue rotates an open link: 200 with a fresh token ONCE, link_reissued logged', async () => {
+      const res = await dispatch('POST', `/rfps/${RFP}/recipients/${REC2}:reissue`, viewer(OWNER_ORG));
+      assert.equal(res.status, 200);
+      assert.equal(res.body.token, 'raw-token-reissued');
+      // revoked_at is cleared on a re-issue; iso(null) omits the field (not revoked).
+      assert.equal(res.body.revoked_at, undefined);
+      assert.ok(store.ledger.includes('tendering.rfp.link_reissued'));
+    });
+
+    test('reissue refuses a SPENT link (submitted lane) → 409, no rotation', async () => {
+      const res = await dispatch('POST', `/rfps/${RFP}/recipients/${REC1}:reissue`, viewer(OWNER_ORG));
+      assert.equal(res.status, 409);
+      assert.ok(!store.ledger.includes('tendering.rfp.link_reissued'));
+    });
+
+    test('reissue is issuer-only: a bidder → 404', async () => {
+      const res = await dispatch('POST', `/rfps/${RFP}/recipients/${REC2}:reissue`, viewer(BIDDER_ORG));
+      assert.equal(res.status, 404);
+    });
+
+    test('reissue of an unknown recipient → 404', async () => {
+      const res = await dispatch('POST', `/rfps/${RFP}/recipients/${STRANGER_ORG}:reissue`, viewer(OWNER_ORG));
+      assert.equal(res.status, 404);
+    });
+
+    test('reissue on a cancelled RFP → 409', async () => {
+      store.rfps.set(RFP, baseRfp({ status: 'cancelled' }));
+      const res = await dispatch('POST', `/rfps/${RFP}/recipients/${REC2}:reissue`, viewer(OWNER_ORG));
+      assert.equal(res.status, 409);
     });
   });
 

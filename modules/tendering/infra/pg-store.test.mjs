@@ -101,7 +101,7 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
   });
 
   const RFP = randomUUID();
-  let lane1, lane2, token1;
+  let lane1, lane2, token1, token2;
 
   test('createRfp snapshots the subtree with quantities and NO prices', async () => {
     const snapshot = await store.snapshotPackage(PROJECT, [ROOT_TASK]);
@@ -139,6 +139,7 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
     });
     assert.equal(created.length, 2);
     token1 = created[0].token;
+    token2 = created[1].token;
     assert.match(token1, /^[0-9a-f]{64}$/);
     const { rows } = await pool.query(
       'SELECT token_hash FROM tendering.rfp_recipient WHERE rfp_id = $1 ORDER BY email', [RFP],
@@ -200,6 +201,39 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
       'SELECT status FROM tendering.rfp_recipient WHERE id = $1', [lane1.recipient_id],
     );
     assert.equal(rec[0].status, 'proposal_submitted');
+  });
+
+  test('reissue (gap S1): rotating an OPEN link kills the old token and mints a new one', async () => {
+    // lane2 is still invited (open). Its original token resolves now …
+    assert.ok(await store.findRecipientByToken(token2), 'token2 live before re-issue');
+
+    const rotated = await store.reissueRecipientLink({
+      rfpId: RFP, recipientId: lane2.recipient_id, projectId: PROJECT, actor: ACTOR,
+    });
+    assert.ok(rotated, 'an open lane rotates');
+    assert.match(rotated.token, /^[0-9a-f]{64}$/);
+    assert.notEqual(rotated.token, token2);
+
+    // … and dies the instant the rotate commits (hash overwritten in place).
+    assert.equal(await store.findRecipientByToken(token2), null, 'old token dead');
+    const fresh = await store.findRecipientByToken(rotated.token);
+    assert.ok(fresh, 'new token live');
+    assert.equal(fresh.id, lane2.recipient_id);
+
+    // The rotation is in the project ledger.
+    const { rows } = await pool.query(
+      `SELECT type FROM record.audit_event WHERE project_id = $1 AND type = 'tendering.rfp.link_reissued'`,
+      [PROJECT],
+    );
+    assert.equal(rows.length, 1);
+  });
+
+  test('reissue (gap S1): a SPENT link cannot be rotated (single-use preserved)', async () => {
+    // lane1 already submitted → its link is spent; the store refuses to rotate it.
+    const rotated = await store.reissueRecipientLink({
+      rfpId: RFP, recipientId: lane1.recipient_id, projectId: PROJECT, actor: ACTOR,
+    });
+    assert.equal(rotated, null, 'a spent lane does not rotate');
   });
 
   test('V8 in SQL: a bidder reads ONLY its own lane; a stranger none', async () => {
