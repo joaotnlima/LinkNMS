@@ -306,7 +306,19 @@ source of `permission` moves from the token to our DB. `app/src/server/v2/viewer
 that changed. The `provision-clerk.mjs` script stays for dev parity but the live instance is **not**
 provisioned and needs no add-on.
 
-**Follow-up:** Clerk's free tier can only carry `admin` / `member` on an *invitation*. Assigning the
-finer catalogue roles (manager, representative, site_lead, finance, inspector) to invited members
-without the add-on requires our invite-accept flow to write the domain role to the mirror directly,
-rather than relying on the Clerk membership role. Tracked separately (see LINA-368 children).
+**Follow-up — RESOLVED (LINA-402):** Clerk's free tier can only carry `admin` / `member` on an
+*invitation*. The finer catalogue roles (manager, representative, site_lead, finance, inspector) now
+reach the mirror without the add-on via this contract:
+
+- An org invitation is created on Clerk with `role: 'org:member'` (free tier) **and**
+  `public_metadata: { org_role: '<catalogue role>' }`. Clerk copies an organization invitation's
+  `public_metadata` onto the resulting membership when the invite is accepted.
+- On the `organizationMembership.created` / `.updated` webhook, the mirror
+  (`modules/identity/domain/mirror.mjs`) reads `public_metadata.org_role` and writes it to
+  `identity.org_membership.org_role`. The override applies **only** when Clerk's own membership role is
+  the placeholder `member`; an explicit `org:admin` (or, on a provisioned dev instance, a finer Clerk
+  role) always wins, so a later dashboard role change is never shadowed by stale invitation metadata.
+  A `public_metadata.org_role` outside the §4 catalogue is rejected, not silently downgraded to member.
+- `viewer.ts` already prefers the mirror role over the session role (D-38), so no viewer change was
+  needed — the mirror simply receives the right role. `admin`/`member` invites need no metadata and are
+  unaffected.
