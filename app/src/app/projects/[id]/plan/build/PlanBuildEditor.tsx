@@ -52,6 +52,7 @@ import Link from 'next/link';
 import {
   DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
   addPhase, addSubtask, addTask, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, enforceLink, enforceParentRollup, nodeIndex,
+  nodeStatus,
   promoteNode,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
   reorderPhase, reorderSubtask, reorderTask,
@@ -59,14 +60,14 @@ import {
   setAssignee, setDependencyType, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
   setTaskDate, setTaskDates, setTaskDescription, setTrade,
   subtaskCount, taskCount, toggleDependency, toTemplateBody, toWire,
-  type AuthoredNode, type DepType, type PhaseDraft, type PlanNodeRef, type StageStatus, type TemplatePhase,
+  type AuthoredNode, type DepType, type PhaseDraft, type PlanNodeRef, type StageStatus, type TaskDraft, type TemplatePhase,
 } from '@/lib/plan-authoring';
 import { rekeyDraft, rekeyWire, draftKeys } from '@/lib/v2/plan-rekey';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 import { TaskWorkspace } from '@/components/TaskWorkspace';
 import { taskPath } from '@/lib/task-workspace';
-import { PlanGrid } from './PlanGrid';
+import { PlanGrid, StatusPicker } from './PlanGrid';
 import '@/components/plan-build.css';
 
 // ── "Scheduling links" (LINA-233; typed by ADR-0020 / LINA-253) ─────────────
@@ -216,6 +217,50 @@ function rowOfKey(
     }
   }
   return null;
+}
+
+/**
+ * Where a key sits in the status hierarchy (LINA-404 FIX 1): its ANCESTOR keys
+ * (phase first, then task), its descendant LEAF keys, whether it HAS children, and
+ * the node itself. Null when the key names nothing here. Used by the status
+ * cascade — marking a parent done fans out to its leaves, and reopening a leaf
+ * reopens its done ancestors.
+ */
+function locateStatusNode(
+  phases: PhaseDraft[], key: string,
+): { ancestors: string[]; descendantLeaves: string[]; hasChildren: boolean; node: PhaseDraft | TaskDraft } | null {
+  for (const phase of phases) {
+    if (phase.key === key) {
+      const leaves: string[] = [];
+      for (const t of phase.tasks) {
+        const kids = t.children ?? [];
+        if (kids.length) leaves.push(...kids.map((s) => s.key));
+        else leaves.push(t.key);
+      }
+      return { ancestors: [], descendantLeaves: leaves, hasChildren: phase.tasks.length > 0, node: phase };
+    }
+    for (const t of phase.tasks) {
+      if (t.key === key) {
+        const kids = t.children ?? [];
+        return { ancestors: [phase.key], descendantLeaves: kids.map((s) => s.key), hasChildren: kids.length > 0, node: t };
+      }
+      for (const s of t.children ?? []) {
+        if (s.key === key) {
+          return { ancestors: [phase.key, t.key], descendantLeaves: [], hasChildren: false, node: s };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** The status of a node by key — a phase/task derives nothing here (status is the
+ *  reported leaf value), so we read `.status` off a task/sub and treat a phase as
+ *  having none. Used only to decide whether a DONE ancestor needs reopening. */
+function statusOfKey(phases: PhaseDraft[], key: string): StageStatus | null {
+  const loc = locateStatusNode(phases, key);
+  if (!loc) return null;
+  return 'tasks' in loc.node ? (loc.node as PhaseDraft & { status?: StageStatus }).status ?? null : nodeStatus(loc.node as TaskDraft);
 }
 
 /**
@@ -391,6 +436,11 @@ export function PlanBuildEditor({
   const [openDeps, setOpenDeps] = useState<string | null>(null);
   const [serverCycle, setServerCycle] = useState<Array<{ key: string | null; name: string }>>([]);
 
+  // The "mark everything below done" confirm (LINA-404 FIX 1). Non-null while the
+  // modal is open; holds the parent/phase key and the descendant LEAF keys the
+  // cascade will each attribute a `done` progress report to.
+  const [cascade, setCascade] = useState<{ nodeKey: string; leafKeys: string[] } | null>(null);
+
   // ── The address bar follows the drawer (LINA-250, Jira behaviour) ──────────
   // Opening a SAVED task puts its permalink in the address bar, so the URL is
   // always the thing to share; closing puts the plan back. replaceState, not
@@ -541,6 +591,16 @@ export function PlanBuildEditor({
           phasesRef.current = rekeyed;
           setPhases(rekeyed);
           lastSavedWireRef.current = rekeyWire(stages, idByKey);
+          // A created row's key is now its stable v2 id — record id→id so its
+          // status is settable this session without a reload (LINA-404 FIX 1).
+          setStageIdByKey((prev) => {
+            const next = new Map(prev);
+            for (const localKey of Object.keys(idByKey)) {
+              const id = idByKey[localKey];
+              next.set(id, id);
+            }
+            return next;
+          });
         } else {
           // Nothing created — the tree we sent IS what the server now holds.
           lastSavedWireRef.current = stages;
@@ -663,19 +723,54 @@ export function PlanBuildEditor({
   // stageIdByKey. A node with no live id yet (never saved) is read-only in the
   // grid and never reaches here. On success we refresh so the server's derived
   // status — and every parent meter that rolls it up — re-reads.
-  const setStatus = useCallback(async (nodeKey: string, status: StageStatus) => {
+  // Post ONE append-only progress report, resolving the node key to its live v2
+  // id. Throws a typed refusal (role / no active org / out-of-scope) so the grid
+  // picker rolls back and shows it inline, as the v1 path surfaced PlanActionError.
+  const postProgress = useCallback(async (nodeKey: string, status: StageStatus) => {
     if (!reportProgressV2) return;
     const taskId = stageIdByKey.get(nodeKey) ?? nodeKey;
-    setError(null);
     const res = await reportProgressV2(taskId, status);
-    if (!res.ok) {
-      // A typed refusal (role / no active org / out-of-scope) — throw so the
-      // grid's picker rolls itself back to the last recorded status and shows the
-      // reason inline, exactly as the v1 path surfaced a PlanActionError.
-      throw new Error(res.message);
+    if (!res.ok) throw new Error(res.message);
+  }, [reportProgressV2, stageIdByKey]);
+
+  // Set a row's status (LINA-307 + LINA-404 FIX 1). A LEAF posts its own status;
+  // moving a leaf OFF done reopens any ancestor currently `done` to `in_progress`
+  // so the tree stays consistent (founder's ask). A PARENT/PHASE moving TO done
+  // opens the confirm modal — the cascade runs on confirm, so nothing is posted
+  // here (the grid's pickers are leaves and never reach that branch; it fires from
+  // the drawer's parent control). On success we refresh so derived meters re-read.
+  const setStatus = useCallback(async (nodeKey: string, status: StageStatus) => {
+    if (!reportProgressV2) return;
+    setError(null);
+    const loc = locateStatusNode(phasesRef.current, nodeKey);
+    if (status === 'done' && loc?.hasChildren) {
+      setCascade({ nodeKey, leafKeys: loc.descendantLeaves });
+      return;
+    }
+    await postProgress(nodeKey, status);
+    if (status !== 'done' && loc) {
+      for (const aKey of loc.ancestors) {
+        if (statusOfKey(phasesRef.current, aKey) === 'done') await postProgress(aKey, 'in_progress');
+      }
     }
     router.refresh();
-  }, [reportProgressV2, stageIdByKey, router]);
+  }, [reportProgressV2, postProgress, router]);
+
+  // Run the parent/phase "mark everything below done" cascade (LINA-404 FIX 1):
+  // the parent AND every descendant leaf each get their own attributed `done`
+  // progress row, so the audit trail stays honest. Append-only, one call per task.
+  const runCascadeDone = useCallback(async () => {
+    const c = cascade;
+    if (!c) return;
+    setCascade(null);
+    try {
+      await postProgress(c.nodeKey, 'done');
+      for (const leafKey of c.leafKeys) await postProgress(leafKey, 'done');
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not mark the sub-tasks done.');
+    }
+  }, [cascade, postProgress, router]);
 
   // Which leaf rows are settable: those the server holds a live id for. A Set so
   // the grid can test membership per row without re-deriving it.
@@ -945,15 +1040,56 @@ export function PlanBuildEditor({
               </div>
             </header>
 
-            {/* Status is DERIVED from reported progress, never authored (ADR-0019).
-                A draft has no progress, so it reads "Not started" until the plan is
-                live — shown read-only so nothing here can desync from the record. */}
-            <div className="pbx-drawer-status">
-              <span className="pbx-status-chip">Not started</span>
-              <span className="pbx-status-hint">
-                Progress is reported once the plan is live and agreed — you can’t set it while drafting.
-              </span>
-            </div>
+            {/* Status is an append-only, attributed progress report (LINA-307,
+                LINA-404 FIX 1). A LEAF gets a live picker; a PARENT/PHASE gets the
+                "mark everything below done" cascade (a confirm modal fans it out to
+                every sub-task). A never-saved row has no live id yet, so it stays a
+                read-only chip until the next autosave lands. The derived parent
+                METER stays honest (ADR-0019) — this sets leaf status, not the meter. */}
+            {(() => {
+              const statusKey = activeKey ?? null;
+              const settable = !!statusKey && statusSettableKeys.has(statusKey);
+              const isPhase = openRow.ti == null;
+              const isParent = isPhase
+                ? (activePhase?.tasks.length ?? 0) > 0
+                : (openRow.si == null && (active?.children ?? []).length > 0);
+              const isLeaf = !!active && !isParent;
+              return (
+                <div className="pbx-drawer-status">
+                  {settable && isParent ? (
+                    <>
+                      <button
+                        type="button" className="pbx-icon" style={{ width: 'auto', padding: '0 10px' }}
+                        title={`Report “done” for this ${isPhase ? 'phase' : 'task'} and every sub-task under it`}
+                        onClick={() => { void setStatus(statusKey!, 'done'); }}
+                      >Mark everything below done</button>
+                      <span className="pbx-status-hint">
+                        Marks this {isPhase ? 'phase' : 'task'} and each of its sub-tasks done — you’ll confirm first.
+                      </span>
+                    </>
+                  ) : settable && isLeaf ? (
+                    <>
+                      <StatusPicker
+                        key={`${statusKey}:${nodeStatus(active!)}`}
+                        nodeKey={statusKey!}
+                        value={nodeStatus(active!)}
+                        over={false}
+                        what={openRow.si != null ? 'Sub-task' : 'Task'}
+                        onSet={setStatus}
+                      />
+                      <span className="pbx-status-hint">Records one attributed progress report on the shared record.</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="pbx-status-chip">Not started</span>
+                      <span className="pbx-status-hint">
+                        Status can be reported once this row is saved to the plan.
+                      </span>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="pbx-drawer-meta">
               <span className="pbx-drawer-label">Owner</span>
@@ -1058,6 +1194,43 @@ export function PlanBuildEditor({
                 onClick={() => { setOpenRow(null); setOpenDeps(null); }}>Done</button>
             </div>
           </aside>
+        </div>
+      ) : null}
+
+      {/* The "mark everything below done" confirm (LINA-404 FIX 1). Self-contained
+          overlay (inline styles) so it never depends on drawer layout — a plain
+          centered dialog with a working-day-honest count of what it will mark. */}
+      {cascade ? (
+        <div
+          className="pbx-drawer-scrim" role="presentation"
+          onClick={() => setCascade(null)}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div
+            role="dialog" aria-modal="true" aria-label="Mark sub-tasks done"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--surface, #fff)', color: 'inherit', maxWidth: 440, width: '90%',
+              padding: '20px 22px', borderRadius: 12, boxShadow: '0 12px 48px rgba(0,0,0,.28)',
+            }}
+          >
+            <h2 className="pbx-drawer-title" style={{ marginTop: 0 }}>Mark the sub-tasks done too?</h2>
+            <p style={{ margin: '8px 0 18px' }}>
+              {cascade.leafKeys.length === 0
+                ? 'This reports this row as done.'
+                : `This reports done for this row and its ${cascade.leafKeys.length} `
+                  + `${cascade.leafKeys.length === 1 ? 'sub-task' : 'sub-tasks'} — each recorded as its own event.`}
+            </p>
+            <div className="pbx-drawer-actions">
+              <button
+                type="button" className="pbx-icon" style={{ width: 'auto', padding: '0 12px' }}
+                onClick={() => setCascade(null)}
+              >Cancel</button>
+              <button type="button" className="btn primary" onClick={() => { void runCascadeDone(); }}>
+                Mark all done
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </main>

@@ -89,6 +89,7 @@ function fakeStore() {
     events: [],
     changeIds: new Set(),
   };
+  // (progress lives outside withPlanTx, so it is intentionally not snapshotted)
 
   const snapshotState = () => structuredClone({
     tasks: [...state.tasks.entries()],
@@ -146,6 +147,17 @@ function fakeStore() {
     async loadPlan() { return loadPlan(); },
     async listFieldChanges(taskId) { return state.fieldChanges.filter((f) => f.taskId === taskId); },
     async listProgress(taskId) { return state.progress.filter((p) => p.taskId === taskId); },
+    async insertProgress({ taskId, status, percent, note, photoDocumentIds, actor }) {
+      const seq = state.progress.filter((p) => p.taskId === taskId).length + 1;
+      const report = {
+        taskId, seq, status, percent: percent ?? null, note: note ?? null,
+        photoDocumentIds: photoDocumentIds ?? [],
+        reportedByOrgId: actor.orgId, reportedByPersonId: actor.personId,
+        reportedAt: '2026-09-21T12:00:00Z',
+      };
+      state.progress.push(report);
+      return report;
+    },
     async listVariations() { return []; },
     async idempotent(meta, fn) { return fn(); },
     async withPlanTx(projectId, fn, { dryRun = false } = {}) {
@@ -565,6 +577,105 @@ describe('planning over the /api/v2 router', () => {
       assert.ok(res.body.undated_rows.some((r) => r.id === OWNER_ROW));
       assert.ok(res.body.uncosted_rows.every((r) => r.id !== TASK_A)); // TASK_A has cost lines
       assert.ok(res.body.unassigned_rows.some((r) => r.id === OWNER_ROW));
+    });
+  });
+
+  // ── LINA-404 FIX 2: assignable parties + create-path assignment ──────────────
+  describe('assignable parties + assignment (LINA-404)', () => {
+    test('listAssignableParties returns the viewer org + its direct suppliers, with names', async () => {
+      const res = await dispatch('GET', `/projects/${PROJECT}/assignable-parties`, viewer(GC_ORG));
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.body.parties.map((p) => p.id).sort(), [GC_ORG, SUB_ORG].sort());
+      assert.equal(res.body.parties.find((p) => p.id === SUB_ORG).name, 'Canalizações Norte');
+    });
+
+    test('the owner sees itself (role owner) + its direct supplier the GC', async () => {
+      const res = await dispatch('GET', `/projects/${PROJECT}/assignable-parties`, viewer(OWNER_ORG));
+      assert.deepEqual(res.body.parties.map((p) => p.id).sort(), [OWNER_ORG, GC_ORG].sort());
+      assert.equal(res.body.parties.find((p) => p.id === OWNER_ORG).role, 'owner');
+    });
+
+    test('a stranger gets 404, never the party list', async () => {
+      const res = await dispatch('GET', `/projects/${PROJECT}/assignable-parties`, viewer(STRANGER_ORG));
+      assert.equal(res.status, 404);
+    });
+
+    test('create_rows carries an explicit owner under the D-33 fence', async () => {
+      const id = uuid();
+      const res = await dispatch('POST', `/projects/${PROJECT}/schedule:apply`, viewer(GC_ORG), {
+        operations: [{ op: 'create_rows', rows: [
+          { id, parent_id: GC_ROOT, name: 'Subempreitada', assignee_org_id: SUB_ORG },
+        ], links: [] }],
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.created[0].assignee.org_id, SUB_ORG);
+      assert.equal(res.body.created[0].assignee.inherited, false);
+    });
+
+    test('create_rows with an out-of-scope owner → 422', async () => {
+      const res = await dispatch('POST', `/projects/${PROJECT}/schedule:apply`, viewer(GC_ORG), {
+        operations: [{ op: 'create_rows', rows: [
+          { id: uuid(), parent_id: GC_ROOT, name: 'x', assignee_org_id: STRANGER_ORG },
+        ], links: [] }],
+      });
+      assert.equal(res.status, 422);
+      assert.match(res.body.type, /validation_failed/);
+    });
+  });
+
+  // ── LINA-404 FIX 1: the server accepts the client-orchestrated status cascade ─
+  describe('status cascade support (LINA-404)', () => {
+    const prog = (org) => viewer(org, { perms: ['org:plan:edit', 'org:progress:report'] });
+
+    test('progress reports on a SUMMARY row and on its leaves, each attributed', async () => {
+      const sum = await dispatch('POST', `/tasks/${GC_ROOT}/progress`, prog(GC_ORG), { status: 'done' });
+      assert.equal(sum.status, 201);
+      const a = await dispatch('POST', `/tasks/${TASK_A}/progress`, prog(GC_ORG), { status: 'done' });
+      assert.equal(a.status, 201);
+      assert.equal(a.body.reported_by.org_id, GC_ORG);
+      const list = await dispatch('GET', `/tasks/${GC_ROOT}/progress`, prog(GC_ORG));
+      assert.equal(list.body.items.at(-1).status, 'done');
+    });
+
+    test('reopening a leaf to in_progress is a legal report (the reopen-ancestors call)', async () => {
+      const res = await dispatch('POST', `/tasks/${TASK_A}/progress`, prog(GC_ORG), { status: 'in_progress' });
+      assert.equal(res.status, 201);
+      assert.equal(res.body.status, 'in_progress');
+    });
+
+    test('progress needs the org:progress:report permission → 403', async () => {
+      const res = await dispatch('POST', `/tasks/${TASK_A}/progress`, viewer(GC_ORG, { perms: ['org:plan:edit'] }), { status: 'done' });
+      assert.equal(res.status, 403);
+    });
+
+    test('out-of-scope progress is refused (D-33) → 403', async () => {
+      const res = await dispatch('POST', `/tasks/${TASK_A}/progress`, prog(SUB_ORG), { status: 'done' });
+      assert.equal(res.status, 403);
+    });
+  });
+
+  // ── LINA-404 FIX 3: structural edits persist (reparent + date survival) ──────
+  describe('structural edits persist (LINA-404)', () => {
+    test('move_subtree reparents a dated row and the date survives the re-read', async () => {
+      const res = await dispatch('POST', `/projects/${PROJECT}/schedule:apply`, viewer(GC_ORG), {
+        operations: [{ op: 'move_subtree', task_id: TASK_B, new_parent_id: SUB_ROOT }],
+      });
+      assert.equal(res.status, 200);
+      const read = await dispatch('GET', `/projects/${PROJECT}/schedule`, viewer(GC_ORG));
+      const byId = Object.fromEntries(read.body.tasks.map((t) => [t.id, t]));
+      assert.equal(byId[TASK_B].parent_id, SUB_ROOT); // reparented
+      assert.equal(byId[TASK_B].start, '2026-09-24');  // date survived the move
+      assert.equal(byId[TASK_B].finish, '2026-09-25');
+      assert.equal(byId[SUB_ROOT].kind, 'summary');    // now has a child
+    });
+
+    test('a summary derives its dates from a reparented dated child', async () => {
+      await dispatch('POST', `/projects/${PROJECT}/schedule:apply`, viewer(GC_ORG), {
+        operations: [{ op: 'move_subtree', task_id: TASK_A, new_parent_id: SUB_ROOT }],
+      });
+      const read = await dispatch('GET', `/projects/${PROJECT}/schedule`, viewer(GC_ORG));
+      const byId = Object.fromEntries(read.body.tasks.map((t) => [t.id, t]));
+      assert.equal(byId[SUB_ROOT].start, '2026-09-21'); // earliest of its new child TASK_A
     });
   });
 });

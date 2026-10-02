@@ -141,11 +141,37 @@ test('clearing specialty/description sends null, not omitted', () => {
   assert.deepEqual(c.description, { value: null, base: 'x' });
 });
 
-test('assignment is never diffed (v2 inherits it from the branch contract)', () => {
+test('a changed owner emits an assignee_org_id field change (LINA-404 FIX 2)', () => {
   const prev = [node({ key: 'T', assigneePartyId: 'party-a' })];
   const next = [node({ key: 'T', assigneePartyId: 'party-b' })];
-  assert.equal(diffFields(prev[0], next[0]), null); // no assignee field in the delta
+  assert.deepEqual(diffFields(prev[0], next[0]), {
+    assignee_org_id: { value: 'party-b', base: 'party-a' },
+  });
+  const diff = diffPlanTrees(prev, next, counter());
+  assert.deepEqual(diff.updates, [{ taskId: 'T', changes: { assignee_org_id: { value: 'party-b', base: 'party-a' } } }]);
+});
+
+test('clearing an owner emits assignee_org_id null (fall back to inheritance)', () => {
+  const prev = [node({ key: 'T', assigneePartyId: 'party-a' })];
+  const next = [node({ key: 'T', assigneePartyId: null })];
+  assert.deepEqual(diffFields(prev[0], next[0]), {
+    assignee_org_id: { value: null, base: 'party-a' },
+  });
+});
+
+test('an unchanged (inherited) owner emits nothing', () => {
+  const prev = [node({ key: 'T', assigneePartyId: null })];
+  const next = [node({ key: 'T', assigneePartyId: null })];
+  assert.equal(diffFields(prev[0], next[0]), null);
   assert.ok(isEmptyDiff(diffPlanTrees(prev, next, counter())));
+});
+
+test('a brand-new row with an explicit owner carries assignee_org_id on its create spec', () => {
+  const prev = [node({ key: 'P' })];
+  const next = [node({ key: 'P', children: [node({ key: 'kNew', name: 'Fresh', assigneePartyId: 'party-x' })] })];
+  const diff = diffPlanTrees(prev, next, counter());
+  assert.equal(diff.createOp.rows.length, 1);
+  assert.equal(diff.createOp.rows[0].assignee_org_id, 'party-x');
 });
 
 // ── LINKS ──────────────────────────────────────────────────────────────────────
@@ -196,9 +222,9 @@ test('an edge whose predecessor was deleted this save is dropped, not sent dangl
   assert.equal(diff.linkAdds.length, 0);
 });
 
-// ── MOVES (the documented deferral) ─────────────────────────────────────────────
+// ── MOVES / REPARENTS (LINA-404 FIX 3 — now emitted as move_subtree) ─────────────
 
-test('a reparent is REPORTED in movedKeys, never emitted as an op', () => {
+test('a reparent is emitted as a move naming the new parent id, never recreated', () => {
   const prev = [
     node({ key: 'P1', children: [node({ key: 'T' })] }),
     node({ key: 'P2' }),
@@ -208,17 +234,37 @@ test('a reparent is REPORTED in movedKeys, never emitted as an op', () => {
     node({ key: 'P2', children: [node({ key: 'T' })] }), // T moved P1 → P2
   ];
   const diff = diffPlanTrees(prev, next, counter());
-  assert.deepEqual(diff.movedKeys, ['T']);
+  assert.deepEqual(diff.moves, [{ taskId: 'T', newParentId: 'P2' }]);
+  assert.deepEqual(diff.movedKeys, []); // retired — reparents are emitted now
   assert.equal(diff.createOp, null); // not recreated
   assert.equal(diff.deletes.length, 0); // not deleted
-  assert.ok(!isEmptyDiff(diff)); // a move is not a no-op
+  assert.ok(!isEmptyDiff(diff));
 });
 
-test('a rename-and-reparent in one save keeps the rename AND reports the move', () => {
+test('a demote to the top level (null parent) emits a move with newParentId null', () => {
+  const prev = [node({ key: 'P', children: [node({ key: 'T' })] })];
+  const next = [node({ key: 'P' }), node({ key: 'T' })]; // T lifted to top level
+  const diff = diffPlanTrees(prev, next, counter());
+  assert.deepEqual(diff.moves, [{ taskId: 'T', newParentId: null }]);
+});
+
+test('a reparent UNDER a row created this save names the parent by its minted id', () => {
+  const prev = [node({ key: 'P', children: [node({ key: 'T' })] })];
+  const next = [node({ key: 'P', children: [
+    node({ key: 'kNewParent', name: 'New' }),
+    // T reparented under the brand-new sibling
+  ] })];
+  next[0].children[0].children = [node({ key: 'T' })];
+  const diff = diffPlanTrees(prev, next, counter());
+  const mintedId = diff.idByKey['kNewParent'];
+  assert.deepEqual(diff.moves, [{ taskId: 'T', newParentId: mintedId }]);
+});
+
+test('a rename-and-reparent in one save keeps the rename AND emits the move', () => {
   const prev = [node({ key: 'P1', children: [node({ key: 'T', name: 'Old' })] }), node({ key: 'P2' })];
   const next = [node({ key: 'P1' }), node({ key: 'P2', children: [node({ key: 'T', name: 'New' })] })];
   const diff = diffPlanTrees(prev, next, counter());
-  assert.deepEqual(diff.movedKeys, ['T']);
+  assert.deepEqual(diff.moves, [{ taskId: 'T', newParentId: 'P2' }]);
   assert.deepEqual(diff.updates, [{ taskId: 'T', changes: { name: { value: 'New', base: 'Old' } } }]);
 });
 

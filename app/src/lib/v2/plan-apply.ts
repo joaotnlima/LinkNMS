@@ -34,12 +34,12 @@
 //     therefore refuses to be used as a replace: the caller only reaches it for
 //     the empty-plan authoring path.
 //
-//  3. ASSIGNMENT IS INHERITED, NOT STAMPED PER ROW. v1's `AuthoredNode` carries an
-//     `assigneePartyId`; v2 rows inherit the assignee from their branch contract
-//     (D-33, `buildRow` sets `assigneeInherited: true`), and a `create_rows` spec
-//     has no assignee field. So authorship-time per-row assignment is DROPPED
-//     here and moves to a separate `updateTask`/contracting flow — a deliberate
-//     departure from v1, documented so it is a choice and not a lost field.
+//  3. ASSIGNMENT INHERITS BY DEFAULT, BUT AN EXPLICIT OWNER IS CARRIED (LINA-404
+//     FIX 2). v2 rows inherit the assignee from their branch contract (D-33,
+//     `buildRow` defaults `assigneeInherited: true`). When the author sets an
+//     explicit owner on a row, the `create_rows` spec carries `assignee_org_id`
+//     and the server's `buildRow` stores it under the own-org-or-supplier fence;
+//     a row left to inherit sends no assignee field at all.
 //
 // The link-anchor mapping is the exact inverse of `planning-view.ts#toDependencyType`.
 
@@ -64,6 +64,10 @@ export interface V2CreateRowSpec {
   dating_mode?: 'dated' | 'undated';
   start?: string | null;
   finish?: string | null;
+  /** Explicit owner org on a brand-new row (LINA-404 FIX 2); omitted → the row
+   *  inherits from its branch (D-33). The server's buildRow honours it under the
+   *  own-org-or-supplier fence. */
+  assignee_org_id?: string | null;
 }
 
 /** One link spec inside a `create_rows` op. Ids reference rows of the batch. */
@@ -170,6 +174,7 @@ export function authoredToCreateBatch(
     if (node.description) spec.description = node.description;
     if (start !== undefined) spec.start = start;
     if (finish !== undefined) spec.finish = finish;
+    if (node.assigneePartyId) spec.assignee_org_id = node.assigneePartyId;
     rows.push(spec);
     if (node.dependsOn.length) {
       pendingLinks.push({ successorKey: node.key, deps: node.dependsOn as AuthoredDep[] });

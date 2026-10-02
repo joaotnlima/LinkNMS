@@ -1,7 +1,7 @@
 // Planning module on the /api/v2 router — route strings verbatim from
 // cowork/documentation/api/v2/openapi.yaml (greppable, AGENT-INDEX §7).
 import {
-  getSchedule, getTask, getScheduleHealth,
+  getSchedule, getTask, getScheduleHealth, listAssignableParties,
   createTask, updateTask, recordActual, previewMove, applySchedule,
   createLink, updateLink, deleteLink,
   listCostLines, createCostLine, updateCostLine, deleteCostLine,
@@ -20,6 +20,9 @@ export function registerPlanning(router, { store }) {
 
   router.register('GET', '/projects/{projectId}/schedule/health', 'getPlanHealth', ({ viewer, params, query }) =>
     getScheduleHealth({ viewer, store, projectId: params.projectId, query }));
+
+  router.register('GET', '/projects/{projectId}/assignable-parties', 'listAssignableParties', ({ viewer, params }) =>
+    listAssignableParties({ viewer, store, projectId: params.projectId }));
 
   router.register('POST', '/projects/{projectId}/tasks', 'createTask', ({ viewer, params, body, headers }) =>
     createTask({ viewer, store, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
