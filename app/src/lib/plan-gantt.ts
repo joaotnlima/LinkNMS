@@ -142,6 +142,24 @@ export function scheduleWindow(
   };
 }
 
+/**
+ * Extend a window's END so it spans at least `minPx` of canvas at `col` px/day
+ * (LINA-404). A compressed reading scale (Quarters, Years) would otherwise draw
+ * a short plan as a left-edge sliver with a near-empty axis — the founder's
+ * "click Years and suddenly there's no timeline". Jira-style, zooming OUT must
+ * fill the screen with MORE calendar, not shrink the plan to a dot: the bars
+ * stay where they are and empty labelled periods fill the rest of the width.
+ * Only trailing days are added, so `startDay` — and thus every bar's offset —
+ * is untouched. A no-op when the window already fills `minPx`, or when either
+ * input is degenerate (col/minPx ≤ 0, e.g. before the viewport is measured).
+ */
+export function fillWindow(win: GanttWindow, col: number, minPx: number): GanttWindow {
+  if (col <= 0 || minPx <= 0) return win;
+  const need = Math.ceil(minPx / col);
+  if (win.days >= need) return win;
+  return { startDay: win.startDay, endDay: addDays(win.startDay, need - 1), days: need };
+}
+
 // ── The time base (LINA-248 follow-up) ───────────────────────────────────────
 
 /**
