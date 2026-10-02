@@ -64,7 +64,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 
 import {
   addDays, applyDrag, barRect, baseWindow, clickDates, clipBarGeom, connectorMidpoint, connectorPath,
-  formatDay, parseDay,
+  formatDay, parseDay, scheduleWindow,
   type ConnectorEnd, type DragMode, type GanttWindow, type TimeBase,
 } from '@/lib/plan-gantt';
 import {
@@ -76,21 +76,28 @@ import { PendingChangeChip } from '@/components/SignOffPanel';
 import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 
 // Pixels per day column, per time base (LINA-248 follow-up): the base the
-// author picks is a READING scale, so a week spreads its 7 days wide while a
-// year compresses to a page-ish sweep. 'custom' is sized after the window is
+// author picks is a READING scale (ZOOM — px per day), nothing more. The
+// timeline WINDOW always spans the whole build (scheduleWindow), so a scale only
+// changes how tight the days read and you scroll/pan across the full plan at any
+// zoom (LINA-404: a house build "normally" runs ~3 years — you must be able to
+// travel through it). A week reads wide (56px/day), a year compresses to a
+// page-ish sweep (2px/day) so a multi-year build fits a screen-ful per pan.
+// 'auto' ("Fit") is NOT in this table — it is computed from the viewport width
+// so the entire window fits on screen. 'custom' is sized after the window is
 // known (fit ~1120px, clamped so a day is never ungrabbable-thin).
-const BASE_PX: Record<Exclude<TimeBase, 'custom'>, number> = {
-  auto: 30, week: 64, month: 30, quarter: 12, half: 6, year: 3,
+const BASE_PX: Record<'week' | 'month' | 'quarter' | 'half' | 'year', number> = {
+  week: 56, month: 16, quarter: 6, half: 4, year: 2,
 };
 /**
- * The floating timeline nav (LINA-306, pen "Timeline nav"): a compact segmented
- * pill pinned bottom-right of the canvas. It exposes the reading scales the pen
- * shows — Fit / Weeks / Months / Quarters — with a "Today" jump beside them. The
- * old full timeline <select> (6 months / year / custom range) is retired from
- * the chrome; those bases stay in the type but the nav keeps to the pen's four.
+ * The floating timeline nav (LINA-306; LINA-404): a compact segmented pill
+ * pinned bottom-right of the canvas. It exposes the reading scales — Fit / Weeks
+ * / Months / Quarters / Years — with a "Today" jump beside them. "Years" was
+ * added for multi-year builds: at that zoom a whole year reads in a screen-ful
+ * and you pan across the rest. Every scale keeps the SAME full-plan window; only
+ * px/day changes. 'half'/'custom' stay in the type for the (retired) range picker.
  */
-const NAV_BASES: Array<[Exclude<TimeBase, 'custom' | 'half' | 'year'>, string]> = [
-  ['auto', 'Fit'], ['week', 'Weeks'], ['month', 'Months'], ['quarter', 'Quarters'],
+const NAV_BASES: Array<[Exclude<TimeBase, 'custom' | 'half'>, string]> = [
+  ['auto', 'Fit'], ['week', 'Weeks'], ['month', 'Months'], ['quarter', 'Quarters'], ['year', 'Years'],
 ];
 
 /**
@@ -630,26 +637,41 @@ export function PlanGrid(props: PlanGridProps) {
     return out;
   }, [phases, collapsed, filterActive, nodePasses]);
 
-  // ── The time base (founder follow-up, 2026-09-11): the author picks the
-  // reading scale — fit / week / month / quarter / 6 months / year — or types
-  // the exact start–end window they want. Session-local view state only.
+  // ── The time base (founder follow-up, 2026-09-11; LINA-404): the author picks
+  // a reading ZOOM — Fit / Weeks / Months / Quarters / Years — or types an exact
+  // window ('custom'). Session-local view state only.
   const [base, setBase] = useState<TimeBase>('auto');
   const [customRange, setCustomRange] = useState<{ from: string; to: string }>({ from: '', to: '' });
 
-  // The window spans the picked base; 'auto' fits every dated stage, and an
-  // undated plan still gets a canvas anchored on today so a first bar can be
-  // clicked into being (LINA-248).
+  // The viewport width of the timeline scroller, tracked so "Fit" can size a day
+  // column to make the WHOLE window fit on screen. Re-measured on resize and when
+  // the table/canvas split moves. 0 until first measured (SSR + first paint).
+  const [viewportW, setViewportW] = useState(0);
+
+  // The timeline WINDOW always spans the whole build (LINA-404) — earliest dated
+  // day to latest, plus a trailing runway (scheduleWindow) — so a scale only
+  // changes the zoom, never what you can reach. An undated plan still gets a
+  // today-anchored canvas so a first bar can be clicked into being (LINA-248).
+  // 'custom' alone keeps an author-typed reading window.
   const win = useMemo(() => {
     const dated: Array<{ start: string; end: string }> = [];
     rows.forEach((r) => { if (r.kind === 'task') dated.push({ start: r.node.start, end: r.node.end }); });
-    return baseWindow(base, dated, todayIso, customRange);
+    if (base === 'custom') return baseWindow('custom', dated, todayIso, customRange);
+    return scheduleWindow(dated, todayIso);
   }, [rows, todayIso, base, customRange]);
 
-  // Day-column width follows the base; a custom window sizes itself to read at
-  // roughly one screen, never thinner than a grabbable 3px day.
+  // Day-column width = the zoom. 'auto' ("Fit") divides the viewport by the whole
+  // window so every day fits on screen (floored at a hair so a multi-year build
+  // genuinely fits — bars still render at a ≥2px min via barRect, so they stay
+  // visible as an overview; zoom in to Weeks/Months to grab them). Before the
+  // viewport is measured it falls back to Months-ish so the first paint is sane.
+  // A fixed scale reads at its BASE_PX; 'custom' fits ~one screen, never thinner
+  // than a grabbable 3px day.
   const col = base === 'custom'
     ? (win ? Math.max(3, Math.min(30, Math.floor(1120 / win.days))) : 30)
-    : BASE_PX[base];
+    : base === 'auto'
+      ? (win && viewportW > 0 ? Math.max(0.5, Math.min(40, viewportW / win.days)) : 16)
+      : BASE_PX[base];
 
   const onPickBase = useCallback((next: TimeBase) => {
     // Entering custom seeds the inputs with the window currently on screen, so
@@ -813,6 +835,19 @@ export function PlanGrid(props: PlanGridProps) {
       try { window.sessionStorage.setItem(SPLIT_KEY, String(split)); } catch { /* quota / private mode */ }
     }
   }, [split]);
+
+  // ── Track the timeline scroller's width (LINA-404) so "Fit" can size a day
+  // column to make the whole window fit. A ResizeObserver catches both window
+  // resizes and the table/canvas split moving (both change the scroller width).
+  useEffect(() => {
+    const sc = scrollRef.current;
+    if (!sc) return undefined;
+    setViewportW(sc.clientWidth);
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => setViewportW(sc.clientWidth));
+    ro.observe(sc);
+    return () => ro.disconnect();
+  }, []);
 
   // ── Horizontal wheel pans the timeline (LINA-259 ask 3). A horizontal swipe
   // anywhere over the grid — even over the pinned table — scrolls only the
@@ -1070,20 +1105,36 @@ export function PlanGrid(props: PlanGridProps) {
     props.onOpenRow(r.pi, r.kind === 'task' ? r.ti : undefined, r.kind === 'task' ? r.si : undefined);
   }, [props]);
 
-  // Wide day columns tick weekly ("Mar 9"); compressed bases (quarter and up)
-  // tick on month boundaries ("Mar", with the year on January) so the labels
-  // never pile onto each other.
+  // The axis ticks at a granularity that keeps labels ~>=56px apart at the
+  // current zoom (LINA-404), so a multi-year "Fit" never piles month labels onto
+  // each other: wide days tick weekly ("Mar 9"); ~2px+ tick monthly ("Mar", year
+  // on Jan); thinner than that tick quarterly ("Jan '27" etc.); a hair-thin
+  // multi-year sweep ticks yearly ("2027"). Spacing ≈ unit-days * col.
+  const axisGran: 'week' | 'month' | 'quarter' | 'year' =
+    col >= 20 ? 'week'
+      : col >= 2.5 ? 'month'
+        : col >= 0.8 ? 'quarter'
+          : 'year';
   const axis = win ? Array.from({ length: win.days }, (_, i) => {
     const iso = addDays(win.startDay, i);
     let tick: boolean;
     let label = '';
-    if (col >= 20) {
+    if (axisGran === 'week') {
       tick = weekday(iso) === 0 || i === 0;
       if (tick) label = dayLabel(iso);
     } else {
       const [y, m, d] = iso.split('-').map(Number);
-      tick = d === 1 || i === 0;
-      if (tick) label = m === 1 || i === 0 ? `${MONTHS[m - 1]} '${String(y).slice(2)}` : MONTHS[m - 1];
+      const yrShort = `'${String(y).slice(2)}`;
+      if (axisGran === 'month') {
+        tick = d === 1 || i === 0;
+        if (tick) label = m === 1 || i === 0 ? `${MONTHS[m - 1]} ${yrShort}` : MONTHS[m - 1];
+      } else if (axisGran === 'quarter') {
+        tick = (d === 1 && (m - 1) % 3 === 0) || i === 0;
+        if (tick) label = m === 1 || i === 0 ? `${MONTHS[m - 1]} ${yrShort}` : MONTHS[m - 1];
+      } else {
+        tick = (d === 1 && m === 1) || i === 0;
+        if (tick) label = String(y);
+      }
     }
     return { i, iso, tick, label };
   }) : [];
