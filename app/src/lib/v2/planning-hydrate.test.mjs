@@ -123,13 +123,23 @@ test('a dep pointing past the depth-3 cap is dropped', () => {
   assert.deepEqual(sub.dependsOn, []);
 });
 
-test('status meter is honest: carried on a baselined plan, absent on a draft', () => {
+test('reported status round-trips on a draft as well as a baselined plan (LINA-404)', () => {
   const rows = [row({ id: 'p1', children: [row({ id: 't1', status: 'in_progress' })] })];
+  // A status the owner reported survives the read on a DRAFT plan now — it used to
+  // be dropped unless baselined ("status not recorded", the founder's reopen).
   const draftTask = planGridToDraft(view({ rows, isBaselined: false }))[0].tasks[0];
-  assert.equal('status' in draftTask, false); // draft → all-grey, no status carried
+  assert.equal(draftTask.status, 'in_progress');
 
   const liveTask = planGridToDraft(view({ rows, isBaselined: true }))[0].tasks[0];
-  assert.equal(liveTask.status, 'in_progress'); // baselined → the real derived status shows
+  assert.equal(liveTask.status, 'in_progress');
+});
+
+test('an unreported row stays status-less so the meter is all-grey by default (ADR-0019)', () => {
+  // The honest default holds: a row the server reports as `not_started` carries no
+  // status, so a fresh/untouched plan still reads all-grey.
+  const rows = [row({ id: 'p1', children: [row({ id: 't1', status: 'not_started' })] })];
+  const draftTask = planGridToDraft(view({ rows, isBaselined: false }))[0].tasks[0];
+  assert.equal('status' in draftTask, false);
 });
 
 test('an empty plan hydrates to an empty draft (the fail-closed / no-plan state)', () => {
