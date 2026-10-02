@@ -64,7 +64,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 
 import {
   addDays, applyDrag, barRect, baseWindow, clickDates, clipBarGeom, connectorMidpoint, connectorPath,
-  formatDay, parseDay, scheduleWindow,
+  fillWindow, formatDay, parseDay, scheduleWindow,
   type ConnectorEnd, type DragMode, type GanttWindow, type TimeBase,
 } from '@/lib/plan-gantt';
 import {
@@ -653,7 +653,11 @@ export function PlanGrid(props: PlanGridProps) {
   // changes the zoom, never what you can reach. An undated plan still gets a
   // today-anchored canvas so a first bar can be clicked into being (LINA-248).
   // 'custom' alone keeps an author-typed reading window.
-  const win = useMemo(() => {
+  // The REAL plan envelope (earliest dated day → latest + runway), independent of
+  // the reading scale. 'auto' ("Fit") sizes its day column from THIS so the whole
+  // plan — and only the plan — fits the screen; the rendered `win` below may be
+  // wider (it fills the viewport), which must not feed back into the Fit zoom.
+  const planWin = useMemo(() => {
     const dated: Array<{ start: string; end: string }> = [];
     rows.forEach((r) => { if (r.kind === 'task') dated.push({ start: r.node.start, end: r.node.end }); });
     if (base === 'custom') return baseWindow('custom', dated, todayIso, customRange);
@@ -668,19 +672,31 @@ export function PlanGrid(props: PlanGridProps) {
   // A fixed scale reads at its BASE_PX; 'custom' fits ~one screen, never thinner
   // than a grabbable 3px day.
   const col = base === 'custom'
-    ? (win ? Math.max(3, Math.min(30, Math.floor(1120 / win.days))) : 30)
+    ? (planWin ? Math.max(3, Math.min(30, Math.floor(1120 / planWin.days))) : 30)
     : base === 'auto'
-      ? (win && viewportW > 0 ? Math.max(0.5, Math.min(40, viewportW / win.days)) : 16)
+      ? (planWin && viewportW > 0 ? Math.max(0.5, Math.min(40, viewportW / planWin.days)) : 16)
       : BASE_PX[base];
+
+  // The RENDERED window. A compressed scale (Quarters/Years) on a short plan
+  // would paint a left-edge sliver with an all-but-empty axis — the LINA-404
+  // "click Years and the timeline vanishes" bug. So the window is extended to
+  // fill the viewport at the current zoom: the plan's bars keep their place and
+  // empty, labelled periods fill the rest of the width, exactly as a Jira
+  // timeline does. 'custom' keeps the author's literal range; 'auto' already
+  // fits by construction (col = viewport / planDays), so the fill is a no-op.
+  const win = useMemo(() => {
+    if (!planWin || base === 'custom') return planWin;
+    return fillWindow(planWin, col, viewportW);
+  }, [planWin, base, col, viewportW]);
 
   const onPickBase = useCallback((next: TimeBase) => {
     // Entering custom seeds the inputs with the window currently on screen, so
     // the author edits a sensible range instead of typing from blank.
-    if (next === 'custom' && win && !(parseDay(customRange.from) !== null && parseDay(customRange.to) !== null)) {
-      setCustomRange({ from: win.startDay, to: win.endDay });
+    if (next === 'custom' && planWin && !(parseDay(customRange.from) !== null && parseDay(customRange.to) !== null)) {
+      setCustomRange({ from: planWin.startDay, to: planWin.endDay });
     }
     setBase(next);
-  }, [win, customRange]);
+  }, [planWin, customRange]);
 
   // ── Column resize (founder follow-up): dragging a header edge widens the
   // name / specialty / dates column; widths land as CSS vars on the root. ──

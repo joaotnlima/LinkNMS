@@ -14,7 +14,7 @@ import {
   parseDay, formatDay, addDays, diffDays,
   ganttWindow, barGeom, daysFromPixels,
   moveBar, resizeStart, resizeEnd, applyDrag, scheduleWindow, clickDates,
-  baseWindow, clipBarGeom, barRect, connectorPath, connectorMidpoint,
+  baseWindow, clipBarGeom, barRect, connectorPath, connectorMidpoint, fillWindow,
 } from './plan-gantt.ts';
 
 test('parseDay: UTC round-trip, rejects blanks and impossible days', () => {
@@ -250,6 +250,25 @@ test('barRect: the bar box the connectors anchor to is the one the bar renders a
   assert.deepEqual(barRect(3, 5, 30), { x: 91, width: 148 });
   // A hair-thin day column still leaves a grabbable 2px bar, never a negative one.
   assert.deepEqual(barRect(2, 1, 3), { x: 7, width: 2 });
+});
+
+test('fillWindow: a compressed scale extends the window to fill the viewport (LINA-404)', () => {
+  // A 42-day plan at the Years zoom (2px/day) is only 84px — the "click Years and
+  // the timeline vanishes" sliver. fillWindow pads the END so the canvas reaches
+  // the viewport width; startDay (and every bar offset) is untouched.
+  const plan = { startDay: '2026-10-05', endDay: '2026-11-15', days: 42 };
+  const filled = fillWindow(plan, 2, 1000);
+  assert.equal(filled.startDay, '2026-10-05');       // start never moves
+  assert.equal(filled.days, 500);                    // ceil(1000 / 2)
+  assert.equal(filled.endDay, addDays('2026-10-05', 499));
+  assert.ok(filled.days * 2 >= 1000);                // the axis now fills the view
+
+  // Already wide enough → untouched (Weeks zoom, 56px/day → 2352px > viewport).
+  assert.deepEqual(fillWindow(plan, 56, 1000), plan);
+
+  // Degenerate inputs (before the viewport is measured) are a safe no-op.
+  assert.deepEqual(fillWindow(plan, 0, 1000), plan);
+  assert.deepEqual(fillWindow(plan, 2, 0), plan);
 });
 
 test('connectorPath: starts_after routes pred RIGHT edge → dep LEFT edge, arrow right', () => {
