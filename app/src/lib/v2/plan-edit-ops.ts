@@ -40,26 +40,52 @@
 //
 // ── IDEMPOTENCY (the audit trail is the product — a retry must not double-write) ─
 // `schedule:apply` and `updateTask` both dedupe on a `client_change_id`; a retried
-// call with the SAME id is a proven no-op on the ledger, not a second event. So the
-// id is NOT minted here per call — it is passed in by the caller and REUSED across
-// a retry of the same logical save (`planning.ts` holds it for the debounce's
-// lifetime). `createLink`/`deleteLink` have no change-id dedupe, but they are
-// naturally idempotent against a re-run: `addLink` refuses a duplicate pair
-// (`version_conflict`) and a delete of an already-gone link resolves to nothing
-// here (the pair is absent from live links), so both no-op on replay. Link ids ARE
+// call with the SAME id is a proven no-op on the ledger, not a second event. One
+// base id (`clientChangeId`) is passed in per save; each request then carries its
+// OWN change id DERIVED deterministically from that base (see `deriveChangeId`):
+//   • `schedule:apply` → the base verbatim;
+//   • each `PATCH /tasks/{id}` → `derive(base, taskId)`, a stable per-row id.
+// Why distinct, not one shared id (LINA-404): `applySchedule` writes a `batch`
+// anchor field-change stamped with ITS `client_change_id`, so after the structural
+// batch runs `plan.hasChange(base)` is TRUE — and any `updateTask` that reused
+// `base` would hit `updateTask`'s idempotent-replay guard and SILENTLY DROP its
+// field edit (a create-plus-edit, or a reparent-plus-edit, in one debounced save
+// lost the edit — an audit-surface silent write-drop). Deriving a unique id per
+// PATCH keeps whole-save retry-dedup (each request still dedupes on its OWN stable
+// id across a re-fire) while removing the cross-request collision. The derived id
+// is UUID-shaped on purpose: `updateTask` validates `client_change_id` as a uuid,
+// so a human-readable `base:patch:taskId` suffix would be rejected 400 — we hash
+// `base + taskId` and format the digest as a uuid instead. `createLink`/`deleteLink`
+// have no change-id dedupe but are naturally idempotent on replay; their ids are
 // minted here (the create endpoint requires a client id) via the injected `mint`.
+
+import { createHash } from 'node:crypto';
 
 import type { PlanDiff } from './plan-diff';
 import type { V2CreateRowsOp, V2LinkAnchor } from './plan-apply';
 import type { V2Link } from './planning-view';
 
+/**
+ * A deterministic, UUID-shaped change id for one request of a save, derived from
+ * the save's base id and a per-request `label` (a task id). Same inputs → same id,
+ * so a re-fired request still dedupes on the server; different labels → different
+ * ids, so a PATCH never collides with the `schedule:apply` anchor (LINA-404). The
+ * server's `client_change_id` gate only checks the `8-4-4-4-12` hex shape (not the
+ * RFC version/variant nibbles), so a SHA-256 digest sliced into that shape passes.
+ */
+export function deriveChangeId(base: string, label: string): string {
+  const h = createHash('sha256').update(`${base}:${label}`).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
 // ── The request shapes the I/O layer fires (one per endpoint) ─────────────────
 
-/** `POST /projects/{projectId}/schedule:apply` — creates + deletes + reorders in
- *  one batch. Ordered createOp → deletes → reorders, so a reorder names the FINAL
- *  child set: created rows already exist, deleted rows are already gone. */
+/** `POST /projects/{projectId}/schedule:apply` — creates + moves + deletes +
+ *  reorders in one batch. Ordered createOp → moves → deletes → reorders, so a
+ *  reorder names the FINAL child set: created rows exist, reparented rows sit
+ *  under their new parent, deleted rows are gone. */
 export interface ScheduleApplyRequest {
-  operations: Array<V2CreateRowsOp | DeleteSubtreeOp | ReorderChildrenOp>;
+  operations: Array<V2CreateRowsOp | MoveSubtreeOp | DeleteSubtreeOp | ReorderChildrenOp>;
   client_change_id: string;
 }
 
@@ -67,6 +93,16 @@ export interface ScheduleApplyRequest {
 export interface DeleteSubtreeOp {
   op: 'delete_subtree';
   task_id: string;
+}
+
+/** A `move_subtree` op — reparent a row (LINA-404 FIX 3). The server moves the
+ *  whole subtree under `new_parent_id` (null at the top level), reassigns a
+ *  position server-side, and leaves dates untouched; a companion
+ *  `reorder_children` on that parent places it exactly. */
+export interface MoveSubtreeOp {
+  op: 'move_subtree';
+  task_id: string;
+  new_parent_id: string | null;
 }
 
 /** A `reorder_children` op — the server reassigns the whole sibling set's position
@@ -137,12 +173,13 @@ function linkKey(predecessorId: string, successorId: string, from: V2LinkAnchor,
  * Turn one `PlanDiff` + the plan's LIVE links into the ordered set of v2 requests.
  * Pure and deterministic: `mint` is injected for the client-minted link ids (the
  * I/O caller passes `crypto.randomUUID`, a test passes a counter), and
- * `clientChangeId` is passed in (reused across a retry so a re-fired save dedupes
- * on the ledger rather than doubling it).
+ * `clientChangeId` is the save's BASE id (passed in); `scheduleApply` carries it
+ * verbatim and each PATCH carries `deriveChangeId(base, taskId)` — distinct per
+ * request so a re-fire dedupes per request without the anchor collision that
+ * silently dropped same-id PATCHes (LINA-404; see the idempotency note above).
  *
- *  • CREATES + DELETES → one `scheduleApply` (createOp first, then a `delete_subtree`
- *    per removed root), or null when the diff added and removed nothing.
- *  • UPDATES → a `PatchTaskRequest` each, carrying the same `client_change_id`.
+ *  • CREATES + MOVES + DELETES + REORDERS → one `scheduleApply` (base id).
+ *  • UPDATES → a `PatchTaskRequest` each, carrying a derived per-row change id.
  *  • LINK ADDS → a `CreateLinkRequest` each, pathed on the successor, id minted.
  *  • LINK REMOVES → resolved against `liveLinks`; an edge with no live match is
  *    DROPPED (already gone — a delete_subtree cascade or a prior remove took it),
@@ -160,8 +197,14 @@ export function planEditRequests(
   // ── Structure: create_rows → delete_subtree per removed root → reorder_children
   // per reordered parent. Reorders go LAST so they name the final child set (created
   // rows exist, deleted rows are gone). ─────────────────────────────────────────
-  const operations: Array<V2CreateRowsOp | DeleteSubtreeOp | ReorderChildrenOp> = [];
+  const operations: Array<V2CreateRowsOp | MoveSubtreeOp | DeleteSubtreeOp | ReorderChildrenOp> = [];
   if (diff.createOp) operations.push(diff.createOp);
+  // Moves after creates (a row may move under a parent created this save) and
+  // before deletes + reorders, so a reparented row is under its new parent by the
+  // time a reorder names the final sibling set (LINA-404 FIX 3).
+  for (const m of diff.moves) {
+    operations.push({ op: 'move_subtree', task_id: m.taskId, new_parent_id: m.newParentId });
+  }
   for (const taskId of diff.deletes) operations.push({ op: 'delete_subtree', task_id: taskId });
   for (const r of diff.reorders) {
     operations.push({ op: 'reorder_children', parent_id: r.parentKey, ordered_child_ids: r.orderedChildIds });
@@ -170,11 +213,14 @@ export function planEditRequests(
     ? { operations, client_change_id: clientChangeId }
     : null;
 
-  // ── Field PATCHes: the same change-id, so a retried batch dedupes per row ──────
+  // ── Field PATCHes: each carries a DISTINCT change-id derived from the base +
+  // its task id (LINA-404). Reusing the base would collide with the schedule:apply
+  // anchor and get the PATCH dropped as an idempotent replay; the derived id still
+  // dedupes a re-fire of THIS row's PATCH. ───────────────────────────────────────
   const patches: PatchTaskRequest[] = diff.updates.map((u) => ({
     taskId: u.taskId,
     changes: u.changes,
-    client_change_id: clientChangeId,
+    client_change_id: deriveChangeId(clientChangeId, u.taskId),
   }));
 
   // ── Link adds: pathed on the successor, a fresh client id per edge ─────────────

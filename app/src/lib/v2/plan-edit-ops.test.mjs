@@ -11,7 +11,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planEditRequests, isEmptyPlan } from './plan-edit-ops.ts';
+import { planEditRequests, isEmptyPlan, deriveChangeId } from './plan-edit-ops.ts';
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // A deterministic id minter — the whole reason `mint` is injected.
 const minter = () => {
@@ -28,6 +30,7 @@ const diff = (over = {}) => ({
   linkAdds: [],
   linkRemoves: [],
   reorders: [],
+  moves: [],
   idByKey: {},
   movedKeys: [],
   ...over,
@@ -84,15 +87,31 @@ test('deletes alone still produce a schedule:apply (no create op)', () => {
   assert.deepEqual(plan.scheduleApply.operations[0], { op: 'delete_subtree', task_id: 'gone' });
 });
 
-test('each update becomes a PATCH carrying the shared client_change_id', () => {
+test('each update becomes a PATCH carrying a DISTINCT per-row change id (LINA-404)', () => {
   const updates = [
     { taskId: 't1', changes: { name: { value: 'Renamed', base: 'Old' } } },
     { taskId: 't2', changes: { start: { value: '2026-01-01', base: null }, dating_mode: { value: 'dated', base: 'undated' } } },
   ];
-  const plan = planEditRequests(diff({ updates }), [], minter(), 'the-ccid');
+  const createOp = { op: 'create_rows', rows: [{ id: 'r1' }], links: [] };
+  const plan = planEditRequests(diff({ createOp, updates }), [], minter(), 'the-base');
   assert.equal(plan.patches.length, 2);
-  assert.deepEqual(plan.patches[0], { taskId: 't1', changes: { name: { value: 'Renamed', base: 'Old' } }, client_change_id: 'the-ccid' });
-  assert.equal(plan.patches[1].client_change_id, 'the-ccid');
+  assert.equal(plan.patches[0].taskId, 't1');
+  // Each PATCH id is derived, UUID-shaped, and DISTINCT from the apply batch's id
+  // AND from the other PATCH — the bug was all three sharing one id, which the
+  // schedule:apply anchor then deduped away (silent drop).
+  assert.equal(plan.scheduleApply.client_change_id, 'the-base');
+  assert.match(plan.patches[0].client_change_id, UUID_SHAPE);
+  assert.match(plan.patches[1].client_change_id, UUID_SHAPE);
+  assert.notEqual(plan.patches[0].client_change_id, 'the-base');
+  assert.notEqual(plan.patches[1].client_change_id, 'the-base');
+  assert.notEqual(plan.patches[0].client_change_id, plan.patches[1].client_change_id);
+});
+
+test('deriveChangeId is deterministic and unique per (base, label)', () => {
+  assert.equal(deriveChangeId('base', 't1'), deriveChangeId('base', 't1')); // stable across a re-fire
+  assert.notEqual(deriveChangeId('base', 't1'), deriveChangeId('base', 't2'));
+  assert.notEqual(deriveChangeId('base-a', 't1'), deriveChangeId('base-b', 't1'));
+  assert.match(deriveChangeId('base', 't1'), UUID_SHAPE);
 });
 
 test('an added edge becomes a createLink pathed on the successor, id minted', () => {
@@ -132,19 +151,40 @@ test('a removed edge with no live match is dropped (already gone), never sent id
   assert.deepEqual(plan.linkRemoves, []);
 });
 
-test('idByKey and movedKeys pass straight through from the diff', () => {
+test('idByKey passes straight through from the diff', () => {
   const plan = planEditRequests(
-    diff({ idByKey: { 'local-1': 'v2-1' }, movedKeys: ['moved-key'] }),
-    [], minter(), 'ccid',
+    diff({ idByKey: { 'local-1': 'v2-1' } }), [], minter(), 'ccid',
   );
   assert.deepEqual(plan.idByKey, { 'local-1': 'v2-1' });
-  assert.deepEqual(plan.movedKeys, ['moved-key']);
+  assert.deepEqual(plan.movedKeys, []); // retired escape hatch — always empty now
 });
 
-test('isEmptyPlan is false when only a move was reported (no writes, but a reload is due)', () => {
-  // movedKeys alone carries no write op, so the plan is "empty" of writes — but the
-  // caller still guards on movedKeys separately (a reload), which is why isEmptyPlan
-  // reflects only the WRITE ops. This pins that contract.
-  const plan = planEditRequests(diff({ movedKeys: ['m'] }), [], minter(), 'ccid');
+test('a reparent becomes a move_subtree op, after creates, before deletes/reorders (LINA-404)', () => {
+  const createOp = { op: 'create_rows', rows: [{ id: 'r1' }], links: [] };
+  const plan = planEditRequests(diff({
+    createOp,
+    moves: [{ taskId: 'T', newParentId: 'NP' }],
+    deletes: ['d1'],
+    reorders: [{ parentKey: 'NP', orderedChildIds: ['x', 'T'] }],
+  }), [], minter(), 'ccid');
+  const ops = plan.scheduleApply.operations;
+  assert.equal(ops[0], createOp);
+  assert.deepEqual(ops[1], { op: 'move_subtree', task_id: 'T', new_parent_id: 'NP' });
+  assert.deepEqual(ops[2], { op: 'delete_subtree', task_id: 'd1' });
+  assert.deepEqual(ops[3], { op: 'reorder_children', parent_id: 'NP', ordered_child_ids: ['x', 'T'] });
+});
+
+test('a move to the top level carries new_parent_id null', () => {
+  const plan = planEditRequests(diff({ moves: [{ taskId: 'T', newParentId: null }] }), [], minter(), 'ccid');
+  assert.deepEqual(plan.scheduleApply.operations[0], { op: 'move_subtree', task_id: 'T', new_parent_id: null });
+});
+
+test('a move alone makes the plan non-empty (it is a real write now)', () => {
+  const plan = planEditRequests(diff({ moves: [{ taskId: 'T', newParentId: 'NP' }] }), [], minter(), 'ccid');
+  assert.equal(isEmptyPlan(plan), false);
+});
+
+test('a genuinely empty diff yields an empty plan', () => {
+  const plan = planEditRequests(diff({}), [], minter(), 'ccid');
   assert.equal(isEmptyPlan(plan), true);
 });

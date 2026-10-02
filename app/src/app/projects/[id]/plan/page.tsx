@@ -42,7 +42,8 @@ import { isSignedIn } from '@/lib/api';
 import { getDefaultTemplateBody } from '@/lib/v2/plan-template';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContextV2 } from '@/lib/v2/shell';
-import { getPlanGrid } from '@/lib/v2/planning';
+import { getPlanGrid, getAssignableParties } from '@/lib/v2/planning';
+import { collectRowKeys } from '@/lib/v2/planning-view';
 import { planGridToDraft } from '@/lib/v2/planning-hydrate';
 import { savePlanV2, reportProgressV2 } from '@/lib/v2/plan-write';
 import { getRecordV2 } from '@/lib/v2/record';
@@ -69,17 +70,25 @@ export default async function PlanPage({
   // reads. `getRecordV2` gives the shell name (fails closed to null); `getPlanGrid`
   // gives the WBS; `getPhasesV2` gives the sign-off state (fails closed to []); and
   // `getViewerPersonId` is the id the sign-off requests are keyed on.
-  const [grid, record, phaseList, myPersonId] = await Promise.all([
+  const [grid, record, phaseList, myPersonId, parties] = await Promise.all([
     getPlanGrid(id),
     getRecordV2(id),
     getPhasesV2(id),
     getViewerPersonId(),
+    getAssignableParties(id),
   ]);
   const name = record?.name ?? 'This build';
   const shell = await buildShellContextV2(id, name);
 
   const phases = planGridToDraft(grid);
   const hasPlan = phases.length > 0;
+
+  // Every row the server already holds (LINA-404 FIX 1). In v2 a row's key IS its
+  // stable task id (planning-view), so the live key→id map is the identity over
+  // these keys — which is exactly what makes a hydrated leaf's status settable and
+  // its task workspace open on first paint, rather than "save the plan first".
+  const serverRowKeys = collectRowKeys(grid.rows);
+  const initialStageIds = Object.fromEntries(serverRowKeys.map((k) => [k, k]));
 
   // Anchor the Gantt's fallback window once, server-side, so the canvas is stable.
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -145,10 +154,15 @@ export default async function PlanPage({
           // seed rather than resume.
           initialPhases={hasPlan ? phases : undefined}
           templateBody={hasPlan ? undefined : await getDefaultTemplateBody()}
-          // v2 authoring does not assign (v2 inherits from the branch, D-33) and
-          // keeps status read-only on a draft (ADR-0019) — so no parties, no live
-          // stage ids. Both arrive with their own v2 slices.
-          parties={[]}
+          // The orgs this viewer may set as a row owner (LINA-404 FIX 2): their
+          // own org + its suppliers (D-33). An inherited row keeps inheriting; an
+          // explicit owner round-trips through assignee_org_id.
+          parties={parties}
+          // The live key→id map (LINA-404 FIX 1): identity over the server's rows,
+          // so every hydrated leaf's status is settable from first paint. Also the
+          // keys the task workspace opens on without a reload.
+          initialStageIds={initialStageIds}
+          savedStageKeys={serverRowKeys}
           saveV2={savePlanV2.bind(null, id)}
           // The status picker's v2 progress-write door (LINA-384). Append-only,
           // keyed on the stable v2 task id; refusals roll the picker back inline.

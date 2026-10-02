@@ -128,7 +128,7 @@ const STATUS_ORDER: StageStatus[] = ['not_started', 'in_progress', 'blocked', 'd
  * so the control can never drift from the record it reports to. Status is NEVER
  * authored into the draft (ADR-0019) — this POSTs an append-only progress report.
  */
-function StatusPicker({
+export function StatusPicker({
   nodeKey, value, over, what, onSet,
 }: {
   nodeKey: string;
