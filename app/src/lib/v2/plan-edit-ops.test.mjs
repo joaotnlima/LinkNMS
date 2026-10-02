@@ -11,7 +11,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planEditRequests, isEmptyPlan } from './plan-edit-ops.ts';
+import { planEditRequests, isEmptyPlan, deriveChangeId } from './plan-edit-ops.ts';
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // A deterministic id minter — the whole reason `mint` is injected.
 const minter = () => {
@@ -85,15 +87,31 @@ test('deletes alone still produce a schedule:apply (no create op)', () => {
   assert.deepEqual(plan.scheduleApply.operations[0], { op: 'delete_subtree', task_id: 'gone' });
 });
 
-test('each update becomes a PATCH carrying the shared client_change_id', () => {
+test('each update becomes a PATCH carrying a DISTINCT per-row change id (LINA-404)', () => {
   const updates = [
     { taskId: 't1', changes: { name: { value: 'Renamed', base: 'Old' } } },
     { taskId: 't2', changes: { start: { value: '2026-01-01', base: null }, dating_mode: { value: 'dated', base: 'undated' } } },
   ];
-  const plan = planEditRequests(diff({ updates }), [], minter(), 'the-ccid');
+  const createOp = { op: 'create_rows', rows: [{ id: 'r1' }], links: [] };
+  const plan = planEditRequests(diff({ createOp, updates }), [], minter(), 'the-base');
   assert.equal(plan.patches.length, 2);
-  assert.deepEqual(plan.patches[0], { taskId: 't1', changes: { name: { value: 'Renamed', base: 'Old' } }, client_change_id: 'the-ccid' });
-  assert.equal(plan.patches[1].client_change_id, 'the-ccid');
+  assert.equal(plan.patches[0].taskId, 't1');
+  // Each PATCH id is derived, UUID-shaped, and DISTINCT from the apply batch's id
+  // AND from the other PATCH — the bug was all three sharing one id, which the
+  // schedule:apply anchor then deduped away (silent drop).
+  assert.equal(plan.scheduleApply.client_change_id, 'the-base');
+  assert.match(plan.patches[0].client_change_id, UUID_SHAPE);
+  assert.match(plan.patches[1].client_change_id, UUID_SHAPE);
+  assert.notEqual(plan.patches[0].client_change_id, 'the-base');
+  assert.notEqual(plan.patches[1].client_change_id, 'the-base');
+  assert.notEqual(plan.patches[0].client_change_id, plan.patches[1].client_change_id);
+});
+
+test('deriveChangeId is deterministic and unique per (base, label)', () => {
+  assert.equal(deriveChangeId('base', 't1'), deriveChangeId('base', 't1')); // stable across a re-fire
+  assert.notEqual(deriveChangeId('base', 't1'), deriveChangeId('base', 't2'));
+  assert.notEqual(deriveChangeId('base-a', 't1'), deriveChangeId('base-b', 't1'));
+  assert.match(deriveChangeId('base', 't1'), UUID_SHAPE);
 });
 
 test('an added edge becomes a createLink pathed on the successor, id minted', () => {

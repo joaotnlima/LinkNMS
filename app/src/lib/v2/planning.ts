@@ -153,14 +153,21 @@ export interface EditPlanResult {
  * (`next`), both keyed the way `planning-hydrate.ts` keys them (row key = v2 id for
  * existing rows). Reads the plan's LIVE links first so a removed edge resolves to a
  * link id, then fires the ordered request set (`plan-edit-ops.ts`):
- *   1. `schedule:apply` (new subtrees + deleted subtrees, dedupe on client_change_id),
- *   2. `PATCH /tasks/{id}` per changed row (same client_change_id),
+ *   1. `schedule:apply` (new/moved/deleted subtrees, dedupe on the base change id),
+ *   2. `PATCH /tasks/{id}` per changed row (a DERIVED per-row change id),
  *   3. `POST /tasks/{id}/links` per added edge,
  *   4. `DELETE /links/{id}` per removed edge.
  *
- * The `client_change_id` is minted ONCE per save and reused across the batch's
- * calls, so a retried save dedupes on the ledger rather than doubling events — the
- * audit trail is the product, and a debounce that re-fires must not write twice.
+ * The `client_change_id` is minted ONCE per save as the BASE id; each request then
+ * carries its OWN id derived from it (`plan-edit-ops.ts#deriveChangeId`): the
+ * `schedule:apply` batch uses the base verbatim, each `PATCH` uses
+ * `derive(base, taskId)`. This is load-bearing (LINA-404): `applySchedule` stamps a
+ * `batch` anchor field-change with its id, so a PATCH that REUSED the base would
+ * trip `updateTask`'s idempotent-replay guard and SILENTLY DROP its edit — a create
+ * (or reparent) plus a field edit in one debounced save would lose the edit.
+ * Distinct derived ids keep per-request retry-dedup without the cross-request
+ * collision; the audit trail is the product, and a debounce re-fire must neither
+ * double-write nor drop a write.
  *
  * Like every v2 WRITE (unlike the fail-closed read), this rethrows a `V2Error`: a
  * viewer who cannot edit must see the refusal, not a silent success. The caller (a
