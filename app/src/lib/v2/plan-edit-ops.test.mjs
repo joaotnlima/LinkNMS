@@ -28,6 +28,7 @@ const diff = (over = {}) => ({
   linkAdds: [],
   linkRemoves: [],
   reorders: [],
+  moves: [],
   idByKey: {},
   movedKeys: [],
   ...over,
@@ -132,19 +133,40 @@ test('a removed edge with no live match is dropped (already gone), never sent id
   assert.deepEqual(plan.linkRemoves, []);
 });
 
-test('idByKey and movedKeys pass straight through from the diff', () => {
+test('idByKey passes straight through from the diff', () => {
   const plan = planEditRequests(
-    diff({ idByKey: { 'local-1': 'v2-1' }, movedKeys: ['moved-key'] }),
-    [], minter(), 'ccid',
+    diff({ idByKey: { 'local-1': 'v2-1' } }), [], minter(), 'ccid',
   );
   assert.deepEqual(plan.idByKey, { 'local-1': 'v2-1' });
-  assert.deepEqual(plan.movedKeys, ['moved-key']);
+  assert.deepEqual(plan.movedKeys, []); // retired escape hatch — always empty now
 });
 
-test('isEmptyPlan is false when only a move was reported (no writes, but a reload is due)', () => {
-  // movedKeys alone carries no write op, so the plan is "empty" of writes — but the
-  // caller still guards on movedKeys separately (a reload), which is why isEmptyPlan
-  // reflects only the WRITE ops. This pins that contract.
-  const plan = planEditRequests(diff({ movedKeys: ['m'] }), [], minter(), 'ccid');
+test('a reparent becomes a move_subtree op, after creates, before deletes/reorders (LINA-404)', () => {
+  const createOp = { op: 'create_rows', rows: [{ id: 'r1' }], links: [] };
+  const plan = planEditRequests(diff({
+    createOp,
+    moves: [{ taskId: 'T', newParentId: 'NP' }],
+    deletes: ['d1'],
+    reorders: [{ parentKey: 'NP', orderedChildIds: ['x', 'T'] }],
+  }), [], minter(), 'ccid');
+  const ops = plan.scheduleApply.operations;
+  assert.equal(ops[0], createOp);
+  assert.deepEqual(ops[1], { op: 'move_subtree', task_id: 'T', new_parent_id: 'NP' });
+  assert.deepEqual(ops[2], { op: 'delete_subtree', task_id: 'd1' });
+  assert.deepEqual(ops[3], { op: 'reorder_children', parent_id: 'NP', ordered_child_ids: ['x', 'T'] });
+});
+
+test('a move to the top level carries new_parent_id null', () => {
+  const plan = planEditRequests(diff({ moves: [{ taskId: 'T', newParentId: null }] }), [], minter(), 'ccid');
+  assert.deepEqual(plan.scheduleApply.operations[0], { op: 'move_subtree', task_id: 'T', new_parent_id: null });
+});
+
+test('a move alone makes the plan non-empty (it is a real write now)', () => {
+  const plan = planEditRequests(diff({ moves: [{ taskId: 'T', newParentId: 'NP' }] }), [], minter(), 'ccid');
+  assert.equal(isEmptyPlan(plan), false);
+});
+
+test('a genuinely empty diff yields an empty plan', () => {
+  const plan = planEditRequests(diff({}), [], minter(), 'ccid');
   assert.equal(isEmptyPlan(plan), true);
 });

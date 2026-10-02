@@ -2553,6 +2553,62 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /projects/{projectId}/assignable-parties:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Planning
+      operationId: listAssignableParties
+      summary: Orgs this viewer may set as a row owner
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        The exact set `updateTask` accepts for `assignee_org_id` (D-33): the
+        viewer''s own org plus its direct suppliers on this project.'
+      x-relationship: project.participant
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - parties
+                properties:
+                  parties:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - id
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                          nullable: true
+                        role:
+                          type: string
+                          nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /projects/{projectId}/baselines:
     parameters:
     - name: projectId

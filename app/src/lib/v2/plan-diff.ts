@@ -35,18 +35,26 @@
 // That single rule classifies every node as create / update / (unchanged), and
 // every `prev` key absent from `next` as a delete — no UUID-format sniffing.
 //
-// ── WHAT THIS BRICK DELIBERATELY DOES NOT EMIT (the documented deferral) ───────
-// REORDER and REPARENT are NOT emitted here. A `move_subtree` op needs the
-// target's `after_position` — a fractional-index position key the server owns
-// (`domain/position.mjs`) and which the read seam (`planning-view.ts`) does NOT
-// project onto `StageRow`, so the editor draft never holds it. Emitting a move
-// without it would drop the row to the end of its siblings, silently reordering
-// the plan — unacceptable on the audit surface. So a structural move is DETECTED
-// and REPORTED in `movedKeys` (never silently dropped, never half-emitted); the
-// caller guards on it (e.g. a reload after a reparent) until the read seam
-// projects positions and a `move_subtree` sub-brick lands. See the S3 write-cut
-// notes in `planning-hydrate.ts`. Assignment is likewise NOT diffed — v2 inherits
-// it from the branch contract (D-33), the same call `plan-apply.ts` documents.
+// ── STRUCTURAL EDITS ARE NOW EMITTED (LINA-404 FIX 3) ─────────────────────────
+// Both REORDER (a sibling-set shuffle) and REPARENT (promote/demote from the
+// outline ⋯ menu) persist. A reorder is one `reorder_children` op naming the whole
+// sibling set in target order (absolute, so the server owns the position keys —
+// no key projection needed). A reparent is one `move_subtree` op naming the row's
+// NEW parent id; the server appends it under the new parent and reassigns a
+// position server-side, and any companion `reorder_children` on that parent then
+// places it exactly (positions stay entirely server-side, doc 05 §2). So the read
+// seam never needs to project `position`, and the old `movedKeys`/needsReload
+// escape hatch is retired — `movedKeys` stays only as an honest signal for a case
+// we still cannot emit (none today, so it is always empty).
+//
+// ── ASSIGNMENT IS NOW DIFFED (LINA-404 FIX 2) ─────────────────────────────────
+// v2 assignment INHERITS from the branch by default (D-33), but an explicit
+// per-row owner is a real edit: a changed `assigneePartyId` becomes an
+// `assignee_org_id` field change on an existing row (the server's `applyDelta`
+// enforces the D-33 own-org-or-supplier fence), and a newly-created row carries
+// its owner in the `create_rows` spec (the server's `buildRow` honours it under
+// the same fence). A row left to inherit emits nothing — inheritance is the
+// honest default, not a null write.
 
 import type { AuthoredNode } from '@/lib/plan-authoring';
 import type {
@@ -76,8 +84,9 @@ export interface V2FieldChange<T> {
 
 /** The subset of `DELTA_FIELDS` (use-cases.mjs) the editor can change on an
  *  existing row. Dates carry `dating_mode` alongside so an undated→dated edit is
- *  stored as dated rather than inferred. Assignment is inherited, not diffed.
- *  Every field is a `FieldChange` envelope, never a bare value — see above. */
+ *  stored as dated rather than inferred. `assignee_org_id` is the explicit owner
+ *  override (null = fall back to branch inheritance, D-33). Every field is a
+ *  `FieldChange` envelope, never a bare value — see above. */
 export interface V2TaskChanges {
   name?: V2FieldChange<string>;
   description?: V2FieldChange<string | null>;
@@ -85,6 +94,7 @@ export interface V2TaskChanges {
   dating_mode?: V2FieldChange<'dated' | 'undated'>;
   start?: V2FieldChange<string | null>;
   finish?: V2FieldChange<string | null>;
+  assignee_org_id?: V2FieldChange<string | null>;
 }
 
 /** One `PATCH /api/v2/tasks/{taskId}` — the changed fields on an existing row. */
@@ -105,6 +115,19 @@ export interface V2TaskUpdate {
 export interface V2ReorderChildren {
   parentKey: string | null;
   orderedChildIds: string[];
+}
+
+/** One existing row reparented to a NEW parent — the editor's promote/demote
+ *  (outline ⋯ menu) saved through the v2 `move_subtree` op (LINA-404 FIX 3).
+ *  `taskId` is the moved row's v2 id; `newParentId` is the target parent's v2 id
+ *  (a new parent created THIS save is already resolved to its minted id), or null
+ *  at the top level. The server appends the subtree under the new parent and
+ *  reassigns a position; a companion `reorder_children` on that parent (emitted
+ *  below when the sibling order differs) then places it exactly. Emitted whenever
+ *  a row's parent differs between prev and next. */
+export interface V2MoveSubtree {
+  taskId: string;
+  newParentId: string | null;
 }
 
 /** One edge removed from an existing successor — the caller resolves it to a
@@ -139,10 +162,13 @@ export interface PlanDiff {
   linkRemoves: V2LinkRemoval[];
   /** Parents whose child order changed → one `reorder_children` op each. */
   reorders: V2ReorderChildren[];
+  /** Existing rows reparented → one `move_subtree` op each (LINA-404 FIX 3). */
+  moves: V2MoveSubtree[];
   /** New local key → minted v2 id, for the created rows (the LINA-307 refresh). */
   idByKey: Record<string, string>;
-  /** Existing rows whose PARENT changed between prev and next — reported, not
-   *  emitted (the caller guards; see the deferral note). Empty in the common case. */
+  /** Existing rows whose PARENT changed but that we still cannot emit a move for
+   *  (none today — reparents are emitted as `moves`). Kept as an honest escape
+   *  hatch; always empty in the current contract, so the caller never reloads. */
   movedKeys: string[];
 }
 
@@ -185,6 +211,9 @@ function createSpec(node: AuthoredNode, parentId: string | null): V2CreateRowSpe
   if (node.description) spec.description = node.description;
   if (start !== undefined) spec.start = start;
   if (finish !== undefined) spec.finish = finish;
+  // An explicit owner on a brand-new row rides the create (the server's buildRow
+  // honours it under the D-33 fence); a row left to inherit sends nothing.
+  if (node.assigneePartyId) spec.assignee_org_id = node.assigneePartyId;
   return spec;
 }
 
@@ -222,6 +251,13 @@ export function diffFields(prev: AuthoredNode, next: AuthoredNode): V2TaskChange
       base: prevStart === null ? 'undated' : 'dated',
     };
   }
+
+  // The explicit owner changed (LINA-404 FIX 2). `null` means "fall back to branch
+  // inheritance" (D-33); the server's applyDelta enforces the own-org-or-supplier
+  // fence and rejects an out-of-scope org, which the editor surfaces inline.
+  const prevOrg = prev.assigneePartyId ?? null;
+  const nextOrg = next.assigneePartyId ?? null;
+  if (prevOrg !== nextOrg) changes.assignee_org_id = { value: nextOrg, base: prevOrg };
 
   return Object.keys(changes).length ? changes : null;
 }
@@ -310,6 +346,7 @@ export function diffPlanTrees(
   const updates: V2TaskUpdate[] = [];
   const linkAdds: V2CreateLinkSpec[] = [];
   const linkRemoves: V2LinkRemoval[] = [];
+  const moves: V2MoveSubtree[] = [];
   const movedKeys: string[] = [];
 
   for (const [key, { node: nextNode, parentKey: nextParent }] of nextFlat) {
@@ -317,10 +354,15 @@ export function diffPlanTrees(
     if (!prevEntry) continue; // a create — handled above
     const { node: prevNode, parentKey: prevParent } = prevEntry;
 
-    // A reparent is reported, not emitted (needs a position key the read seam does
-    // not project). The caller guards on `movedKeys`; we still diff the row's
-    // FIELDS below, so a rename-and-reparent in one save keeps the rename.
-    if (prevParent !== nextParent) movedKeys.push(key);
+    // A reparent (promote/demote) is now EMITTED as a `move_subtree` (LINA-404
+    // FIX 3): the server owns the new position, so no read-seam key is needed.
+    // The new parent resolves to a v2 id — an existing parent's key IS its id, a
+    // parent created this save is its minted id. We still diff the row's FIELDS
+    // below, so a rename-and-reparent in one save keeps both.
+    if (prevParent !== nextParent) {
+      const newParentId = nextParent === null ? null : (idByKey.get(nextParent) ?? nextParent);
+      moves.push({ taskId: key, newParentId });
+    }
 
     const changes = diffFields(prevNode, nextNode);
     if (changes) updates.push({ taskId: key, changes });
@@ -398,6 +440,7 @@ export function diffPlanTrees(
     linkAdds,
     linkRemoves,
     reorders,
+    moves,
     idByKey: Object.fromEntries(idByKey),
     movedKeys,
   };
@@ -413,6 +456,7 @@ export function isEmptyDiff(diff: PlanDiff): boolean {
     diff.linkAdds.length === 0 &&
     diff.linkRemoves.length === 0 &&
     diff.reorders.length === 0 &&
+    diff.moves.length === 0 &&
     diff.movedKeys.length === 0
   );
 }

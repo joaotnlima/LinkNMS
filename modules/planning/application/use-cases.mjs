@@ -136,6 +136,29 @@ export async function getScheduleHealth({ viewer, store, projectId, query }) {
   return { status: 200, body: planHealth(scoped) };
 }
 
+/**
+ * operationId: listAssignableParties — the orgs the viewer may set as a row's
+ * owner on this plan (LINA-404 FIX 2). It is EXACTLY the set `updateTask`'s D-33
+ * fence accepts: the viewer's own org, plus its direct suppliers on this project
+ * (`isMySupplier`). Names come from the plan's org directory (resolved per read,
+ * so a renamed org renames here too — ADR-0006 §1). A participant reads it; a
+ * non-participant gets the same 404 as the schedule, learning nothing.
+ */
+export async function listAssignableParties({ viewer, store, projectId }) {
+  await requireParticipant({ viewer, store, projectId });
+  const snapshot = await store.loadPlan(projectId);
+  const ids = new Set([viewer.orgId]);
+  for (const c of snapshot.contracts.values()) {
+    if (c.clientOrgId === viewer.orgId) ids.add(c.supplierOrgId);
+  }
+  const parties = [...ids].map((id) => ({
+    id,
+    name: snapshot.orgNames?.get(id) ?? null,
+    role: id === snapshot.ownerOrgId ? 'owner' : 'builder',
+  }));
+  return { status: 200, body: { parties } };
+}
+
 // ── row writes ─────────────────────────────────────────────────────────────
 
 /** operationId: createTask */
@@ -1271,6 +1294,27 @@ function buildRow({ plan, cal, projectId, spec, actor }) {
     throw new ProblemError('validation_failed', null, { errors: { finish: 'before start' } });
   }
 
+  // Explicit owner (LINA-404 FIX 2): honour an `assignee_org_id` on the create
+  // spec under the SAME D-33 fence `applyDelta` applies to an edit — the actor's
+  // own org, or one of its direct suppliers (`isMySupplier`). The row is being
+  // created inside the actor's edit scope already (the caller checks
+  // `inEditScope`), so the parent-scope half of D-33 is satisfied; this is the
+  // "who may it point at" half. A spec with no `assignee_org_id` inherits from the
+  // branch (the default), exactly as before.
+  let assigneeOrgId = null;
+  let assigneePersonId = null;
+  let assigneeInherited = true;
+  if (spec.assignee_org_id != null) {
+    if (spec.assignee_org_id !== actor.orgId && !isMySupplier(plan, actor.orgId, spec.assignee_org_id)) {
+      throw new ProblemError('validation_failed', null, {
+        errors: { assignee_org_id: 'assign to your own organisation or one of your suppliers' },
+      });
+    }
+    assigneeOrgId = spec.assignee_org_id;
+    assigneePersonId = spec.assignee_person_id ?? null;
+    assigneeInherited = false;
+  }
+
   return {
     id: spec.id,
     projectId,
@@ -1284,9 +1328,9 @@ function buildRow({ plan, cal, projectId, spec, actor }) {
     locationId: spec.location_id ?? null,
     contractId: null,
     branchContractId: parent ? (parent.contractId ?? parent.branchContractId ?? null) : null,
-    assigneeOrgId: null, // inherited from the branch (D-33), resolved on read
-    assigneePersonId: null,
-    assigneeInherited: true,
+    assigneeOrgId,
+    assigneePersonId,
+    assigneeInherited,
     datingMode,
     start,
     finish,

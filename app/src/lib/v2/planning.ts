@@ -35,6 +35,42 @@ function emptyPlan(projectId: string): PlanGridView {
   return { projectId, rows: [], isBaselined: false, dependenciesBySuccessor: {} };
 }
 
+/** A party the viewer may set as a row owner — the editor's `PartyRef` shape. */
+export interface AssignableParty {
+  partyId: string;
+  name: string;
+  role: string | null;
+}
+
+interface V2AssignablePartiesResponse {
+  parties: Array<{ id: string; name?: string | null; role?: string | null }>;
+}
+
+/**
+ * GET /api/v2/projects/{id}/assignable-parties → the orgs the viewer may assign a
+ * row to (LINA-404 FIX 2): their own org plus its direct suppliers, exactly the
+ * set `updateTask`'s D-33 fence accepts. Mapped to the editor's `PartyRef` shape.
+ * Fail-closed to an EMPTY list on any authorization error — a viewer who cannot
+ * read it simply sees an inert owner picker, never a crash (the plan read uses the
+ * same discipline).
+ */
+export async function getAssignableParties(projectId: string): Promise<AssignableParty[]> {
+  try {
+    const body = await v2<V2AssignablePartiesResponse>({
+      method: 'GET',
+      path: `/projects/${projectId}/assignable-parties`,
+    });
+    return (body.parties ?? []).map((p) => ({
+      partyId: p.id,
+      name: p.name ?? 'Unknown party',
+      role: p.role ?? null,
+    }));
+  } catch (err) {
+    if (err instanceof V2Error) return []; // no access — an inert picker, not a crash
+    throw err;
+  }
+}
+
 /**
  * GET /api/v2/projects/{id}/schedule → the grid-native plan view, membership
  * scoped server-side (the viewer's participation on this build, never a

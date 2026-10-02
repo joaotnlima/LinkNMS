@@ -55,11 +55,12 @@ import type { V2Link } from './planning-view';
 
 // ── The request shapes the I/O layer fires (one per endpoint) ─────────────────
 
-/** `POST /projects/{projectId}/schedule:apply` — creates + deletes + reorders in
- *  one batch. Ordered createOp → deletes → reorders, so a reorder names the FINAL
- *  child set: created rows already exist, deleted rows are already gone. */
+/** `POST /projects/{projectId}/schedule:apply` — creates + moves + deletes +
+ *  reorders in one batch. Ordered createOp → moves → deletes → reorders, so a
+ *  reorder names the FINAL child set: created rows exist, reparented rows sit
+ *  under their new parent, deleted rows are gone. */
 export interface ScheduleApplyRequest {
-  operations: Array<V2CreateRowsOp | DeleteSubtreeOp | ReorderChildrenOp>;
+  operations: Array<V2CreateRowsOp | MoveSubtreeOp | DeleteSubtreeOp | ReorderChildrenOp>;
   client_change_id: string;
 }
 
@@ -67,6 +68,16 @@ export interface ScheduleApplyRequest {
 export interface DeleteSubtreeOp {
   op: 'delete_subtree';
   task_id: string;
+}
+
+/** A `move_subtree` op — reparent a row (LINA-404 FIX 3). The server moves the
+ *  whole subtree under `new_parent_id` (null at the top level), reassigns a
+ *  position server-side, and leaves dates untouched; a companion
+ *  `reorder_children` on that parent places it exactly. */
+export interface MoveSubtreeOp {
+  op: 'move_subtree';
+  task_id: string;
+  new_parent_id: string | null;
 }
 
 /** A `reorder_children` op — the server reassigns the whole sibling set's position
@@ -160,8 +171,14 @@ export function planEditRequests(
   // ── Structure: create_rows → delete_subtree per removed root → reorder_children
   // per reordered parent. Reorders go LAST so they name the final child set (created
   // rows exist, deleted rows are gone). ─────────────────────────────────────────
-  const operations: Array<V2CreateRowsOp | DeleteSubtreeOp | ReorderChildrenOp> = [];
+  const operations: Array<V2CreateRowsOp | MoveSubtreeOp | DeleteSubtreeOp | ReorderChildrenOp> = [];
   if (diff.createOp) operations.push(diff.createOp);
+  // Moves after creates (a row may move under a parent created this save) and
+  // before deletes + reorders, so a reparented row is under its new parent by the
+  // time a reorder names the final sibling set (LINA-404 FIX 3).
+  for (const m of diff.moves) {
+    operations.push({ op: 'move_subtree', task_id: m.taskId, new_parent_id: m.newParentId });
+  }
   for (const taskId of diff.deletes) operations.push({ op: 'delete_subtree', task_id: taskId });
   for (const r of diff.reorders) {
     operations.push({ op: 'reorder_children', parent_id: r.parentKey, ordered_child_ids: r.orderedChildIds });
