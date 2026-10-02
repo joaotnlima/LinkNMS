@@ -71,9 +71,11 @@ import {
   DEP_LABELS, childStatusCounts, criticalPathKeys, nodeIndex, nodeStatus, planLinks,
   type DepType, type PhaseDraft, type StageStatus, type StatusCounts, type TaskDraft,
 } from '@/lib/plan-authoring';
-import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { PendingChangeChip } from '@/components/SignOffPanel';
-import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
+import { partyIndex, roleWord, type PartyRef } from '@/lib/party-display';
+import {
+  STATUS_META, STATUS_ORDER, StatusPicker, OwnerField, SpecialtyField, useSpecialtyCatalog,
+} from './plan-fields';
 
 // Pixels per day column, per time base (LINA-248 follow-up): the base the
 // author picks is a READING scale (ZOOM — px per day), nothing more. The
@@ -100,167 +102,11 @@ const NAV_BASES: Array<[Exclude<TimeBase, 'custom' | 'half'>, string]> = [
   ['auto', 'Fit'], ['week', 'Weeks'], ['month', 'Months'], ['quarter', 'Quarters'], ['year', 'Years'],
 ];
 
-/**
- * The status palette (LINA-306, pen "Status legend"): every derived StageStatus
- * → its swatch class and its word. ONE source of truth shared by the STATUS
- * column's leaf pills, the parent meter's segments, the filter's status select
- * and the legend, so a colour can never drift between them. The classes resolve
- * to tokens in plan-build.css (done → --success, in progress → --plan-baseline,
- * blocked → --state-danger, not started → the muted grey).
- */
-const STATUS_META: Record<StageStatus, { cls: string; label: string }> = {
-  done: { cls: 'is-done', label: 'Done' },
-  in_progress: { cls: 'is-doing', label: 'In progress' },
-  blocked: { cls: 'is-blocked', label: 'Blocked' },
-  not_started: { cls: 'is-todo', label: 'Not started' },
-};
-/** Legend / status-select order: closed → active → stuck → not begun. */
-const STATUS_ORDER: StageStatus[] = ['not_started', 'in_progress', 'blocked', 'done'];
+// The status palette (STATUS_META), the legend order (STATUS_ORDER), the settable
+// StatusPicker and the SpecialtyField now live in ./plan-fields, shared with the
+// detail drawer so the grid and the drawer render the SAME Jira-style dropdown
+// (LINA-404). This file imports them above.
 
-/**
- * The SETTABLE leaf-status control (LINA-307, founder ask "I should always be
- * able to move the status of a task"). The draft grid's read-only status bar
- * becomes this picker for any leaf the server already holds a stage id for. It
- * mirrors `PlanBaseline.StatusControl`: the SAME four statuses and palette, an
- * optimistic pick that rolls back and shows the reason inline on a typed refusal
- * (e.g. the GC-only 403). On success the caller's `router.refresh()` re-reads the
- * server-derived status and this instance remounts on it (keyed on the value),
- * so the control can never drift from the record it reports to. Status is NEVER
- * authored into the draft (ADR-0019) — this POSTs an append-only progress report.
- */
-export function StatusPicker({
-  nodeKey, value, over, what, onSet,
-}: {
-  nodeKey: string;
-  value: StageStatus;
-  over: boolean;
-  what: string;
-  onSet: (nodeKey: string, status: StageStatus) => Promise<void> | void;
-}) {
-  const [val, setVal] = useState<StageStatus>(value);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const meta = STATUS_META[val];
-  const word = over ? `${meta.label} · overdue` : meta.label;
-  return (
-    <span className={`pgd-statusedit${over ? ' is-overdue' : ''}`}>
-      <select
-        className={`pgd-statussel ${meta.cls}`}
-        value={val}
-        disabled={busy}
-        aria-label={`${what} status`}
-        aria-busy={busy}
-        title={`${what}: ${word}`}
-        onChange={async (e) => {
-          const next = e.target.value as StageStatus;
-          if (next === val) return;
-          const prev = val;
-          setVal(next);
-          setBusy(true);
-          setErr(null);
-          try {
-            await onSet(nodeKey, next);
-          } catch (e2) {
-            // Roll the picker back to the last recorded value and surface why —
-            // the record is unchanged, so the control must not claim otherwise.
-            setVal(prev);
-            setErr(e2 instanceof Error ? e2.message : 'Could not update the status.');
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        {STATUS_ORDER.map((s) => (
-          <option key={s} value={s}>{STATUS_META[s].label}</option>
-        ))}
-      </select>
-      {err ? <span className="pgd-status-err" role="alert">{err}</span> : null}
-    </span>
-  );
-}
-
-/**
- * The SPECIALTY picker (LINA-306, founder 2026-09-23 "I cannot select the
- * specialty from the dropdown"). The old control was a bare `<input list>` whose
- * native `<datalist>` never presents as a clickable dropdown across browsers —
- * the founder saw a plain text box, not a picker. This is a real `<select>` so
- * every browser shows the standard trade list on click, while an "＋ Add new…"
- * sentinel keeps the free-text path (a typed label the catalog does not yet
- * know) alive — the deliberate design from LINA-306 item 6, not a regression.
- *
- * Options are the caller's catalog (system ∪ their own) UNION the value already
- * stored on this stage, so a free-form label authored before still shows as the
- * selected option rather than silently blanking. Selection is presentational
- * over the draft — it calls back into `onSet`; nothing is written until the
- * editor's autosave lands (same as every other cell here).
- */
-const ADD_SPECIALTY = '__add_specialty__';
-function SpecialtyCell({
-  value, options, disabled, ariaLabel, onSet, onRemember,
-}: {
-  value: string;
-  options: string[];
-  disabled: boolean;
-  ariaLabel: string;
-  onSet: (label: string) => void;
-  onRemember: (label: string) => void;
-}) {
-  const [adding, setAdding] = useState(false);
-  // Catalog ∪ the stage's own value, de-duped case-insensitively and sorted, so a
-  // previously-typed label survives as a selectable option.
-  const opts = useMemo(() => {
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const label of [...options, value]) {
-      const l = label.trim();
-      if (!l) continue;
-      const k = l.toLowerCase();
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push(l);
-    }
-    return out.sort((a, b) => a.localeCompare(b));
-  }, [options, value]);
-
-  // The free-text escape: reveal an input, commit its trimmed value on blur/Enter
-  // (which also remembers it for next time), or bail on Escape.
-  if (adding) {
-    return (
-      <span className="pgd-trade">
-        <input
-          className="pgd-tradeinput" autoFocus placeholder="New specialty" defaultValue=""
-          list="pgd-specialties" maxLength={120} aria-label={ariaLabel} disabled={disabled}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-            else if (e.key === 'Escape') setAdding(false);
-          }}
-          onBlur={(e) => {
-            const label = e.target.value.trim();
-            if (label) { onSet(label); onRemember(label); }
-            setAdding(false);
-          }}
-        />
-      </span>
-    );
-  }
-
-  return (
-    <span className="pgd-trade">
-      <select
-        className="pgd-tradeinput pgd-tradesel" value={value} aria-label={ariaLabel} disabled={disabled}
-        onChange={(e) => {
-          const next = e.target.value;
-          if (next === ADD_SPECIALTY) { setAdding(true); return; }
-          onSet(next);
-        }}
-      >
-        <option value="">Specialty…</option>
-        {opts.map((s) => <option key={s} value={s}>{s}</option>)}
-        <option value={ADD_SPECIALTY}>＋ Add new…</option>
-      </select>
-    </span>
-  );
-}
 /** Row heights, shared by the table cell and its track so the panes align.
  *  Compact rows with thin bars (founder, LINA-306): a task row is 34px, a
  *  sub-task row 28px — tighter than before so more of the plan reads at once. */
@@ -474,44 +320,13 @@ export function PlanGrid(props: PlanGridProps) {
   const pendingChange = props.pendingChangeKeys ?? EMPTY_KEYS;
   const dir = useMemo(() => partyIndex(parties), [parties]);
 
-  // ── Specialty catalog (LINA-306 item 6) ────────────────────────────────────
-  // The "Specialty" chip stays a free-form label, but it is now backed by a
-  // picker: a datalist of the caller's known trades — the seeded system set ∪ any
-  // they have typed before, across every project (GET /api/v1/specialties).
-  // Typing a brand-new label and committing it (blur) remembers it (POST) so it
-  // is offered next time and on their other builds. Progressive enhancement: the
-  // input behaves exactly as before while the list loads or if the fetch fails —
-  // the picker only ADDS suggestions, it never gates what can be typed, and the
-  // chosen string is still what lands on the stage (no plan-contract change).
-  const [specialties, setSpecialties] = useState<string[]>([]);
-  useEffect(() => {
-    let live = true;
-    fetch('/api/v2/specialties', { headers: { accept: 'application/json' } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { specialties?: Array<{ label: string }> } | null) => {
-        if (live && d?.specialties) setSpecialties(d.specialties.map((s) => s.label));
-      })
-      .catch(() => { /* picker is enhancement-only; the free-form input stands */ });
-    return () => { live = false; };
-  }, []);
-
-  // Commit of a typed specialty: if it is non-empty and not already known
-  // (case-insensitively), remember it. Fire-and-forget — the create is idempotent
-  // server-side, and a failure just means it is not offered later, never that the
-  // typed label is lost (onTrade already stored it on the stage).
-  const rememberSpecialty = useCallback((raw: string) => {
-    const label = raw.trim();
-    if (!label) return;
-    setSpecialties((prev) => {
-      if (prev.some((s) => s.toLowerCase() === label.toLowerCase())) return prev;
-      return [...prev, label].sort((a, b) => a.localeCompare(b));
-    });
-    fetch('/api/v2/specialties', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ label }),
-    }).catch(() => { /* enhancement-only */ });
-  }, []);
+  // ── Specialty catalog (LINA-306 item 6; shared since LINA-404) ──────────────
+  // The caller's known trades (seeded system set ∪ anything they have typed,
+  // across every build) back the Specialty picker; committing a new label
+  // remembers it for next time. The fetch + remember now live in a shared hook
+  // (./plan-fields) so the detail drawer's specialty control reads the SAME
+  // catalog as the grid, rather than a second copy.
+  const { specialties, remember: rememberSpecialty } = useSpecialtyCatalog();
 
   // ── Accordion fold, phases AND tasks (LINA-306) ────────────────────────────
   // Any row that HAS children folds: a phase folds its tasks (and the "+ Add
@@ -1354,29 +1169,20 @@ export function PlanGrid(props: PlanGridProps) {
     );
   }, [meter, isOverdue, disabled, props.onSetStatus, props.statusSettableKeys]);
 
-  const owner = useCallback((nodeKey: string, assigneePartyId: string | null, label: string) => {
-    const p = partyOf(dir, assigneePartyId);
-    return (
-      <span className="pgd-owner" title={p ? `${p.name} · ${roleWord(p.role)}` : 'Unassigned — click to assign'}>
-        {p ? <PartyAvatar party={p} size="sm" /> : <UnassignedAvatar size="sm" />}
-        <select
-          className="pgd-ownersel"
-          value={assigneePartyId ?? ''}
-          aria-label={`Owner of ${label}`}
-          disabled={disabled || parties.length === 0}
-          onChange={(e) => props.onAssign(nodeKey, e.target.value || null)}
-        >
-          <option value="">Unassigned</option>
-          {parties.map((m) => (
-            <option key={m.partyId} value={m.partyId}>{m.name} · {roleWord(m.role)}</option>
-          ))}
-          {assigneePartyId && !dir.has(assigneePartyId) ? (
-            <option value={assigneePartyId}>{p?.name}</option>
-          ) : null}
-        </select>
-      </span>
-    );
-  }, [dir, parties, disabled, props]);
+  // The owner cell is now the shared Jira-style menu (LINA-404): the avatar is the
+  // trigger, the parties (+ Unassigned) are the options. `avatar` variant — the
+  // grid shows only the circle; the drawer uses the `full` variant beside it.
+  const owner = useCallback((nodeKey: string, assigneePartyId: string | null, label: string) => (
+    <OwnerField
+      value={assigneePartyId}
+      parties={parties}
+      dir={dir}
+      disabled={disabled || parties.length === 0}
+      ariaLabel={`Owner of ${label}`}
+      onAssign={(partyId) => props.onAssign(nodeKey, partyId)}
+      variant="avatar"
+    />
+  ), [dir, parties, disabled, props]);
 
   const resizer = (c: keyof typeof COL_MIN, what: string) => (
     <span
@@ -1435,11 +1241,6 @@ export function PlanGrid(props: PlanGridProps) {
         '--pgdw-dates': colW.dates ? `${colW.dates}px` : undefined,
       } as React.CSSProperties}
     >
-      {/* Specialty picker options (LINA-306 item 6) — shared by every trade
-          input's `list`. Native datalist: a suggestion source, never a gate. */}
-      <datalist id="pgd-specialties">
-        {specialties.map((s) => <option key={s} value={s} />)}
-      </datalist>
       {/* ── The filter bar (LINA-306, pen "Filter bar"): search + owner + status
           + overdue/blocked toggles narrow the visible rows; the legend on the
           right reads the STATUS column's colours. All view state — it hides rows,
@@ -1557,7 +1358,7 @@ export function PlanGrid(props: PlanGridProps) {
               const cellFor = (c: ColKey) => {
                 if (c === 'trade') {
                   return (
-                    <SpecialtyCell
+                    <SpecialtyField
                       key="trade"
                       value={r.phase.trade}
                       options={specialties}
@@ -1633,7 +1434,7 @@ export function PlanGrid(props: PlanGridProps) {
             const cellFor = (c: ColKey) => {
               if (c === 'trade') {
                 return (
-                  <SpecialtyCell
+                  <SpecialtyField
                     key="trade"
                     value={r.node.trade}
                     options={specialties}
