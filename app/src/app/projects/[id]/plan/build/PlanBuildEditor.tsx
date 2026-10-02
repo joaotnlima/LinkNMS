@@ -63,11 +63,13 @@ import {
   type AuthoredNode, type DepType, type PhaseDraft, type PlanNodeRef, type StageStatus, type TaskDraft, type TemplatePhase,
 } from '@/lib/plan-authoring';
 import { rekeyDraft, rekeyWire, draftKeys } from '@/lib/v2/plan-rekey';
-import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
-import { partyIndex, partyOf, roleWord, type PartyRef } from '@/lib/party-display';
+import { partyIndex, type PartyRef } from '@/lib/party-display';
 import { TaskWorkspace } from '@/components/TaskWorkspace';
 import { taskPath } from '@/lib/task-workspace';
-import { PlanGrid, StatusPicker } from './PlanGrid';
+import { PlanGrid } from './PlanGrid';
+import {
+  StatusPicker, OwnerField, SpecialtyField, useSpecialtyCatalog,
+} from './plan-fields';
 import '@/components/plan-build.css';
 
 // ── "Scheduling links" (LINA-233; typed by ADR-0020 / LINA-253) ─────────────
@@ -261,6 +263,43 @@ function statusOfKey(phases: PhaseDraft[], key: string): StageStatus | null {
   const loc = locateStatusNode(phases, key);
   if (!loc) return null;
   return 'tasks' in loc.node ? (loc.node as PhaseDraft & { status?: StageStatus }).status ?? null : nodeStatus(loc.node as TaskDraft);
+}
+
+/**
+ * Write reported statuses into the draft tree by key (LINA-404). Status is NOT an
+ * authored field — `toWire` never sends it — so this patch is PURELY local: it
+ * lets a reported progress report show the moment it is posted, with NO page
+ * reload (the founder's "the page should never refresh … each change saved
+ * atomically"). Pure and copy-on-write: only the touched nodes (and their
+ * ancestors' array spines) are rebuilt, and an update that changes nothing returns
+ * the same ref. Phases, tasks and sub-tasks are all addressable (the cascade and
+ * the ancestor-reopen both target mixed levels).
+ */
+function applyStatusPatch(phases: PhaseDraft[], updates: Map<string, StageStatus>): PhaseDraft[] {
+  if (updates.size === 0) return phases;
+  let anyPhase = false;
+  const nextPhases = phases.map((p) => {
+    let phaseChanged = false;
+    const tasks = p.tasks.map((t) => {
+      let taskChanged = false;
+      const kids = (t.children ?? []).map((s) => {
+        const ns = updates.get(s.key);
+        if (ns && ns !== s.status) { taskChanged = true; return { ...s, status: ns }; }
+        return s;
+      });
+      const tns = updates.get(t.key);
+      let nt: TaskDraft = t;
+      if (tns && tns !== t.status) { nt = { ...t, status: tns }; taskChanged = true; }
+      if (taskChanged) { phaseChanged = true; return { ...nt, children: kids }; }
+      return t;
+    });
+    const pns = updates.get(p.key);
+    const cur = (p as PhaseDraft & { status?: StageStatus }).status;
+    if (pns && pns !== cur) { anyPhase = true; return { ...p, status: pns, tasks } as PhaseDraft; }
+    if (phaseChanged) { anyPhase = true; return { ...p, tasks }; }
+    return p;
+  });
+  return anyPhase ? nextPhases : phases;
 }
 
 /**
@@ -492,6 +531,9 @@ export function PlanBuildEditor({
   const subs = useMemo(() => subtaskCount(phases), [phases]);
   const index = useMemo(() => nodeIndex(phases), [phases]);
   const dir = useMemo(() => partyIndex(parties), [parties]);
+  // The drawer's Specialty control reads the SAME catalog the grid does (LINA-404),
+  // so the two surfaces offer identical trades and both learn a newly-typed one.
+  const { specialties, remember: rememberSpecialty } = useSpecialtyCatalog();
 
   // The picker already refuses a choice that would loop, so this should never
   // fire — it is the belt to that braces: "Save plan" stays disabled while a
@@ -733,12 +775,30 @@ export function PlanBuildEditor({
     if (!res.ok) throw new Error(res.message);
   }, [reportProgressV2, stageIdByKey]);
 
+  // Write reported statuses into the draft IN PLACE — no page reload (LINA-404,
+  // founder: "the page should never refresh … each change saved atomically"). The
+  // old code called `router.refresh()` after every status post, which reloaded the
+  // whole plan page AND — because the editor's tree lives in client state whose
+  // initialisers never re-run on a refresh — threw the just-set status away on the
+  // round trip, the "status not recorded" bug. Patching the draft instead keeps the
+  // post atomic: the picker, the parent meter and the drawer all re-read the new
+  // value from the same in-memory tree, and a later genuine reload now re-reads it
+  // from storage too (the hydration fix carries a reported status on a draft plan).
+  const patchStatus = useCallback((updates: Map<string, StageStatus>) => {
+    if (updates.size === 0) return;
+    const next = applyStatusPatch(phasesRef.current, updates);
+    if (next === phasesRef.current) return;
+    phasesRef.current = next;
+    setPhases(next);
+  }, []);
+
   // Set a row's status (LINA-307 + LINA-404 FIX 1). A LEAF posts its own status;
   // moving a leaf OFF done reopens any ancestor currently `done` to `in_progress`
   // so the tree stays consistent (founder's ask). A PARENT/PHASE moving TO done
   // opens the confirm modal — the cascade runs on confirm, so nothing is posted
   // here (the grid's pickers are leaves and never reach that branch; it fires from
-  // the drawer's parent control). On success we refresh so derived meters re-read.
+  // the drawer's parent control). On success we PATCH the draft in place so the
+  // derived meters re-read with no reload. A refusal throws so the picker rolls back.
   const setStatus = useCallback(async (nodeKey: string, status: StageStatus) => {
     if (!reportProgressV2) return;
     setError(null);
@@ -748,17 +808,22 @@ export function PlanBuildEditor({
       return;
     }
     await postProgress(nodeKey, status);
+    const updates = new Map<string, StageStatus>([[nodeKey, status]]);
     if (status !== 'done' && loc) {
       for (const aKey of loc.ancestors) {
-        if (statusOfKey(phasesRef.current, aKey) === 'done') await postProgress(aKey, 'in_progress');
+        if (statusOfKey(phasesRef.current, aKey) === 'done') {
+          await postProgress(aKey, 'in_progress');
+          updates.set(aKey, 'in_progress');
+        }
       }
     }
-    router.refresh();
-  }, [reportProgressV2, postProgress, router]);
+    patchStatus(updates);
+  }, [reportProgressV2, postProgress, patchStatus]);
 
   // Run the parent/phase "mark everything below done" cascade (LINA-404 FIX 1):
   // the parent AND every descendant leaf each get their own attributed `done`
-  // progress row, so the audit trail stays honest. Append-only, one call per task.
+  // progress row, so the audit trail stays honest. Append-only, one call per task,
+  // then one in-place patch so the whole subtree re-reads done with no reload.
   const runCascadeDone = useCallback(async () => {
     const c = cascade;
     if (!c) return;
@@ -766,11 +831,13 @@ export function PlanBuildEditor({
     try {
       await postProgress(c.nodeKey, 'done');
       for (const leafKey of c.leafKeys) await postProgress(leafKey, 'done');
-      router.refresh();
+      const updates = new Map<string, StageStatus>([[c.nodeKey, 'done']]);
+      for (const leafKey of c.leafKeys) updates.set(leafKey, 'done');
+      patchStatus(updates);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not mark the sub-tasks done.');
     }
-  }, [cascade, postProgress, router]);
+  }, [cascade, postProgress, patchStatus]);
 
   // Which leaf rows are settable: those the server holds a live id for. A Set so
   // the grid can test membership per row without re-deriving it.
@@ -831,8 +898,6 @@ export function PlanBuildEditor({
       ? setTaskDates(phases, pi, ti, start, end)
       : setSubtaskDates(phases, pi, ti, si, start, end));
   }, [applyDeps, phases]);
-
-  const activeOwner = partyOf(dir, (openRow?.ti == null ? activePhase?.assigneePartyId : active?.assigneePartyId) ?? null);
 
   return (
     <main className="pbx pbx--grid">
@@ -1092,32 +1157,28 @@ export function PlanBuildEditor({
             })()}
 
             <div className="pbx-drawer-meta">
+              {/* Owner / Specialty now reuse the SAME Jira-style dropdown the grid
+                  rows use (LINA-404) — the drawer's old full-width <select>/<input>
+                  stretched the panel; these size to their content. */}
               <span className="pbx-drawer-label">Owner</span>
-              <span className="pbx-owner">
-                {activeOwner ? <PartyAvatar party={activeOwner} size="md" /> : <UnassignedAvatar size="md" />}
-                <select
-                  className="pbx-ownersel"
-                  value={(openRow.ti == null ? activePhase.assigneePartyId : active!.assigneePartyId) ?? ''}
-                  aria-label="Owner"
-                  disabled={parties.length === 0}
-                  onChange={(e) => activeKey && assign(activeKey, e.target.value || null)}
-                >
-                  <option value="">Unassigned</option>
-                  {parties.map((p) => (
-                    <option key={p.partyId} value={p.partyId}>{p.name} · {roleWord(p.role)}</option>
-                  ))}
-                </select>
-              </span>
+              <OwnerField
+                value={(openRow.ti == null ? activePhase.assigneePartyId : active!.assigneePartyId) ?? null}
+                parties={parties}
+                dir={dir}
+                disabled={parties.length === 0 || !activeKey}
+                ariaLabel="Owner"
+                onAssign={(partyId) => activeKey && assign(activeKey, partyId)}
+                variant="full"
+              />
 
               <span className="pbx-drawer-label">Specialty</span>
-              <input
-                className="pbx-tradeinput"
+              <SpecialtyField
                 value={openRow.ti == null ? activePhase.trade : active!.trade}
-                placeholder="e.g. Electrical"
-                maxLength={120}
-                aria-label="Specialty (trade)"
-                disabled={false}
-                onChange={(e) => activeKey && retrade(activeKey, e.target.value)}
+                options={specialties}
+                disabled={!activeKey}
+                ariaLabel="Specialty (trade)"
+                onSet={(label) => activeKey && retrade(activeKey, label)}
+                onRemember={rememberSpecialty}
               />
 
               {openRow.ti != null && active ? (

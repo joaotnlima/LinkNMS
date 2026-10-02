@@ -992,3 +992,91 @@ select.pgd-tradesel:not(:disabled) { cursor: pointer; }
 }
 .pgd-timenav-today:focus-visible,
 .pgd-timenav-scale:focus-visible { outline: 2px solid var(--plan-baseline); outline-offset: 1px; }
+
+/* ── FieldMenu (LINA-404) ──────────────────────────────────────────────────────
+   The one Jira-style dropdown behind Status / Owner / Specialty, in the grid rows
+   AND the detail drawer. The trigger shows the current value; the popover (a flat
+   list of pill/row options) is PORTALLED to <body> and positioned `fixed`, so the
+   grid's `overflow: hidden` ancestor can never clip it. Tokens only — holds in
+   light and dark. */
+.fm { position: relative; display: inline-flex; max-width: 100%; min-width: 0; }
+.fm-trigger {
+  display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%;
+  font: inherit; font-size: 12px; cursor: pointer; color: var(--fg);
+  border: 1px solid transparent; border-radius: 6px; padding: 2px 6px; background: transparent;
+}
+.fm-trigger:hover:not(:disabled) { border-color: var(--outline); background: var(--sunken); }
+.fm-trigger:focus-visible { outline: 2px solid var(--owner); outline-offset: 1px; }
+.fm-trigger:disabled { opacity: .55; cursor: default; }
+.fm-trigger[aria-busy='true'] { cursor: progress; }
+.fm-caret { flex: none; color: var(--muted); opacity: .8; }
+.fm-trigger:disabled .fm-caret { opacity: .4; }
+
+/* The floating menu. Same chrome as the scheduling-links popover, so the surface
+   reads as one family. */
+.fm-pop {
+  z-index: 60; max-height: 320px; overflow-y: auto;
+  background: var(--paper); border: 1px solid var(--outline); border-radius: 10px;
+  padding: 5px; display: flex; flex-direction: column; gap: 1px;
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+.fm-away { position: fixed; inset: 0; z-index: 59; }
+.fm-opt, .fm-action {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  font: inherit; font-size: 13px; color: var(--fg); cursor: pointer;
+  background: transparent; border: none; border-radius: 6px; padding: 6px 8px;
+}
+.fm-opt.is-active, .fm-action.is-active { background: var(--sunken); }
+.fm-opt.is-selected { font-weight: 650; }
+.fm-opt-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-opt-note { flex: none; color: var(--muted); font-size: 11px; }
+.fm-check { flex: none; color: var(--owner); }
+.fm-lead { flex: none; display: inline-flex; }
+.fm-dot { flex: none; width: 9px; height: 9px; border-radius: 999px; background: var(--muted); }
+/* A footer action (＋ Add new…) divided from the value rows. */
+.fm-action {
+  margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--outline);
+  color: var(--muted); font-weight: 600; font-size: 12px; border-radius: 0 0 6px 6px;
+}
+.fm-err { font-size: 11px; color: var(--state-danger); max-width: 180px; }
+
+/* Status: the trigger is a coloured pill (same palette as the bar/meter/legend),
+   and each option carries a matching dot. */
+.fm-status { border-radius: 999px; font-weight: 650; font-size: 11px; padding: 1px 8px; }
+.fm-status .fm-status-word { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-status.is-todo {
+  color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, var(--paper));
+  border-color: var(--outline);
+}
+.fm-status.is-doing {
+  color: var(--plan-baseline); background: color-mix(in srgb, var(--plan-baseline) 12%, var(--paper));
+  border-color: color-mix(in srgb, var(--plan-baseline) 55%, transparent);
+}
+.fm-status.is-done {
+  color: var(--success); background: color-mix(in srgb, var(--success) 12%, var(--paper));
+  border-color: color-mix(in srgb, var(--success) 55%, transparent);
+}
+.fm-status.is-blocked {
+  color: var(--state-danger); background: color-mix(in srgb, var(--state-danger) 12%, var(--paper));
+  border-color: var(--state-danger);
+}
+.pgd-statusedit.is-overdue .fm-status { box-shadow: 0 0 0 1.5px var(--state-warning); }
+.fm-dot.is-todo { background: var(--muted); }
+.fm-dot.is-doing { background: var(--plan-baseline); }
+.fm-dot.is-done { background: var(--success); }
+.fm-dot.is-blocked { background: var(--state-danger); }
+
+/* Owner: the grid cell is just the avatar (no caret, no chrome — it still reads
+   as the circle it always was); the drawer's `full` variant shows the name too. */
+.fm-owner { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
+.fm-owner.is-avatar { justify-self: center; }
+.fm-owner.is-avatar .fm-trigger { padding: 0; gap: 0; border: none; background: transparent; }
+.fm-owner.is-avatar .fm-caret { display: none; }
+.fm-owner.is-avatar .fm-trigger:hover:not(:disabled) { background: transparent; }
+.fm-ownername { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.fm-owner.is-full .fm-trigger { gap: 6px; }
+
+/* Specialty: borrows the input chrome so it reads as an editable field. */
+.fm-specialty { width: 100%; border-bottom: 1px solid var(--outline); border-radius: 4px; }
+.fm-specialty .fm-specialty-word { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-specialty-word.is-empty { color: var(--muted); }

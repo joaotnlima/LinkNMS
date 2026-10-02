@@ -29,13 +29,15 @@
 //     is not a row we RENDER (dropped past depth 3, or absent) is dropped, not
 //     drawn dangling — the same discipline `toWire`/`hydrateDraft` apply.
 //
-//  3. THE METER STAYS HONEST (ADR-0019). The grid's child-count status meter
-//     reads `TaskDraft.status`; a row with no `status` counts as `not_started`
-//     (all-grey). v1 showed progress only against an ACCEPTED version; v2 shows
-//     it only against a BOUND baseline (`PlanGridView.isBaselined`, the
-//     honest-meter switch). So a task's derived status is carried ONLY when the
-//     plan is baselined; on an unbound (draft) plan every row is status-less and
-//     the meter is all-grey — exactly as v1 rendered an un-accepted plan.
+//  3. REPORTED STATUS ROUND-TRIPS (LINA-404). The grid's child-count meter reads
+//     `TaskDraft.status`; a row with no `status` counts as `not_started` (all-grey).
+//     A row's REPORTED progress is carried whenever the server holds one — draft or
+//     baselined. This used to be gated on `isBaselined` (v2's honest-meter switch),
+//     which dropped a status the owner reported on their draft on the very next read
+//     ("status not recorded", the founder's reopen). Carrying it always keeps the
+//     meter honest-by-default — a never-reported row is still `not_started`/grey, so
+//     an untouched plan reads all-grey exactly as before (ADR-0019) — while a row the
+//     owner actually moved now survives a reload.
 //
 // ── WHAT THIS SEAM DELIBERATELY DOES NOT DO (the increment-4 write contract) ───
 // This is READ hydration only — it seeds the editor so a v2 plan RENDERS in the
@@ -103,18 +105,23 @@ function depsFor(
 /**
  * One `StageRow` → one `TaskDraft`, at task (deep) or subtask level. The row id is
  * the editor key (v2 ids are stable — `planning-view.ts`). `trade`/`start`/`end`
- * normalise `null` to the empty string the editor uses for "not set". `status` is
- * the honest-meter switch: carried only on a BASELINED plan, so an unbound plan
- * reads all-grey (ADR-0019). A `StageRow` carries no description (the read seam
- * does not project it), so the editor's description opens empty until the write
- * increment round-trips it.
+ * normalise `null` to the empty string the editor uses for "not set".
+ *
+ * `status` is the row's REPORTED progress, carried whenever the server holds one —
+ * on a draft plan as well as a baselined one (LINA-404). It USED to be gated on
+ * `isBaselined`, so a status the owner reported on their draft was silently dropped
+ * on the next read ("status not recorded" — the founder reopened on exactly this).
+ * Carrying it always is still honest-by-default: a never-reported row comes back
+ * `not_started`, which the meter already counts as grey (ADR-0019's "all-grey on an
+ * untouched plan" holds), while a row the owner actually moved now survives a
+ * reload. A `StageRow` carries no description (the read seam does not project it),
+ * so the editor's description opens empty until the write increment round-trips it.
  */
 function toTaskDraft(
   row: StageRow,
   deep: boolean,
   bySuccessor: PlanGridView['dependenciesBySuccessor'],
   rendered: Set<string>,
-  baselined: boolean,
 ): TaskDraft {
   return {
     key: row.id,
@@ -125,11 +132,15 @@ function toTaskDraft(
     dependsOn: depsFor(row.id, bySuccessor, rendered),
     assigneePartyId: row.assigneePartyId,
     trade: row.trade ?? '',
-    // Only a bound baseline lights the meter; a draft plan is status-less (grey).
-    ...(baselined && row.status ? { status: row.status } : {}),
+    // Carry a MEANINGFUL reported status (draft or baselined) so a progress report
+    // the owner made survives a page reload (LINA-404). `not_started` is the default
+    // and stays un-carried, so an untouched plan is status-less and reads all-grey
+    // exactly as before (ADR-0019) — `nodeStatus` reports a missing status as
+    // not_started regardless, so nothing is lost by omitting it.
+    ...(row.status && row.status !== 'not_started' ? { status: row.status } : {}),
     // Subtasks are the depth cap — a task's children hydrate, a subtask's are
     // dropped (the editor has no row for them, and a save would be `too_deep`).
-    children: deep ? row.children.map((s) => toTaskDraft(s, false, bySuccessor, rendered, baselined)) : [],
+    children: deep ? row.children.map((s) => toTaskDraft(s, false, bySuccessor, rendered)) : [],
   };
 }
 
@@ -144,13 +155,12 @@ function toTaskDraft(
  */
 export function planGridToDraft(view: PlanGridView): PhaseDraft[] {
   const rendered = renderedKeys(view.rows);
-  const baselined = view.isBaselined;
   return view.rows.map((phase) => ({
     key: phase.id,
     name: phase.name,
     dependsOn: depsFor(phase.id, view.dependenciesBySuccessor, rendered),
     assigneePartyId: phase.assigneePartyId,
     trade: phase.trade ?? '',
-    tasks: phase.children.map((t) => toTaskDraft(t, true, view.dependenciesBySuccessor, rendered, baselined)),
+    tasks: phase.children.map((t) => toTaskDraft(t, true, view.dependenciesBySuccessor, rendered)),
   }));
 }
