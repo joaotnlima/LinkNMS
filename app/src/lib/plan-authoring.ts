@@ -907,79 +907,121 @@ export function planLinks(phases: PhaseDraft[]): PlanLink[] {
 // cyclic — there is nothing honest to light, so every bar stays at full
 // strength rather than guessing a path.
 
-const MS_PER_DAY = 86_400_000;
+// The anchor each link type binds on: the predecessor edge that DRIVES the
+// dependent, and the dependent edge that is BOUND. Mirrors toLinkAnchors on the v2
+// wire (ADR-0020), kept local so this pure lib pulls in no v2 module.
+function linkAnchors(type: DepType): { from: 'start' | 'end'; to: 'start' | 'end' } {
+  switch (type) {
+    case 'starts_with': return { from: 'start', to: 'start' };
+    case 'ends_with': return { from: 'end', to: 'end' };
+    default: return { from: 'end', to: 'start' }; // starts_after (finish-to-start)
+  }
+}
+
+// The critical path, the founder's way (LINA-404, video 2026-10-03): "calculated
+// from the last task until the first in sequence" — the chain of linked stages that
+// SETS the project's finish — AND every summary/phase that CONTAINS a stage on it
+// lights too ("critical path is 1.1 (1.1.2 plus 1.1.1) and then 1.2 (1.2.1 plus
+// 1.2.2)" — the parents 1.1 / 1.2, not only their children).
+//
+// We walk LEAVES (a parent is an envelope, not a schedulable thing), stepping
+// backward from the latest-ending leaf through the predecessor that drives it, and
+// close the set upward over ancestors at the end. Crucially this reads the SEQUENCE,
+// not the gap between dates: a weekend or a lag between a driver and its dependent is
+// not slack. (The old pass computed float in CALENDAR days and subtracted a fixed
+// one-day gap for starts_after, so any working-day gap — e.g. a Sun→Wed hand-off —
+// read as 2+ days of float and the stage fell dark though it was dead on the path.)
+//
+// Returns an EMPTY set when the plan has no dated leaf — nothing honest to light.
 
 export function criticalPathKeys(phases: PhaseDraft[]): Set<string> {
-  // 1. Resolve every stage's [start, end] in ms — a leaf from its own dates, a
-  //    parent/phase from its descendants' envelope (undated stages drop out).
-  const { phaseKeys, phaseChildren, dates } = dateMaps(phases);
-  const span = new Map<string, { s: number; e: number }>();
-  for (const n of planNodes(phases)) {
-    const sp = spanMs(n.key, dates, phaseKeys, phaseChildren);
-    if (sp) span.set(n.key, { s: sp.start, e: sp.end });
-  }
-  if (span.size === 0) return new Set();
+  // A momentarily-cyclic draft has no honest "last task → first" to walk — light
+  // nothing rather than guess (the draft can't be saved in this state anyway).
+  if (detectCycle(phases)) return new Set();
 
-  // 2. The predecessor → dependent graph, over dated stages only. A link
-  //    touching an undated stage anchors no bar and schedules nothing, so it is
-  //    not an ordering edge here (same as the Gantt leaves it undrawn).
-  const succ = new Map<string, Array<{ to: string; type: DepType }>>();
-  const indeg = new Map<string, number>();
-  for (const k of span.keys()) indeg.set(k, 0);
+  const { phaseKeys, phaseChildren, taskChildren, dates } = dateMaps(phases);
+
+  // Parent → child wiring, both levels: used to resolve a link drawn on a summary
+  // row down to the leaf that actually drives/binds it, and to light every ancestor
+  // of a critical leaf.
+  const parentOf = new Map<string, string>();
+  for (const [ph, tasks] of phaseChildren) for (const t of tasks) parentOf.set(t, ph);
+  for (const [t, subs] of taskChildren) for (const s of subs) parentOf.set(s, t);
+
+  const isLeaf = (key: string): boolean => !phaseKeys.has(key) && !taskChildren.has(key);
+  const descLeaves = (key: string): string[] => {
+    if (phaseKeys.has(key)) return (phaseChildren.get(key) ?? []).flatMap(descLeaves);
+    const subs = taskChildren.get(key);
+    return subs ? subs.flatMap(descLeaves) : [key];
+  };
+
+  // Dated leaves only — an undated leaf anchors no bar and schedules nothing.
+  const leafSpan = new Map<string, { s: number; e: number }>();
+  for (const [key, d] of dates) {
+    if (!isLeaf(key)) continue;
+    const s = parseDay(d.start);
+    const e = parseDay(d.end);
+    if (s !== null && e !== null) leafSpan.set(key, { s, e });
+  }
+  if (leafSpan.size === 0) return new Set();
+
+  // The dated leaf a link drives FROM / binds TO — a link on a summary resolves to
+  // its extreme dated leaf (latest-ending for an `end` anchor, earliest-starting for
+  // a `start` anchor), the same edge the Gantt connector draws.
+  const extremeLeaf = (key: string, edge: 'start' | 'end'): string | null => {
+    let best: string | null = null;
+    let bestVal = edge === 'end' ? -Infinity : Infinity;
+    for (const leaf of descLeaves(key)) {
+      const sp = leafSpan.get(leaf);
+      if (!sp) continue;
+      const v = edge === 'end' ? sp.e : sp.s;
+      if (best === null || (edge === 'end' ? v > bestVal : v < bestVal)) { bestVal = v; best = leaf; }
+    }
+    return best;
+  };
+
+  // Each dated leaf's predecessors, tagged with the time the driver binds it; the
+  // backward walk steps to the driver(s) with the LATEST such time — the one that
+  // actually sets this leaf's position.
+  const preds = new Map<string, Array<{ from: string; driveAt: number }>>();
   for (const l of planLinks(phases)) {
-    if (!span.has(l.from) || !span.has(l.to)) continue;
-    let arr = succ.get(l.to);
-    if (!arr) { arr = []; succ.set(l.to, arr); }
-    arr.push({ to: l.from, type: l.type });
-    indeg.set(l.from, (indeg.get(l.from) ?? 0) + 1);
+    const a = linkAnchors(l.type);
+    const driver = extremeLeaf(l.to, a.from);   // l.to = predecessor
+    const bound = extremeLeaf(l.from, a.to);    // l.from = dependent
+    if (!driver || !bound || driver === bound) continue;
+    const dsp = leafSpan.get(driver)!;
+    const arr = preds.get(bound) ?? [];
+    arr.push({ from: driver, driveAt: a.from === 'end' ? dsp.e : dsp.s });
+    preds.set(bound, arr);
   }
 
-  // 3. Topological order (Kahn). A leftover node means a cycle — bail honestly
-  //    rather than light a path a longest-walk can't trust.
-  const deg = new Map(indeg);
-  const queue = [...deg].filter(([, d]) => d === 0).map(([k]) => k);
-  const order: string[] = [];
+  // Project finish = the latest-ending leaf(s).
+  let projectEnd = -Infinity;
+  for (const { e } of leafSpan.values()) if (e > projectEnd) projectEnd = e;
+
+  // Backward walk from each finisher through its BINDING predecessor(s) — those tied
+  // for the latest drive-time, so parallel driving chains both light. A `visited`
+  // guard keeps a momentarily-cyclic draft from looping.
+  const critical = new Set<string>();
+  const queue: string[] = [];
+  for (const [k, { e }] of leafSpan) if (e === projectEnd) { critical.add(k); queue.push(k); }
   while (queue.length > 0) {
     const k = queue.shift()!;
-    order.push(k);
-    for (const e of succ.get(k) ?? []) {
-      const d = (deg.get(e.to) ?? 0) - 1;
-      deg.set(e.to, d);
-      if (d === 0) queue.push(e.to);
-    }
-  }
-  if (order.length !== span.size) return new Set();
-
-  // 4. Project finish = the latest end across every dated stage.
-  let projectEnd = -Infinity;
-  for (const { e } of span.values()) if (e > projectEnd) projectEnd = e;
-
-  // 5. Backward pass in REVERSE topological order: each stage's LATEST finish is
-  //    bounded by every dependent it feeds (a dependent read before its
-  //    predecessor, so its latest times are already final). A stage's actual
-  //    dates are its earliest schedule (enforceDependencies snapped them
-  //    forward), so float = latestFinish − actualEnd ≥ 0; a day or less of
-  //    float ⇒ on the critical path.
-  const lf = new Map<string, number>();                 // latest finish, ms
-  for (const k of span.keys()) lf.set(k, projectEnd);
-  for (let i = order.length - 1; i >= 0; i--) {
-    const k = order[i];
-    const me = span.get(k)!;
-    const dur = me.e - me.s;
-    for (const e of succ.get(k) ?? []) {
-      const dep = span.get(e.to)!;
-      const depLatestStart = lf.get(e.to)! - (dep.e - dep.s);
-      const cand =
-        e.type === 'starts_after' ? depLatestStart - MS_PER_DAY  // finish a day before dep starts
-          : e.type === 'starts_with' ? depLatestStart + dur       // start with dep ⇒ finish = start + my duration
-            : lf.get(e.to)!;                                      // ends_with ⇒ finish when dep finishes
-      if (cand < lf.get(k)!) lf.set(k, cand);
+    const ps = preds.get(k);
+    if (!ps || ps.length === 0) continue;
+    let latest = -Infinity;
+    for (const p of ps) if (p.driveAt > latest) latest = p.driveAt;
+    for (const p of ps) {
+      if (p.driveAt !== latest || critical.has(p.from)) continue;
+      critical.add(p.from);
+      queue.push(p.from);
     }
   }
 
-  const critical = new Set<string>();
-  for (const [k, { e }] of span) {
-    if (Math.abs(lf.get(k)! - e) < MS_PER_DAY) critical.add(k);
+  // Light every ancestor (summary task + phase) of a critical leaf.
+  for (const leaf of [...critical]) {
+    let p = parentOf.get(leaf);
+    while (p !== undefined) { critical.add(p); p = parentOf.get(p); }
   }
   return critical;
 }

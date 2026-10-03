@@ -723,7 +723,12 @@ export function PlanGrid(props: PlanGridProps) {
   useEffect(() => {
     const sc = scrollRef.current;
     if (!sc) return undefined;
-    const INTERACTIVE = '.pgt-bar, .pgt-handle, .pgt-linksrc, .pgt-linktgt, .pgt-track.is-clickable';
+    // `.pgt-unlink` MUST be here (LINA-404): the ⊘ clear-a-link button lives on the
+    // canvas, so without it a pointer-down on ⊘ starts a pan + pointer-capture and
+    // the trailing click is swallowed — the link never clears (founder's unlink
+    // video, 2026-10-03). It shows its hover state regardless (pure CSS), which is
+    // why the control looked alive but did nothing.
+    const INTERACTIVE = '.pgt-bar, .pgt-handle, .pgt-linksrc, .pgt-linktgt, .pgt-unlink, .pgt-track.is-clickable';
     let startX = 0;
     let startLeft = 0;
     let pointerId = -1;
