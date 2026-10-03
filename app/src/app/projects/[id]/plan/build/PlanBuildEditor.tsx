@@ -64,7 +64,7 @@ import {
 import { rekeyDraft, rekeyWire, draftKeys } from '@/lib/v2/plan-rekey';
 import { partyIndex, type PartyRef } from '@/lib/party-display';
 import { TaskWorkspace } from '@/components/TaskWorkspace';
-import { taskPath } from '@/lib/task-workspace';
+import { taskHref, planHref } from '@/lib/task-workspace';
 import { PlanGrid } from './PlanGrid';
 import {
   StatusPicker, OwnerField, SpecialtyField, useSpecialtyCatalog,
@@ -505,8 +505,15 @@ export function PlanBuildEditor({
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const next = workspaceKey ? taskPath(projectId, workspaceKey) : `/projects/${projectId}/plan/build`;
-    if (window.location.pathname !== next) window.history.replaceState(null, '', next);
+    // Stay on the `/plan` route — the task is a query param, not a sibling path
+    // (LINA-404). replaceState feeds Next 15's canonical URL, and every server
+    // action revalidates it; a sibling/redirect route there navigated on each
+    // save and blanked the page. Compare pathname+search so the query change is
+    // seen.
+    const next = workspaceKey ? taskHref(projectId, workspaceKey) : planHref(projectId);
+    if (window.location.pathname + window.location.search !== next) {
+      window.history.replaceState(null, '', next);
+    }
   }, [projectId, workspaceKey]);
 
   // A fresh task means a fresh link — the "Copied" flash must not carry over.
@@ -514,7 +521,7 @@ export function PlanBuildEditor({
 
   const copyLink = useCallback(async () => {
     if (!workspaceKey) return;
-    const url = `${window.location.origin}${taskPath(projectId, workspaceKey)}`;
+    const url = `${window.location.origin}${taskHref(projectId, workspaceKey)}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
