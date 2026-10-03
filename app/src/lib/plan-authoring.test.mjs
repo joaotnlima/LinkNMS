@@ -1281,6 +1281,50 @@ test('criticalPathKeys: an undated plan lights nothing', () => {
   assert.equal(criticalPathKeys(phases).size, 0);
 });
 
+test('criticalPathKeys: a working-day gap (Sun finish → Wed start) is NOT slack', () => {
+  // The driver finishes Sun Nov 1; its dependent starts Wed Nov 4 (the next working
+  // day across the weekend). The chain is tight — a weekend is not float. The old
+  // calendar-day float read this 3-day gap as 2 days of slack and dropped the
+  // driver from the path (LINA-404 regression).
+  const phases = [{
+    key: 'p1', name: 'P', dependsOn: [], tasks: [
+      { key: 'a', name: 'A', start: '2026-10-25', end: '2026-11-01', dependsOn: [], children: [] },
+      { key: 'b', name: 'B', start: '2026-11-04', end: '2026-11-10',
+        dependsOn: [{ on: 'a', type: 'starts_after' }], children: [] },
+    ],
+  }];
+  const crit = criticalPathKeys(phases);
+  assert.ok(crit.has('a') && crit.has('b'), 'both legs of the working-day-gapped chain are critical');
+});
+
+test('criticalPathKeys: lights summary parents + the driving chain, dark the early sibling (founder)', () => {
+  // The founder's plan (video 2026-10-03): phase P1 with two summary tasks. The
+  // critical path is "1.1 (1.1.2 plus 1.1.1) and then 1.2 (1.2.1 plus 1.2.2)" — the
+  // summary bars 1.1 / 1.2 light because the work inside them drives the finish; the
+  // early-finishing sibling 1.1.3 and its parent-free self stay dark.
+  const phases = [{
+    key: 'p1', name: '1 · Pre-Construction', dependsOn: [], tasks: [
+      { key: 't11', name: '1.1 Planning', start: '2026-10-06', end: '2026-10-21', dependsOn: [], children: [
+        { key: 's112', name: 'test2', start: '2026-10-06', end: '2026-10-16', dependsOn: [], children: [] },
+        { key: 's111', name: 'test', start: '2026-10-17', end: '2026-10-21',
+          dependsOn: [{ on: 's112', type: 'starts_after' }], children: [] },
+        { key: 's113', name: 'test', start: '2026-10-06', end: '2026-10-16', dependsOn: [], children: [] },
+      ] },
+      { key: 't12', name: '1.2 Design', start: '2026-10-25', end: '2026-11-10',
+        dependsOn: [{ on: 't11', type: 'starts_after' }], children: [
+        { key: 's121', name: 'test', start: '2026-10-25', end: '2026-11-01', dependsOn: [], children: [] },
+        { key: 's122', name: 'test2', start: '2026-11-04', end: '2026-11-10',
+          dependsOn: [{ on: 's121', type: 'starts_after' }], children: [] },
+      ] },
+    ],
+  }];
+  const crit = criticalPathKeys(phases);
+  for (const k of ['s112', 's111', 's121', 's122', 't11', 't12', 'p1']) {
+    assert.ok(crit.has(k), `${k} is on the critical path`);
+  }
+  assert.ok(!crit.has('s113'), '1.1.3 finishes early and drives nothing — dark');
+});
+
 test('criticalPathKeys: a cyclic graph bails to an empty set rather than guess', () => {
   const phases = [{
     key: 'p1', name: 'P', dependsOn: [], tasks: [
