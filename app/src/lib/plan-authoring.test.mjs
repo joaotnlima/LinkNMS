@@ -22,8 +22,8 @@ import {
   // Dependencies (LINA-233), typed by ADR-0020 / LINA-253.
   planNodes, dependencyChoices, dependsOnOf, setDependsOn, toggleDependency, detectCycle,
   setDependencyType, planLinks, DEP_TYPES, DEP_LABELS, DEFAULT_DEP_TYPE, isDepType,
-  // Dependency-date enforcement (LINA-306) + parent end roll-up (LINA-404).
-  enforceDependencies, enforceLink, enforceParentRollup,
+  // Dependency-date enforcement (LINA-306) + parent end roll-up + group move (LINA-404).
+  enforceDependencies, enforceLink, enforceParentRollup, shiftGroup,
   // The third level (LINA-243).
   addSubtask, renameSubtask, setSubtaskDate, setSubtaskDates, setSubtaskDescription, removeSubtask,
   moveSubtask, reorderSubtask, subtaskCount,
@@ -1161,6 +1161,67 @@ test('enforceLink: a released or undated link moves nothing (identity)', () => {
   assert.equal(enforceLink(phases, 'b'), phases, 'an undated dependent → identity (same ref)');
   const noDeps = [P('p1', [T('a', '2026-03-01', '2026-03-05')])];
   assert.equal(enforceLink(noDeps, 'a'), noDeps, 'a node with no links → identity');
+});
+
+test('enforceLink: linking to a PARENT slides its whole subtree forward (LINA-404)', () => {
+  // The founder's exact bug: 1.1 (a leaf) ends 03-10; 1.2 is a PARENT holding two
+  // sub-tasks. Drawing "1.2 starts after 1.1" must push 1.2 AND its children forward
+  // as a group — not set 1.2's derived row (which the roll-up would revert) and leave
+  // the children behind.
+  let phases = [P('p1', [
+    T('t1.1', '2026-03-01', '2026-03-10'),
+    Twith('t1.2', '2026-03-05', '2026-03-20', [
+      T('t1.2.1', '2026-03-05', '2026-03-12'),  // earliest start = parent start
+      T('t1.2.2', '2026-03-14', '2026-03-20'),  // latest end = parent end
+    ]),
+  ])];
+  phases = toggleDependency(phases, 't1.2', 't1.1'); // 1.2 starts_after 1.1
+  const out = enforceLink(phases, 't1.2');
+  // 1.1 ends 03-10 → 1.2 starts 03-11. The parent slid +6 days, and so did BOTH kids
+  // by the SAME delta, keeping their 03-05→03-14 relative gap intact.
+  assert.equal(out[0].tasks[1].start, '2026-03-11', 'parent start := pred.end + 1');
+  assert.equal(out[0].tasks[1].end, '2026-03-26', 'parent end slid by the same +6 days');
+  assert.equal(out[0].tasks[1].children[0].start, '2026-03-11', 'child 1 slid +6');
+  assert.equal(out[0].tasks[1].children[0].end, '2026-03-18');
+  assert.equal(out[0].tasks[1].children[1].start, '2026-03-20', 'child 2 slid +6, gap kept');
+  assert.equal(out[0].tasks[1].children[1].end, '2026-03-26');
+  // The predecessor never moves.
+  assert.equal(out[0].tasks[0].start, '2026-03-01');
+});
+
+test('shiftGroup: a parent task slides itself and every sub-task by the same delta', () => {
+  const phases = [P('p1', [
+    Twith('t1', '2026-03-01', '2026-03-20', [
+      T('s1', '2026-03-01', '2026-03-10'),
+      T('s2', '2026-03-12', '2026-03-20'),
+    ]),
+    T('tX', '2026-04-01', '2026-04-05'),   // a sibling — must NOT move
+  ])];
+  const out = shiftGroup(phases, 't1', 5);
+  assert.equal(out[0].tasks[0].start, '2026-03-06');
+  assert.equal(out[0].tasks[0].end, '2026-03-25');
+  assert.equal(out[0].tasks[0].children[0].start, '2026-03-06');
+  assert.equal(out[0].tasks[0].children[1].end, '2026-03-25');
+  assert.equal(out[0].tasks[1].start, '2026-04-01', 'the sibling is untouched');
+});
+
+test('shiftGroup: a whole phase slides all of its tasks and sub-tasks', () => {
+  const phases = [P('p1', [
+    Twith('t1', '2026-03-01', '2026-03-10', [T('s1', '2026-03-01', '2026-03-10')]),
+    T('t2', '2026-03-15', '2026-03-20'),
+  ])];
+  const out = shiftGroup(phases, 'p1', -3);
+  assert.equal(out[0].tasks[0].start, '2026-02-26');
+  assert.equal(out[0].tasks[0].children[0].end, '2026-03-07');
+  assert.equal(out[0].tasks[1].start, '2026-03-12');
+});
+
+test('shiftGroup: blanks stay blank, delta 0 and unknown key are identity', () => {
+  const phases = [P('p1', [{ key: 't1', name: 'T1', start: '', end: '', description: '', trade: '', assigneePartyId: null, dependsOn: [], children: [] }])];
+  const out = shiftGroup(phases, 't1', 4);
+  assert.equal(out[0].tasks[0].start, '', 'an undated edge has no boundary to move');
+  assert.equal(shiftGroup(phases, 't1', 0), phases, 'delta 0 → same ref');
+  assert.equal(shiftGroup(phases, 'nope', 4), phases, 'a key naming nothing → same ref');
 });
 
 test('enforceDependencies: pure — the input tree is never mutated', () => {

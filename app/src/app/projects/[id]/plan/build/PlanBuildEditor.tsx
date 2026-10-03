@@ -46,7 +46,6 @@
 // the plan page ("Send for approval"). On save we hand the returned audit id to
 // /plan, which shows the "draft saved" stamp once and links to the audit trail.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 import {
@@ -58,7 +57,7 @@ import {
   reorderPhase, reorderSubtask, reorderTask,
   saveMyDefaultTemplate, seedFromTemplate, seedSkeleton,
   setAssignee, setDependencyType, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
-  setTaskDate, setTaskDates, setTaskDescription, setTrade,
+  setTaskDate, setTaskDates, setTaskDescription, setTrade, shiftGroup,
   subtaskCount, taskCount, toggleDependency, toTemplateBody, toWire,
   type AuthoredNode, type DepType, type PhaseDraft, type PlanNodeRef, type StageStatus, type TaskDraft, type TemplatePhase,
 } from '@/lib/plan-authoring';
@@ -389,7 +388,6 @@ export function PlanBuildEditor({
    */
   reportProgressV2?: ReportProgressV2;
 }) {
-  const router = useRouter();
   const resuming = initialPhases != null && initialPhases.length > 0;
   // v2 mode (LINA-369): the save writes the build's live plan on the v2 record —
   // NOT the v1 private-draft-then-propose flow. The copy below drops the "only you
@@ -655,13 +653,10 @@ export function PlanBuildEditor({
           return nextKeys;
         });
         setSaveState('saved');
-        // A reparent/reorder is REPORTED but not persisted on v2 yet (the read seam
-        // does not project sibling positions — tracked past S3). Be honest that the
-        // move did not save while the rest did, and re-sync the read surfaces.
-        if (res.needsReload) {
-          setError('Moving a row to a new position isn’t saved on the new plan yet — your other changes were saved. Reload to see the plan as stored.');
-          router.refresh();
-        }
+        // The page NEVER reloads on a save (LINA-404, founder: edits must land in
+        // place). Reorders and reparents are now persisted as their own v2 ops
+        // (`reorder_children` / `move_subtree`, plan-diff.ts), so `needsReload` is
+        // always false and there is no router.refresh() to throw away the live tree.
         return;
       } finally {
         savingRef.current = false;
@@ -677,7 +672,7 @@ export function PlanBuildEditor({
     pendingRef.current = false;
     setSaveState('error');
     setError('This editor is misconfigured — reload the page to try again.');
-  }, [projectId, router, saveV2]);
+  }, [projectId, saveV2]);
 
   useEffect(() => { flushRef.current = flush; }, [flush]);
   // Flush a still-pending debounce on unmount so the last edit is never lost when
@@ -899,6 +894,23 @@ export function PlanBuildEditor({
       : setSubtaskDates(phases, pi, ti, si, start, end));
   }, [applyDeps, phases]);
 
+  // Drag a SUMMARY bar to move the whole group (LINA-404, founder's ask: "if I move
+  // the parent task, the tasks inside move with it"). `shiftGroup` slides the named
+  // stage and every descendant by the same whole-day delta; the parent's derived
+  // envelope follows, and applyDeps re-flows anything linked to it — exactly the
+  // leaf-drag pipeline, fed a rigid group move. The grid sends the TOTAL offset from
+  // the drag start, applied against the tree snapshotted when the drag began — so it
+  // is ABSOLUTE and idempotent (a dropped render never double-counts), like the leaf
+  // drag's absolute dates. The move stream collapses into one debounced save.
+  const groupBaseRef = useRef<{ key: string; tree: PhaseDraft[] } | null>(null);
+  const shiftGroupDates = useCallback((key: string, deltaDays: number) => {
+    if (!groupBaseRef.current || groupBaseRef.current.key !== key) {
+      groupBaseRef.current = { key, tree: phasesRef.current };
+    }
+    applyDeps(shiftGroup(groupBaseRef.current.tree, key, deltaDays));
+  }, [applyDeps]);
+  const endGroupShift = useCallback(() => { groupBaseRef.current = null; }, []);
+
   return (
     <main className="pbx pbx--grid">
       <header className="pbx-head">
@@ -981,6 +993,8 @@ export function PlanBuildEditor({
         onRename={rename}
         onSetDate={setDate}
         onDates={setDates}
+        onShiftGroup={shiftGroupDates}
+        onShiftGroupEnd={endGroupShift}
         onAssign={assign}
         onTrade={retrade}
         onAddPhase={() => {
