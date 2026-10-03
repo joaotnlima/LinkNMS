@@ -1034,21 +1034,58 @@ function spanMs(
 function dateMaps(phases: PhaseDraft[]): {
   phaseKeys: Set<string>;
   phaseChildren: Map<string, string[]>;
+  /** A task key → its sub-task keys, present only for tasks that HAVE sub-tasks.
+   *  Enforcement reads this to move a PARENT dependent as a group (LINA-404). */
+  taskChildren: Map<string, string[]>;
   dates: Map<string, { start: string; end: string }>;
 } {
   const phaseKeys = new Set(phases.map((p) => p.key));
   const phaseChildren = new Map<string, string[]>();
+  const taskChildren = new Map<string, string[]>();
   const dates = new Map<string, { start: string; end: string }>();
   for (const p of phases) {
     const kidKeys: string[] = [];
     for (const t of p.tasks) {
       kidKeys.push(t.key);
       dates.set(t.key, { start: t.start, end: t.end });
-      for (const s of kids(t)) dates.set(s.key, { start: s.start, end: s.end });
+      const subKeys: string[] = [];
+      for (const s of kids(t)) { dates.set(s.key, { start: s.start, end: s.end }); subKeys.push(s.key); }
+      if (subKeys.length) taskChildren.set(t.key, subKeys);
     }
     phaseChildren.set(p.key, kidKeys);
   }
-  return { phaseKeys, phaseChildren, dates };
+  return { phaseKeys, phaseChildren, taskChildren, dates };
+}
+
+/** Slide one date-map entry by `deltaMs`, preserving a blank edge (an undated edge
+ *  has no boundary to move). Used to move a PARENT's subtree rigidly (LINA-404). */
+function slideEntry(
+  dates: Map<string, { start: string; end: string }>, key: string, deltaMs: number,
+): void {
+  const d = dates.get(key);
+  if (!d) return;
+  const s = parseDay(d.start);
+  const e = parseDay(d.end);
+  dates.set(key, {
+    start: s === null ? d.start : formatDay(s + deltaMs),
+    end: e === null ? d.end : formatDay(e + deltaMs),
+  });
+}
+
+/**
+ * The START delta a link's `snap` implies for a PARENT dependent, in ms — non-zero
+ * ONLY when the link moved the dependent's START (`starts_after` / `starts_with`).
+ * A start-constrained parent slides its whole subtree by this delta so the children
+ * follow. An `ends_with` link moves the END alone (pinning the start, LINA-306), so
+ * it returns 0 — the caller then sets the parent's own row (resize), exactly as a
+ * leaf, and the roll-up reconciles the span with the children on the next pass.
+ */
+function parentStartShiftMs(
+  cur: { start: string; end: string }, snap: { start: string; end: string },
+): number {
+  const cs = parseDay(cur.start);
+  const ss = parseDay(snap.start);
+  return cs !== null && ss !== null && ss !== cs ? ss - cs : 0;
 }
 
 /**
@@ -1144,7 +1181,7 @@ export function enforceDependencies(phases: PhaseDraft[]): PhaseDraft[] {
 
   const link = edges(phases);
   const nodes = planNodes(phases);
-  const { phaseKeys, phaseChildren, dates } = dateMaps(phases);
+  const { phaseKeys, phaseChildren, taskChildren, dates } = dateMaps(phases);
 
   // Kahn's algorithm on the predecessor → dependent graph, so a node is only
   // processed once all its predecessors already carry their enforced dates.
@@ -1176,7 +1213,20 @@ export function enforceDependencies(phases: PhaseDraft[]): PhaseDraft[] {
     const deps = link.get(key) ?? [];
     if (deps.length === 0) continue;
     const snap = snapToLinks(key, deps, dates, phaseKeys, phaseChildren);
-    if (snap) { dates.set(key, snap); changed = true; }
+    if (!snap) continue;
+    const subs = taskChildren.get(key);
+    const deltaMs = subs && subs.length ? parentStartShiftMs(dates.get(key)!, snap) : 0;
+    if (deltaMs !== 0) {
+      // A start-constrained PARENT moves as a GROUP (LINA-404): slide its whole
+      // subtree so the children follow and the derived envelope tracks them.
+      slideEntry(dates, key, deltaMs);
+      for (const c of subs!) slideEntry(dates, c, deltaMs);
+    } else {
+      // A leaf, or an `ends_with` parent (end-only, start pinned) → set the row;
+      // the roll-up reconciles a parent's span with its children next pass.
+      dates.set(key, snap);
+    }
+    changed = true;
   }
   if (!changed) return phases;
 
@@ -1195,10 +1245,21 @@ export function enforceLink(phases: PhaseDraft[], dependent: string): PhaseDraft
   if (detectCycle(phases)) return phases;
   const deps = edges(phases).get(dependent) ?? [];
   if (deps.length === 0) return phases;
-  const { phaseKeys, phaseChildren, dates } = dateMaps(phases);
+  const { phaseKeys, phaseChildren, taskChildren, dates } = dateMaps(phases);
   const snap = snapToLinks(dependent, deps, dates, phaseKeys, phaseChildren);
   if (!snap) return phases;
-  dates.set(dependent, snap);
+  const subs = taskChildren.get(dependent);
+  const deltaMs = subs && subs.length ? parentStartShiftMs(dates.get(dependent)!, snap) : 0;
+  if (deltaMs !== 0) {
+    // A start-constrained link to a PARENT slides its whole subtree (LINA-404, the
+    // founder's ask that linking 1.1→1.2 pushes 1.2 forward "regardless of the tasks
+    // inside"): the children move with it and the derived envelope follows.
+    slideEntry(dates, dependent, deltaMs);
+    for (const c of subs!) slideEntry(dates, c, deltaMs);
+  } else {
+    // A leaf, or an `ends_with` parent (end only, start pinned, LINA-306).
+    dates.set(dependent, snap);
+  }
   return withDates(phases, dates);
 }
 
@@ -1267,6 +1328,53 @@ export function enforceParentRollup(phases: PhaseDraft[]): PhaseDraft[] {
       if (t.start === start && t.end === end) return t; // already the envelope → identity
       touched = true;
       return { ...t, start, end };                     // derive both edges from the children
+    });
+    if (!touched) return p;
+    changed = true;
+    return { ...p, tasks };
+  });
+  return changed ? next : phases;
+}
+
+/**
+ * Slide a stage and every descendant under it by `deltaDays` whole days (LINA-404,
+ * founder's ask: "if I try to move the parent task, the tasks inside move with it").
+ * A GROUP — a phase or a task that holds sub-tasks — moves RIGIDLY: every dated leaf
+ * under it slides by the SAME delta, so the children keep their relative layout and
+ * the parent's derived envelope follows. A leaf shifts only itself. Only dated edges
+ * move — a blank start/finish stays blank. `deltaDays === 0`, or a key that names
+ * nothing, returns the same ref, so this never fabricates an edit. Pure and
+ * copy-on-write: only the touched spine is rebuilt.
+ */
+export function shiftGroup(phases: PhaseDraft[], key: string, deltaDays: number): PhaseDraft[] {
+  if (deltaDays === 0) return phases;
+  const slide = (iso: string): string => (iso ? addDays(iso, deltaDays) : iso);
+  const slideTask = (t: TaskDraft): TaskDraft => ({
+    ...t,
+    start: slide(t.start),
+    end: slide(t.end),
+    children: kids(t).map((s) => ({ ...s, start: slide(s.start), end: slide(s.end) })),
+  });
+  let changed = false;
+  const next = phases.map((p) => {
+    if (p.key === key) {
+      // A whole PHASE moves: every task (and its sub-tasks) slides by delta.
+      changed = true;
+      return { ...p, tasks: p.tasks.map(slideTask) };
+    }
+    let touched = false;
+    const tasks = p.tasks.map((t) => {
+      if (t.key === key) { touched = true; return slideTask(t); } // task + its sub-tasks
+      if (kids(t).some((s) => s.key === key)) {
+        touched = true;
+        return {
+          ...t,
+          children: kids(t).map((s) => (s.key === key
+            ? { ...s, start: slide(s.start), end: slide(s.end) }
+            : s)),
+        };
+      }
+      return t;
     });
     if (!touched) return p;
     changed = true;
