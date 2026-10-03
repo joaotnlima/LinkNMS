@@ -128,14 +128,15 @@ const COL_MAX = 560;
 
 // ── The reorderable middle columns (LINA-259 ask 6) ──────────────────────────
 // The name column is pinned first and never moves; grip and ID are fixed too.
-// Only these three reorder, and their widths reorder with them so the grid
-// template stays row-for-row consistent between the header and the body.
-type ColKey = 'trade' | 'owner' | 'dates';
-const DEFAULT_COL_ORDER: ColKey[] = ['trade', 'owner', 'dates'];
+// Only these reorder, and their widths reorder with them so the grid template
+// stays row-for-row consistent between the header and the body. The DATES column
+// was removed (LINA-404, founder: the bars already carry each row's start/finish
+// on hover and in the detail drawer, so the table column was wasted width).
+type ColKey = 'trade' | 'owner';
+const DEFAULT_COL_ORDER: ColKey[] = ['trade', 'owner'];
 const COL_TEMPLATE: Record<ColKey, string> = {
   trade: 'var(--pgdw-trade, 96px)',
   owner: '30px',
-  dates: 'var(--pgdw-dates, 176px)',
 };
 
 // Session-only view state (LINA-259): the split and the column order live for
@@ -215,6 +216,18 @@ export interface PlanGridProps {
   onSetDate: (field: 'start' | 'end', value: string, pi: number, ti: number, si?: number) => void;
   /** Both dates at once — a drag result or an empty-track click plant. */
   onDates: (pi: number, ti: number, start: string, end: string, si?: number) => void;
+  /**
+   * Slide a SUMMARY row and its whole subtree by `deltaDays` whole days (LINA-404) —
+   * dragging a parent bar moves the group rigidly, children and all. `deltaDays` is
+   * the TOTAL offset from the drag's START (not an increment), so the caller applies
+   * it against the tree snapshotted at drag start — idempotent, exactly like the
+   * leaf drag's absolute dates, so a dropped render never double-counts. Absent →
+   * summary bars are not group-draggable.
+   */
+  onShiftGroup?: (nodeKey: string, deltaDays: number) => void;
+  /** End a group drag (LINA-404) — the caller drops its drag-start snapshot so the
+   *  next group drag re-captures a fresh base. Fires on pointer-up/cancel. */
+  onShiftGroupEnd?: () => void;
   onAssign: (nodeKey: string, partyId: string | null) => void;
   onTrade: (nodeKey: string, trade: string) => void;
   /** Add ops return the NEW node's key so the grid can open rename on it. */
@@ -792,38 +805,61 @@ export function PlanGrid(props: PlanGridProps) {
   const [dragTask, setDragTask] = useState<{ pi: number; ti: number } | null>(null);
   const [dragSub, setDragSub] = useState<{ pi: number; ti: number; si: number } | null>(null);
 
-  // ── Bar drag (LINA-236/244, unchanged): origin captured at pointer-down. ──
+  // ── Bar drag (LINA-236/244): origin captured at pointer-down. A SUMMARY bar is
+  // draggable as a GROUP (LINA-404) — `group` routes the move to onShiftGroup, which
+  // slides the whole subtree; `lastDeltaDays` lets us send the INCREMENT since the
+  // last pointermove so the shift never double-counts. ──
   const drag = useRef<
-    null | { pi: number; ti: number; si?: number; mode: DragMode; startX: number; start: string; end: string }
+    null | {
+      pi: number; ti: number; si?: number; key: string; mode: DragMode;
+      startX: number; start: string; end: string; group: boolean; lastDeltaDays: number;
+    }
   >(null);
 
   const onBarDown = useCallback((
     e: React.PointerEvent, r: Extract<Row, { kind: 'task' }>, mode: DragMode,
   ) => {
-    // A summary task's bar is its children's derived envelope (LINA-404) — you
-    // move the sub-tasks, not the summary, exactly as a phase bar is not draggable.
-    if (disabled || e.button !== 0 || (r.si == null && (r.node.children ?? []).length > 0)) return;
+    // A summary task (one with sub-tasks) can be MOVED as a group but never RESIZED
+    // — its span derives from its children (LINA-404). So only a 'move' drag starts
+    // on it, and it needs an onShiftGroup handler to go anywhere.
+    const isSummary = r.si == null && (r.node.children ?? []).length > 0;
+    if (disabled || e.button !== 0) return;
+    if (isSummary && (mode !== 'move' || !props.onShiftGroup)) return;
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     drag.current = {
-      pi: r.pi, ti: r.ti, si: r.si, mode,
+      pi: r.pi, ti: r.ti, si: r.si, key: r.key, mode,
       startX: e.clientX, start: r.node.start, end: r.node.end,
+      group: isSummary, lastDeltaDays: 0,
     };
-  }, [disabled]);
+  }, [disabled, props]);
 
   const onBarMove = useCallback((e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
+    if (d.group) {
+      // Send the TOTAL day-offset from the drag start (absolute, not an increment),
+      // so the caller re-applies it against its drag-start snapshot — idempotent, so
+      // a dropped render never double-counts. Skip a resend when it hasn't changed.
+      const deltaDays = Math.round((e.clientX - d.startX) / col);
+      if (deltaDays !== d.lastDeltaDays && props.onShiftGroup) {
+        props.onShiftGroup(d.key, deltaDays);
+        d.lastDeltaDays = deltaDays;
+      }
+      return;
+    }
     const next = applyDrag(d.mode, d.start, d.end, e.clientX - d.startX, col);
     props.onDates(d.pi, d.ti, next.start, next.end, d.si);
   }, [props, col]);
 
   const onBarUp = useCallback((e: React.PointerEvent) => {
-    if (!drag.current) return;
+    const d = drag.current;
+    if (!d) return;
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    if (d.group) props.onShiftGroupEnd?.();  // drop the drag-start snapshot
     drag.current = null;
-  }, []);
+  }, [props]);
 
   // A click on an UNDATED row's empty track plants a one-week bar on the
   // clicked day (ask 3). A dated row's empty track does nothing — rescheduling
@@ -1222,8 +1258,8 @@ export function PlanGrid(props: PlanGridProps) {
     }
     return (
       <span key={c} className="pgd-hcell" {...dropProps}>
-        {handle(c === 'trade' ? 'Specialty' : 'Dates')}
-        {resizer(c, c === 'trade' ? 'specialty' : 'dates')}
+        {handle('Specialty')}
+        {resizer('trade', 'specialty')}
       </span>
     );
   };
@@ -1369,10 +1405,7 @@ export function PlanGrid(props: PlanGridProps) {
                     />
                   );
                 }
-                if (c === 'owner') {
-                  return <Fragment key="owner">{owner(r.key, r.phase.assigneePartyId, `phase ${r.pi + 1}`)}</Fragment>;
-                }
-                return <span key="dates" className="pgd-datecell" />;
+                return <Fragment key="owner">{owner(r.key, r.phase.assigneePartyId, `phase ${r.pi + 1}`)}</Fragment>;
               };
               return (
                 <div
@@ -1426,11 +1459,10 @@ export function PlanGrid(props: PlanGridProps) {
             const isTaskDrag = !sub && dragTask?.pi === r.pi;
             const isSubDrag = sub && dragSub?.pi === r.pi && dragSub.ti === r.ti;
             const counts = sub ? null : childStatusCounts(r.node);
-            // A task that carries sub-tasks is a SUMMARY: like a phase, its bar is
-            // the children's envelope and its dates derive from them (LINA-404,
-            // founder's ask). So its date cell is read-only — the author schedules
-            // the sub-tasks and the parent follows — and its bar is not draggable.
-            const isSummary = !sub && (r.node.children ?? []).length > 0;
+            // The DATES column is gone (LINA-404): a row's start/finish now live on
+            // its Gantt bar (hover shows both edges) and in the detail drawer. So the
+            // table carries only Specialty and Owner; dates are edited by dragging
+            // the bar, clicking an undated track, or the drawer's date fields.
             const cellFor = (c: ColKey) => {
               if (c === 'trade') {
                 return (
@@ -1445,29 +1477,7 @@ export function PlanGrid(props: PlanGridProps) {
                   />
                 );
               }
-              if (c === 'owner') {
-                return <Fragment key="owner">{owner(r.key, r.node.assigneePartyId, `${what} ${id}`)}</Fragment>;
-              }
-              // Start and finish share ONE column (founder follow-up): two inputs
-              // around a dash, reading as "start – finish". A summary task's dates
-              // are derived from its sub-tasks, so its inputs are read-only.
-              return (
-                <span key="dates" className={`pgd-datecell pgd-dates${isSummary ? ' is-derived' : ''}`}>
-                  <input
-                    type="date" className="pgd-date" value={r.node.start}
-                    aria-label={`${what} ${id} start date`} disabled={disabled || isSummary}
-                    title={isSummary ? 'Derived from the sub-tasks' : undefined}
-                    onChange={(e) => props.onSetDate('start', e.target.value, r.pi, r.ti, r.si)}
-                  />
-                  <span className="pgd-datesep" aria-hidden>–</span>
-                  <input
-                    type="date" className="pgd-date" value={r.node.end}
-                    aria-label={`${what} ${id} finish date`} disabled={disabled || isSummary}
-                    title={isSummary ? 'Derived from the sub-tasks' : undefined}
-                    onChange={(e) => props.onSetDate('end', e.target.value, r.pi, r.ti, r.si)}
-                  />
-                </span>
-              );
+              return <Fragment key="owner">{owner(r.key, r.node.assigneePartyId, `${what} ${id}`)}</Fragment>;
             };
             return (
               <div
@@ -1602,6 +1612,11 @@ export function PlanGrid(props: PlanGridProps) {
                 const bar = clipBarGeom(win, r.node.start, r.node.end);
                 const box = bar ? barRect(bar.offsetDays, bar.spanDays, col) : null;
                 const undated = !r.node.start && !r.node.end;
+                // A task with sub-tasks is a SUMMARY (LINA-404): it moves as a GROUP
+                // (drag the body → onShiftGroup slides the whole subtree) but cannot
+                // be RESIZED — its span derives from its children — so it shows no
+                // edge handles. A leaf drags and resizes as before.
+                const isSummary = r.si == null && (r.node.children ?? []).length > 0;
                 return (
                   <div
                     key={`tt-${r.key}`}
@@ -1617,29 +1632,34 @@ export function PlanGrid(props: PlanGridProps) {
                     ) : null}
                     {bar && box ? (
                       <div
-                        className={`pgt-bar${r.si != null ? ' is-sub' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}${criticalOnly ? (criticalKeys.has(r.key) ? ' is-critical' : ' is-dimmed') : ''}`}
+                        className={`pgt-bar${r.si != null ? ' is-sub' : ''}${isSummary ? ' is-summary' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}${criticalOnly ? (criticalKeys.has(r.key) ? ' is-critical' : ' is-dimmed') : ''}`}
                         style={{ left: box.x, width: box.width }}
                         role="button" tabIndex={-1}
                         aria-label={
                           `${r.node.name.trim() || (r.si != null ? 'Sub-task' : 'Task')}: `
                           + `${r.node.start || 'no start'} → ${r.node.end || 'no finish'}. `
-                          + 'Drag to move; drag an edge to change start or finish.'
+                          + (isSummary
+                            ? 'Drag to move this group and its sub-tasks together.'
+                            : 'Drag to move; drag an edge to change start or finish.')
                         }
-                        title="Drag to move — drag an edge to change start or finish"
+                        title={isSummary
+                          ? 'Drag to move the whole group — its sub-tasks move with it'
+                          : 'Drag to move — drag an edge to change start or finish'}
                         onPointerDown={(e) => onBarDown(e, r, 'move')}
                         onPointerMove={onBarMove}
                         onPointerUp={onBarUp}
                         onPointerCancel={onBarUp}
                       >
-                        {/* A clipped edge is the WINDOW's edge, not the task's —
-                            no resize handle there (the body still drags). */}
-                        {!bar.open && !bar.clipStart && r.node.start ? (
+                        {/* A summary bar has no resize handles — its span derives from
+                            its children. A leaf shows handles on each unclipped edge
+                            (a clipped edge is the WINDOW's, not the task's). */}
+                        {!isSummary && !bar.open && !bar.clipStart && r.node.start ? (
                           <span className="pgt-handle pgt-handle-l" aria-hidden
                             onPointerDown={(e) => onBarDown(e, r, 'resize-start')}
                             onPointerMove={onBarMove} onPointerUp={onBarUp} onPointerCancel={onBarUp} />
                         ) : null}
                         <span className="pgt-bar-lbl">{r.node.name.trim() || 'Untitled'}</span>
-                        {!bar.open && !bar.clipEnd && r.node.end ? (
+                        {!isSummary && !bar.open && !bar.clipEnd && r.node.end ? (
                           <span className="pgt-handle pgt-handle-r" aria-hidden
                             onPointerDown={(e) => onBarDown(e, r, 'resize-end')}
                             onPointerMove={onBarMove} onPointerUp={onBarUp} onPointerCancel={onBarUp} />

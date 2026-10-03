@@ -772,6 +772,24 @@ select.pgd-tradesel:not(:disabled) { cursor: pointer; }
 }
 .pgt-bar.is-sub .pgt-bar-lbl { font-size: 11px; font-weight: 500; padding: 0 6px; }
 
+/* A SUMMARY bar — a task that holds sub-tasks (LINA-404). It spans its children's
+   envelope and moves as a GROUP (drag it and the sub-tasks move with it), but it
+   never resizes, so it reads as a solid bracket: a stronger fill and squared ends,
+   with small downward "feet" at each end hinting it brackets the rows below. */
+.pgt-bar.is-summary {
+  background: color-mix(in srgb, var(--plan-baseline) 42%, var(--paper));
+  border-color: color-mix(in srgb, var(--plan-baseline) 85%, transparent);
+  border-radius: 3px; cursor: grab;
+}
+.pgt-bar.is-summary::before,
+.pgt-bar.is-summary::after {
+  content: ''; position: absolute; bottom: -3px; width: 2px; height: 4px;
+  background: color-mix(in srgb, var(--plan-baseline) 85%, transparent);
+}
+.pgt-bar.is-summary::before { left: 0; }
+.pgt-bar.is-summary::after { right: 0; }
+.pgt-bar.is-summary .pgt-bar-lbl { font-weight: 700; }
+
 /* Critical-path overlay (LINA-404): when the toggle is on, every bar washes out
    to a faint ghost and the stages on the finish-driving chain light up in the
    critical violet with a lifted ring — so the eye lands on the path that moves
