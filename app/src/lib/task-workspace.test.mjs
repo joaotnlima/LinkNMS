@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { taskPath } from './task-workspace.ts';
+import { taskPath, taskHref, planHref } from './task-workspace.ts';
 
 test('taskPath: builds the project-nested task permalink, encoding both segments', () => {
   assert.equal(
@@ -21,4 +21,27 @@ test('taskPath: builds the project-nested task permalink, encoding both segments
     taskPath('a/b', 'k e/y'),
     `/projects/${encodeURIComponent('a/b')}/plan/tasks/${encodeURIComponent('k e/y')}`,
   );
+});
+
+// The in-place drawer addresses (LINA-404) MUST stay on the `/plan` route — the
+// whole fix is that the live editor never points the canonical URL at a sibling
+// route or a redirect, so a server action's revalidation refreshes in place.
+test('taskHref: opens a task as a query on the plan route, never a sibling path', () => {
+  const href = taskHref('proj-1', 'task-id-2');
+  assert.equal(href, '/projects/proj-1/plan?task=task-id-2');
+  // It is the SAME route as planHref — only a query apart — so a save stays put.
+  assert.ok(href.startsWith(`${planHref('proj-1')}?task=`));
+  // No `/plan/tasks/` or `/plan/build` segment that would navigate on revalidate.
+  assert.ok(!href.includes('/plan/tasks/'));
+  assert.ok(!href.includes('/plan/build'));
+  // URL-unsafe characters are encoded, not interpolated raw.
+  assert.equal(
+    taskHref('a/b', 'k e/y'),
+    `/projects/${encodeURIComponent('a/b')}/plan?task=${encodeURIComponent('k e/y')}`,
+  );
+});
+
+test('planHref: the drawer-closed address is the bare plan route', () => {
+  assert.equal(planHref('proj-1'), '/projects/proj-1/plan');
+  assert.equal(planHref('a/b'), `/projects/${encodeURIComponent('a/b')}/plan`);
 });

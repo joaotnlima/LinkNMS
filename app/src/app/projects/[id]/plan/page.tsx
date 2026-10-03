@@ -60,10 +60,18 @@ export const dynamic = 'force-dynamic';
 
 export default async function PlanPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  // `?task=<key>` is the in-place drawer address (LINA-404): the live editor keeps
+  // the URL on this route and hangs the open task off a query param instead of a
+  // sibling route, so a server action's revalidation refreshes here rather than
+  // navigating. Reading it lets a pasted/reloaded link land with the drawer open —
+  // the same affordance the standalone `/plan/tasks/:key` permalink gives.
+  searchParams: Promise<{ task?: string }>;
 }) {
   const { id } = await params;
+  const { task } = await searchParams;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan`);
 
   // The grid, the build name, the phases, and who is looking — in one round of
@@ -163,6 +171,9 @@ export default async function PlanPage({
           // keys the task workspace opens on without a reload.
           initialStageIds={initialStageIds}
           savedStageKeys={serverRowKeys}
+          // Open the task a `?task=` link named, on mount (LINA-404). Unknown keys
+          // resolve to no open drawer — the editor's rowOfKey fails closed.
+          openStageKey={task ?? null}
           saveV2={savePlanV2.bind(null, id)}
           // The status picker's v2 progress-write door (LINA-384). Append-only,
           // keyed on the stable v2 task id; refusals roll the picker back inline.
