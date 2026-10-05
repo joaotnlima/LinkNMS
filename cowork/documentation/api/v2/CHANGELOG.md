@@ -2,6 +2,27 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-05 — Self-serve apply to open RFPs (LINA-406, additive)
+
+- **One Tendering op** makes the open marketplace act (D-40, marketplace build Slice 1):
+  - `applyToOpenRfp` — `POST /rfps/{rfpId}:apply` (authed, `org:tendering:bid`). A bidder that found
+    an `open`, **published** RFP through `GET /marketplace/rfps` claims its **own proposal lane**,
+    instead of waiting for the issuer to invite it by email. The response is the `Proposal` lane;
+    from here the existing `putProposal` / `submitProposal` carry it exactly as an invited bidder's.
+  - **Idempotent:** the first apply creates the lane (`201`), re-applying returns the same lane
+    (`200`) — a double-click or retry never forks a second lane. A prior **email-only** invite for
+    the org's own address is **adopted** (its `org_id` + the proposal's `bidder_org_id` backfilled),
+    not duplicated, so "the issuer emailed me, then I signed in and applied" lands on one lane.
+  - **Existence-hidden (V8):** an invite-only or unpublished RFP answers `404`, not `403` — apply is
+    not an oracle for RFPs a stranger shouldn't know exist. The issuer applying to its own RFP is
+    `422`; applying after the submission deadline is `409`.
+- No schema migration — a self-serve lane reuses `tendering.rfp_recipient` + `tendering.proposal`
+  (D-36); a token is minted only to satisfy the `token_hash` column and is never surfaced (the
+  applicant is authenticated). A distinct ledger event `tendering.rfp.applied` records the self-serve
+  apply; bidder identity stays in `tendering.*`, never the ledger (D-29).
+- This is the `proposal.submit_open` entitlement's first wire surface; enforcement still waits on
+  billing (phase 8), so apply is gated by `org:tendering:bid` alone for now.
+
 ## 2026-09-28 — Token-scoped proposal attachments (LINA-370, additive)
 
 - **Three Tendering ops** let a tokened bidder attach portfolio files to the public RFP form, and

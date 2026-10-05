@@ -3926,6 +3926,61 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /rfps/{rfpId}:apply:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Tendering
+      operationId: applyToOpenRfp
+      summary: Apply to an open RFP (self-serve)
+      description: 'A bidder that found an open, published RFP through the
+        marketplace claims its own proposal lane, instead of waiting for the
+        issuer to invite it. Idempotent: the first apply creates the lane
+        (`201`), re-applying returns the same lane (`200`). From here the
+        authed proposal endpoints (`putProposal`, `submitProposal`) carry the
+        lane exactly as an invited bidder''s.
+
+
+        **Clerk permission:** `org:tendering:bid`
+
+
+        **Relationship (LinkNMS):** none (any org that could bid on an open
+        listing, D-15)'
+      x-clerk-permission: org:tendering:bid
+      x-relationship: none
+      parameters:
+      - $ref: '#/components/parameters/rfpId'
+      responses:
+        '200':
+          description: The existing lane (already applied)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
+        '201':
+          description: A new lane was created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '402':
+          $ref: '#/components/responses/NotEntitled'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /marketplace/rfps:
     get:
       tags:
