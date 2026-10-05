@@ -1013,6 +1013,58 @@ export function createTenderingStore(pool) {
       });
     },
 
+    /**
+     * A signed-in self-serve bidder submits a SUMMARY bid in its own lane
+     * (LINA-406). Same stored shape as submitPublicProposal (summary total +
+     * duration + conditions + documents; no priced BoQ), but with a REAL actor
+     * — the submitting person+org, recorded on the ledger with `via: platform`
+     * — where the token submit is anonymous. `from` is the single-step guard:
+     * a concurrent submit that already moved the row returns null (caller 409s).
+     */
+    async submitOwnBid({ proposalId, from, revision, totalCents, durationWd,
+      conditions, validityUntil, documentIds, projectId, rfpId, bidderOrgId, actor }) {
+      return tx(async (client) => {
+        const { rows } = await client.query(
+          `UPDATE tendering.proposal SET
+             status = 'submitted', current_revision = $3,
+             summary_total_cents = $4, summary_duration_wd = $5,
+             conditions = $6, validity_until = $7, document_ids = $8,
+             version = version + 1
+           WHERE id = $1 AND status = $2 RETURNING *`,
+          [proposalId, from, revision, totalCents, durationWd,
+            conditions, validityUntil, documentIds],
+        );
+        if (!rows.length) return null;
+        await client.query(
+          `INSERT INTO tendering.proposal_revision (proposal_id, revision, total_cents)
+           VALUES ($1,$2,$3)`,
+          [proposalId, revision, totalCents],
+        );
+        await client.query(
+          `UPDATE tendering.rfp_recipient SET status = 'proposal_submitted' WHERE id = $2 AND rfp_id = $1`,
+          [rfpId, rows[0].recipient_id],
+        );
+        await appendAuditEvent(client, {
+          projectId, actor,
+          category: 'tendering',
+          type: 'tendering.proposal.submitted',
+          scope: { type: 'rfp_private', id: proposalId },
+          object: { type: 'proposal', id: proposalId },
+          payload: { rfp_id: rfpId, revision, total: totalCents, channel: 'platform', via: 'platform' },
+          channel: actor.channel,
+        });
+        await publishEvent(client, {
+          event_id: randomUUID(),
+          type: 'tendering.proposal.submitted',
+          project_id: projectId,
+          actor: { person_id: actor.personId, org_id: actor.orgId },
+          scope: { type: 'rfp_private', id: proposalId },
+          data: { rfp_id: rfpId, proposal_id: proposalId, bidder_org_id: bidderOrgId, revision },
+        });
+        return rows[0];
+      });
+    },
+
     /** Guarded proposal move; eventType null = ledger-only (shortlist). */
     async transitionProposal({ proposalId, from, to, eventType, projectId, rfpId, actor }) {
       return tx(async (client) => {

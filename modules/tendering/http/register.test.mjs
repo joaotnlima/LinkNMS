@@ -287,6 +287,20 @@ function fakeStore() {
       events.push('tendering.proposal.submitted');
       return withRfpFacts(next);
     },
+    async submitOwnBid({ proposalId, from, revision, totalCents, durationWd, conditions, validityUntil, documentIds }) {
+      const p = lanes.get(proposalId);
+      if (!p || p.status !== from) return null;
+      const next = {
+        ...p, status: 'submitted', current_revision: revision, version: p.version + 1,
+        summary_total_cents: totalCents, summary_duration_wd: durationWd,
+        conditions, validity_until: validityUntil, document_ids: documentIds,
+      };
+      lanes.set(proposalId, next);
+      ledger.push('tendering.proposal.submitted');
+      events.push('tendering.proposal.submitted');
+      return withRfpFacts(next);
+    },
+    async storedProposalDocumentIds() { return new Set(); },
     async transitionProposal({ proposalId, from, to, eventType }) {
       const p = lanes.get(proposalId);
       if (!p || p.status !== from) return null;
@@ -722,6 +736,62 @@ describe('tendering over the /api/v2 router', () => {
       openRfp();
       const res = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(APPLICANT_ORG, { perms: [] }));
       assert.equal(res.status, 403);
+    });
+  });
+
+  describe('submitOwnBid (authenticated self-serve summary bid)', () => {
+    // LANE2 is BIDDER2_ORG's own invited lane — the shape a marketplace apply
+    // leaves behind, ready for its owner to price and send in one call.
+    const bid = { total: { amount_cents: 500000, currency: 'EUR' }, duration_wd: 20, document_ids: [] };
+
+    test('the bidder prices and sends its own lane → 200 submitted, summary set', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG), bid);
+      assert.equal(res.status, 200);
+      assert.equal(res.body.status, 'submitted');
+      assert.deepEqual(res.body.summary.total, { amount_cents: 500000, currency: 'EUR' });
+      assert.ok(store.events.includes('tendering.proposal.submitted'));
+    });
+
+    test('another bidder cannot submit in a lane it does not own → 404 (V8)', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER_ORG), bid);
+      assert.equal(res.status, 404);
+    });
+
+    test('a stranger never learns the lane exists → 404', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(STRANGER_ORG), bid);
+      assert.equal(res.status, 404);
+    });
+
+    test('needs org:tendering:bid → 403', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG, { perms: [] }), bid);
+      assert.equal(res.status, 403);
+    });
+
+    test('a missing total → 422 validation_failed', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG), { duration_wd: 20, document_ids: [] });
+      assert.equal(res.status, 422);
+      assert.ok(res.body.errors.total);
+    });
+
+    test('a non-EUR total → 422', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG),
+        { ...bid, total: { amount_cents: 500000, currency: 'USD' } });
+      assert.equal(res.status, 422);
+      assert.ok(res.body.errors.total);
+    });
+
+    test('after the submission deadline → 409 invalid_transition', async () => {
+      store.rfps.set(RFP, baseRfp({ submission_deadline: '2020-01-01T00:00:00Z' }));
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG), bid);
+      assert.equal(res.status, 409);
+    });
+
+    test('once submitted, the bidder may revise its figure in place → 200', async () => {
+      await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG), bid);
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG),
+        { ...bid, total: { amount_cents: 480000, currency: 'EUR' } });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.summary.total.amount_cents, 480000);
     });
   });
 });

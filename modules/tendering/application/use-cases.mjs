@@ -166,6 +166,40 @@ export async function getRfpByToken({ store, token }) {
   };
 }
 
+/**
+ * Validate a SUMMARY bid body — one total, a working-day duration, optional
+ * conditions/validity, and portfolio document ids. The single authority behind
+ * both the public-token submit (submitProposalByToken) and the authenticated
+ * self-serve submit (submitOwnBid), so the two simple-bid paths can never drift.
+ *
+ * The document-id check is async: each id must be a `stored` proposal_document
+ * of THIS proposal — a well-formed UUID that names someone else's file, or a
+ * ticket never completed, is refused here so a submit cannot smuggle a reference
+ * the download side would reject. Returns the field errors (empty when valid)
+ * and the de-duped document ids.
+ */
+async function validateSummaryBid({ store, proposalId, body }) {
+  const errors = {};
+  if (!Number.isInteger(body?.total?.amount_cents) || body.total.amount_cents < 0) {
+    errors.total = 'Money {amount_cents, currency}';
+  } else if (body.total.currency !== 'EUR') errors.total = 'currency must be EUR';
+  if (!Number.isInteger(body?.duration_wd) || body.duration_wd <= 0) {
+    errors.duration_wd = 'working days > 0';
+  }
+  const docs = body?.document_ids ?? [];
+  if (!Array.isArray(docs) || docs.some((d) => !UUID.test(d ?? ''))) {
+    errors.document_ids = 'document ids';
+  } else if (docs.length) {
+    const stored = await store.storedProposalDocumentIds(proposalId);
+    if (docs.some((d) => !stored.has(d))) {
+      errors.document_ids = 'each id must be a completed upload on this proposal';
+    }
+  }
+  if (body?.validity_until !== undefined && body?.validity_until !== null
+      && !DATE_ONLY.test(body.validity_until)) errors.validity_until = 'YYYY-MM-DD';
+  return { errors, docs: Array.isArray(docs) ? [...new Set(docs)] : [] };
+}
+
 /** operationId: submitProposalByToken — POST /rfp-links/{token}/proposal, security: []. */
 export async function submitProposalByToken({ store, token, body }) {
   const rec = await store.findRecipientByToken(token ?? '');
@@ -184,28 +218,7 @@ export async function submitProposalByToken({ store, token, body }) {
     throw new ProblemError('invalid_transition', 'this RFP is no longer accepting proposals');
   }
 
-  const errors = {};
-  if (!Number.isInteger(body?.total?.amount_cents) || body.total.amount_cents < 0) {
-    errors.total = 'Money {amount_cents, currency}';
-  } else if (body.total.currency !== 'EUR') errors.total = 'currency must be EUR';
-  if (!Number.isInteger(body?.duration_wd) || body.duration_wd <= 0) {
-    errors.duration_wd = 'working days > 0';
-  }
-  // document_ids are the bidder's own uploaded attachments (LINA-370). Each
-  // must be a `stored` proposal_document of THIS proposal — a well-formed UUID
-  // that names someone else's file, or a ticket never completed, is refused
-  // here so a submit cannot smuggle a reference the download side would reject.
-  const docs = body?.document_ids ?? [];
-  if (!Array.isArray(docs) || docs.some((d) => !UUID.test(d ?? ''))) {
-    errors.document_ids = 'document ids';
-  } else if (docs.length) {
-    const stored = await store.storedProposalDocumentIds(proposal.id);
-    if (docs.some((d) => !stored.has(d))) {
-      errors.document_ids = 'each id must be a completed upload on this proposal';
-    }
-  }
-  if (body?.validity_until !== undefined && body?.validity_until !== null
-      && !DATE_ONLY.test(body.validity_until)) errors.validity_until = 'YYYY-MM-DD';
+  const { errors, docs } = await validateSummaryBid({ store, proposalId: proposal.id, body });
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const outcome = proposalTransition(proposal.status, 'submit');
@@ -219,7 +232,7 @@ export async function submitProposalByToken({ store, token, body }) {
     durationWd: body.duration_wd,
     conditions: body.conditions ?? null,
     validityUntil: body.validity_until ?? null,
-    documentIds: [...new Set(docs)],
+    documentIds: docs,
     projectId: proposal.project_id,
     rfpId: proposal.rfp_id,
     recipientOrgId: rec.org_id ?? null,
@@ -820,6 +833,65 @@ export async function submitProposal({ viewer, store, proposalId }) {
   if (!updated) throw new ProblemError('invalid_transition', 'someone moved this proposal first');
   const doc = await store.proposalDoc(proposalId);
   return { status: 200, body: proposalBody(updated, { ...doc, seesMoney: viewer.has('org:money:view') }) };
+}
+
+/**
+ * operationId: submitOwnBid — POST /proposals/{proposalId}:submit-bid.
+ *
+ * The authenticated twin of submitProposalByToken: a self-serve bidder that
+ * claimed its lane through the open marketplace (applyToOpenRfp, LINA-406) sends
+ * a SUMMARY bid — one total, a duration, optional conditions/validity — in one
+ * call, exactly the simple shape the public token form sends. It deliberately
+ * does NOT reuse the token submit: that records the bid to the ledger as an
+ * anonymous `public_link` with a null person, which would be a lie for a
+ * signed-in bidder. Here the actor is the real submitting person+org and the
+ * ledger notes `via: platform`.
+ *
+ * (The priced-BoQ path — putProposal/submitProposal — stays for bidders who build
+ * a full plan in their lane; this is the lump-sum lane the marketplace needs, and
+ * it stores summary fields directly with no rows/lines, the same honest shape the
+ * public-token and offline summaries take.)
+ *
+ * `submit` is allowed from invited/draft/submitted, so a bidder may revise its
+ * figure in place until the deadline; each send bumps the revision and the latest
+ * submitted revision is the one the issuer compares.
+ */
+export async function submitOwnBid({ viewer, store, proposalId, body }) {
+  requireActiveOrg(viewer);
+  if (!viewer.has('org:tendering:bid')) throw new ProblemError('forbidden', null, { reason: 'role' });
+  const { proposal, isAuthor } = await requireLane({ viewer, store, proposalId });
+  if (!isAuthor) throw new ProblemError('forbidden', 'only the bidder submits its lane', { reason: 'relationship' });
+  if (proposal.rfp_status !== 'published') {
+    throw new ProblemError('invalid_transition', 'the RFP is not open for submissions');
+  }
+  if (new Date(proposal.submission_deadline) < new Date()) {
+    throw new ProblemError('invalid_transition', 'the submission deadline has passed');
+  }
+  const { errors, docs } = await validateSummaryBid({ store, proposalId: proposal.id, body });
+  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+
+  const outcome = proposalTransition(proposal.status, 'submit');
+  if (!outcome.ok) throw new ProblemError('invalid_transition', outcome.reason);
+
+  const actor = await requireActor(store, viewer);
+  const updated = await store.submitOwnBid({
+    proposalId: proposal.id,
+    from: proposal.status,
+    revision: proposal.current_revision + 1,
+    totalCents: body.total.amount_cents,
+    durationWd: body.duration_wd,
+    conditions: body.conditions ?? null,
+    validityUntil: body.validity_until ?? null,
+    documentIds: docs,
+    projectId: proposal.project_id,
+    rfpId: proposal.rfp_id,
+    bidderOrgId: viewer.orgId,
+    actor: actorOf(actor, viewer),
+  });
+  if (!updated) throw new ProblemError('invalid_transition', 'someone moved this proposal first');
+  const doc = await store.proposalDoc(proposal.id);
+  // The bidder always sees the money on their own proposal.
+  return { status: 200, body: proposalBody(updated, { ...doc, seesMoney: true }) };
 }
 
 /** operationId: withdrawProposal — bidder, before award. */

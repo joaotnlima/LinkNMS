@@ -7,7 +7,7 @@ import {
   addAddendum, closeRfp, cancelRfp, browseOpenRfps, applyToOpenRfp, listMyRfps,
   askClarification, answerClarification, listProposalLanes, getProposal,
   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
-  getComparison, shortlistProposal, awardRfp,
+  submitOwnBid, getComparison, shortlistProposal, awardRfp,
   getRfpByToken, submitProposalByToken,
   reserveProposalDocumentByToken, completeProposalDocumentByToken, downloadProposalDocument,
 } from '../application/use-cases.mjs';
@@ -104,6 +104,12 @@ export function registerTendering(router, { store, storage, contractingAward }) 
 
   router.register('POST', '/proposals/{proposalId}:submit', 'submitProposal', ({ viewer, params }) =>
     submitProposal({ viewer, store, proposalId: params.proposalId }));
+
+  // Self-serve SUMMARY bid (LINA-406): the authenticated twin of the public
+  // token submit — the bidder prices + sends a single-total bid in its own lane,
+  // actor recorded as the real person+org (not anonymous `public_link`).
+  router.register('POST', '/proposals/{proposalId}:submit-bid', 'submitOwnBid', ({ viewer, params, body }) =>
+    submitOwnBid({ viewer, store, proposalId: params.proposalId, body }));
 
   router.register('POST', '/proposals/{proposalId}:withdraw', 'withdrawProposal', ({ viewer, params }) =>
     withdrawProposal({ viewer, store, proposalId: params.proposalId }));
