@@ -43,9 +43,14 @@ municipality for a construction licence, **and** it is the package the execution
 
 ### Phase 1 — Design tendering (new)
 
-- The owner (or GC) opens the **marketplace** to engage **design-only** firms — firms that *design*
-  and do not execute (a permitting-only architect, a structural engineer, an MEP designer). Many
-  such firms exist in pre-construction; the marketplace must surface them with **portfolio samples
+- The owner opens the **marketplace** (the listing of linkNMS member orgs) **or invites firms
+  directly by email** to engage design firms. Two engagement shapes, the owner's choice
+  (founder 1.1 / 1.2):
+  - **Turn-key** — award **one** Design RFP to a GC (or a lead architect) that produces the whole
+    project (architecture + coordinates the rest).
+  - **By specialty** — publish **one Design RFP per discipline** (architect, structure, energy,
+    water, MEP …); each firm prices only *its* discipline on the shared model.
+  Many firms *design but do not execute*; the marketplace must surface them with **portfolio samples
   (before vs after)** so the owner chooses on price, fit or taste.
 - A **Design RFP** is published; bidders may **open the current design document** ("the document
   that models the building") and raise **clarifications** while they price.
@@ -63,6 +68,31 @@ compare, award → contract → merge subtree → baseline. The only connection 
 execution RFP **package is seeded from the design output** (the model + its material spec), and the
 founder's "small BIM modifications" (finish materials) happen on that model before/within the
 execution RFP so the awarded baseline reflects what is actually to be built.
+
+## Founder workflow (LINA-406) — step-by-step feasibility
+
+The founder restated the end-to-end flow (LINA-406 thread, 2026-10-05). Mapping each step to the
+architecture confirms the whole workflow **is expressible on the one RFP engine** — the only missing
+pieces are the two prerequisites already named below (marketplace directory + versioned design
+model). Verdict per step:
+
+| # | Founder's step | Expressible? | Reuses / needs |
+|---|---|---|---|
+| 1 | Owner opens the marketplace (member listing) **or** invites firms by email, to find firms that can *define the project* | **Design marketplace: blocked** · email-invite: **reuses today** | Invite path = existing `rfp_recipient` + token form. The marketplace listing is the **Directory epic** ([07](./07-marketplace-and-billing.md)) — not built. |
+| 1.1 | Turn-key: contract **one GC** to produce the whole project | **Yes** | One Design RFP, `purpose=design`, awarded to one firm. New: `purpose` discriminator. |
+| 1.2 | By specialty: contract engineers/firms **per discipline** | **Yes** | N Design RFPs (one per discipline), each awarded independently. Same discriminator. |
+| 2 | Award (1.1 or 1.2) | **Yes** | Existing `award` action — but a **design** award grants **authoring rights on the model**, *not* a contract/baseline. New award-effect branch. |
+| 2.1 | A **versioned shared BIM model** exists; every selected firm may edit it to finalise the project | **Deferred (hard prerequisite)** | This *is* the BIM-document task the founder set aside. Phase 1 has nothing to open/author without it. Versioning + per-discipline authoring rights are new. |
+| 3 | BIM model complete → hand off | **Yes (transition)** | Project-phase transition pre-construction → construction; relates to phases/sign-off (ADR-0024). |
+| 3.1 | Identify GC or specialties for **execution** planning — Gantt + BoQ | **Shipped** | Execution RFP from plan rows + BoQ — exactly [06](./06-tendering-and-contracting.md), live. |
+| 3.2 | Award execution contract(s) → create **baseline** | **Shipped** | `award` → contract → merge subtree → baseline. Live (LINA-321/354). |
+| 3.3 | Any delta between baseline and executed = an **"alteration"** | **Shipped** | Change-order model: budget moves **only** via change orders (ADR-0014); `plan_change_log` + CO guard (LINA-280). This is precisely "alteração". |
+
+**Net:** the back half (3.1–3.3) is fully built and untouched. The front half (1–2.1) is expressible
+with three small additions — a `purpose: design|execution` discriminator, a design-award effect that
+grants model-authoring instead of a baseline, and a Project-phase hand-off — all of which sit on top
+of **two prerequisites that do not yet exist**: the Directory/Marketplace (step 1) and the versioned
+shared design model (step 2.1, the deferred BIM task). Neither can be built inside LINA-406.
 
 ## What is reusable vs new
 
