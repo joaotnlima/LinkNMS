@@ -43,6 +43,7 @@ founder), **Proposed** (recommended by the review, awaiting explicit confirmatio
 | D-36 | Bids are proposal lanes shown under the tendered row (Tendering), not child rows of the WBS; answer on platform (own plan) or by email (issuer records it) | Proposed (adapts the founder's child-task idea) |
 | D-37 | MCP server as a client of /api/v2: acts as the person, dry-run → confirm, human-only acts excluded, tools generated from `x-mcp-tool` | Proposed |
 | D-38 | Cost roll-up per viewer is split by side: supplier ⇒ revenue, client ⇒ cost, margin = revenue − cost | Accepted (found by db/v2 checks) |
+| D-39 | Tendering has two purposes — `design` (pre-construction) and `execution` — on one RFP engine; a design award grants authoring rights on the shared design model, an execution award creates a contract + baseline. See [23](./23-design-tendering.md) | Accepted (LINA-406, founder confirmed 2026-10-05) |
 
 ---
 
