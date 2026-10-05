@@ -631,6 +631,67 @@ export function createTenderingStore(pool) {
      * D-36). The raw token is returned ONCE; only its hash is stored.
      * A re-add of the same email is absorbed (UNIQUE rfp_id, email).
      */
+    /**
+     * Self-serve apply to an OPEN RFP (LINA-406): a bidder that discovered the
+     * RFP through the marketplace claims its own lane, the mirror of the issuer
+     * minting one with addRecipients. Idempotent and collision-safe:
+     *   - a re-apply hits UNIQUE (rfp_id, email) and the lane is returned as-is
+     *     (created=false), so a retry never forks a second lane;
+     *   - a prior email-only invite for the org's address (org_id NULL) is
+     *     ADOPTED — org_id and the proposal's bidder_org_id are backfilled — so
+     *     "the issuer emailed me, then I signed in and applied" lands on one lane.
+     * A token is minted only to satisfy the NOT NULL/UNIQUE token_hash column;
+     * it is never surfaced — the applicant is authenticated and drives the lane
+     * through the authed proposal endpoints, not the public link.
+     */
+    async applyToOpenRfp({ rfpId, projectId, orgId, email, actor }) {
+      return tx(async (client) => {
+        const token = randomBytes(32).toString('hex');
+        const { rows: recRows } = await client.query(
+          `INSERT INTO tendering.rfp_recipient (id, rfp_id, org_id, email, token_hash, expires_at)
+           VALUES ($1,$2,$3,$4,$5,
+             (SELECT submission_deadline + interval '14 days' FROM tendering.rfp WHERE id = $2))
+           ON CONFLICT (rfp_id, email) DO UPDATE
+             SET org_id = COALESCE(tendering.rfp_recipient.org_id, EXCLUDED.org_id)
+           RETURNING *`,
+          [randomUUID(), rfpId, orgId, email, sha256(token)],
+        );
+        const recipient = recRows[0];
+        let { rows: propRows } = await client.query(
+          'SELECT * FROM tendering.proposal WHERE recipient_id = $1',
+          [recipient.id],
+        );
+        let created = false;
+        if (!propRows.length) {
+          ({ rows: propRows } = await client.query(
+            `INSERT INTO tendering.proposal (id, rfp_id, recipient_id, bidder_org_id)
+             VALUES ($1,$2,$3,$4) RETURNING *`,
+            [randomUUID(), rfpId, recipient.id, orgId],
+          ));
+          created = true;
+        } else if (propRows[0].bidder_org_id == null) {
+          ({ rows: propRows } = await client.query(
+            'UPDATE tendering.proposal SET bidder_org_id = $2 WHERE id = $1 RETURNING *',
+            [propRows[0].id, orgId],
+          ));
+        }
+        if (created) {
+          await appendAuditEvent(client, {
+            projectId, actor,
+            category: 'tendering',
+            type: 'tendering.rfp.applied',
+            scope: { type: 'project', id: projectId },
+            object: { type: 'rfp', id: rfpId },
+            // D-29: bidder identity lives in tendering.*, never the ledger —
+            // the record only notes that a self-serve apply happened.
+            payload: {},
+            channel: actor.channel,
+          });
+        }
+        return { proposalId: propRows[0].id, created };
+      });
+    },
+
     async addRecipients({ rfpId, projectId, recipients, actor }) {
       return tx(async (client) => {
         const out = [];

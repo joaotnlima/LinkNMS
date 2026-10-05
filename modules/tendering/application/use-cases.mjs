@@ -1,6 +1,6 @@
 // Tendering module use cases (phase 6) — one function per operationId:
 //   createRfp, getRfp, updateRfp, addRecipients, listRecipients, publishRfp,
-//   addAddendum, closeRfp, cancelRfp, browseOpenRfps, listMyRfps,
+//   addAddendum, closeRfp, cancelRfp, browseOpenRfps, applyToOpenRfp, listMyRfps,
 //   askClarification, answerClarification, listProposalLanes, getProposal,
 //   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
 //   getComparison, shortlistProposal, awardRfp.
@@ -587,6 +587,52 @@ export async function browseOpenRfps({ viewer, store, query }) {
     limit: clampLimit(query?.limit),
   });
   return { status: 200, body: { items: items.map(rfpBody), next_cursor: nextCursor } };
+}
+
+/**
+ * operationId: applyToOpenRfp — the self-serve hinge of the open marketplace
+ * (D-15, LINA-406). A bidder that found an OPEN, published RFP through the
+ * directory claims its OWN lane, instead of waiting for the issuer to mint one.
+ * From here the authed proposal endpoints (putProposal, submitProposal) carry
+ * the lane exactly as they do an invited bidder's — the only thing the invite
+ * flow did that this skips is the emailed token (the applicant is signed in).
+ *
+ * Idempotent: the first apply creates the lane (201); re-applying returns the
+ * same lane (200), so a double-click or a retry never forks a second lane. A
+ * prior email-only invite for the org's address is adopted, not duplicated
+ * (store, UNIQUE (rfp_id, email)). This is the `proposal.submit_open`
+ * entitlement's surface; enforcement waits on billing (phase 8).
+ */
+export async function applyToOpenRfp({ viewer, store, rfpId }) {
+  requireActiveOrg(viewer);
+  if (!viewer.has('org:tendering:bid')) throw new ProblemError('forbidden', null, { reason: 'role' });
+  const rfp = await store.getRfp(rfpId);
+  // 404, not 403: an invite-only or unpublished RFP must not be an existence
+  // oracle to a stranger (V8) — only an OPEN published one is discoverable.
+  if (!rfp || rfp.visibility !== 'open' || rfp.status !== 'published') {
+    throw new ProblemError('not_found');
+  }
+  if (rfp.issuer_org_id === viewer.orgId) {
+    throw new ProblemError('validation_failed', null, { errors: { rfp: 'the issuer cannot bid on its own RFP' } });
+  }
+  if (new Date(rfp.submission_deadline) < new Date()) {
+    throw new ProblemError('invalid_transition', 'the submission deadline has passed');
+  }
+  const org = await store.getOrganization(viewer.orgId);
+  const email = org?.billing_email ?? org?.contact_email ?? null;
+  if (!email) {
+    throw new ProblemError('validation_failed', null, { errors: { org: 'your organisation needs a contact email before bidding' } });
+  }
+  const actor = await requireActor(store, viewer);
+  const { proposalId, created } = await store.applyToOpenRfp({
+    rfpId, projectId: rfp.project_id, orgId: viewer.orgId, email, actor: actorOf(actor, viewer),
+  });
+  const proposal = await store.getProposal(proposalId);
+  const doc = await store.proposalDoc(proposalId);
+  return {
+    status: created ? 201 : 200,
+    body: proposalBody(proposal, { ...doc, seesMoney: viewer.has('org:money:view') }),
+  };
 }
 
 /** operationId: listMyRfps — RFPs my org was invited to or applied to. */

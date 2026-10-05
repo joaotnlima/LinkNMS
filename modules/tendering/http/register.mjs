@@ -4,7 +4,7 @@
 // clarifications, proposal lanes, comparison, award.
 import {
   createRfp, getRfp, updateRfp, addRecipients, listRecipients, reissueRecipientLink, publishRfp,
-  addAddendum, closeRfp, cancelRfp, browseOpenRfps, listMyRfps,
+  addAddendum, closeRfp, cancelRfp, browseOpenRfps, applyToOpenRfp, listMyRfps,
   askClarification, answerClarification, listProposalLanes, getProposal,
   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
   getComparison, shortlistProposal, awardRfp,
@@ -78,6 +78,11 @@ export function registerTendering(router, { store, storage, contractingAward }) 
 
   router.register('GET', '/marketplace/rfps', 'browseOpenRfps', ({ viewer, query }) =>
     browseOpenRfps({ viewer, store, query }));
+
+  // Self-serve apply: a bidder claims its own lane on an open RFP it found in
+  // the marketplace (LINA-406). The authed proposal endpoints take it from here.
+  router.register('POST', '/rfps/{rfpId}:apply', 'applyToOpenRfp', ({ viewer, params }) =>
+    applyToOpenRfp({ viewer, store, rfpId: params.rfpId }));
 
   router.register('GET', '/me/rfps', 'listMyRfps', ({ viewer, query }) =>
     listMyRfps({ viewer, store, query }));
