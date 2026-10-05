@@ -1,0 +1,160 @@
+/* /marketplace — the open-marketplace discovery surface (LINA-406). Reuses the
+   shared tokens (--raised/--outline/--muted/--fg) and the global .badge/.btn
+   primitives, so it reads as one system with the portfolio and the record. */
+
+.mkt {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+
+.mkt-head {
+  margin-bottom: 20px;
+}
+
+.mkt-head h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.mkt-sub {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0;
+  max-width: 56ch;
+}
+
+/* ── Specialty filter ─────────────────────────────────────────────────────── */
+.mkt-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.mkt-chip {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--outline);
+  background: var(--raised);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mkt-chip:hover {
+  background: var(--sunken);
+}
+
+.mkt-chip.is-on {
+  background: var(--owner);
+  border-color: var(--owner);
+  color: #fff;
+}
+
+/* ── The listing ──────────────────────────────────────────────────────────── */
+.mkt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mkt-card {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border: 1px solid var(--outline);
+  border-radius: var(--r-ctrl, 10px);
+  background: var(--raised);
+}
+
+.mkt-card-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.mkt-card-title {
+  font-size: 16px;
+  font-weight: 650;
+  margin: 0 0 6px;
+}
+
+.mkt-card-scope {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 10px;
+}
+
+.mkt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.mkt-deadline {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.mkt-card-side {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 120px;
+  text-align: right;
+}
+
+.mkt-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  max-width: 24ch;
+}
+
+.mkt-error {
+  font-size: 13px;
+  color: var(--danger);
+  margin: 0;
+  max-width: 24ch;
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────────── */
+.mkt-empty {
+  border: 1px dashed var(--outline);
+  border-radius: var(--r-ctrl, 10px);
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.mkt-empty p {
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .mkt-card {
+    flex-direction: column;
+  }
+
+  .mkt-card-side {
+    align-items: flex-start;
+    text-align: left;
+    width: 100%;
+  }
+}
