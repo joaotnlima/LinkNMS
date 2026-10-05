@@ -4328,6 +4328,70 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /proposals/{proposalId}:submit-bid:
+    parameters:
+    - name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Tendering
+      operationId: submitOwnBid
+      summary: 'Self-serve summary bid: price and send your own lane'
+      description: 'The authenticated twin of `submitProposalByToken`: a signed-in bidder that
+        claimed its lane through the open marketplace (`applyToOpenRfp`) sends a SUMMARY bid —
+        one total, a working-day duration, optional conditions/validity, portfolio document ids —
+        in a single call. Unlike the priced-BoQ `submit`, it stores summary fields directly (no
+        rows/lines). Unlike the token submit, the actor on the ledger is the real submitting
+        person+org (`via: platform`), never an anonymous `public_link`. `submit` is allowed from
+        invited/draft/submitted, so a bidder may revise its figure in place until the deadline;
+        each send bumps the revision.
+
+
+        **Clerk permission:** `org:tendering:bid`
+
+
+        **Relationship (LinkNMS):** author'
+      x-clerk-permission: org:tendering:bid
+      x-relationship: author
+      parameters:
+      - $ref: '#/components/parameters/proposalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [total, duration_wd]
+              properties:
+                total: { $ref: '#/components/schemas/Money' }
+                duration_wd: { type: integer, minimum: 1, description: Working days to complete. }
+                conditions: { type: string, nullable: true }
+                validity_until: { type: string, format: date, nullable: true }
+                document_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                  description: Portfolio / supporting document ids already uploaded.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /proposals/{proposalId}:withdraw:
     parameters:
     - name: proposalId

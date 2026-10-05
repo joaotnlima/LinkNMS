@@ -6,14 +6,14 @@
 // action. It imports only pure view helpers and types — never the server-only
 // I/O — so nothing here drags `server-only` into the client bundle.
 //
-// ── WHAT "APPLY" DOES, AND WHAT IT DOES NOT ──────────────────────────────────
-// Apply claims this org's proposal lane on the RFP (idempotent server-side). It
-// is the DISCOVERY half of the self-serve flow: the issuer now sees the bidder in
-// its inbox as an interested lane. Pricing and SENDING the bid is the next slice
-// (the authenticated bid editor) — so a freshly-claimed lane shows an honest
-// "lane claimed, the bid step opens here next" note rather than pretending a
-// price was sent.
+// ── WHAT "APPLY" DOES ────────────────────────────────────────────────────────
+// Apply claims this org's proposal lane on the RFP (idempotent server-side), then
+// sends the bidder straight to the bid editor (`/marketplace/bid/[rfpId]`, Slice
+// 3) to PRICE and SEND the figure. A card the org already holds a lane on shows
+// an "Applied" badge and a link back into that editor, so the bid is always one
+// click away — never a dead "the bid step opens here next" stub.
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { formatDateOnly } from '@/lib/v2/rfp-link-view';
@@ -107,6 +107,7 @@ function RfpCard({
   applied: boolean;
   onApplied: (rfpId: string) => void;
 }) {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -115,8 +116,11 @@ function RfpCard({
     setError(null);
     startTransition(async () => {
       const res = await applyAction(rfp.id);
-      if (res.ok) onApplied(rfp.id);
-      else setError(res.error);
+      if (res.ok) {
+        onApplied(rfp.id);
+        // Straight into pricing — the lane is claimed, the bid is the next step.
+        router.push(`/marketplace/bid/${rfp.id}`);
+      } else setError(res.error);
     });
   };
 
@@ -147,9 +151,9 @@ function RfpCard({
         {applied ? (
           <>
             <span className="badge ok">Applied</span>
-            <p className="mkt-note">
-              Your lane is claimed. The bid step opens here next.
-            </p>
+            <Link className="btn primary" href={`/marketplace/bid/${rfp.id}`}>
+              Price &amp; send your bid
+            </Link>
           </>
         ) : (
           <>

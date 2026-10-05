@@ -2,6 +2,27 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-05 — Self-serve summary bid (LINA-406, additive)
+
+- **One Tendering op** lets a marketplace applicant actually price and send its bid (marketplace
+  build Slice 3):
+  - `submitOwnBid` — `POST /proposals/{proposalId}:submit-bid` (authed, `org:tendering:bid`,
+    relationship **author**). The authenticated twin of `submitProposalByToken`: a signed-in bidder
+    that claimed its lane via `applyToOpenRfp` sends a **summary** bid — one total, a working-day
+    duration, optional conditions/validity, portfolio document ids — in a single call.
+  - **Two bid shapes, one model.** Unlike the priced-BoQ `submit` (`putProposal` builds rows/lines
+    and derives the total), this stores **summary fields directly** with no rows/lines — the same
+    honest shape the public-token and offline summaries take. Unlike the token submit, the actor on
+    the ledger is the **real submitting person+org** (`via: platform`), never an anonymous
+    `public_link`.
+  - **Revise-in-place:** `submit` is allowed from `invited`/`draft`/`submitted`, so a bidder may
+    update its figure until the deadline; each send bumps the revision and the latest submitted one
+    is what the issuer compares. Existence-hidden (V8): a lane the caller does not own is `404`; a
+    closed RFP or a passed deadline is `409`; a bad/non-EUR total is `422`.
+- No schema migration — reuses `tendering.proposal` summary columns (D-36). The request body is the
+  same summary shape as `submitProposalByToken`; the validator is now shared between the two paths so
+  they cannot drift.
+
 ## 2026-10-05 — Self-serve apply to open RFPs (LINA-406, additive)
 
 - **One Tendering op** makes the open marketplace act (D-40, marketplace build Slice 1):
