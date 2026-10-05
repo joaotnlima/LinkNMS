@@ -138,6 +138,14 @@ export function PortalShell({
             </span>
           )}
 
+          {/* Cross-build, org-scoped: the open marketplace (LINA-406). A plain
+              link in both modes — it is not a build section, it is where a company
+              discovers tendering work it was never emailed about. */}
+          <Link className="psh-nav-item" href="/marketplace">
+            <StoreIcon />
+            Marketplace
+          </Link>
+
           <span className="psh-nav-group">This build</span>
 
           {buildScoped ? (
@@ -358,6 +366,14 @@ function HouseIcon() {
   return (
     <svg viewBox="0 0 24 24" role="presentation">
       <path d="M3 11l9-7 9 7M5 10v10h14V10" />
+    </svg>
+  );
+}
+
+function StoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" role="presentation">
+      <path d="M4 9h16M4 9l1.2-4h13.6L20 9M5 9v11h14V9M9 20v-6h6v6" />
     </svg>
   );
 }
