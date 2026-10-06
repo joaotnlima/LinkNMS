@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation';
 import {
   BID_CURRENCY,
   EMPTY_DRAFT,
+  MAX_REFERENCE_NOTES_CHARS,
   formatDateOnly,
   formatEuro,
   formatWorkingDays,
@@ -45,6 +46,9 @@ function draftFromLane(lane: AppliedLane): BidDraft {
     durationUnit: 'wd',
     conditions: lane.conditions ?? '',
     validityUntil: lane.validity_until ?? '',
+    // The marketplace lane view does not echo references back, so a revise opens
+    // this empty; the figure/conditions above still pre-fill (LINA-407).
+    referenceNotes: '',
   };
 }
 
@@ -186,6 +190,23 @@ export function BidEditor({ rfp, lane }: { rfp: V2Rfp; lane: AppliedLane }) {
           />
           <FieldNote id="conditions-note" text={errors.conditions} />
         </div>
+
+        {rfp.mode === 'light' ? (
+          <div className="bid-field">
+            <label htmlFor="referenceNotes">References (optional)</label>
+            <textarea
+              id="referenceNotes" name="referenceNotes" rows={5}
+              maxLength={MAX_REFERENCE_NOTES_CHARS}
+              value={draft.referenceNotes}
+              placeholder="Comparable projects you have delivered and who the client can call to ask about your work."
+              aria-invalid={errors.referenceNotes ? 'true' : undefined}
+              aria-describedby={errors.referenceNotes ? 'referenceNotes-note' : undefined}
+              onChange={(e) => set('referenceNotes', e.target.value)}
+            />
+            <p className="bid-hint">A design proposal is judged on your portfolio and past work.</p>
+            <FieldNote id="referenceNotes-note" text={errors.referenceNotes} />
+          </div>
+        ) : null}
 
         {sent && lane.summary ? (
           <p className="bid-current">

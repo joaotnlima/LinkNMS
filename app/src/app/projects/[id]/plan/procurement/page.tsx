@@ -37,10 +37,17 @@ export const dynamic = 'force-dynamic';
 
 export default async function ProcurementPage({
   params,
+  // The per-package "Start tendering" deep-link (LINA-407) lands here with the
+  // chosen row as `?task=<id>` and `?mode=light`, so the composer opens pre-set
+  // to Light (design) with that package already picked. Both are optional — the
+  // surface is reachable bare from the "Tendering" link too.
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ task?: string; mode?: string }>;
 }) {
   const { id } = await params;
+  const { task, mode } = await searchParams;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan/procurement`);
 
   // One round of reads: the plan tree (candidate tasks to tender over), the build
@@ -65,6 +72,11 @@ export default async function ProcurementPage({
   // shows another project's tenders.
   const initialMyRfps = myRfps.filter((r) => r.project_id === id);
 
+  // A deep-link only auto-opens the composer when it names a real package on this
+  // plan (ProcurementSection re-checks too); `mode=light` picks the design shape.
+  const composeTaskId = task && tasks.some((t) => t.id === task) ? task : null;
+  const composeMode = mode === 'light' ? 'light' : 'detailed';
+
   return (
     <PortalShell
       user={shell.user}
@@ -86,6 +98,8 @@ export default async function ProcurementPage({
           tasks={tasks}
           hasActiveOrg={hasActiveOrg}
           initialMyRfps={initialMyRfps}
+          composeTaskId={composeTaskId}
+          composeMode={composeMode}
         />
       </main>
     </PortalShell>
