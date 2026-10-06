@@ -29,6 +29,7 @@ import { v2, V2Error } from './client';
 import type { V2Me } from './profile-view';
 import type {
   V2Rfp, V2Recipient, V2ProposalLane, V2Comparison, RfpDraftInput, RfpVisibility,
+  V2Money, V2ProposalDetail, V2ProposalDocument,
 } from './tendering-view';
 import type { V2UploadTicket } from './task-workspace-view';
 
@@ -143,6 +144,79 @@ async function gatherLanes(rootTaskIds: readonly string[]): Promise<V2ProposalLa
     if (!byProposal.has(lane.proposal_id)) byProposal.set(lane.proposal_id, lane);
   }
   return [...byProposal.values()];
+}
+
+// ── Reads: the Compare drill-down (LINA-411) ──────────────────────────────────
+// Post-shortlist the issuer compares the bids side by side. A DETAILED tender
+// uses the money-gated per-line matrix already in the inbox; a LIGHT tender
+// (design/pre-construction, a fee not a BoQ) has no lines to tabulate, so the
+// Docs renderer reads each bidder's full answer — its references, notes and the
+// portfolio PDFs it attached. Both reads fail CLOSED (a proposal the viewer
+// cannot see contributes nothing), never a rendered 500.
+
+/** A bidder's full answer + its portfolio attachments, for the Docs renderer. */
+export interface CompareEntry {
+  detail: V2ProposalDetail;
+  documents: V2ProposalDocument[];
+}
+
+interface ProposalWire {
+  id: string;
+  summary?: { total?: V2Money; duration_wd?: number; start?: string };
+  conditions?: string;
+  validity_until?: string;
+  reference_notes?: string;
+  document_ids?: string[];
+}
+
+/**
+ * GET /proposals/{proposalId} → the bidder's answer (issuer or author). `total`
+ * is ABSENT without `org:money:view` (wire invariant §6.5), which `formatMoney`
+ * renders as "—". Null when the viewer cannot see it, never a leak of existence.
+ */
+export async function getProposalDetail(proposalId: string): Promise<V2ProposalDetail | null> {
+  try {
+    const p = await v2<ProposalWire>({ method: 'GET', path: `/proposals/${encodeURIComponent(proposalId)}` });
+    return {
+      proposal_id: p.id,
+      ...(p.reference_notes ? { reference_notes: p.reference_notes } : {}),
+      ...(p.conditions ? { conditions: p.conditions } : {}),
+      ...(p.validity_until ? { validity_until: p.validity_until } : {}),
+      ...(p.summary?.total ? { total: p.summary.total } : {}),
+      ...(p.summary?.duration_wd != null ? { duration_wd: p.summary.duration_wd } : {}),
+      ...(p.summary?.start ? { start: p.summary.start } : {}),
+      document_ids: p.document_ids ?? [],
+    };
+  } catch (err) {
+    if (err instanceof V2Error) return null;
+    throw err;
+  }
+}
+
+/**
+ * A proposal's portfolio attachments for the Docs renderer, derived from the
+ * proposal's own `document_ids`.
+ *
+ * WHY NOT A DOCUMENTS LIST CALL: proposal attachments live in
+ * `tendering.proposal_document`, NOT the documents module, and the only route
+ * over them is the per-file download (`…/documents/{id}:download`, issuer|author
+ * gated). There is no issuer-side list-with-names endpoint, so the file's own
+ * name is not on the wire here; each attachment is shown as a numbered portfolio
+ * link and the download response carries the real filename (Content-Disposition).
+ * `getProposal` already returns `document_ids` filtered to what the viewer may
+ * see, so this needs no extra read and inherits that gate.
+ */
+function portfolioOf(detail: V2ProposalDetail): V2ProposalDocument[] {
+  return detail.document_ids.map((id, i) => ({ id, title: `Portfolio file ${i + 1}` }));
+}
+
+/** The Docs renderer's read: each compared proposal's detail + its portfolio. */
+export async function getCompareEntries(proposalIds: readonly string[]): Promise<CompareEntry[]> {
+  const entries = await Promise.all(proposalIds.map(async (id) => {
+    const detail = await getProposalDetail(id);
+    return detail ? { detail, documents: portfolioOf(detail) } : null;
+  }));
+  return entries.filter((e): e is CompareEntry => e !== null);
 }
 
 // ── Writes: the composer ─────────────────────────────────────────────────────
