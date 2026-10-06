@@ -80,10 +80,19 @@ export interface PackageItem {
 }
 
 /** The scope-of-works, structure + quantities, that the recipient is asked to bid. */
+/** Design (pre-construction) vs execution — D-39. A design RFP is always
+ *  `light`: the bid is a fee + portfolio + references + PDF, never a BoQ. */
+export type RfpPurpose = 'design' | 'execution';
+export type RfpMode = 'light' | 'detailed';
+
 export interface RfpLinkRfp {
   title: string;
   scope_text?: string;
   specialties: string[];
+  /** The bid shape the form must render — light asks for a fee + references,
+   *  detailed for a priced BoQ (D-39). */
+  purpose: RfpPurpose;
+  mode: RfpMode;
   /** ISO datetime; absent when the RFP set no deadline. */
   submission_deadline?: string;
   package: { rows: PackageRow[]; items: PackageItem[] };
@@ -114,6 +123,8 @@ export interface ProposalEcho {
   conditions?: string;
   /** YYYY-MM-DD; absent when the bid named no validity date. */
   validity_until?: string;
+  /** Light-bid references (referenceable past work / client contacts). */
+  reference_notes?: string;
   document_ids: string[];
 }
 
@@ -142,6 +153,8 @@ export interface BidBody {
   duration_wd: number;
   conditions?: string;
   validity_until?: string;
+  /** Light-bid references — optional free text (≤4000 chars, BE-enforced). */
+  reference_notes?: string;
   /**
    * Ids of portfolio attachments uploaded via the token-scoped upload route
    * (LINA-375), each already proven `stored`. The BE refuses any id that is not
