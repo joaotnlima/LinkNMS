@@ -182,6 +182,33 @@
   border: 1px solid var(--outline); border-radius: 8px; background: var(--sunken);
 }
 
+/* ── Compare drill-down (a surface, not a modal; LINA-411) ────────────────── */
+.prc-compare { display: flex; flex-direction: column; gap: var(--s3); }
+
+/* The Docs renderer: one column per shortlisted bidder, set side by side so the
+   references, notes and portfolio read against each other. Columns wrap and then
+   stack on a narrow screen rather than scrolling off a jobsite phone. */
+.prc-docs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s3);
+  align-items: start;
+}
+.prc-doc-col {
+  display: flex; flex-direction: column; gap: var(--s2);
+  border: 1px solid var(--outline); border-radius: var(--r-ctrl);
+  background: var(--raised); padding: var(--s3); min-width: 0;
+}
+.prc-doc-col.is-selected { border-color: var(--plan-baseline-line); background: var(--plan-baseline-muted); }
+.prc-doc-col-hd { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.prc-doc-sec { display: flex; flex-direction: column; gap: 4px; }
+.prc-doc-sec .prc-label { color: var(--muted); }
+.prc-doc-col .prc-meta { gap: var(--s2) var(--s3); }
+
+@media (max-width: 640px) {
+  .prc-docs { grid-template-columns: 1fr; }
+}
+
 /* ── Draft details (read + inline editor) ────────────────────────────────── */
 .prc-details { display: flex; flex-direction: column; gap: var(--s2); }
 .prc-meta { margin: 0; display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
