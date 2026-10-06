@@ -673,6 +673,49 @@ select.pgd-tradesel:not(:disabled) { cursor: pointer; }
   background: color-mix(in srgb, var(--warn-fg, #b45309) 55%, transparent);
 }
 
+/* ── Procurement window: the tendering⇄schedule bridge (LINA-413) ────────────
+   A row that is out to tender carries a band over its track — the stretch of
+   calendar spent choosing a contractor before the work can begin — drawn UNDER
+   the task bar (earlier in the DOM, so the bar paints on top of its own window).
+   It is a backdrop, not an interactive element: pointer-events pass through to
+   the track/bar beneath. The colour folds the tender lifecycle into four reads;
+   a left/right border caps the opened / bids-due edges, dropped (via the clip
+   classes) when that edge is the viewport's rather than the tender's. */
+.pgp-window {
+  position: absolute; top: 3px; bottom: 3px; z-index: 0; pointer-events: none;
+  border-radius: 5px;
+  --pgp-tone: var(--muted);
+  background: color-mix(in srgb, var(--pgp-tone) 12%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--pgp-tone) 55%, transparent);
+}
+.pgp-window.is-draft     { --pgp-tone: var(--muted); }
+.pgp-window.is-tendering { --pgp-tone: var(--warn-fg); border-style: solid; }
+.pgp-window.is-bids-in   { --pgp-tone: var(--accent); border-style: solid; }
+.pgp-window.is-awarded {
+  --pgp-tone: var(--success-fg, var(--success));
+  border-style: solid;
+  background: color-mix(in srgb, var(--pgp-tone) 16%, transparent);
+}
+/* A clipped edge is the viewport's, not the window's — drop its cap so the band
+   reads as "continues off-screen", exactly as a clipped bar edge does. */
+.pgp-window.is-clip-start { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
+.pgp-window.is-clip-end   { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
+
+/* The bids-due marker — a dotted vertical rule at the submission deadline, in the
+   tender's "bids in" blue so it reads as the moment responses are due. */
+.pgp-bidsdue {
+  position: absolute; top: 0; bottom: 0; width: 0; z-index: 1; pointer-events: none;
+  border-left: 1.5px dotted color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+/* A bar whose row is actively out to tender (LINA-413): its manual dates are
+   locked, so it reads as not-grabbable — no grab cursor, a faint tender wash. */
+.pgt-bar.is-tender-locked {
+  cursor: default;
+  background: color-mix(in srgb, var(--warn-fg) 14%, var(--paper));
+  border-style: dashed;
+}
+
 .pgd-hint { color: var(--muted); font-size: 13px; margin: 0; }
 
 /* The drawer's meta block (LINA-248): label / control pairs. */

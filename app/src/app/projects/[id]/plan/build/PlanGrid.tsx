@@ -64,8 +64,9 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 
 import {
   addDays, applyDrag, barRect, baseWindow, clickDates, clipBarGeom, connectorMidpoint, connectorPath,
-  fillWindow, formatDay, parseDay, scheduleWindow,
-  type ConnectorEnd, type DragMode, type GanttWindow, type TimeBase,
+  fillWindow, formatDay, parseDay, procurementGeom, scheduleWindow,
+  type ConnectorEnd, type DragMode, type GanttWindow, type ProcurementGeom, type ProcurementRfp,
+  type TimeBase,
 } from '@/lib/plan-gantt';
 import {
   DEP_LABELS, childStatusCounts, criticalPathKeys, nodeIndex, nodeStatus, planLinks,
@@ -286,10 +287,29 @@ export interface PlanGridProps {
    * id the composer could pre-select, so it offers no link until the draft lands.
    */
   tenderableKeys?: Set<string>;
+  /**
+   * The tendering⇄schedule bridge (LINA-413): the procurement window each
+   * out-to-tender row paints on its Gantt bar, keyed by the row's stable key
+   * (its v2 task id). A row with a live tender gets a window band + a bids-due
+   * tick drawn over its track, and while that tender is actively open its manual
+   * dates are LOCKED (no drag, no resize) — they belong to the procurement until
+   * a bid is in or it is awarded. Primitives only: no date is written back here.
+   * Absent/empty → no row paints a window and nothing is locked.
+   */
+  procurement?: Record<string, ProcurementRfp>;
 }
 
 /** Module-level so the default never changes identity between renders. */
 const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
+
+/** The procurement window's state, in the author's words (LINA-413) — the
+ *  band's hover title, so the colour has a name. */
+const PROC_LABEL: Record<ProcurementGeom['state'], string> = {
+  draft: 'Tender being prepared',
+  tendering: 'Out to tender — bids open',
+  bids_in: 'Bids in — comparing',
+  awarded: 'Tender awarded',
+};
 
 /** How near (px) a link drag must come to a bar edge to snap onto it. */
 const LINK_SNAP = 14;
@@ -347,6 +367,7 @@ function LinkGlyph() {
 export function PlanGrid(props: PlanGridProps) {
   const { phases, parties, litRows, disabled, todayIso } = props;
   const pendingChange = props.pendingChangeKeys ?? EMPTY_KEYS;
+  const procurement = props.procurement;
   const dir = useMemo(() => partyIndex(parties), [parties]);
 
   // ── Specialty catalog (LINA-306 item 6; shared since LINA-404) ──────────────
@@ -532,6 +553,21 @@ export function PlanGrid(props: PlanGridProps) {
     if (!planWin || base === 'custom') return planWin;
     return fillWindow(planWin, col, viewportW);
   }, [planWin, base, col, viewportW]);
+
+  // The procurement window geometry per row (LINA-413), in the SAME window + col
+  // the bars use — so a window band shares the bars' day→pixel math to the pixel
+  // (a window that drifted from the bar it annotates would be a lie). Keyed by
+  // the row's stable key. Empty unless a row is out to tender; the geom is null
+  // (dropped) for a cancelled tender or a span wholly off the current view.
+  const procGeom = useMemo(() => {
+    const m = new Map<string, ProcurementGeom>();
+    if (!win || !procurement) return m;
+    for (const [key, rfp] of Object.entries(procurement)) {
+      const g = procurementGeom(win, col, rfp);
+      if (g) m.set(key, g);
+    }
+    return m;
+  }, [win, col, procurement]);
 
   const onPickBase = useCallback((next: TimeBase) => {
     // Entering custom seeds the inputs with the window currently on screen, so
@@ -845,6 +881,9 @@ export function PlanGrid(props: PlanGridProps) {
     // on it, and it needs an onShiftGroup handler to go anywhere.
     const isSummary = r.si == null && (r.node.children ?? []).length > 0;
     if (disabled || e.button !== 0) return;
+    // While a row is actively out to tender its MANUAL dates are locked (LINA-413):
+    // they belong to the procurement until a bid is in or it is awarded.
+    if (procGeom.get(r.key)?.locked) return;
     if (isSummary && (mode !== 'move' || !props.onShiftGroup)) return;
     e.preventDefault();
     e.stopPropagation();
@@ -854,7 +893,7 @@ export function PlanGrid(props: PlanGridProps) {
       startX: e.clientX, start: r.node.start, end: r.node.end,
       group: isSummary, lastDeltaDays: 0,
     };
-  }, [disabled, props]);
+  }, [disabled, props, procGeom]);
 
   const onBarMove = useCallback((e: React.PointerEvent) => {
     const d = drag.current;
@@ -889,10 +928,11 @@ export function PlanGrid(props: PlanGridProps) {
     e: React.MouseEvent, w: GanttWindow, r: Extract<Row, { kind: 'task' }>,
   ) => {
     if (disabled || r.node.start || r.node.end) return;
+    if (procGeom.get(r.key)?.locked) return; // tendering locks manual dates (LINA-413)
     const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
     const d = clickDates(w, x / col);
     props.onDates(r.pi, r.ti, d.start, d.end, r.si);
-  }, [disabled, props, col]);
+  }, [disabled, props, col, procGeom]);
 
   // ── Draw-a-dependency on the Gantt (LINA-306) ──────────────────────────────
   // The author drags the ＋ handle off one bar's edge onto another bar's edge;
@@ -1646,6 +1686,10 @@ export function PlanGrid(props: PlanGridProps) {
                 // be RESIZED — its span derives from its children — so it shows no
                 // edge handles. A leaf drags and resizes as before.
                 const isSummary = r.si == null && (r.node.children ?? []).length > 0;
+                // The procurement window this row paints, if it is out to tender
+                // (LINA-413). Drawn under the bar as a backdrop band + a bids-due
+                // tick; while `locked` (actively tendering) the bar cannot move.
+                const proc = procGeom.get(r.key) ?? null;
                 return (
                   <div
                     key={`tt-${r.key}`}
@@ -1659,21 +1703,40 @@ export function PlanGrid(props: PlanGridProps) {
                     {todayOffset !== null && todayOffset >= 0 && todayOffset < win.days ? (
                       <div className="pgd-today" style={{ left: todayOffset * col }} aria-hidden />
                     ) : null}
+                    {/* The procurement window (LINA-413): a backdrop band over the
+                        stretch spent choosing a contractor, coloured by tender
+                        state, with a tick on the bids-due day. Drawn before the
+                        bar so the task bar sits on top of its own window. */}
+                    {proc?.band ? (
+                      <div
+                        className={`pgp-window is-${proc.state.replace('_', '-')}${proc.band.clipStart ? ' is-clip-start' : ''}${proc.band.clipEnd ? ' is-clip-end' : ''}`}
+                        style={{ left: proc.band.x, width: proc.band.width }}
+                        aria-hidden
+                        title={PROC_LABEL[proc.state]} />
+                    ) : null}
+                    {proc?.bidsDueX != null ? (
+                      <div className="pgp-bidsdue" style={{ left: proc.bidsDueX }} aria-hidden
+                        title="Bids due" />
+                    ) : null}
                     {bar && box ? (
                       <div
-                        className={`pgt-bar${r.si != null ? ' is-sub' : ''}${isSummary ? ' is-summary' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}${criticalOnly ? (criticalKeys.has(r.key) ? ' is-critical' : ' is-dimmed') : ''}`}
+                        className={`pgt-bar${r.si != null ? ' is-sub' : ''}${isSummary ? ' is-summary' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${proc?.locked ? ' is-tender-locked' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}${criticalOnly ? (criticalKeys.has(r.key) ? ' is-critical' : ' is-dimmed') : ''}`}
                         style={{ left: box.x, width: box.width }}
                         role="button" tabIndex={-1}
                         aria-label={
                           `${r.node.name.trim() || (r.si != null ? 'Sub-task' : 'Task')}: `
                           + `${r.node.start || 'no start'} → ${r.node.end || 'no finish'}. `
-                          + (isSummary
-                            ? 'Drag to move this group and its sub-tasks together.'
-                            : 'Drag to move; drag an edge to change start or finish.')
+                          + (proc?.locked
+                            ? 'Dates locked while out to tender.'
+                            : isSummary
+                              ? 'Drag to move this group and its sub-tasks together.'
+                              : 'Drag to move; drag an edge to change start or finish.')
                         }
-                        title={isSummary
-                          ? 'Drag to move the whole group — its sub-tasks move with it'
-                          : 'Drag to move — drag an edge to change start or finish'}
+                        title={proc?.locked
+                          ? 'Dates are locked while this is out to tender — they settle once a bid is in'
+                          : isSummary
+                            ? 'Drag to move the whole group — its sub-tasks move with it'
+                            : 'Drag to move — drag an edge to change start or finish'}
                         onPointerDown={(e) => onBarDown(e, r, 'move')}
                         onPointerMove={onBarMove}
                         onPointerUp={onBarUp}
@@ -1681,14 +1744,16 @@ export function PlanGrid(props: PlanGridProps) {
                       >
                         {/* A summary bar has no resize handles — its span derives from
                             its children. A leaf shows handles on each unclipped edge
-                            (a clipped edge is the WINDOW's, not the task's). */}
-                        {!isSummary && !bar.open && !bar.clipStart && r.node.start ? (
+                            (a clipped edge is the WINDOW's, not the task's). A row
+                            locked out to tender (LINA-413) shows none — its dates
+                            belong to the procurement until a bid is in. */}
+                        {!isSummary && !proc?.locked && !bar.open && !bar.clipStart && r.node.start ? (
                           <span className="pgt-handle pgt-handle-l" aria-hidden
                             onPointerDown={(e) => onBarDown(e, r, 'resize-start')}
                             onPointerMove={onBarMove} onPointerUp={onBarUp} onPointerCancel={onBarUp} />
                         ) : null}
                         <span className="pgt-bar-lbl">{r.node.name.trim() || 'Untitled'}</span>
-                        {!isSummary && !bar.open && !bar.clipEnd && r.node.end ? (
+                        {!isSummary && !proc?.locked && !bar.open && !bar.clipEnd && r.node.end ? (
                           <span className="pgt-handle pgt-handle-r" aria-hidden
                             onPointerDown={(e) => onBarDown(e, r, 'resize-end')}
                             onPointerMove={onBarMove} onPointerUp={onBarUp} onPointerCancel={onBarUp} />

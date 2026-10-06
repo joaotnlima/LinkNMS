@@ -40,6 +40,7 @@ function baseRfp(over = {}) {
     scope_text: null, specialties: ['plumbing'], visibility: 'invite_only',
     questions_deadline: null, submission_deadline: FUTURE,
     package_version: 1, status: 'published', awarded_proposal_id: null, version: 3,
+    created_at: '2026-12-01T09:00:00Z',
     ...over,
   };
 }
@@ -220,6 +221,19 @@ function fakeStore() {
           && (r.issuer_org_id === viewerOrgId || p.bidder_org_id === viewerOrgId);
       });
       return { items, nextCursor: null };
+    },
+    // The governing RFP of a row (LINA-413) — same scoping as lanesForTask:
+    // issuer, or an org that holds a lane on it; cancelled excluded.
+    async rfpForTask(taskId, viewerOrgId) {
+      const candidates = [...rfps.values()].filter((r) => r.root_task_ids.includes(taskId)
+        && r.status !== 'cancelled'
+        && (r.issuer_org_id === viewerOrgId
+          || [...lanes.values()].some((p) => p.rfp_id === r.id && p.bidder_org_id === viewerOrgId)));
+      candidates.sort((a, b) => {
+        if ((b.status === 'awarded') - (a.status === 'awarded')) return (b.status === 'awarded') - (a.status === 'awarded');
+        return String(b.created_at).localeCompare(String(a.created_at));
+      });
+      return candidates[0] ?? null;
     },
     async lanesOfRfp(rfpId) {
       return [...lanes.values()].filter((p) => p.rfp_id === rfpId);
@@ -548,6 +562,23 @@ describe('tendering over the /api/v2 router', () => {
         viewer(OWNER_ORG, { perms: ['org:tendering:issue'] }));
       assert.equal(res.status, 200);
       assert.ok(!('total' in res.body.items.find((l) => l.proposal_id === LANE1)));
+    });
+
+    test('the response carries the governing RFP window (LINA-413)', async () => {
+      const res = await dispatch('GET', `/tasks/${TASK}/proposal-lanes`, viewer(OWNER_ORG));
+      assert.equal(res.status, 200);
+      assert.ok(res.body.rfp, 'rfp window present');
+      assert.equal(res.body.rfp.id, RFP);
+      assert.equal(res.body.rfp.status, 'published');
+      assert.equal(res.body.rfp.submission_deadline, FUTURE);
+      assert.equal(res.body.rfp.opened_at, '2026-12-01T09:00:00Z');
+    });
+
+    test('a bidder on the tender sees the window; a stranger sees none', async () => {
+      const bidderRes = await dispatch('GET', `/tasks/${TASK}/proposal-lanes`, viewer(BIDDER_ORG));
+      assert.equal(bidderRes.body.rfp.id, RFP);
+      const strangerRes = await dispatch('GET', `/tasks/${TASK}/proposal-lanes`, viewer(GC_ORG));
+      assert.equal(strangerRes.body.rfp, null);
     });
 
     test('getProposal: another bidder’s lane → 404', async () => {
