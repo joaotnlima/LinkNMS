@@ -1047,6 +1047,9 @@ export function PlanBuildEditor({
             `${procurementHref}?task=${encodeURIComponent(nodeKey)}&mode=light`,
           )
           : undefined}
+        // Only server-persisted rows can be tendered — the composer pre-selects a
+        // real task id, so a not-yet-saved phase offers no "Start tendering" link.
+        tenderableKeys={saved}
       />
 
       <p className="pgd-hint">

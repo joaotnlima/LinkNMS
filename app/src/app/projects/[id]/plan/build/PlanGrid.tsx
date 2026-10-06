@@ -279,6 +279,13 @@ export interface PlanGridProps {
    * BE-enforced door regardless).
    */
   onStartTender?: (nodeKey: string) => void;
+  /**
+   * The node keys the server already persists (LINA-407). A tender is raised over
+   * a real server task, so the "Start tendering" control shows ONLY on a top-level
+   * row whose key is in here — a freshly-added, not-yet-saved phase has no server
+   * id the composer could pre-select, so it offers no link until the draft lands.
+   */
+  tenderableKeys?: Set<string>;
 }
 
 /** Module-level so the default never changes identity between renders. */
@@ -1463,7 +1470,7 @@ export function PlanGrid(props: PlanGridProps) {
                     {/* Raise a tender over this package (LINA-407). Shown only to a
                         viewer who may issue tenders; it opens the composer pre-set
                         to Light (design) with this row already picked. */}
-                    {props.onStartTender ? (
+                    {props.onStartTender && props.tenderableKeys?.has(r.key) ? (
                       <button type="button" className="pbx-icon" title="Start tendering (design)"
                         aria-label={`Start tendering phase ${r.pi + 1}`}
                         onClick={(e) => { e.stopPropagation(); props.onStartTender!(r.key); }}>⤴</button>
