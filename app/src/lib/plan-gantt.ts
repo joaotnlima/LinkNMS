@@ -309,6 +309,120 @@ export function barRect(offsetDays: number, spanDays: number, col: number): { x:
   return { x: offsetDays * col + 1, width: Math.max(2, spanDays * col - 2) };
 }
 
+// ── The tendering ⇄ schedule bridge (LINA-413, LINA-407 slice D) ──────────────
+// A row that is out to tender carries a *procurement window* on its Gantt bar:
+// the stretch of calendar the schedule spends choosing a contractor before the
+// work itself can begin. This is the pure half — RFP facts in, overlay geometry
+// out — so every state/date edge is unit-tested, exactly like barGeom. The paint
+// (the .pgp-window band and the .pgp-bidsdue tick, in PlanGrid) is layout only.
+//
+// PRIMITIVES ONLY. This computes where the window sits and which state it is in;
+// it does NOT write any date back to the plan. Seeding a task's own start/finish
+// from the awarded bid is a separate slice (the award write-back), deliberately
+// kept out so a wrong overlay can never corrupt a real scheduled date.
+
+/** The RFP lifecycle, verbatim from the tendering schema. */
+export type RfpLifecycle = 'draft' | 'published' | 'closed' | 'awarded' | 'cancelled';
+
+/** The four states the bar paints — the lifecycle folded for the schedule's eye. */
+export type ProcurementState = 'draft' | 'tendering' | 'bids_in' | 'awarded';
+
+/**
+ * The governing RFP of a row, as the bridge reads it off
+ * `GET /tasks/{id}/proposal-lanes` (the `rfp` block) plus the lanes it already
+ * holds. Dates are the same pure 'YYYY-MM-DD' calendar days the rest of this
+ * module speaks — the caller slices the wire's timestamps to the day.
+ */
+export interface ProcurementRfp {
+  status: RfpLifecycle;
+  /** When tendering opened (the RFP draft's creation), 'YYYY-MM-DD'. */
+  openedDay: string;
+  /** Bids due — the submission deadline, 'YYYY-MM-DD'. */
+  bidsDueDay: string;
+  /** How many lanes have actually been submitted — what makes "bids in" true. */
+  submittedCount: number;
+}
+
+/**
+ * Fold the RFP lifecycle (+ whether any bid has landed) into the state the bar
+ * paints. Returns null when there is nothing to paint — a cancelled tender
+ * leaves no window. A published tender with a bid already in reads as "bids in";
+ * a closed one always does (its deadline has passed, the bids are in whatever
+ * their count). An awarded tender is its own terminal state regardless of count.
+ */
+export function procurementState(
+  rfp: Pick<ProcurementRfp, 'status' | 'submittedCount'>,
+): ProcurementState | null {
+  switch (rfp.status) {
+    case 'cancelled': return null;
+    case 'draft': return 'draft';
+    case 'awarded': return 'awarded';
+    case 'closed': return 'bids_in';
+    case 'published': return rfp.submittedCount > 0 ? 'bids_in' : 'tendering';
+    default: return null;
+  }
+}
+
+/**
+ * While a row is actively out to tender its MANUAL schedule is locked (the
+ * founder's ask): the dates belong to the procurement, not the author's drag,
+ * until a bid is in or the tender is awarded. Draft (not yet published) and
+ * bids-in/awarded (the dates are settling from the outcome) stay editable; only
+ * the open `tendering` state locks.
+ */
+export function procurementLocksSchedule(state: ProcurementState | null): boolean {
+  return state === 'tendering';
+}
+
+export interface ProcurementGeom {
+  state: ProcurementState;
+  /**
+   * The window band's pixel box, clipped to the canvas like clipBarGeom — null
+   * only when the whole [opened, bids-due] span lies outside the view. The clip
+   * flags let the paint suppress a cap on an edge that is the window's, not the
+   * tender's.
+   */
+  band: { x: number; width: number; clipStart: boolean; clipEnd: boolean } | null;
+  /**
+   * The bids-due marker's x in canvas px (the right edge of the deadline day),
+   * or null when that day falls outside the view.
+   */
+  bidsDueX: number | null;
+  /** Whether this state locks the row's manual dates (see procurementLocksSchedule). */
+  locked: boolean;
+}
+
+/**
+ * Where a row's procurement window paints in the canvas, from its RFP and the
+ * same window + col the bars use. Null when there is nothing to paint (cancelled
+ * tender, or the span lies entirely off-canvas with no in-view bids-due tick).
+ * The band reuses clipBarGeom/barRect so it shares the bars' day→pixel math to
+ * the pixel — a window that drifted from the bar it annotates would be a lie.
+ */
+export function procurementGeom(
+  win: GanttWindow, col: number, rfp: ProcurementRfp,
+): ProcurementGeom | null {
+  const state = procurementState(rfp);
+  if (state === null) return null;
+
+  const clip = clipBarGeom(win, rfp.openedDay, rfp.bidsDueDay);
+  const band = clip
+    ? { ...barRect(clip.offsetDays, clip.spanDays, col), clipStart: clip.clipStart, clipEnd: clip.clipEnd }
+    : null;
+
+  const due = parseDay(rfp.bidsDueDay);
+  const winStart = parseDay(win.startDay);
+  let bidsDueX: number | null = null;
+  if (due !== null && winStart !== null) {
+    const off = Math.round((due - winStart) / MS_PER_DAY);
+    // The tick sits at the END of the deadline day — bids are due by its close.
+    if (off >= 0 && off <= win.days - 1) bidsDueX = (off + 1) * col;
+  }
+
+  if (band === null && bidsDueX === null) return null;
+  return { state, band, bidsDueX, locked: procurementLocksSchedule(state) };
+}
+
 // ── Dependency connectors (ADR-0020 §6, LINA-253) ────────────────────────────
 // The timeline is absolutely-positioned divs; the links between bars are drawn
 // in one SVG overlay above them. This is the geometry half: bar boxes in, elbow

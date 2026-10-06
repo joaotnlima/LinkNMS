@@ -4260,6 +4260,14 @@ paths:
                       type: array
                       items:
                         $ref: '#/components/schemas/ProposalLane'
+                    rfp:
+                      allOf:
+                      - $ref: '#/components/schemas/RfpWindow'
+                      nullable: true
+                      description: >-
+                        The governing RFP of this row, for the plan/Gantt
+                        procurement window (LINA-413). Null when the row has no
+                        live tender. Present on the first page only.
                   required:
                   - items
         '401':
@@ -9561,6 +9569,39 @@ components:
         url:
           type: string
       description: Pseudo-row drawn under the tendered task (D-36). Issuer sees all lanes; a bidder only its own.
+    RfpWindow:
+      type: object
+      description: >-
+        The governing RFP of a tendered row, as the plan/Gantt bridge paints it
+        (LINA-413): which tender, its lifecycle status, when tendering opened and
+        when bids are due. The "bids in / awarded" state the client derives from
+        the lanes. No money, no counts.
+      properties:
+        id: *id001
+        status:
+          type: string
+          enum:
+          - draft
+          - published
+          - closed
+          - awarded
+          - cancelled
+        opened_at:
+          type: string
+          format: date-time
+          description: When the tender was opened (the draft's creation).
+        submission_deadline:
+          type: string
+          format: date-time
+          description: Bids due by this instant.
+        awarded_proposal_id:
+          allOf:
+          - *id001
+          description: Present once the tender is awarded.
+      required:
+      - id
+      - status
+      - submission_deadline
     Proposal:
       type: object
       properties:

@@ -156,6 +156,26 @@ export function laneBody(row, { seesMoney }) {
   };
 }
 
+/**
+ * #/components/schemas/RfpWindow — the governing RFP of a tendered row, as the
+ * plan/Gantt bridge needs it (LINA-413). Just the four facts that paint the
+ * procurement window on the task bar: which RFP, its lifecycle status, when
+ * tendering opened (`opened_at`, the draft's creation) and when bids are due
+ * (`submission_deadline`). The "bids in / awarded" refinement the FE derives
+ * from the lanes it already holds (a submitted lane; the awarded proposal) — no
+ * money, no counts on the wire. Null when the row has no live (non-cancelled)
+ * RFP; a cancelled tender leaves no window to paint.
+ */
+export function rfpWindowBody(row) {
+  return {
+    id: row.id,
+    status: row.status,
+    opened_at: iso(row.created_at),
+    submission_deadline: iso(row.submission_deadline),
+    ...(row.awarded_proposal_id ? { awarded_proposal_id: row.awarded_proposal_id } : {}),
+  };
+}
+
 /** #/components/schemas/Proposal — full document (issuer | author only). */
 export function proposalBody(row, { rows = [], links = [], lines = [], seesMoney }) {
   return {

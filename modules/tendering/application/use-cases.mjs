@@ -29,6 +29,7 @@ import { visibilityOf, contractBody } from '../../contracting/domain/lifecycle.m
 import { rfpTransition, proposalTransition } from '../domain/lifecycle.mjs';
 import {
   rfpBody, packageBody, recipientBody, clarificationBody, laneBody, proposalBody, rfpLinkView,
+  rfpWindowBody,
 } from '../domain/wire.mjs';
 import { comparisonMatrix, missingLineCount } from '../domain/comparison.mjs';
 import { renderInviteEmail, PREVIEW_LINK_PLACEHOLDER_TOKEN } from '../domain/invite-email.mjs';
@@ -821,8 +822,22 @@ export async function listProposalLanes({ viewer, store, taskId, query }) {
     cursor: query?.cursor ?? null,
     limit: clampLimit(query?.limit),
   });
+  // The governing RFP of this row, for the plan/Gantt procurement window
+  // (LINA-413). Read on the FIRST page only — the window is one fact about the
+  // row, not something that paginates with the lanes. Null when the row has no
+  // live tender (or the store predates this read).
+  const rfp = !query?.cursor && store.rfpForTask
+    ? await store.rfpForTask(taskId, viewer.orgId)
+    : null;
   const seesMoney = viewer.has('org:money:view');
-  return { status: 200, body: { items: items.map((l) => laneBody(l, { seesMoney })), next_cursor: nextCursor } };
+  return {
+    status: 200,
+    body: {
+      items: items.map((l) => laneBody(l, { seesMoney })),
+      rfp: rfp ? rfpWindowBody(rfp) : null,
+      next_cursor: nextCursor,
+    },
+  };
 }
 
 /** operationId: getProposal — issuer | author only (V8, 404 for anyone else). */

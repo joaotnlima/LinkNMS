@@ -63,6 +63,7 @@ import {
   type AuthoredNode, type DepType, type PhaseDraft, type PlanNodeRef, type StageStatus, type TaskDraft, type TemplatePhase,
 } from '@/lib/plan-authoring';
 import { rekeyDraft, rekeyWire, draftKeys } from '@/lib/v2/plan-rekey';
+import type { ProcurementRfp } from '@/lib/plan-gantt';
 import { partyIndex, type PartyRef } from '@/lib/party-display';
 import { TaskWorkspace } from '@/components/TaskWorkspace';
 import { taskHref, planHref } from '@/lib/task-workspace';
@@ -336,7 +337,7 @@ export type ReportProgressV2 = (
 export function PlanBuildEditor({
   projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
   importHref = null, procurementHref = null, initialStageIds = {}, saveV2, reportProgressV2,
-  canStartTender = false,
+  canStartTender = false, procurement = {},
 }: {
   projectId: string;
   /**
@@ -396,6 +397,13 @@ export function PlanBuildEditor({
    * (design); without it (or with no procurement door) the control is hidden.
    */
   canStartTender?: boolean;
+  /**
+   * The tendering⇄schedule bridge (LINA-413): the procurement window each
+   * out-to-tender row paints on its Gantt bar, keyed by the v2 task id (= the
+   * row's stable key). Read server-side from the project's live tenders; empty
+   * for a build with nothing out to tender. Forwarded straight to the grid.
+   */
+  procurement?: Record<string, ProcurementRfp>;
 }) {
   const router = useRouter();
   const resuming = initialPhases != null && initialPhases.length > 0;
@@ -1050,6 +1058,7 @@ export function PlanBuildEditor({
         // Only server-persisted rows can be tendered — the composer pre-selects a
         // real task id, so a not-yet-saved phase offers no "Start tendering" link.
         tenderableKeys={saved}
+        procurement={procurement}
       />
 
       <p className="pgd-hint">

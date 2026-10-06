@@ -25,11 +25,13 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 
+import type { ProcurementRfp } from '../plan-gantt';
 import { v2, V2Error } from './client';
 import type { V2Me } from './profile-view';
 import type {
   V2Rfp, V2Recipient, V2ProposalLane, V2Comparison, RfpDraftInput, RfpVisibility,
   V2Money, V2ProposalDetail, V2ProposalDocument,
+  RfpStatus, ProposalStatus,
 } from './tendering-view';
 import type { V2UploadTicket } from './task-workspace-view';
 
@@ -217,6 +219,79 @@ export async function getCompareEntries(proposalIds: readonly string[]): Promise
     return detail ? { detail, documents: portfolioOf(detail) } : null;
   }));
   return entries.filter((e): e is CompareEntry => e !== null);
+}
+
+// ── The tendering ⇄ schedule bridge: procurement windows (LINA-413) ──────────
+// The plan's Gantt paints a procurement window on a tendered task's bar — the
+// stretch of calendar spent choosing a contractor before the work can begin.
+// This is the READ that feeds it: for every root task of the project's live
+// tenders, the RFP facts the bar needs (status, when it opened, when bids are
+// due, how many have landed). PRIMITIVES ONLY — no write-back of a date.
+
+/** The `rfp` block `GET /tasks/{id}/proposal-lanes` carries (RfpWindow). */
+interface RfpWindowWire {
+  id: string;
+  status: RfpStatus;
+  opened_at?: string;
+  submission_deadline: string;
+  awarded_proposal_id?: string;
+}
+
+/** A proposal-lanes read with its governing-RFP block (LINA-413). */
+interface LanesWithRfp extends ListBody<V2ProposalLane> {
+  rfp?: RfpWindowWire | null;
+}
+
+/** A lane counts as a landed bid — what turns "tendering" into "bids in". */
+function isLandedBid(status: ProposalStatus): boolean {
+  return status === 'submitted' || status === 'shortlisted' || status === 'awarded';
+}
+
+/**
+ * Every tendered task of a project, mapped to the procurement window its Gantt
+ * bar paints (LINA-413), keyed by task id (= the plan row's stable key in v2).
+ *
+ * Scope is the ISSUER's own tenders (`getMyRfps`), filtered to this project and
+ * excluding cancelled ones — which is exactly who the plan editor serves (the GC
+ * authoring the plan is the tender's issuer; a bidder never sees the editor). We
+ * discover WHICH tasks are out to tender from the RFP list, then read each root
+ * task's lanes to get the `rfp` block (its `opened_at`, the draft's creation) and
+ * count the bids that have landed. One read per tendered task, in parallel; a
+ * denied/absent read drops that task silently rather than failing the plan.
+ *
+ * Fail-closed like every read here: no active org, no tenders, or any V2Error →
+ * an empty map, never a crash and never a leak.
+ */
+export async function getProcurementWindows(
+  projectId: string,
+): Promise<Record<string, ProcurementRfp>> {
+  const rfps = (await getMyRfps()).filter(
+    (r) => r.project_id === projectId && r.status !== 'cancelled',
+  );
+  // The union of root tasks across the project's live tenders — one read each.
+  const taskIds = [...new Set(rfps.flatMap((r) => r.root_task_ids))];
+  if (taskIds.length === 0) return {};
+
+  const windows: Record<string, ProcurementRfp> = {};
+  await Promise.all(taskIds.map(async (taskId) => {
+    try {
+      const res = await v2<LanesWithRfp>({
+        method: 'GET', path: `/tasks/${encodeURIComponent(taskId)}/proposal-lanes`,
+      });
+      const rfp = res.rfp;
+      if (!rfp?.opened_at) return; // no live tender on this row (or pre-LINA-413 store)
+      windows[taskId] = {
+        status: rfp.status,
+        openedDay: rfp.opened_at.slice(0, 10),
+        bidsDueDay: rfp.submission_deadline.slice(0, 10),
+        submittedCount: (res.items ?? []).filter((l) => isLandedBid(l.status)).length,
+      };
+    } catch (err) {
+      if (err instanceof V2Error) return;
+      throw err;
+    }
+  }));
+  return windows;
 }
 
 // ── Writes: the composer ─────────────────────────────────────────────────────

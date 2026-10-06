@@ -487,6 +487,32 @@ export function createTenderingStore(pool) {
       return { items: page, nextCursor: rows.length > limit ? page[page.length - 1].id : null };
     },
 
+    /**
+     * The RFP that governs a tendered row, for the plan/Gantt window (LINA-413).
+     * A row can be the root of more than one RFP over its life (a re-tender, or a
+     * design RFP then an execution one); the window paints ONE, so we pick the
+     * authoritative tender: an awarded one wins (it is the outcome the schedule
+     * commits to), otherwise the most recently opened. Cancelled tenders are
+     * excluded — they leave no window. Scoped exactly like `lanesForTask`: the
+     * viewer must be the issuer, or hold a proposal on the RFP (a bidder sees the
+     * window of the tender it is in). Null when there is no such RFP.
+     */
+    async rfpForTask(taskId, viewerOrgId) {
+      const { rows } = await pool.query(
+        `SELECT r.*
+           FROM tendering.rfp r
+           JOIN tendering.rfp_root rr ON rr.rfp_id = r.id AND rr.task_id = $1
+          WHERE r.status <> 'cancelled'
+            AND (r.issuer_org_id = $2
+                 OR EXISTS (SELECT 1 FROM tendering.proposal p
+                             WHERE p.rfp_id = r.id AND p.bidder_org_id = $2))
+          ORDER BY (r.status = 'awarded') DESC, r.created_at DESC
+          LIMIT 1`,
+        [taskId, viewerOrgId],
+      );
+      return rows[0] ?? null;
+    },
+
     /** Every lane of an RFP — issuer-side internals (award, comparison). */
     async lanesOfRfp(rfpId) {
       const { rows } = await pool.query(
