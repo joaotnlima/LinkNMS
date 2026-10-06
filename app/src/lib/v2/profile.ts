@@ -29,6 +29,7 @@
 import 'server-only';
 
 import { v2, V2Error } from './client';
+import { viewerFromClerk } from '@/server/v2/viewer';
 import type { PortalUser } from '@/components/PortalShell';
 import type { ProjectSummary } from '@/lib/types';
 import {
@@ -65,6 +66,23 @@ export async function viewerHasActiveOrg(): Promise<boolean> {
   } catch (err) {
     if (err instanceof V2Error) return false; // no mirror / no session — treat as no org
     throw err;
+  }
+}
+
+/**
+ * Can the viewer raise a tender (LINA-407)? Resolved from the org-role permission
+ * matrix (`org:tendering:issue` → admin / manager / representative, access.mjs),
+ * NOT from a client claim. Used to gate the per-task "Start tendering" action on
+ * the plan grid: a viewer without it never sees the control (the composer route
+ * itself is a separate, BE-enforced door). Fail-closed: no viewer / any error →
+ * false, so the action is hidden rather than shown-then-refused.
+ */
+export async function viewerCanIssueTenders(): Promise<boolean> {
+  try {
+    const viewer = await viewerFromClerk();
+    return viewer?.has('org:tendering:issue') ?? false;
+  } catch {
+    return false; // no session / mirror race → no control, never a crash
   }
 }
 

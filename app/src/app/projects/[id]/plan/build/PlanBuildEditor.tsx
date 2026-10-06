@@ -47,6 +47,7 @@
 // /plan, which shows the "draft saved" stamp once and links to the audit trail.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 import {
   DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
@@ -335,6 +336,7 @@ export type ReportProgressV2 = (
 export function PlanBuildEditor({
   projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
   importHref = null, procurementHref = null, initialStageIds = {}, saveV2, reportProgressV2,
+  canStartTender = false,
 }: {
   projectId: string;
   /**
@@ -387,7 +389,15 @@ export function PlanBuildEditor({
    * live v2 stage ids, so no row is status-settable there anyway).
    */
   reportProgressV2?: ReportProgressV2;
+  /**
+   * True when the viewer may raise a tender (`org:tendering:issue`, LINA-407).
+   * Gates the per-package "Start tendering" control on the grid: with it, each
+   * top-level row offers a one-click deep-link into the composer pre-set to Light
+   * (design); without it (or with no procurement door) the control is hidden.
+   */
+  canStartTender?: boolean;
 }) {
+  const router = useRouter();
   const resuming = initialPhases != null && initialPhases.length > 0;
   // v2 mode (LINA-369): the save writes the build's live plan on the v2 record —
   // NOT the v1 private-draft-then-propose flow. The copy below drops the "only you
@@ -1032,6 +1042,14 @@ export function PlanBuildEditor({
         onUnlinkDep={unlinkDep}
         onSetStatus={setStatus}
         statusSettableKeys={statusSettableKeys}
+        onStartTender={canStartTender && procurementHref
+          ? (nodeKey) => router.push(
+            `${procurementHref}?task=${encodeURIComponent(nodeKey)}&mode=light`,
+          )
+          : undefined}
+        // Only server-persisted rows can be tendered — the composer pre-selects a
+        // real task id, so a not-yet-saved phase offers no "Start tendering" link.
+        tenderableKeys={saved}
       />
 
       <p className="pgd-hint">

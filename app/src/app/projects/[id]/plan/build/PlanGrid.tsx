@@ -270,6 +270,22 @@ export interface PlanGridProps {
    * status shows as a read-only bar until the draft lands.
    */
   statusSettableKeys?: Set<string>;
+  /**
+   * Raise a tender over a TOP-LEVEL row straight from the grid (LINA-407).
+   * `nodeKey` is the row's stable v2 id — the same value the composer lists as a
+   * tender package (`root_task_ids`), so the deep-link it builds pre-selects this
+   * row. Present only for a viewer with `org:tendering:issue`; absent → the
+   * "Start tendering" control is not rendered at all (the composer route is the
+   * BE-enforced door regardless).
+   */
+  onStartTender?: (nodeKey: string) => void;
+  /**
+   * The node keys the server already persists (LINA-407). A tender is raised over
+   * a real server task, so the "Start tendering" control shows ONLY on a top-level
+   * row whose key is in here — a freshly-added, not-yet-saved phase has no server
+   * id the composer could pre-select, so it offers no link until the draft lands.
+   */
+  tenderableKeys?: Set<string>;
 }
 
 /** Module-level so the default never changes identity between renders. */
@@ -1451,6 +1467,14 @@ export function PlanGrid(props: PlanGridProps) {
                   <span className="pgd-statuscol">{statusCell(counts, null, `Phase ${r.pi + 1}`)}</span>
                   {colOrder.map(cellFor)}
                   <span className="pgd-ctl">
+                    {/* Raise a tender over this package (LINA-407). Shown only to a
+                        viewer who may issue tenders; it opens the composer pre-set
+                        to Light (design) with this row already picked. */}
+                    {props.onStartTender && props.tenderableKeys?.has(r.key) ? (
+                      <button type="button" className="pbx-icon" title="Start tendering (design)"
+                        aria-label={`Start tendering phase ${r.pi + 1}`}
+                        onClick={(e) => { e.stopPropagation(); props.onStartTender!(r.key); }}>⤴</button>
+                    ) : null}
                     <button type="button" className="pbx-icon pbx-del" title="Remove phase"
                       disabled={disabled} onClick={() => props.onRemovePhase(r.pi)}>✕</button>
                   </span>

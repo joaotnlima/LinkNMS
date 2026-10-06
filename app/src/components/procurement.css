@@ -43,6 +43,22 @@
 .prc-fileinput { display: none; }
 .prc-reject { margin: 0; color: var(--warn-fg); font-size: var(--size-caption); line-height: 1.5; }
 
+/* ── Light / Detailed purpose picker (LINA-407) ──────────────────────────── */
+.prc-seg { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.prc-seg-opt {
+  flex: 1 1 220px; text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid var(--outline); background: var(--paper);
+  border-radius: var(--r-ctrl); padding: 10px 12px; font: inherit; color: var(--fg);
+}
+.prc-seg-opt:focus-visible { outline: none; border-color: var(--plan-baseline); }
+.prc-seg-opt.is-on {
+  border-color: var(--plan-baseline-line); background: var(--owner-muted); color: var(--owner-fg);
+}
+.prc-seg-title { font-weight: 650; font-size: 13px; }
+.prc-seg-sub { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.prc-seg-opt.is-on .prc-seg-sub { color: var(--owner-fg); }
+
 /* ── Badges (the four recipient states + the RFP's own) ──────────────────── */
 .prc-badge {
   display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
