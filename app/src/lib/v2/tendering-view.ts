@@ -53,6 +53,10 @@ export type RfpVisibility = 'invite_only' | 'open';
 
 export type RfpLevel = 'owner' | 'sub';
 
+/** D-39: design (pre-construction, light) vs execution (as-is, detailed). */
+export type RfpPurpose = 'design' | 'execution';
+export type RfpMode = 'light' | 'detailed';
+
 /** One packaged BoQ item a bidder prices (packageBody.items). */
 export interface V2PackageItem {
   rfp_item_id: string;
@@ -86,6 +90,8 @@ export interface V2Rfp {
   project_id: string;
   issuer_org_id: string;
   level: RfpLevel;
+  purpose: RfpPurpose;
+  mode: RfpMode;
   parent_contract_id?: string;
   root_task_ids: string[];
   title: string;
@@ -267,6 +273,9 @@ export interface RfpDraftInput {
   submissionDeadline: string; // ISO date-time
   questionsDeadline?: string;
   visibility: RfpVisibility;
+  /** D-39. Omit for the as-is execution tender; `design` pins the RFP light. */
+  purpose?: RfpPurpose;
+  mode?: RfpMode;
 }
 
 /**

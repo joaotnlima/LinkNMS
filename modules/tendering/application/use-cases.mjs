@@ -40,6 +40,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const VISIBILITIES = new Set(['invite_only', 'open']);
+const PURPOSES = new Set(['design', 'execution']);
+const MODES = new Set(['light', 'detailed']);
 const ANCHORS = new Set(['start', 'end']);
 const ROW_KINDS = new Set(['task', 'summary', 'milestone']);
 
@@ -61,6 +63,14 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
   if (body?.visibility !== undefined && !VISIBILITIES.has(body.visibility)) {
     errors.visibility = 'invite_only or open';
   }
+  // Purpose / mode (D-39): design is always light (prices a service, no BoQ),
+  // execution defaults to detailed (the as-is). An explicit mode is honoured
+  // but may not contradict the design⇒light invariant the DB also pins.
+  const purpose = body?.purpose ?? 'execution';
+  if (!PURPOSES.has(purpose)) errors.purpose = 'design or execution';
+  const mode = body?.mode ?? (purpose === 'design' ? 'light' : 'detailed');
+  if (!MODES.has(mode)) errors.mode = 'light or detailed';
+  else if (purpose === 'design' && mode !== 'light') errors.mode = 'a design RFP is always light';
   validateDeadlines(body, errors, { submissionRequired: true });
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
@@ -102,6 +112,8 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
       issuerOrgId: viewer.orgId,
       level,
       parentContractId,
+      purpose,
+      mode,
       title: body.title.trim(),
       scopeText: body.scope_text ?? null,
       visibility: body.visibility ?? 'invite_only',
@@ -159,6 +171,7 @@ export async function getRfpByToken({ store, token }) {
     status: 200,
     body: rfpLinkView(
       { title: rec.title, scope_text: rec.scope_text, specialties: rec.specialties,
+        purpose: rec.purpose, mode: rec.mode,
         submission_deadline: rec.submission_deadline, status: rec.rfp_status },
       { pkg, project: { name: rec.project_name, location: rec.project_location },
         recipientEmail: rec.email, proposal },
@@ -197,7 +210,17 @@ async function validateSummaryBid({ store, proposalId, body }) {
   }
   if (body?.validity_until !== undefined && body?.validity_until !== null
       && !DATE_ONLY.test(body.validity_until)) errors.validity_until = 'YYYY-MM-DD';
-  return { errors, docs: Array.isArray(docs) ? [...new Set(docs)] : [] };
+  // Light-bid references (D-39): optional free text, capped so a single field
+  // can't be used to stuff the lane. Trimmed to null when blank.
+  let referenceNotes = body?.reference_notes;
+  if (referenceNotes !== undefined && referenceNotes !== null) {
+    if (typeof referenceNotes !== 'string') errors.reference_notes = 'text';
+    else {
+      referenceNotes = referenceNotes.trim() || null;
+      if (referenceNotes && referenceNotes.length > 4000) errors.reference_notes = '4000 chars max';
+    }
+  } else referenceNotes = null;
+  return { errors, docs: Array.isArray(docs) ? [...new Set(docs)] : [], referenceNotes };
 }
 
 /** operationId: submitProposalByToken — POST /rfp-links/{token}/proposal, security: []. */
@@ -218,7 +241,7 @@ export async function submitProposalByToken({ store, token, body }) {
     throw new ProblemError('invalid_transition', 'this RFP is no longer accepting proposals');
   }
 
-  const { errors, docs } = await validateSummaryBid({ store, proposalId: proposal.id, body });
+  const { errors, docs, referenceNotes } = await validateSummaryBid({ store, proposalId: proposal.id, body });
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const outcome = proposalTransition(proposal.status, 'submit');
@@ -232,6 +255,7 @@ export async function submitProposalByToken({ store, token, body }) {
     durationWd: body.duration_wd,
     conditions: body.conditions ?? null,
     validityUntil: body.validity_until ?? null,
+    referenceNotes,
     documentIds: docs,
     projectId: proposal.project_id,
     rfpId: proposal.rfp_id,
@@ -867,7 +891,7 @@ export async function submitOwnBid({ viewer, store, proposalId, body }) {
   if (new Date(proposal.submission_deadline) < new Date()) {
     throw new ProblemError('invalid_transition', 'the submission deadline has passed');
   }
-  const { errors, docs } = await validateSummaryBid({ store, proposalId: proposal.id, body });
+  const { errors, docs, referenceNotes } = await validateSummaryBid({ store, proposalId: proposal.id, body });
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const outcome = proposalTransition(proposal.status, 'submit');
@@ -882,6 +906,7 @@ export async function submitOwnBid({ viewer, store, proposalId, body }) {
     durationWd: body.duration_wd,
     conditions: body.conditions ?? null,
     validityUntil: body.validity_until ?? null,
+    referenceNotes,
     documentIds: docs,
     projectId: proposal.project_id,
     rfpId: proposal.rfp_id,

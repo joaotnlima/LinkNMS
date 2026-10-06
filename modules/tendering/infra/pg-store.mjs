@@ -224,6 +224,7 @@ export function createTenderingStore(pool) {
         `SELECT rec.id, rec.rfp_id, rec.org_id, rec.email, rec.status,
                 rec.expires_at, rec.revoked_at,
                 r.title, r.scope_text, r.specialties, r.submission_deadline,
+                r.purpose, r.mode,
                 r.status AS rfp_status, r.project_id, r.package_version,
                 pr.name AS project_name,
                 -- The site's name is a public-safe locality; the full address
@@ -264,17 +265,18 @@ export function createTenderingStore(pool) {
      * a second submit finds the proposal already 'submitted' and returns null.
      */
     async submitPublicProposal({ proposalId, from, revision, totalCents, durationWd,
-      conditions, validityUntil, documentIds, projectId, rfpId, recipientOrgId }) {
+      conditions, validityUntil, referenceNotes, documentIds, projectId, rfpId, recipientOrgId }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `UPDATE tendering.proposal SET
              status = 'submitted', current_revision = $3,
              summary_total_cents = $4, summary_duration_wd = $5,
              conditions = $6, validity_until = $7, document_ids = $8,
+             reference_notes = $9,
              version = version + 1
            WHERE id = $1 AND status = $2 RETURNING *`,
           [proposalId, from, revision, totalCents, durationWd,
-            conditions, validityUntil, documentIds],
+            conditions, validityUntil, documentIds, referenceNotes ?? null],
         );
         if (!rows.length) return null;
         await client.query(
@@ -552,16 +554,17 @@ export function createTenderingStore(pool) {
 
     // ── writes (ledger + outbox on the same client — §6.3/§6.4) ──────────
 
-    async createRfp({ id, projectId, issuerOrgId, level, parentContractId, title, scopeText,
+    async createRfp({ id, projectId, issuerOrgId, level, parentContractId, purpose, mode, title, scopeText,
       visibility, questionsDeadline, submissionDeadline, rootTaskIds, packageRows, packageItems, actor }) {
       return tx(async (client) => {
         const specialties = [...new Set(packageRows.map((r) => r.specialty).filter(Boolean))];
         await client.query(
           `INSERT INTO tendering.rfp
-             (id, project_id, issuer_org_id, level, parent_contract_id, title, scope_text,
+             (id, project_id, issuer_org_id, level, parent_contract_id, purpose, mode, title, scope_text,
               specialties, visibility, questions_deadline, submission_deadline)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [id, projectId, issuerOrgId, level, parentContractId, title, scopeText,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [id, projectId, issuerOrgId, level, parentContractId,
+            purpose ?? 'execution', mode ?? 'detailed', title, scopeText,
             specialties, visibility, questionsDeadline, submissionDeadline],
         );
         for (const taskId of rootTaskIds) {
@@ -1022,17 +1025,18 @@ export function createTenderingStore(pool) {
      * a concurrent submit that already moved the row returns null (caller 409s).
      */
     async submitOwnBid({ proposalId, from, revision, totalCents, durationWd,
-      conditions, validityUntil, documentIds, projectId, rfpId, bidderOrgId, actor }) {
+      conditions, validityUntil, referenceNotes, documentIds, projectId, rfpId, bidderOrgId, actor }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `UPDATE tendering.proposal SET
              status = 'submitted', current_revision = $3,
              summary_total_cents = $4, summary_duration_wd = $5,
              conditions = $6, validity_until = $7, document_ids = $8,
+             reference_notes = $9,
              version = version + 1
            WHERE id = $1 AND status = $2 RETURNING *`,
           [proposalId, from, revision, totalCents, durationWd,
-            conditions, validityUntil, documentIds],
+            conditions, validityUntil, documentIds, referenceNotes ?? null],
         );
         if (!rows.length) return null;
         await client.query(

@@ -3285,11 +3285,13 @@ paths:
                       location: { type: string, nullable: true }
                   rfp:
                     type: object
-                    required: [title, specialties, submission_deadline, package]
+                    required: [title, specialties, purpose, mode, submission_deadline, package]
                     properties:
                       title: { type: string }
                       scope_text: { type: string }
                       specialties: { type: array, items: { type: string } }
+                      purpose: { type: string, enum: [design, execution], description: 'D-39: the tender purpose, so the form can label the bid.' }
+                      mode: { type: string, enum: [light, detailed], description: 'The bid shape the form must render (light = fee + references, detailed = BoQ).' }
                       submission_deadline: { type: string, format: date-time }
                       package:
                         type: object
@@ -3368,6 +3370,7 @@ paths:
                 duration_wd: { type: integer, minimum: 1, description: Working days to complete. }
                 conditions: { type: string, nullable: true }
                 validity_until: { type: string, format: date, nullable: true }
+                reference_notes: { type: string, nullable: true, maxLength: 4000, description: 'Light-bid references — referenceable past work / client contacts (D-39).' }
                 document_ids:
                   type: array
                   items: { type: string, format: uuid }
@@ -4371,6 +4374,7 @@ paths:
                 duration_wd: { type: integer, minimum: 1, description: Working days to complete. }
                 conditions: { type: string, nullable: true }
                 validity_until: { type: string, format: date, nullable: true }
+                reference_notes: { type: string, nullable: true, maxLength: 4000, description: 'Light-bid references — referenceable past work / client contacts (D-39).' }
                 document_ids:
                   type: array
                   items: { type: string, format: uuid }
@@ -9232,6 +9236,20 @@ components:
           enum:
           - owner
           - sub
+        purpose:
+          type: string
+          description: 'D-39: design (pre-construction, a service) vs execution (the
+            as-is, built work priced as a BoQ).'
+          enum:
+          - design
+          - execution
+        mode:
+          type: string
+          description: 'Bid shape: light = fee lump-sum + portfolio + references +
+            PDF (no BoQ); detailed = priced BoQ. A design RFP is always light.'
+          enum:
+          - light
+          - detailed
         parent_contract_id: *id001
         root_task_ids:
           type: array
@@ -9335,6 +9353,18 @@ components:
           enum:
           - invite_only
           - open
+        purpose:
+          type: string
+          description: 'D-39. Omit for the as-is execution tender; design pins the
+            RFP light.'
+          enum:
+          - design
+          - execution
+        mode:
+          type: string
+          enum:
+          - light
+          - detailed
         questions_deadline: *id004
         submission_deadline: *id004
       required:
@@ -9529,6 +9559,10 @@ components:
         conditions:
           type: string
         validity_until: *id003
+        reference_notes:
+          type: string
+          description: 'Light-bid references (D-39); present only when the bidder
+            gave them.'
         document_ids:
           type: array
           items: *id001

@@ -172,6 +172,8 @@ export async function createRfp(projectId: string, draft: RfpDraftInput): Promis
       title: draft.title.trim(),
       ...(draft.scopeText.trim() ? { scope_text: draft.scopeText.trim() } : {}),
       visibility: draft.visibility,
+      ...(draft.purpose ? { purpose: draft.purpose } : {}),
+      ...(draft.mode ? { mode: draft.mode } : {}),
       ...(draft.questionsDeadline ? { questions_deadline: draft.questionsDeadline } : {}),
       submission_deadline: draft.submissionDeadline,
     },
