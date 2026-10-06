@@ -18,6 +18,7 @@ import { registerQuality } from '@modules/quality/http/register.mjs';
 import { createQualityStore } from '@modules/quality/infra/pg-store.mjs';
 import { registerTendering } from '@modules/tendering/http/register.mjs';
 import { createTenderingStore } from '@modules/tendering/infra/pg-store.mjs';
+import { createMailSender } from '@modules/tendering/infra/mail-sender.mjs';
 import { createContractFromAward } from '@modules/contracting/application/award.mjs';
 import { registerDocuments } from '@modules/documents/http/register.mjs';
 import { createDocumentsStore } from '@modules/documents/infra/pg-store.mjs';
@@ -103,6 +104,15 @@ export function getRouter() {
     store: createTenderingStore(getPool()),
     storage: objectStorage,
     contractingAward: createContractFromAward,
+    // The invite email goes through the MailSender port (LINA-412). No
+    // transactional provider is chosen yet (LINA-406, founder-gated), so the
+    // default is no-op/log, selected by MAIL_PROVIDER; nothing hits the wire in
+    // dev. The secure link is built on the same origin the project share links
+    // use.
+    mailSender: createMailSender(),
+    linkBaseUrl: () =>
+      process.env.NEXT_PUBLIC_APP_URL
+      ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://portal.linknms.com'),
   });
 
   // Phase 7 — Documents (versioned files on R2 behind presigned tickets,

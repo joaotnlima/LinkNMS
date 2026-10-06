@@ -796,6 +796,25 @@ export function createTenderingStore(pool) {
       });
     },
 
+    /**
+     * Record that a recipient's invite email left for the provider (LINA-412).
+     * Moves the delivery breadcrumb `queued` → `sent`, stamps `sent_at`, and
+     * pins the provider's message id. Guarded on `status = 'queued'` so a
+     * late-arriving send never clobbers a recipient who has already OPENED the
+     * link or SUBMITTED a proposal (the open/submit writes win). Returns the
+     * updated row, or null when the guard skipped it (not queued any more).
+     */
+    async markRecipientSent({ rfpId, recipientId, messageId }) {
+      const { rows } = await pool.query(
+        `UPDATE tendering.rfp_recipient
+            SET status = 'sent', sent_at = now(), email_message_id = $3
+          WHERE id = $2 AND rfp_id = $1 AND status = 'queued'
+          RETURNING *`,
+        [rfpId, recipientId, messageId ?? null],
+      );
+      return rows[0] ?? null;
+    },
+
     /** Guarded status move; null when `from` raced away (caller answers 409). */
     async transitionRfp({ rfpId, from, to, eventType, projectId, data, actor }) {
       return tx(async (client) => {

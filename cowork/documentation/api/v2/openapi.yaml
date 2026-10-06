@@ -3705,6 +3705,60 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /rfps/{rfpId}/invite-email:preview:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Tendering
+      operationId: previewInviteEmail
+      summary: Preview the invite email before sending
+      description: 'Render the invite email (subject + HTML + plain text) the way a recipient
+        would receive it, so the issuer can review the copy BEFORE dispatching invites (LINA-412,
+        pen frame 986). Produced by the same renderer the dispatch uses, so the preview is the real
+        email — EXCEPT the secure link, which is a NON-secret placeholder: a preview never carries a
+        live personal-link token (LINA-373). `reissue=true` previews the rotated-link variant.
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** issuer'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: issuer
+      parameters:
+      - $ref: '#/components/parameters/rfpId'
+      - name: email
+        in: query
+        required: false
+        schema:
+          type: string
+          format: email
+        description: Sample recipient address shown in the preview's `to` field; defaults to an example.
+      - name: reissue
+        in: query
+        required: false
+        schema:
+          type: boolean
+        description: Preview the re-issued-link variant of the copy instead of the first-invite one.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteEmailPreview'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /rfps/{rfpId}/recipients/{recipientId}:reissue:
     parameters:
     - name: rfpId
@@ -9422,10 +9476,33 @@ components:
         token:
           type: string
           description: 'Response-only, ONCE, in the addRecipients 201 and the reissue 200:
-            the raw personal-link token (only its SHA-256 is stored). Returned to the
-            issuer until the notifications module owns email delivery — same
-            rationale as ProjectInvitation.token.'
+            the raw personal-link token (only its SHA-256 is stored). The invite is also
+            emailed through the MailSender port (LINA-412) with the token ONLY in the body;
+            this echo lets the issuer re-send manually. Same rationale as
+            ProjectInvitation.token.'
       description: Visible to the issuer only.
+    InviteEmailPreview:
+      type: object
+      description: 'The rendered invite email (LINA-412, previewInviteEmail). The secure link in
+        the body is a non-secret placeholder — a preview never carries a live token (LINA-373).'
+      properties:
+        to:
+          type: string
+          format: email
+          description: The sample recipient the preview is addressed to.
+        subject:
+          type: string
+        html:
+          type: string
+          description: The HTML body; carries only the placeholder link, never a live token.
+        text:
+          type: string
+          description: The plain-text body; carries only the placeholder link, never a live token.
+      required:
+      - to
+      - subject
+      - html
+      - text
     Clarification:
       type: object
       properties:
