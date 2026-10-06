@@ -1,5 +1,5 @@
 // Tendering module use cases (phase 6) — one function per operationId:
-//   createRfp, getRfp, updateRfp, addRecipients, listRecipients, publishRfp,
+//   createRfp, getRfp, updateRfp, addRecipients, previewInviteEmail, listRecipients, publishRfp,
 //   addAddendum, closeRfp, cancelRfp, browseOpenRfps, applyToOpenRfp, listMyRfps,
 //   askClarification, answerClarification, listProposalLanes, getProposal,
 //   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
@@ -31,6 +31,7 @@ import {
   rfpBody, packageBody, recipientBody, clarificationBody, laneBody, proposalBody, rfpLinkView,
 } from '../domain/wire.mjs';
 import { comparisonMatrix, missingLineCount } from '../domain/comparison.mjs';
+import { renderInviteEmail, PREVIEW_LINK_PLACEHOLDER_TOKEN } from '../domain/invite-email.mjs';
 import {
   validateAttachmentFile, attachmentStorageKey, uploadTicketBody, attachmentBody,
   MAX_ATTACHMENTS_PER_PROPOSAL,
@@ -435,8 +436,40 @@ export async function updateRfp({ viewer, store, rfpId, body, ifMatch }) {
   return { status: 200, body: rfpBody(updated) };
 }
 
+// ── invite email dispatch (LINA-412, slice E) ────────────────────────────────
+// The secure personal link a recipient receives. The token is placed ONLY here,
+// in the body the mail sender puts on the wire — never a path, a header, or a
+// log line (LINA-373/294). `/rfp/{token}` is the public, noindex form.
+function secureLinkUrl(linkBaseUrl, token) {
+  const base = String(linkBaseUrl || '').replace(/\/+$/, '');
+  return `${base}/rfp/${token}`;
+}
+
+/**
+ * Render + send one recipient's invite through the MailSender port, then record
+ * the delivery breadcrumb (status→sent, sent_at, email_message_id). Resilient:
+ * the dispatch runs AFTER the invite has committed, so a provider failure must
+ * not fail the invite — it is swallowed (never re-throwing the body/token) and
+ * the lane stays `queued` for a later re-issue to retry. Returns the (possibly
+ * updated) recipient row and the message id (null when nothing was sent).
+ */
+async function dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, token, reissue = false }) {
+  if (!mailSender || !token) return { recipient, messageId: null };
+  const email = renderInviteEmail({ rfp, linkUrl: secureLinkUrl(linkBaseUrl, token), reissue });
+  try {
+    const { id } = await mailSender.send({
+      to: recipient.email, subject: email.subject, html: email.html, text: email.text,
+    });
+    const updated = await store.markRecipientSent({ rfpId: rfp.id, recipientId: recipient.id, messageId: id });
+    return { recipient: updated ?? recipient, messageId: id };
+  } catch {
+    // Never surface the token-bearing body on an error path; leave it queued.
+    return { recipient, messageId: null };
+  }
+}
+
 /** operationId: addRecipients — each opens a lane; one personal token each. */
-export async function addRecipients({ viewer, store, rfpId, body }) {
+export async function addRecipients({ viewer, store, mailSender, linkBaseUrl, rfpId, body }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
   if (!['draft', 'published'].includes(rfp.status)) {
     throw new ProblemError('invalid_transition', `cannot invite on a ${rfp.status} RFP`);
@@ -479,13 +512,35 @@ export async function addRecipients({ viewer, store, rfpId, body }) {
     recipients: resolved,
     actor: actorOf(actor, viewer),
   });
-  return {
-    status: 201,
-    body: {
-      items: created.map(({ recipient, token }) => recipientBody(recipient, { token })),
-      next_cursor: null,
-    },
-  };
+  // Dispatch the invite email per freshly-minted link (token !== null). An
+  // existing recipient (ON CONFLICT → token null) is NOT re-sent here; use
+  // reissue for that. The token stays in the 201 body too (issuer sees it once).
+  const items = [];
+  for (const { recipient, token } of created) {
+    const out = token
+      ? await dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, token })
+      : { recipient };
+    items.push(recipientBody(out.recipient, { token }));
+  }
+  return { status: 201, body: { items, next_cursor: null } };
+}
+
+/**
+ * operationId: previewInviteEmail — the issuer previews the invite email copy
+ * BEFORE any send (pen frame 986). Rendered from the same renderer the dispatch
+ * uses, so the preview is byte-for-byte the real email — EXCEPT the link, which
+ * is a non-secret placeholder: a preview never carries a live token (LINA-373).
+ * `?reissue=true` previews the rotated-link variant; `?email=` sets the sample
+ * recipient shown in the `to` field. Issuer-only, same gate as addRecipients.
+ */
+export async function previewInviteEmail({ viewer, store, linkBaseUrl, rfpId, query }) {
+  const { rfp } = await requireIssuer({ viewer, store, rfpId });
+  const reissue = query?.reissue === 'true' || query?.reissue === true;
+  const to = EMAIL.test(query?.email ?? '') ? query.email : 'empreiteiro@exemplo.pt';
+  const email = renderInviteEmail({
+    rfp, linkUrl: secureLinkUrl(linkBaseUrl, PREVIEW_LINK_PLACEHOLDER_TOKEN), reissue,
+  });
+  return { status: 200, body: { to, subject: email.subject, html: email.html, text: email.text } };
 }
 
 /** operationId: listRecipients — per-recipient delivery status, issuer only. */
@@ -506,7 +561,7 @@ export async function listRecipients({ viewer, store, rfpId, query }) {
  * cancelled/closed RFP (nothing left to bid on) and on a SPENT link (a submitted
  * lane) — rotating a spent link would hand a second single-use submission.
  */
-export async function reissueRecipientLink({ viewer, store, rfpId, recipientId }) {
+export async function reissueRecipientLink({ viewer, store, mailSender, linkBaseUrl, rfpId, recipientId }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
   if (!UUID.test(recipientId ?? '')) throw new ProblemError('not_found', 'no such recipient');
   if (!['draft', 'published'].includes(rfp.status)) {
@@ -528,7 +583,12 @@ export async function reissueRecipientLink({ viewer, store, rfpId, recipientId }
   // Null means the lane raced to spent between the read and the rotate; answer
   // the same refusal the pre-check would have.
   if (!rotated) throw new ProblemError('invalid_transition', 'this recipient has already submitted — their link cannot be re-issued');
-  return { status: 200, body: recipientBody(rotated.recipient, { token: rotated.token }) };
+  // Send the fresh link so the issuer need not copy-paste it (LINA-412). The
+  // rotated token is still returned ONCE in the body, as before.
+  const out = await dispatchInvite({
+    store, mailSender, linkBaseUrl, rfp, recipient: rotated.recipient, token: rotated.token, reissue: true,
+  });
+  return { status: 200, body: recipientBody(out.recipient, { token: rotated.token }) };
 }
 
 /** operationId: publishRfp — human-only; one individual email per recipient. */
