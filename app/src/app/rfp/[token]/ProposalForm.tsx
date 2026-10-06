@@ -18,16 +18,25 @@ import { useCallback, useRef, useState, useTransition } from 'react';
 import {
   BID_CURRENCY,
   EMPTY_DRAFT,
+  MAX_REFERENCE_NOTES_CHARS,
   validateBid,
   type BidDraft,
   type BidErrors,
   type DurationUnit,
+  type RfpMode,
 } from '@/lib/v2/rfp-link-view';
 
 import { submitBidAction } from './actions';
 import { PortfolioUpload } from './PortfolioUpload';
 
-export function ProposalForm({ token }: { token: string }) {
+export function ProposalForm({ token, mode }: { token: string; mode: RfpMode }) {
+  // A light (design) tender asks for a fee + portfolio + references, never a
+  // priced BoQ (D-39). The one shape difference on this form is the References
+  // box, shown only here; everything else is identical, so a detailed bid is
+  // unchanged. `validateBid` only ever sends `reference_notes` when the draft
+  // carries text, so even if a stray value survived a mode flip it would not be
+  // sent from the detailed form (the box that fills it is not rendered).
+  const isLight = mode === 'light';
   const [draft, setDraft] = useState<BidDraft>(EMPTY_DRAFT);
   const [errors, setErrors] = useState<BidErrors>({});
   const [banner, setBanner] = useState<string | null>(null);
@@ -148,6 +157,25 @@ export function ProposalForm({ token }: { token: string }) {
           />
           <FieldNote id="conditions-note" text={errors.conditions} />
         </div>
+
+        {isLight ? (
+          <div className="field">
+            <label htmlFor="referenceNotes">References (optional)</label>
+            <textarea
+              id="referenceNotes" name="referenceNotes" rows={5}
+              maxLength={MAX_REFERENCE_NOTES_CHARS}
+              value={draft.referenceNotes}
+              placeholder="Comparable projects you have delivered and who the homeowner can call to ask about your work."
+              aria-invalid={errors.referenceNotes ? 'true' : undefined}
+              aria-describedby={errors.referenceNotes ? 'referenceNotes-note' : undefined}
+              onChange={(e) => set('referenceNotes', e.target.value)}
+            />
+            <p className="hint">
+              A design proposal is judged on your portfolio and past work — point the homeowner to it.
+            </p>
+            <FieldNote id="referenceNotes-note" text={errors.referenceNotes} />
+          </div>
+        ) : null}
 
         <PortfolioUpload
           token={token}

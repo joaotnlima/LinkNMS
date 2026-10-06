@@ -176,6 +176,12 @@ export interface BidDraft {
   conditions: string;
   /** An <input type=date> value: "" or YYYY-MM-DD. */
   validityUntil: string;
+  /**
+   * Light-bid references (LINA-407): comparable past work and who to call. Only
+   * the light form shows this box; a detailed bid leaves it empty and it is
+   * never sent, so an execution tender is unchanged.
+   */
+  referenceNotes: string;
 }
 
 export const EMPTY_DRAFT: BidDraft = {
@@ -184,11 +190,12 @@ export const EMPTY_DRAFT: BidDraft = {
   durationUnit: 'weeks',
   conditions: '',
   validityUntil: '',
+  referenceNotes: '',
 };
 
 /** The field-keyed errors the form renders beside the inputs that caused them. */
 export type BidErrors = Partial<
-  Record<'total' | 'durationValue' | 'validityUntil' | 'conditions', string>
+  Record<'total' | 'durationValue' | 'validityUntil' | 'conditions' | 'referenceNotes', string>
 >;
 
 /** The currency the whole v2 tender model records in; the BE refuses anything else. */
@@ -196,6 +203,8 @@ export const BID_CURRENCY = 'EUR';
 /** A working week, in working days — the conversion the weeks picker applies. */
 export const WORKING_DAYS_PER_WEEK = 5;
 export const MAX_CONDITIONS_CHARS = 4000;
+/** Light-bid references cap — mirrors the BE's ≤4000 (0010 / wire.mjs). */
+export const MAX_REFERENCE_NOTES_CHARS = 4000;
 /** Ten working years. Past that it is a typo, not an estimate. */
 const MAX_WORKING_DAYS = 2600;
 
@@ -314,6 +323,14 @@ export function validateBid(
     errors.conditions = 'That note is too long.';
   }
 
+  // Light-bid references (LINA-407): optional free text. The detailed form never
+  // shows the box, so this is '' there and nothing is sent — an execution bid is
+  // byte-for-byte unchanged. Only the length is guarded; the BE is the authority.
+  const referenceNotes = draft.referenceNotes.trim();
+  if (referenceNotes.length > MAX_REFERENCE_NOTES_CHARS) {
+    errors.referenceNotes = 'Those references are too long.';
+  }
+
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return {
     ok: true,
@@ -322,6 +339,7 @@ export function validateBid(
       duration_wd: durationWd,
       ...(conditions ? { conditions } : {}),
       ...(validityUntil ? { validity_until: validityUntil } : {}),
+      ...(referenceNotes ? { reference_notes: referenceNotes } : {}),
       document_ids: documentIds,
     },
   };

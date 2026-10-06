@@ -93,6 +93,10 @@ function Details({ proposal }: { proposal: ProposalEcho }) {
             <Fact label="Conditions" multiline>{proposal.conditions}</Fact>
           ) : null}
 
+          {proposal.reference_notes ? (
+            <Fact label="References" multiline>{proposal.reference_notes}</Fact>
+          ) : null}
+
           {proposal.document_ids.length > 0 ? (
             <Fact label="Portfolio">
               {/* The echo carries ids, not names — the homeowner opens the files

@@ -43,7 +43,7 @@ import {
   parseRecipients, createBlockedReason, publishBlockedReason,
   orderLanes, isLive, awardBlockedReason, packageSpecialties, eurosToCents,
   type V2Rfp, type V2Recipient, type V2ProposalLane, type V2Comparison,
-  type RfpVisibility, type RfpDraftInput,
+  type RfpVisibility, type RfpDraftInput, type RfpMode,
 } from '@/lib/v2/tendering-view';
 import type { Inbox } from '@/lib/v2/tendering';
 import { digestSha256, putToTicket } from '@/lib/v2/upload-client';
@@ -57,6 +57,7 @@ export interface TaskOption {
 
 export function ProcurementSection({
   projectId, tasks, hasActiveOrg = true, initialMyRfps = null,
+  composeTaskId = null, composeMode = 'detailed',
 }: {
   projectId: string;
   /** Candidate root tasks (from the plan) the composer can put out to tender. */
@@ -70,12 +71,22 @@ export function ProcurementSection({
   hasActiveOrg?: boolean;
   /** The org's RFPs for this project, when the page already read them. */
   initialMyRfps?: V2Rfp[] | null;
+  /**
+   * A "Start tendering" deep-link (LINA-407): a plan package to open the composer
+   * on. When set (and an org is active), the composer opens straight away with
+   * this task pre-picked, in `composeMode`. Null → the normal list/empty state.
+   */
+  composeTaskId?: string | null;
+  /** The shape the deep-link asked for — `light` for a design tender. */
+  composeMode?: RfpMode;
 }) {
   const [rfps, setRfps] = useState<V2Rfp[] | null>(initialMyRfps);
   const [loading, setLoading] = useState(hasActiveOrg && initialMyRfps === null);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  // A deep-link lands straight in the composer (LINA-407). Only when an org is
+  // active — otherwise the no-org state below stands and the seed is moot.
+  const [creating, setCreating] = useState(hasActiveOrg && composeTaskId !== null);
 
   const refreshList = useCallback(async () => {
     setLoading(true);
@@ -133,6 +144,8 @@ export function ProcurementSection({
       <NewRfp
         projectId={projectId}
         tasks={tasks}
+        initialMode={composeMode}
+        initialTaskIds={composeTaskId ? [composeTaskId] : []}
         onCancel={() => setCreating(false)}
         onCreated={(rfp) => {
           setRfps((prev) => [rfp, ...(prev ?? [])]);
@@ -184,16 +197,32 @@ export function ProcurementSection({
 // ── Create ─────────────────────────────────────────────────────────────────
 
 function NewRfp({
-  projectId, tasks, onCancel, onCreated,
+  projectId, tasks, onCancel, onCreated, initialMode = 'detailed', initialTaskIds = [],
 }: {
   projectId: string;
   tasks: TaskOption[];
   onCancel: () => void;
   onCreated: (rfp: V2Rfp) => void;
+  /** Deep-link seed (LINA-407): a "Start tendering" link opens the composer
+   *  pre-set to Light design mode with the task already picked. */
+  initialMode?: RfpMode;
+  initialTaskIds?: string[];
 }) {
+  // Light (design) vs Detailed (execution) — D-39. Light raises a design RFP:
+  // the deliverable is the project itself (drawings + a spec), priced as a fee,
+  // so there is NO BoQ to assemble and the public form asks for a fee +
+  // portfolio + references, not a priced line list. Detailed is the as-is
+  // execution tender, byte-for-byte unchanged (purpose/mode omitted → the API
+  // back-fills execution/detailed).
+  const [mode, setMode] = useState<RfpMode>(initialMode);
+  const light = mode === 'light';
+
   const [title, setTitle] = useState('');
   const [scopeText, setScopeText] = useState('');
-  const [rootTaskIds, setRootTaskIds] = useState<string[]>([]);
+  // Only keep seeded ids that are real tasks on this plan.
+  const [rootTaskIds, setRootTaskIds] = useState<string[]>(
+    () => initialTaskIds.filter((id) => tasks.some((t) => t.id === id)),
+  );
   const [submissionDeadline, setSubmissionDeadline] = useState('');
   const [questionsDeadline, setQuestionsDeadline] = useState('');
   const [visibility, setVisibility] = useState<RfpVisibility>('invite_only');
@@ -217,6 +246,8 @@ function NewRfp({
       submissionDeadline: toIso(submissionDeadline),
       ...(questionsDeadline ? { questionsDeadline: toIso(questionsDeadline) } : {}),
       visibility,
+      // Detailed stays implicit (defaults); Light pins purpose=design, mode=light.
+      ...(light ? { purpose: 'design' as const, mode: 'light' as const } : {}),
     };
     const res = await createRfpAction(projectId, draft);
     setBusy(false);
@@ -233,6 +264,33 @@ function NewRfp({
       </div>
       {error ? <p role="alert" className="prc-error">{error}</p> : null}
 
+      {/* ── Light (design) / Detailed (execution) picker (LINA-407) ──────── */}
+      <div className="prc-field">
+        <span className="prc-label" id="prc-mode-label">What are you tendering?</span>
+        <div className="prc-seg" role="radiogroup" aria-labelledby="prc-mode-label">
+          <button
+            type="button"
+            className={`prc-seg-opt${!light ? ' is-on' : ''}`}
+            role="radio"
+            aria-checked={!light}
+            onClick={() => setMode('detailed')}
+          >
+            <span className="prc-seg-title">Detailed (build)</span>
+            <span className="prc-seg-sub">Price the plan line by line — a Bill of Quantities.</span>
+          </button>
+          <button
+            type="button"
+            className={`prc-seg-opt${light ? ' is-on' : ''}`}
+            role="radio"
+            aria-checked={light}
+            onClick={() => setMode('light')}
+          >
+            <span className="prc-seg-title">Light (design)</span>
+            <span className="prc-seg-sub">A pre-construction brief — bidders answer with a fee, portfolio and references.</span>
+          </button>
+        </div>
+      </div>
+
       <div className="prc-field">
         <label className="prc-label" htmlFor="prc-title">Title</label>
         <input
@@ -240,20 +298,22 @@ function NewRfp({
           className="prc-line"
           value={title}
           maxLength={200}
-          placeholder="e.g. Groundworks & foundations"
+          placeholder={light ? 'e.g. Architectural design — Casa Silva' : 'e.g. Groundworks & foundations'}
           onChange={(e) => setTitle(e.target.value)}
         />
         {fieldErrors.title ? <p className="prc-reject">{fieldErrors.title}</p> : null}
       </div>
 
       <div className="prc-field">
-        <label className="prc-label" htmlFor="prc-scope">Scope</label>
+        <label className="prc-label" htmlFor="prc-scope">{light ? 'Brief & deliverables' : 'Scope'}</label>
         <textarea
           id="prc-scope"
           className="prc-input"
           value={scopeText}
           maxLength={8000}
-          placeholder="What is being built and what a contractor must know to price it honestly."
+          placeholder={light
+            ? 'The design intent, the deliverables you expect (drawings, a material spec), and the constraints to work within.'
+            : 'What is being built and what a contractor must know to price it honestly.'}
           onChange={(e) => setScopeText(e.target.value)}
         />
       </div>

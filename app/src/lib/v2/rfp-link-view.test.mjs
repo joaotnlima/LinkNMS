@@ -28,6 +28,7 @@ const goodDraft = {
   durationUnit: 'weeks',
   conditions: '',
   validityUntil: '',
+  referenceNotes: '',
 };
 
 test('a week is five working days, not seven', () => {
@@ -66,6 +67,27 @@ test('validateAttachmentFile mirrors the BE envelope (LINA-375)', () => {
   assert.match(validateAttachmentFile({ type: 'text/plain', size: 10 }), /not accepted/);
   assert.match(validateAttachmentFile({ type: 'image/png', size: 0 }), /empty/);
   assert.match(validateAttachmentFile({ type: 'image/png', size: MAX_ATTACHMENT_SIZE_BYTES + 1 }), /15 MB/);
+});
+
+test('light references are carried (trimmed) when present, absent otherwise (LINA-407)', () => {
+  // A detailed bid leaves the box empty → no reference_notes on the wire.
+  const detailed = validateBid(goodDraft, NOW);
+  assert.equal(detailed.ok, true);
+  assert.equal('reference_notes' in detailed.body, false);
+
+  // A light bid's references ride along, trimmed.
+  const light = validateBid(
+    { ...goodDraft, referenceNotes: '  Casa Verde (2024) — call Ana, 912… ' },
+    NOW,
+  );
+  assert.equal(light.ok, true);
+  assert.equal(light.body.reference_notes, 'Casa Verde (2024) — call Ana, 912…');
+});
+
+test('over-long references are a field error (LINA-407)', () => {
+  const r = validateBid({ ...goodDraft, referenceNotes: 'x'.repeat(4001) }, NOW);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.referenceNotes);
 });
 
 test('optional conditions and validity are carried when present', () => {
