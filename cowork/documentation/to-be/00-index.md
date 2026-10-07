@@ -49,6 +49,7 @@ platform, so execution is the wedge and the marketplace feeds on it.
 | 18 | [DB model fit](./18-db-model-fit.md) | Does the as-is DB answer? (no) — requirement by requirement, and the executable to-be model in `db/v2/` |
 | 19 | [MCP](./19-mcp.md) | Where agents help (compose the project, tenders, changes, field reporting) and the rules they follow |
 | 23 | [Design tendering](./23-design-tendering.md) | Pre-construction *design* tendering vs *execution* tendering — one RFP engine, two purposes (D-39, LINA-406) |
+| 24 | [BIM viewer](./24-bim-viewer.md) | IFC 3D view-only viewer embedded in the project RFP package — web-ifc + Three.js, read-only (D-41, LINA-409) |
 
 ## Executable artefacts
 
