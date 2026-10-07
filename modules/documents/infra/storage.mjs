@@ -64,7 +64,21 @@ export function createR2ObjectStorage({
         ContentType: mime,
         ChecksumSHA256: Buffer.from(sha256Hex, 'hex').toString('base64'),
       });
-      const url = await presigner.getSignedUrl(client, command, { expiresIn: UPLOAD_TTL_S });
+      // Keep `x-amz-checksum-sha256` a SIGNED HEADER, not a hoisted query param.
+      // By default the presigner hoists every non-host header into the query
+      // string; the checksum then rides as `?x-amz-checksum-sha256=…`. Against
+      // Cloudflare R2 that is doubly wrong: R2 does NOT enforce a checksum given
+      // as a query param (bad bytes upload clean — the pinned-sha256 integrity
+      // guarantee silently evaporates), and the moment the browser sends the
+      // matching header the request no longer matches `SignedHeaders=host` and R2
+      // answers SignatureDoesNotMatch (403). Pinning it unhoistable makes
+      // SignedHeaders `host;x-amz-checksum-sha256`: the browser's header is now
+      // covered by the signature AND R2 rejects any body whose digest differs
+      // (400 BadDigest). Verified against the live bucket both ways.
+      const url = await presigner.getSignedUrl(client, command, {
+        expiresIn: UPLOAD_TTL_S,
+        unhoistableHeaders: new Set(['x-amz-checksum-sha256']),
+      });
       return { url, expiresAt: new Date(Date.now() + UPLOAD_TTL_S * 1000).toISOString() };
     },
 

@@ -331,11 +331,18 @@ export async function reserveProposalDocumentByToken({ store, storage, token, bo
 
   const id = randomUUID();
   const key = attachmentStorageKey({ proposalId: proposal.id, documentId: id, fileName: body.file.name });
+  // Sign BEFORE we persist. The presigned PUT needs only the storage key (which
+  // is derived from the id we just minted) and the declared mime/sha256 — never
+  // the DB row — so signing first costs nothing and means a presign failure
+  // (a storage outage, a misconfigured endpoint) can't leave an orphan `pending`
+  // row behind. Those orphans count against the per-link cap and would otherwise
+  // wedge the whole surface at "at most N files" for a reason that has nothing
+  // to do with the bidder.
+  const { url, expiresAt } = await storage.signUpload({
+    key, mime: body.file.mime, sha256Hex: String(body.file.sha256).toLowerCase(),
+  });
   const document = await store.createProposalDocument({
     id, proposalId: proposal.id, storageKey: key, file: body.file,
-  });
-  const { url, expiresAt } = await storage.signUpload({
-    key, mime: document.mime, sha256Hex: document.sha256,
   });
   return { status: 201, body: uploadTicketBody({ document, url, expiresAt }) };
 }
