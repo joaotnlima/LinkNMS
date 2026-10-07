@@ -31,7 +31,7 @@ can be decomposed and built against a fixed contract.
 | 2 | **The IFC is a Documents-module document**, `scope_type = 'rfp'`, `kind = 'bim'`. **No schema change** — `db/v2/0001_schema.sql` already models both. One model per RFP for Phase 1 (the schema allows many; the UI surfaces the first `bim` document). |
 | 3 | **Authorization lives in the tendering module**, not Documents. New RFP-model routes reuse `requireRfpRead` / issuer checks (`modules/tendering`), and delegate persistence + storage to the injected Documents store/storage. The Documents module is **not** taught the RFP invite-only/open rule. |
 | 4 | **Byte delivery = short-TTL presigned *inline* GET**, minted only after the authorization check passes, returned as JSON (`{ url, expiresAt }`) — not a 302. R2 bucket CORS is configured once for the app origins so the browser `fetch(...).arrayBuffer()` succeeds. We do **not** stream bytes through our origin (serverless size/duration limits, egress cost). |
-| 5 | **Parsing runs in a Web Worker** (web-ifc WASM) so a large model never blocks the main thread; geometry is streamed into the scene in batches. |
+| 5 | **Parsing is lazy — nothing loads until the reader clicks "Load 3D model".** As built, the web-ifc WASM parse runs on the main thread behind that explicit click (with a "Loading…" state and a "large model" notice >50 MB), not in a Web Worker. The worker was scoped out of Phase 1: it is a pure performance refinement (the main thread blocks only during the one deliberate parse, never on page load), adds Next worker-bundling complexity, and changes nothing a bidder can do. It is the first optimisation if a real model proves too heavy — tracked as a future refinement, not a gap in the view-only capability. |
 | 6 | **File limits:** upload cap **100 MB** per `.ifc`; the viewer shows a "large model" notice above ~50 MB. IFC only (`application/x-step` / `.ifc`); other model formats are out of scope. |
 | 7 | **Read-only, always.** No route writes to the model. The viewer never mounts an edit affordance. |
 
@@ -115,12 +115,12 @@ a founder-gated dashboard task.
 1. Fetch the model descriptor from the package projection (`models[0]`), then the `:view-url` for its
    `documentId`.
 2. `fetch(url)` → `ArrayBuffer`. Enforce the client-side size notice.
-3. Hand the buffer to **web-ifc in a Web Worker**; parse and extract geometry + property sets
-   (`IfcBuildingStorey`, discipline via `IfcProject`/`IfcRelDefinesByProperties` where present).
-4. Stream meshes into a Three.js scene in batches (keep the main thread responsive); `OrbitControls`
-   for orbit / pan / zoom; fit-to-bounds on load.
-5. Build a **discipline / storey tree** from property sets → isolate / hide toggles (client-only, no
-   write-back).
+3. Hand the buffer to **web-ifc** (main thread, behind the explicit "Load 3D model" click — see
+   decision 5); parse and extract geometry, grouping meshes by **IFC category** (`IfcWall`, `IfcSlab`,
+   …) — the category is the "discipline" dimension a bidder isolates. Geometry is merged into one
+   `BufferGeometry` per (category, colour) to keep the mesh count — and WebGL cost — low.
+4. Add meshes to a Three.js scene; `OrbitControls` for orbit / pan / zoom; fit-to-bounds on load.
+5. Build a **category tree** → isolate / hide toggles (client-only, no write-back).
 6. **Measure:** basic point-to-point distance (two picked points → world-space Euclidean distance).
 7. Dispose geometry + worker on unmount; abort in-flight fetch on route change.
 

@@ -36,7 +36,7 @@ export function rfpBody(row) {
  * The package a bidder prices: subtree structure + quantities, never prices
  * (doc 05 §10). Response-only extension of Rfp on getRfp (see CHANGELOG).
  */
-export function packageBody(rows, items) {
+export function packageBody(rows, items, models = []) {
   return {
     rows: rows.map((r) => ({
       task_id: r.task_id,
@@ -56,6 +56,10 @@ export function packageBody(rows, items) {
       material_spec: i.material_spec ?? undefined,
       specialty: i.specialty ?? undefined,
     })),
+    // Attached BIM models (LINA-409 / doc 24): the 3D model a bidder views
+    // before pricing. Already wire-shaped by modelBody; absent → empty array,
+    // never null (§6.5). Phase 1 surfaces models[0].
+    models,
   };
 }
 
@@ -93,7 +97,7 @@ export function recipientBody(row, { token } = {}) {
  * other recipients, or any other lane (V8). `closed` is true when the RFP is no
  * longer receiving proposals, so the form can say so without a second call.
  */
-export function rfpLinkView(rfp, { pkg, project, recipientEmail, proposal, seesMoney = true }) {
+export function rfpLinkView(rfp, { pkg, project, recipientEmail, proposal, models = [], seesMoney = true }) {
   return {
     project: {
       name: project.name,
@@ -109,7 +113,7 @@ export function rfpLinkView(rfp, { pkg, project, recipientEmail, proposal, seesM
       purpose: rfp.purpose,
       mode: rfp.mode,
       submission_deadline: iso(rfp.submission_deadline),
-      package: packageBody(pkg.rows, pkg.items),
+      package: packageBody(pkg.rows, pkg.items, models),
     },
     recipient_email: recipientEmail,
     closed: rfp.status !== 'published',

@@ -13,6 +13,7 @@ import { redirect } from 'next/navigation';
 
 import {
   completeProposalDocument,
+  modelViewUrlByToken,
   reserveProposalDocument,
   submitBid,
   type ProposalUploadTicket,
@@ -56,6 +57,18 @@ export async function completeDocumentAction(
 ): Promise<{ error?: string }> {
   const res = await completeProposalDocument(token, documentId);
   return res.ok ? {} : { error: res.message };
+}
+
+// ── BIM model view-url (LINA-409 / doc 24) ───────────────────────────────────
+// Mint a fresh short-TTL presigned INLINE GET for the attached 3D model. Called
+// lazily by the viewer island on "Load 3D model" — the token is the authority
+// (re-supplied here, server-to-server), the URL is all that reaches the browser.
+export async function resolveModelUrlAction(
+  token: string,
+  documentId: string,
+): Promise<{ url: string } | { error: string }> {
+  const res = await modelViewUrlByToken(token, documentId);
+  return res.ok ? { url: res.url } : { error: res.message };
 }
 
 export async function submitBidAction(

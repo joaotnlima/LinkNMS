@@ -50,6 +50,8 @@ import {
 } from '@/lib/v2/tendering-view';
 import type { Inbox, CompareEntry } from '@/lib/v2/tendering';
 import { digestSha256, putToTicket } from '@/lib/v2/upload-client';
+import RfpModelComposer from './ifc/RfpModelComposer';
+import OwnerModelViewer from './ifc/OwnerModelViewer';
 import './procurement.css';
 
 /** A plan task the composer can tender over — supplied by the mounting surface. */
@@ -539,6 +541,9 @@ function Composer({
 
       <DraftDetails rfp={rfp} onError={onError} onRfpChanged={onRfpChanged} />
 
+      {/* ── BIM model (IFC, view-only) — LINA-409 / doc 24 ───────────────── */}
+      <RfpModelComposer rfpId={rfp.id} model={rfp.package?.models?.[0] ?? null} />
+
       {/* ── Recipients ──────────────────────────────────────────────────── */}
       <div className="prc-field">
         <span className="prc-label" id="prc-rcp-label">
@@ -915,6 +920,18 @@ function ProposalsInbox({
           You can see who bid, but not the amounts — that needs the money permission on this
           organisation. Ask an owner to grant it to compare bids here.
         </p>
+      ) : null}
+
+      {/* ── BIM model (IFC, view-only) — LINA-409 / doc 24 ───────────────── */}
+      {!comparing && rfp.package?.models?.[0] ? (
+        <div className="prc-field">
+          <OwnerModelViewer
+            rfpId={rfp.id}
+            documentId={rfp.package.models[0].documentId}
+            fileName={rfp.package.models[0].fileName}
+            sizeBytes={rfp.package.models[0].sizeBytes}
+          />
+        </div>
       ) : null}
 
       {comparing ? (

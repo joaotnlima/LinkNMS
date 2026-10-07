@@ -3321,6 +3321,10 @@ paths:
                                 quantity: { type: string }
                                 material_spec: { type: string }
                                 specialty: { type: string }
+                          models:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/RfpModel'
                   recipient_email: { type: string, format: email }
                   closed:
                     type: boolean
@@ -3535,6 +3539,246 @@ paths:
           headers:
             Location:
               schema: { type: string, format: uri }
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /rfps/{rfpId}/model:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Tendering
+      operationId: reserveRfpModel
+      summary: Reserve an IFC BIM-model upload for an RFP package (issuer, LINA-409)
+      description: 'Reserve the RFP''s BIM model and return a presigned PUT. The declared sha256 is
+        pinned into the signature, so storage refuses any bytes but the ones declared; call `:complete`
+        once the PUT lands. Bounded to IFC only (`.ifc`) and a 100 MB cap. Only the issuer of a live RFP
+        may reserve; otherwise 409. An unknown RFP is a uniform 404.
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** issuer'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: issuer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: object
+                  required: [name, mime, size_bytes, sha256]
+                  properties:
+                    name: { type: string }
+                    mime: { type: string }
+                    size_bytes: { type: integer, minimum: 1, maximum: 104857600 }
+                    sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+      responses:
+        '201':
+          description: An upload ticket — PUT the IFC file to `upload_url`, then call `:complete`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [documentId, version, upload_url, expires_at]
+                properties:
+                  documentId: { type: string, format: uuid }
+                  version: { type: integer }
+                  upload_url: { type: string, format: uri }
+                  expires_at: { type: string, format: date-time }
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /rfps/{rfpId}/model/{documentId}:complete:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Tendering
+      operationId: completeRfpModel
+      summary: Prove the IFC BIM-model upload and attach it to the RFP package (issuer, LINA-409)
+      description: 'Prove the bytes reached storage with the declared size (sha256 was already pinned
+        into the PUT), then mark the model `stored` and bind it to the RFP package. Idempotent. The
+        model must belong to this RFP; anything else is 404.
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** issuer'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: issuer
+      responses:
+        '200':
+          description: The stored BIM model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfpModel'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /rfps/{rfpId}/model/{documentId}:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    delete:
+      tags:
+      - Tendering
+      operationId: removeRfpModel
+      summary: Remove the IFC BIM model from an RFP package (issuer, LINA-409)
+      description: 'Detach and delete the RFP''s BIM model. Only the issuer may remove it, and only
+        while the RFP still permits package edits; otherwise 409. A model under a different RFP, or an
+        unknown one, is existence-hidden (404).
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** issuer'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: issuer
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /rfps/{rfpId}/model/{documentId}:view-url:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Tendering
+      operationId: rfpModelViewUrl
+      summary: Short-TTL inline view URL for an RFP's BIM model (issuer | recipient, LINA-409)
+      description: 'A short-lived presigned INLINE GET for the RFP''s IFC model, so an RFP reader can
+        stream it into the BIM viewer. Any reader of the RFP (issuer or recipient) may fetch it; a
+        model under a different RFP, or an unknown one, is existence-hidden (404).
+
+
+        **Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** issuer | recipient'
+      x-relationship: issuer | recipient
+      responses:
+        '200':
+          description: A short-TTL presigned inline view URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expiresAt]
+                properties:
+                  url: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /rfp-links/{token}/model/{documentId}:view-url:
+    parameters:
+    - name: token
+      in: path
+      required: true
+      description: The 64-hex-char personal link token; hashed at rest, compared server-side.
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{64}$'
+    - name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Tendering
+      operationId: rfpModelViewUrlByToken
+      summary: 'RFP personal link: short-TTL inline view URL for the BIM model (gap S1, anonymous, LINA-409)'
+      description: 'A short-lived presigned INLINE GET for the RFP''s IFC model, reached from the bidder''s
+        personal link so the public RFP form can stream it into the BIM viewer. Anonymous — the token IS
+        the authority, so the global security requirement is overridden to none. A model under a different
+        RFP, an unknown token, or a dead one answers a uniform 404.
+
+
+        **Clerk permission:** none (token-authenticated)
+
+
+        **Relationship (LinkNMS):** the invited recipient'
+      security: []
+      responses:
+        '200':
+          description: A short-TTL presigned inline view URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expiresAt]
+                properties:
+                  url: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
         '404':
           $ref: '#/components/responses/NotFound'
   /rfps/{rfpId}:
@@ -9383,12 +9627,26 @@ components:
                     type: string
                   specialty:
                     type: string
+            models:
+              type: array
+              items:
+                $ref: '#/components/schemas/RfpModel'
         clarifications:
           type: array
           description: 'Response-only, on getRfp: askers anonymised; a bidder sees
             answered questions and its own open ones.'
           items:
             $ref: '#/components/schemas/Clarification'
+    RfpModel:
+      type: object
+      properties:
+        documentId: { type: string, format: uuid }
+        version: { type: integer }
+        fileName: { type: string }
+        mime: { type: string }
+        sizeBytes: { type: integer }
+        sha256: { type: string, nullable: true }
+      required: [documentId, version, fileName, mime, sizeBytes]
     Award:
       type: object
       properties:
