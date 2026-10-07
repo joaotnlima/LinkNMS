@@ -11,6 +11,7 @@ import {
   submitOwnBid, getComparison, shortlistProposal, awardRfp,
   getRfpByToken, submitProposalByToken,
   reserveProposalDocumentByToken, completeProposalDocumentByToken, downloadProposalDocument,
+  reserveRfpModel, completeRfpModel, removeRfpModel, rfpModelViewUrl, rfpModelViewUrlByToken,
 } from '../application/use-cases.mjs';
 
 /**
@@ -24,8 +25,11 @@ import {
  *     sends each recipient's secure link through (LINA-412). Optional; absent in
  *     DB-free unit tests, which assert dispatch via a capturing double instead.
  *   linkBaseUrl — origin the `/rfp/{token}` link is built on; string or a thunk.
+ *   documentsStore — the Documents module's store (LINA-409 / doc 24): the RFP
+ *     BIM model is a documents.document; tendering owns the RFP authorization
+ *     and delegates the model's persistence to this injected store.
  */
-export function registerTendering(router, { store, storage, contractingAward, mailSender, linkBaseUrl } = {}) {
+export function registerTendering(router, { store, storage, documentsStore, contractingAward, mailSender, linkBaseUrl } = {}) {
   // The link origin may be supplied as a thunk (env read deferred to request
   // time, as the project module's shareBaseUrl is); resolve it per call.
   const baseUrl = () => (typeof linkBaseUrl === 'function' ? linkBaseUrl() : linkBaseUrl);
@@ -33,7 +37,13 @@ export function registerTendering(router, { store, storage, contractingAward, ma
   // authority; the /api/v2 adapter lets these two through without a session
   // (path[0] === 'rfp-links'), exactly as it does the Clerk webhook.
   router.register('GET', '/rfp-links/{token}', 'getRfpByToken', ({ params }) =>
-    getRfpByToken({ store, token: params.token }));
+    getRfpByToken({ store, documentsStore, token: params.token }));
+
+  // Public token-scoped BIM model view-url (security: []) — the token is the
+  // authority; a short-TTL presigned INLINE GET is minted server-side and only
+  // the URL reaches the browser (doc 24). path[0] === 'rfp-links' → anonymous.
+  router.register('GET', '/rfp-links/{token}/model/{documentId}:view-url', 'rfpModelViewUrlByToken', ({ params }) =>
+    rfpModelViewUrlByToken({ store, documentsStore, storage, token: params.token, documentId: params.documentId }));
 
   router.register('POST', '/rfp-links/{token}/proposal', 'submitProposalByToken', ({ params, body }) =>
     submitProposalByToken({ store, token: params.token, body }));
@@ -55,7 +65,22 @@ export function registerTendering(router, { store, storage, contractingAward, ma
     createRfp({ viewer, store, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] }));
 
   router.register('GET', '/rfps/{rfpId}', 'getRfp', ({ viewer, params }) =>
-    getRfp({ viewer, store, rfpId: params.rfpId }));
+    getRfp({ viewer, store, documentsStore, rfpId: params.rfpId }));
+
+  // BIM model (LINA-409 / doc 24) — attach/replace/remove are issuer-only on a
+  // draft; the authed view-url is any RFP reader. The model is a Documents-
+  // module document; tendering owns the gate, documentsStore owns persistence.
+  router.register('POST', '/rfps/{rfpId}/model', 'reserveRfpModel', ({ viewer, params, body }) =>
+    reserveRfpModel({ viewer, store, documentsStore, storage, rfpId: params.rfpId, body }));
+
+  router.register('POST', '/rfps/{rfpId}/model/{documentId}:complete', 'completeRfpModel', ({ viewer, params }) =>
+    completeRfpModel({ viewer, store, documentsStore, storage, rfpId: params.rfpId, documentId: params.documentId }));
+
+  router.register('DELETE', '/rfps/{rfpId}/model/{documentId}', 'removeRfpModel', ({ viewer, params }) =>
+    removeRfpModel({ viewer, store, documentsStore, rfpId: params.rfpId, documentId: params.documentId }));
+
+  router.register('GET', '/rfps/{rfpId}/model/{documentId}:view-url', 'rfpModelViewUrl', ({ viewer, params }) =>
+    rfpModelViewUrl({ viewer, store, documentsStore, storage, rfpId: params.rfpId, documentId: params.documentId }));
 
   router.register('PATCH', '/rfps/{rfpId}', 'updateRfp', ({ viewer, params, body, headers }) =>
     updateRfp({ viewer, store, rfpId: params.rfpId, body, ifMatch: headers['if-match'] }));

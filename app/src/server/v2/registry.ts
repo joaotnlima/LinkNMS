@@ -97,12 +97,19 @@ export function getRouter() {
   // presigned both ways.
   const objectStorage = createR2ObjectStorage();
 
+  // Documents store (phase 7) is built up-front: Tendering injects it for the
+  // RFP BIM model (LINA-409 / doc 24 — the model is a documents.document;
+  // tendering owns the RFP authorization, documents owns persistence), and
+  // Record reuses the same instance for its export artefact.
+  const documentsStore = createDocumentsStore(getPool());
+
   // Phase 6 — Tendering (RFPs, lanes, comparison, award). The award
   // transaction runs contracting's award port on the same client so the
   // contract draft exists the instant the RFP says awarded.
   registerTendering(router, {
     store: createTenderingStore(getPool()),
     storage: objectStorage,
+    documentsStore,
     contractingAward: createContractFromAward,
     // The invite email goes through the MailSender port (LINA-412). No
     // transactional provider is chosen yet (LINA-406, founder-gated), so the
@@ -117,8 +124,7 @@ export function getRouter() {
 
   // Phase 7 — Documents (versioned files on R2 behind presigned tickets,
   // sha256 proven in the ledger, downloads gated by V6 scope visibility).
-  // Shared with Record below, which persists its export artefact through it.
-  const documentsStore = createDocumentsStore(getPool());
+  // The store is created above (shared into Tendering and Record).
   registerDocuments(router, {
     store: documentsStore,
     storage: objectStorage,

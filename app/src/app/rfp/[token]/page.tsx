@@ -28,6 +28,7 @@ import {
 } from '@/lib/v2/rfp-link-view';
 
 import { DeadGlyph, RfpShell, RfpState } from '../RfpShell';
+import TokenModelViewer from './ModelViewer';
 import { ProposalForm } from './ProposalForm';
 
 export const metadata: Metadata = {
@@ -95,7 +96,7 @@ export default async function RfpTokenPage({
         <p className="rfp-where">Invitation sent to {view.recipient_email}</p>
       </div>
 
-      <Scope view={view} />
+      <Scope view={view} token={token} />
 
       <section className="rfp-sec">
         <h2>Your proposal</h2>
@@ -106,9 +107,10 @@ export default async function RfpTokenPage({
 }
 
 /** The read-only ask: scope text, trades, deadline and the package to price. */
-function Scope({ view }: { view: RfpLinkView }) {
+function Scope({ view, token }: { view: RfpLinkView; token: string }) {
   const { rfp } = view;
   const items = rfp.package.items;
+  const model = rfp.package.models?.[0] ?? null;
   return (
     <section className="rfp-sec">
       <h2>{rfp.title}</h2>
@@ -131,6 +133,17 @@ function Scope({ view }: { view: RfpLinkView }) {
           ) : null}
 
           {items.length > 0 ? <PackageTable items={items} /> : null}
+
+          {/* 3D model (IFC, view-only) — LINA-409 / doc 24. The token is the
+              authority: the viewer mints the presigned URL server-side. */}
+          {model ? (
+            <TokenModelViewer
+              token={token}
+              documentId={model.documentId}
+              fileName={model.fileName}
+              sizeBytes={model.sizeBytes}
+            />
+          ) : null}
         </div>
       </div>
     </section>
