@@ -221,7 +221,7 @@ export function createDocumentsStore(pool) {
 
     // ── documents ──────────────────────────────────────────────────────────
     async getDocument(documentId) {
-      const { rows } = await pool.query('SELECT * FROM documents.document WHERE id = $1', [documentId]);
+      const { rows } = await pool.query('SELECT * FROM documents.document WHERE id = $1 AND deleted_at IS NULL', [documentId]);
       return rows[0] ?? null;
     },
 
@@ -253,6 +253,7 @@ export function createDocumentsStore(pool) {
       const { rows } = await pool.query(
         `SELECT * FROM documents.document
           WHERE scope_type = $1 AND scope_id = $2 AND current_version > 0
+            AND deleted_at IS NULL
             AND ($3::uuid IS NULL OR id > $3)
             AND (private_to_org_id IS NULL OR private_to_org_id = $5)
           ORDER BY id LIMIT $4`,
@@ -260,6 +261,37 @@ export function createDocumentsStore(pool) {
       );
       const page = rows.slice(0, limit);
       return { items: page, nextCursor: rows.length > limit ? page[page.length - 1].id : null };
+    },
+
+    /**
+     * Completed, non-deleted, non-private documents of one scope+kind — for a
+     * module that owns its OWN authorization (tendering's RFP model, LINA-409)
+     * and so does not pass a viewer org. Ordered oldest-first; Phase 1 reads
+     * only the first. Never returns soft-deleted or reserved-but-unproven rows.
+     */
+    async listScopeDocuments({ scopeType, scopeId, kind }) {
+      const { rows } = await pool.query(
+        `SELECT * FROM documents.document
+          WHERE scope_type = $1 AND scope_id = $2 AND kind = $3
+            AND current_version > 0 AND deleted_at IS NULL AND private_to_org_id IS NULL
+          ORDER BY id`,
+        [scopeType, scopeId, kind],
+      );
+      return rows;
+    },
+
+    /**
+     * Soft-delete a document (LINA-409 removeRfpModel). The append-only byte
+     * ledger (document_version + its trigger) is NEVER touched — only the parent
+     * row is tombstoned, so the audit trail and the stored bytes remain intact.
+     * Idempotent: a second call finds nothing to flip and returns null.
+     */
+    async softDeleteDocument(documentId) {
+      const { rows } = await pool.query(
+        'UPDATE documents.document SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
+        [documentId],
+      );
+      return rows[0] ?? null;
     },
 
     /** Reserve document + version 1. No ledger yet — nothing proven uploaded. */

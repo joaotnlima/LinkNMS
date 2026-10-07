@@ -23,7 +23,9 @@ import {
   createRfp, updateRfp, addRecipients, publishRfp, closeRfp, cancelRfp,
   shortlistProposal, awardRfp, recordOfflineProposal,
   reserveProposalDocument, completeProposalDocument,
+  reserveRfpModel, completeRfpModel, removeRfpModel, rfpModelViewUrl,
   type Inbox, type CompareEntry, type RfpPatch, type OfflineProposalInput, type ProposalUploadTicket,
+  type ModelUploadTicket,
 } from '@/lib/v2/tendering';
 import type { V2Rfp, V2Recipient, RfpDraftInput } from '@/lib/v2/tendering-view';
 
@@ -128,4 +130,32 @@ export async function completeProposalDocumentAction(versionRef: string): Promis
     await completeProposalDocument(versionRef);
     return null;
   });
+}
+
+// ── RFP BIM model (LINA-409 / doc 24) — issuer attach/replace/remove + view ──
+
+export async function reserveRfpModelAction(
+  rfpId: string,
+  file: { name: string; mime: string; sizeBytes: number; sha256: string },
+): Promise<Result<ModelUploadTicket>> {
+  return guard('Could not start that model upload. Try again.', () => reserveRfpModel(rfpId, file));
+}
+
+export async function completeRfpModelAction(rfpId: string, documentId: string): Promise<Result<null>> {
+  return guard('That model did not finish uploading. Try again.', async () => {
+    await completeRfpModel(rfpId, documentId);
+    return null;
+  });
+}
+
+export async function removeRfpModelAction(rfpId: string, documentId: string): Promise<Result<null>> {
+  return guard('Could not remove that model. Try again.', async () => {
+    await removeRfpModel(rfpId, documentId);
+    return null;
+  });
+}
+
+/** Mint a fresh short-TTL presigned inline GET for the model (authed reader). */
+export async function rfpModelViewUrlAction(rfpId: string, documentId: string): Promise<Result<{ url: string; expiresAt: string }>> {
+  return guard('The 3D model could not be opened. Try again.', () => rfpModelViewUrl(rfpId, documentId));
 }

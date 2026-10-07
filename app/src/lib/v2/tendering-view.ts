@@ -79,9 +79,21 @@ export interface V2PackageRow {
   position: number;
 }
 
+/** An attached BIM model (packageBody.models, LINA-409 / doc 24 §RfpModel). */
+export interface V2Model {
+  documentId: string;
+  version: number;
+  fileName: string;
+  mime: string;
+  sizeBytes: number;
+  sha256?: string | null;
+}
+
 export interface V2Package {
   rows: V2PackageRow[];
   items: V2PackageItem[];
+  /** Attached 3D models (Phase 1 surfaces models[0]); [] when none. */
+  models: V2Model[];
 }
 
 /** #/components/schemas/Rfp (rfpBody). `package` is present only on getRfp. */

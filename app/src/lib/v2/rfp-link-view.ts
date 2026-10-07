@@ -66,6 +66,16 @@ export interface PackageRow {
   position: number;
 }
 
+/** An attached BIM model the bidder may view before pricing (LINA-409 / doc 24). */
+export interface PackageModel {
+  documentId: string;
+  version: number;
+  fileName: string;
+  mime: string;
+  sizeBytes: number;
+  sha256?: string | null;
+}
+
 /** One priced-by-the-bidder line of the package: quantities, never a price. */
 export interface PackageItem {
   rfp_item_id: string;
@@ -95,7 +105,7 @@ export interface RfpLinkRfp {
   mode: RfpMode;
   /** ISO datetime; absent when the RFP set no deadline. */
   submission_deadline?: string;
-  package: { rows: PackageRow[]; items: PackageItem[] };
+  package: { rows: PackageRow[]; items: PackageItem[]; models: PackageModel[] };
 }
 
 /** Enough of the project to tell a contractor which job this is. Public — a

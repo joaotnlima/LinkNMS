@@ -501,3 +501,71 @@ export async function completeProposalDocument(versionRef: string): Promise<void
     path: `/document-versions/${encodeURIComponent(versionRef)}:complete`,
   });
 }
+
+// ── RFP BIM model (LINA-409 / doc 24) ────────────────────────────────────────
+// The issuer attaches a read-only IFC 3D model to a DRAFT RFP; bidders view it
+// before pricing. Attach/replace/remove are issuer-only; the view-url is any
+// RFP reader. The model is a Documents-module document scoped to the RFP; these
+// helpers hit the tendering surface that owns the RFP authorization (doc 24).
+
+/** A reserved model upload: the document id, its new version, the presigned PUT. */
+export interface ModelUploadTicket {
+  documentId: string;
+  version: number;
+  uploadUrl: string;
+  expiresAt: string;
+}
+
+const rfpModelBase = (rfpId: string) => `/rfps/${encodeURIComponent(rfpId)}/model`;
+
+/**
+ * Step 1: reserve the model (a `bim`/`rfp`-scoped document, or a NEW version of
+ * the existing one — one model per RFP) and get a presigned PUT. IFC-only, 100
+ * MB cap, enforced server-side; the declared sha256 is pinned into the signature.
+ */
+export async function reserveRfpModel(
+  rfpId: string,
+  file: { name: string; mime: string; sizeBytes: number; sha256: string },
+): Promise<ModelUploadTicket> {
+  const t = await v2<{ documentId: string; version: number; upload_url: string; expires_at: string }>({
+    method: 'POST',
+    path: rfpModelBase(rfpId),
+    body: {
+      file: {
+        name: file.name,
+        mime: file.mime,
+        size_bytes: file.sizeBytes,
+        sha256: file.sha256.toLowerCase(),
+      },
+    },
+  });
+  return { documentId: t.documentId, version: t.version, uploadUrl: t.upload_url, expiresAt: t.expires_at };
+}
+
+/** Step 3 (step 2 is the browser PUT): prove the bytes landed and finalise it. */
+export async function completeRfpModel(rfpId: string, documentId: string): Promise<void> {
+  await v2<unknown>({
+    method: 'POST',
+    path: `${rfpModelBase(rfpId)}/${encodeURIComponent(documentId)}:complete`,
+  });
+}
+
+/** Remove the attached model (soft delete; the byte ledger is never touched). */
+export async function removeRfpModel(rfpId: string, documentId: string): Promise<void> {
+  await v2<unknown>({
+    method: 'DELETE',
+    path: `${rfpModelBase(rfpId)}/${encodeURIComponent(documentId)}`,
+  });
+}
+
+/**
+ * Mint a short-TTL presigned INLINE GET for the model so the browser can
+ * fetch()+ArrayBuffer it into the viewer. Called lazily (on "Load 3D model"),
+ * not on page load, so the URL is fresh when the bytes are fetched.
+ */
+export async function rfpModelViewUrl(rfpId: string, documentId: string): Promise<{ url: string; expiresAt: string }> {
+  return v2<{ url: string; expiresAt: string }>({
+    method: 'GET',
+    path: `${rfpModelBase(rfpId)}/${encodeURIComponent(documentId)}:view-url`,
+  });
+}

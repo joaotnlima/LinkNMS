@@ -179,6 +179,32 @@ export async function completeProposalDocument(
   }
 }
 
+// ── BIM model view-url (LINA-409 / doc 24) ───────────────────────────────────
+// The tokened bidder views the attached 3D model before pricing. The token in
+// the path is the whole credential (security: []); the BE mints a short-TTL
+// presigned INLINE GET server-side and returns only the URL — the token never
+// reaches R2. Called lazily (on "Load 3D model"), not on page load, so the URL
+// is fresh when the browser fetches the bytes.
+
+/** A minted, short-TTL presigned inline GET for a model, or a refusal. */
+export type ModelUrlResult =
+  | { ok: true; url: string; expiresAt: string }
+  | { ok: false; code: string; message: string };
+
+export async function modelViewUrlByToken(token: string, documentId: string): Promise<ModelUrlResult> {
+  try {
+    const r = await v2<{ url: string; expiresAt: string }>({
+      method: 'GET',
+      path: `${base(token)}/model/${encodeURIComponent(documentId)}:view-url`,
+      allowAnonymous: true,
+    });
+    return { ok: true, url: r.url, expiresAt: r.expiresAt };
+  } catch (e) {
+    if (e instanceof V2Error) return { ok: false, code: e.code, message: uploadBannerFor(e) };
+    return { ok: false, code: 'internal', message: 'The 3D model could not be opened. Try again.' };
+  }
+}
+
 /** Per-file copy for the upload steps — distinct from the submit's sentences. */
 function uploadBannerFor(e: V2Error): string {
   switch (e.code) {

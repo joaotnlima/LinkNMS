@@ -68,13 +68,17 @@ export function createR2ObjectStorage({
       return { url, expiresAt: new Date(Date.now() + UPLOAD_TTL_S * 1000).toISOString() };
     },
 
-    async signDownload({ key, fileName }) {
+    async signDownload({ key, fileName, disposition = 'attachment' }) {
       assertConfigured();
       const { client, s3, presigner } = await sdk();
+      // `inline` lets the browser fetch()+ArrayBuffer the bytes (the BIM viewer,
+      // LINA-409 / doc 24 decision 4); `attachment` (default) is unchanged for
+      // every existing download route.
+      const kind = disposition === 'inline' ? 'inline' : 'attachment';
       const command = new s3.GetObjectCommand({
         Bucket: bucket,
         Key: key,
-        ResponseContentDisposition: `attachment; filename="${String(fileName).replace(/["\\]/g, '_')}"`,
+        ResponseContentDisposition: `${kind}; filename="${String(fileName).replace(/["\\]/g, '_')}"`,
       });
       const url = await presigner.getSignedUrl(client, command, { expiresIn: DOWNLOAD_TTL_S });
       return { url, expiresAt: new Date(Date.now() + DOWNLOAD_TTL_S * 1000).toISOString() };
