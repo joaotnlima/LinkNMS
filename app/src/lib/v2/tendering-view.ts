@@ -53,6 +53,10 @@ export type RfpVisibility = 'invite_only' | 'open';
 
 export type RfpLevel = 'owner' | 'sub';
 
+/** D-39: design (pre-construction, light) vs execution (as-is, detailed). */
+export type RfpPurpose = 'design' | 'execution';
+export type RfpMode = 'light' | 'detailed';
+
 /** One packaged BoQ item a bidder prices (packageBody.items). */
 export interface V2PackageItem {
   rfp_item_id: string;
@@ -86,6 +90,8 @@ export interface V2Rfp {
   project_id: string;
   issuer_org_id: string;
   level: RfpLevel;
+  purpose: RfpPurpose;
+  mode: RfpMode;
   parent_contract_id?: string;
   root_task_ids: string[];
   title: string;
@@ -267,6 +273,9 @@ export interface RfpDraftInput {
   submissionDeadline: string; // ISO date-time
   questionsDeadline?: string;
   visibility: RfpVisibility;
+  /** D-39. Omit for the as-is execution tender; `design` pins the RFP light. */
+  purpose?: RfpPurpose;
+  mode?: RfpMode;
 }
 
 /**
@@ -363,6 +372,113 @@ export function awardBlockedReason(
  */
 export function packageSpecialties(rfp: Pick<V2Rfp, 'specialties'>): string[] {
   return [...new Set(rfp.specialties ?? [])];
+}
+
+// ── Compare drill-down: renderer selection + light-bid detail (LINA-411) ──────
+// Post-shortlist, the issuer opens a Compare SURFACE (not a modal) over the
+// bids it shortlisted. Which renderer it gets is keyed off the RFP's shape
+// (D-39): a detailed tender compares as the price MATRIX (per-line unit prices +
+// medians); a light tender — a design/pre-construction service priced as a fee —
+// has no BoQ to tabulate, so it compares as DOCS: the bidders' references, their
+// notes and their portfolio PDFs set side by side.
+
+/** Which renderer the Compare drill-down uses for an RFP. */
+export type CompareRenderer = 'docs' | 'matrix';
+
+/**
+ * Light bids compare as Documents, detailed bids as the price Matrix. `mode` is
+ * the discriminator — a design RFP is pinned light by the DB (rfp_design_is_light)
+ * — with `purpose` as the backstop so an older row that predates the column still
+ * resolves to Docs when it is a design tender.
+ */
+export function compareRenderer(rfp: Pick<V2Rfp, 'mode' | 'purpose'>): CompareRenderer {
+  return rfp.mode === 'light' || rfp.purpose === 'design' ? 'docs' : 'matrix';
+}
+
+/** A bidder's answer as the Docs renderer shows it (a light bid), issuer-side. */
+export interface V2ProposalDetail {
+  proposal_id: string;
+  reference_notes?: string;
+  conditions?: string;
+  validity_until?: string;
+  /** Absent without `org:money:view` — prints "—", never €0. */
+  total?: V2Money;
+  duration_wd?: number;
+  start?: string;
+  /**
+   * Portfolio attachment ids (issuer-visible subset). The per-file name is not on
+   * the wire — the only route over these is the per-file download — so the Docs
+   * renderer shows numbered links whose download carries the real filename.
+   */
+  document_ids: string[];
+}
+
+/** A proposal's portfolio attachment as the Docs renderer links to it. */
+export interface V2ProposalDocument {
+  id: string;
+  title: string;
+  mime?: string;
+}
+
+/**
+ * Where the browser navigates to download a proposal's portfolio attachment: a
+ * plain link the handler answers with a 302 to a short-lived presigned R2 URL
+ * (issuer | author only). NOT routed through the server-only v2 client — the same
+ * discipline as `taskDocumentDownloadPath`. The colon is a router command, so the
+ * segments are encoded individually, never the whole path.
+ */
+export function proposalDocumentDownloadPath(proposalId: string, documentId: string): string {
+  return `/api/v2/proposals/${encodeURIComponent(proposalId)}/documents/${encodeURIComponent(documentId)}:download`;
+}
+
+// ── Shortlist → Compare gating + the shareable `?compare=` param ──────────────
+
+/**
+ * The shortlisted lanes, in inbox order — the ones Compare drills into. An
+ * awarded lane counts too, so a decided tender can still be opened to the
+ * comparison it was decided on.
+ */
+export function shortlistedLanes(lanes: readonly V2ProposalLane[]): V2ProposalLane[] {
+  return orderLanes(lanes).filter((l) => l.status === 'shortlisted' || l.status === 'awarded');
+}
+
+/**
+ * Why "Compare" is off, or null when it is on. Compare opens the drill-down only
+ * AFTER shortlisting (issue requirement) and needs at least two lanes to be a
+ * comparison — a disabled button says which of the two it is waiting on.
+ */
+export function compareBlockedReason(lanes: readonly V2ProposalLane[]): string | null {
+  const n = shortlistedLanes(lanes).length;
+  if (n === 0) return 'Shortlist the bids you want to compare first.';
+  if (n < 2) return 'Shortlist at least two bids to compare them.';
+  return null;
+}
+
+const COMPARE_SEP = ',';
+
+/** Serialize compared proposal ids into the shareable `?compare=` value. */
+export function serializeCompareIds(ids: readonly string[]): string {
+  return [...new Set(ids)].join(COMPARE_SEP);
+}
+
+/**
+ * Read a `?compare=` value into ordered, de-duplicated proposal ids that are
+ * actually bids on this RFP — a stale or hand-edited link silently drops ids that
+ * are not lanes here rather than rendering an empty column. The order follows the
+ * link (what the sharer arranged), filtered to `validIds`.
+ */
+export function parseCompareIds(raw: string | null | undefined, validIds: readonly string[]): string[] {
+  if (!raw) return [];
+  const valid = new Set(validIds);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(COMPARE_SEP)) {
+    const id = part.trim();
+    if (!id || seen.has(id) || !valid.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
 }
 
 // ── Recorded-offline money entry ─────────────────────────────────────────────

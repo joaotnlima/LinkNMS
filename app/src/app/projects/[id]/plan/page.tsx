@@ -46,7 +46,9 @@ import { getPlanGrid, getAssignableParties } from '@/lib/v2/planning';
 import { collectRowKeys } from '@/lib/v2/planning-view';
 import { planGridToDraft } from '@/lib/v2/planning-hydrate';
 import { savePlanV2, reportProgressV2 } from '@/lib/v2/plan-write';
+import { getProcurementWindows } from '@/lib/v2/tendering';
 import { getRecordV2 } from '@/lib/v2/record';
+import { viewerCanIssueTenders } from '@/lib/v2/profile';
 import { getPhasesV2, getViewerPersonId } from '@/lib/v2/phases';
 import { executionPhase, signOffViewer } from '@/lib/v2/phases-view';
 import { countPlanTasks, isPlanLocked } from '@/lib/phase-signoff';
@@ -78,12 +80,14 @@ export default async function PlanPage({
   // reads. `getRecordV2` gives the shell name (fails closed to null); `getPlanGrid`
   // gives the WBS; `getPhasesV2` gives the sign-off state (fails closed to []); and
   // `getViewerPersonId` is the id the sign-off requests are keyed on.
-  const [grid, record, phaseList, myPersonId, parties] = await Promise.all([
+  const [grid, record, phaseList, myPersonId, parties, canStartTender, procurement] = await Promise.all([
     getPlanGrid(id),
     getRecordV2(id),
     getPhasesV2(id),
     getViewerPersonId(),
     getAssignableParties(id),
+    viewerCanIssueTenders(),
+    getProcurementWindows(id),
   ]);
   const name = record?.name ?? 'This build';
   const shell = await buildShellContextV2(id, name);
@@ -180,6 +184,12 @@ export default async function PlanPage({
           reportProgressV2={reportProgressV2}
           // The door to the plan's Procurement surface (its own page, LINA-371).
           procurementHref={`/projects/${id}/plan/procurement`}
+          // Gate the per-package "Start tendering" deep-link (LINA-407) on the
+          // org-role permission, resolved server-side — not a client claim.
+          canStartTender={canStartTender}
+          // The tendering⇄schedule bridge (LINA-413): the procurement window each
+          // out-to-tender row paints on its Gantt bar, keyed by task id.
+          procurement={procurement}
         />
       ) : (
         <main className="pi">

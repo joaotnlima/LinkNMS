@@ -25,10 +25,13 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 
+import type { ProcurementRfp } from '../plan-gantt';
 import { v2, V2Error } from './client';
 import type { V2Me } from './profile-view';
 import type {
   V2Rfp, V2Recipient, V2ProposalLane, V2Comparison, RfpDraftInput, RfpVisibility,
+  V2Money, V2ProposalDetail, V2ProposalDocument,
+  RfpStatus, ProposalStatus,
 } from './tendering-view';
 import type { V2UploadTicket } from './task-workspace-view';
 
@@ -145,6 +148,152 @@ async function gatherLanes(rootTaskIds: readonly string[]): Promise<V2ProposalLa
   return [...byProposal.values()];
 }
 
+// ── Reads: the Compare drill-down (LINA-411) ──────────────────────────────────
+// Post-shortlist the issuer compares the bids side by side. A DETAILED tender
+// uses the money-gated per-line matrix already in the inbox; a LIGHT tender
+// (design/pre-construction, a fee not a BoQ) has no lines to tabulate, so the
+// Docs renderer reads each bidder's full answer — its references, notes and the
+// portfolio PDFs it attached. Both reads fail CLOSED (a proposal the viewer
+// cannot see contributes nothing), never a rendered 500.
+
+/** A bidder's full answer + its portfolio attachments, for the Docs renderer. */
+export interface CompareEntry {
+  detail: V2ProposalDetail;
+  documents: V2ProposalDocument[];
+}
+
+interface ProposalWire {
+  id: string;
+  summary?: { total?: V2Money; duration_wd?: number; start?: string };
+  conditions?: string;
+  validity_until?: string;
+  reference_notes?: string;
+  document_ids?: string[];
+}
+
+/**
+ * GET /proposals/{proposalId} → the bidder's answer (issuer or author). `total`
+ * is ABSENT without `org:money:view` (wire invariant §6.5), which `formatMoney`
+ * renders as "—". Null when the viewer cannot see it, never a leak of existence.
+ */
+export async function getProposalDetail(proposalId: string): Promise<V2ProposalDetail | null> {
+  try {
+    const p = await v2<ProposalWire>({ method: 'GET', path: `/proposals/${encodeURIComponent(proposalId)}` });
+    return {
+      proposal_id: p.id,
+      ...(p.reference_notes ? { reference_notes: p.reference_notes } : {}),
+      ...(p.conditions ? { conditions: p.conditions } : {}),
+      ...(p.validity_until ? { validity_until: p.validity_until } : {}),
+      ...(p.summary?.total ? { total: p.summary.total } : {}),
+      ...(p.summary?.duration_wd != null ? { duration_wd: p.summary.duration_wd } : {}),
+      ...(p.summary?.start ? { start: p.summary.start } : {}),
+      document_ids: p.document_ids ?? [],
+    };
+  } catch (err) {
+    if (err instanceof V2Error) return null;
+    throw err;
+  }
+}
+
+/**
+ * A proposal's portfolio attachments for the Docs renderer, derived from the
+ * proposal's own `document_ids`.
+ *
+ * WHY NOT A DOCUMENTS LIST CALL: proposal attachments live in
+ * `tendering.proposal_document`, NOT the documents module, and the only route
+ * over them is the per-file download (`…/documents/{id}:download`, issuer|author
+ * gated). There is no issuer-side list-with-names endpoint, so the file's own
+ * name is not on the wire here; each attachment is shown as a numbered portfolio
+ * link and the download response carries the real filename (Content-Disposition).
+ * `getProposal` already returns `document_ids` filtered to what the viewer may
+ * see, so this needs no extra read and inherits that gate.
+ */
+function portfolioOf(detail: V2ProposalDetail): V2ProposalDocument[] {
+  return detail.document_ids.map((id, i) => ({ id, title: `Portfolio file ${i + 1}` }));
+}
+
+/** The Docs renderer's read: each compared proposal's detail + its portfolio. */
+export async function getCompareEntries(proposalIds: readonly string[]): Promise<CompareEntry[]> {
+  const entries = await Promise.all(proposalIds.map(async (id) => {
+    const detail = await getProposalDetail(id);
+    return detail ? { detail, documents: portfolioOf(detail) } : null;
+  }));
+  return entries.filter((e): e is CompareEntry => e !== null);
+}
+
+// ── The tendering ⇄ schedule bridge: procurement windows (LINA-413) ──────────
+// The plan's Gantt paints a procurement window on a tendered task's bar — the
+// stretch of calendar spent choosing a contractor before the work can begin.
+// This is the READ that feeds it: for every root task of the project's live
+// tenders, the RFP facts the bar needs (status, when it opened, when bids are
+// due, how many have landed). PRIMITIVES ONLY — no write-back of a date.
+
+/** The `rfp` block `GET /tasks/{id}/proposal-lanes` carries (RfpWindow). */
+interface RfpWindowWire {
+  id: string;
+  status: RfpStatus;
+  opened_at?: string;
+  submission_deadline: string;
+  awarded_proposal_id?: string;
+}
+
+/** A proposal-lanes read with its governing-RFP block (LINA-413). */
+interface LanesWithRfp extends ListBody<V2ProposalLane> {
+  rfp?: RfpWindowWire | null;
+}
+
+/** A lane counts as a landed bid — what turns "tendering" into "bids in". */
+function isLandedBid(status: ProposalStatus): boolean {
+  return status === 'submitted' || status === 'shortlisted' || status === 'awarded';
+}
+
+/**
+ * Every tendered task of a project, mapped to the procurement window its Gantt
+ * bar paints (LINA-413), keyed by task id (= the plan row's stable key in v2).
+ *
+ * Scope is the ISSUER's own tenders (`getMyRfps`), filtered to this project and
+ * excluding cancelled ones — which is exactly who the plan editor serves (the GC
+ * authoring the plan is the tender's issuer; a bidder never sees the editor). We
+ * discover WHICH tasks are out to tender from the RFP list, then read each root
+ * task's lanes to get the `rfp` block (its `opened_at`, the draft's creation) and
+ * count the bids that have landed. One read per tendered task, in parallel; a
+ * denied/absent read drops that task silently rather than failing the plan.
+ *
+ * Fail-closed like every read here: no active org, no tenders, or any V2Error →
+ * an empty map, never a crash and never a leak.
+ */
+export async function getProcurementWindows(
+  projectId: string,
+): Promise<Record<string, ProcurementRfp>> {
+  const rfps = (await getMyRfps()).filter(
+    (r) => r.project_id === projectId && r.status !== 'cancelled',
+  );
+  // The union of root tasks across the project's live tenders — one read each.
+  const taskIds = [...new Set(rfps.flatMap((r) => r.root_task_ids))];
+  if (taskIds.length === 0) return {};
+
+  const windows: Record<string, ProcurementRfp> = {};
+  await Promise.all(taskIds.map(async (taskId) => {
+    try {
+      const res = await v2<LanesWithRfp>({
+        method: 'GET', path: `/tasks/${encodeURIComponent(taskId)}/proposal-lanes`,
+      });
+      const rfp = res.rfp;
+      if (!rfp?.opened_at) return; // no live tender on this row (or pre-LINA-413 store)
+      windows[taskId] = {
+        status: rfp.status,
+        openedDay: rfp.opened_at.slice(0, 10),
+        bidsDueDay: rfp.submission_deadline.slice(0, 10),
+        submittedCount: (res.items ?? []).filter((l) => isLandedBid(l.status)).length,
+      };
+    } catch (err) {
+      if (err instanceof V2Error) return;
+      throw err;
+    }
+  }));
+  return windows;
+}
+
 // ── Writes: the composer ─────────────────────────────────────────────────────
 // A refused write surfaces its `V2Error` — the composer shows the reason
 // (validation_failed carries field errors; forbidden carries a role/relationship
@@ -172,6 +321,8 @@ export async function createRfp(projectId: string, draft: RfpDraftInput): Promis
       title: draft.title.trim(),
       ...(draft.scopeText.trim() ? { scope_text: draft.scopeText.trim() } : {}),
       visibility: draft.visibility,
+      ...(draft.purpose ? { purpose: draft.purpose } : {}),
+      ...(draft.mode ? { mode: draft.mode } : {}),
       ...(draft.questionsDeadline ? { questions_deadline: draft.questionsDeadline } : {}),
       submission_deadline: draft.submissionDeadline,
     },

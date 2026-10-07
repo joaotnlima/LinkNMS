@@ -1,6 +1,6 @@
 # 23 — Design tendering (pre-construction)
 
-**Status:** Proposed (D-39) — awaiting founder confirmation. Opened by the Architect for LINA-406.
+**Status:** D-39 ratified; the `design`/`light` discriminator is built (LINA-407 — `tendering.rfp.purpose`/`mode`, `proposal.reference_notes`, db/v2/0010). The light **UI** (composer mode, Docs comparison, inbox V5), the Tendering⇄Schedule bridge and email delivery are the LINA-407 children. Opened by the Architect for LINA-406.
 **Scope:** the distinction between *design* tendering and *execution* tendering, and how the
 existing RFP engine generalises to cover both. Does **not** design the BIM/model document itself
 (a separate task, deferred by the founder) nor the Directory/Marketplace epic ([07](./07-marketplace-and-billing.md)).

@@ -1,0 +1,298 @@
+/* /marketplace — the open-marketplace discovery surface (LINA-406). Reuses the
+   shared tokens (--raised/--outline/--muted/--fg) and the global .badge/.btn
+   primitives, so it reads as one system with the portfolio and the record. */
+
+.mkt {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+
+.mkt-head {
+  margin-bottom: 20px;
+}
+
+.mkt-head h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.mkt-sub {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0;
+  max-width: 56ch;
+}
+
+/* ── Specialty filter ─────────────────────────────────────────────────────── */
+.mkt-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.mkt-chip {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--outline);
+  background: var(--raised);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mkt-chip:hover {
+  background: var(--sunken);
+}
+
+.mkt-chip.is-on {
+  background: var(--owner);
+  border-color: var(--owner);
+  color: #fff;
+}
+
+/* ── The listing ──────────────────────────────────────────────────────────── */
+.mkt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mkt-card {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border: 1px solid var(--outline);
+  border-radius: var(--r-ctrl, 10px);
+  background: var(--raised);
+}
+
+.mkt-card-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.mkt-card-title {
+  font-size: 16px;
+  font-weight: 650;
+  margin: 0 0 6px;
+}
+
+.mkt-card-scope {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 10px;
+}
+
+.mkt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.mkt-deadline {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.mkt-card-side {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 120px;
+  text-align: right;
+}
+
+.mkt-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  max-width: 24ch;
+}
+
+.mkt-error {
+  font-size: 13px;
+  color: var(--danger);
+  margin: 0;
+  max-width: 24ch;
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────────── */
+.mkt-empty {
+  border: 1px dashed var(--outline);
+  border-radius: var(--r-ctrl, 10px);
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.mkt-empty p {
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .mkt-card {
+    flex-direction: column;
+  }
+
+  .mkt-card-side {
+    align-items: flex-start;
+    text-align: left;
+    width: 100%;
+  }
+}
+
+/* ── Bid editor (/marketplace/bid/[rfpId], Slice 3) ───────────────────────── */
+.bid-back {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  padding: 0 0 10px;
+  cursor: pointer;
+}
+
+.bid-back:hover {
+  color: var(--fg);
+}
+
+.bid-card {
+  border: 1px solid var(--outline);
+  border-radius: var(--r-ctrl, 10px);
+  background: var(--raised);
+  padding: 22px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.bid-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bid-field label {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.bid-field input,
+.bid-field select,
+.bid-field textarea {
+  font: inherit;
+  padding: 9px 11px;
+  border: 1px solid var(--outline);
+  border-radius: var(--r-ctrl, 8px);
+  background: var(--sunken, var(--raised));
+  color: var(--fg);
+}
+
+.bid-field textarea {
+  resize: vertical;
+}
+
+.bid-field input[aria-invalid='true'],
+.bid-field textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.bid-money {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bid-money span {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.bid-money input {
+  flex: 1;
+}
+
+.bid-duration {
+  display: flex;
+  gap: 8px;
+}
+
+.bid-duration input {
+  flex: 1;
+}
+
+.bid-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.bid-fieldnote {
+  font-size: 12px;
+  color: var(--danger);
+  margin: 0;
+}
+
+.bid-error {
+  font-size: 14px;
+  color: var(--danger);
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--r-ctrl, 8px);
+}
+
+.bid-sent {
+  font-size: 14px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--owner);
+  border-radius: var(--r-ctrl, 8px);
+  background: color-mix(in srgb, var(--owner) 8%, transparent);
+}
+
+.bid-current {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.bid-submit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--outline);
+  padding-top: 16px;
+}
+
+.bid-submit-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  .bid-submit {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

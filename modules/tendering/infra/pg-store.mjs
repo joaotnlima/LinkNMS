@@ -224,6 +224,7 @@ export function createTenderingStore(pool) {
         `SELECT rec.id, rec.rfp_id, rec.org_id, rec.email, rec.status,
                 rec.expires_at, rec.revoked_at,
                 r.title, r.scope_text, r.specialties, r.submission_deadline,
+                r.purpose, r.mode,
                 r.status AS rfp_status, r.project_id, r.package_version,
                 pr.name AS project_name,
                 -- The site's name is a public-safe locality; the full address
@@ -264,17 +265,18 @@ export function createTenderingStore(pool) {
      * a second submit finds the proposal already 'submitted' and returns null.
      */
     async submitPublicProposal({ proposalId, from, revision, totalCents, durationWd,
-      conditions, validityUntil, documentIds, projectId, rfpId, recipientOrgId }) {
+      conditions, validityUntil, referenceNotes, documentIds, projectId, rfpId, recipientOrgId }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `UPDATE tendering.proposal SET
              status = 'submitted', current_revision = $3,
              summary_total_cents = $4, summary_duration_wd = $5,
              conditions = $6, validity_until = $7, document_ids = $8,
+             reference_notes = $9,
              version = version + 1
            WHERE id = $1 AND status = $2 RETURNING *`,
           [proposalId, from, revision, totalCents, durationWd,
-            conditions, validityUntil, documentIds],
+            conditions, validityUntil, documentIds, referenceNotes ?? null],
         );
         if (!rows.length) return null;
         await client.query(
@@ -485,6 +487,32 @@ export function createTenderingStore(pool) {
       return { items: page, nextCursor: rows.length > limit ? page[page.length - 1].id : null };
     },
 
+    /**
+     * The RFP that governs a tendered row, for the plan/Gantt window (LINA-413).
+     * A row can be the root of more than one RFP over its life (a re-tender, or a
+     * design RFP then an execution one); the window paints ONE, so we pick the
+     * authoritative tender: an awarded one wins (it is the outcome the schedule
+     * commits to), otherwise the most recently opened. Cancelled tenders are
+     * excluded — they leave no window. Scoped exactly like `lanesForTask`: the
+     * viewer must be the issuer, or hold a proposal on the RFP (a bidder sees the
+     * window of the tender it is in). Null when there is no such RFP.
+     */
+    async rfpForTask(taskId, viewerOrgId) {
+      const { rows } = await pool.query(
+        `SELECT r.*
+           FROM tendering.rfp r
+           JOIN tendering.rfp_root rr ON rr.rfp_id = r.id AND rr.task_id = $1
+          WHERE r.status <> 'cancelled'
+            AND (r.issuer_org_id = $2
+                 OR EXISTS (SELECT 1 FROM tendering.proposal p
+                             WHERE p.rfp_id = r.id AND p.bidder_org_id = $2))
+          ORDER BY (r.status = 'awarded') DESC, r.created_at DESC
+          LIMIT 1`,
+        [taskId, viewerOrgId],
+      );
+      return rows[0] ?? null;
+    },
+
     /** Every lane of an RFP — issuer-side internals (award, comparison). */
     async lanesOfRfp(rfpId) {
       const { rows } = await pool.query(
@@ -552,16 +580,17 @@ export function createTenderingStore(pool) {
 
     // ── writes (ledger + outbox on the same client — §6.3/§6.4) ──────────
 
-    async createRfp({ id, projectId, issuerOrgId, level, parentContractId, title, scopeText,
+    async createRfp({ id, projectId, issuerOrgId, level, parentContractId, purpose, mode, title, scopeText,
       visibility, questionsDeadline, submissionDeadline, rootTaskIds, packageRows, packageItems, actor }) {
       return tx(async (client) => {
         const specialties = [...new Set(packageRows.map((r) => r.specialty).filter(Boolean))];
         await client.query(
           `INSERT INTO tendering.rfp
-             (id, project_id, issuer_org_id, level, parent_contract_id, title, scope_text,
+             (id, project_id, issuer_org_id, level, parent_contract_id, purpose, mode, title, scope_text,
               specialties, visibility, questions_deadline, submission_deadline)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [id, projectId, issuerOrgId, level, parentContractId, title, scopeText,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [id, projectId, issuerOrgId, level, parentContractId,
+            purpose ?? 'execution', mode ?? 'detailed', title, scopeText,
             specialties, visibility, questionsDeadline, submissionDeadline],
         );
         for (const taskId of rootTaskIds) {
@@ -631,6 +660,67 @@ export function createTenderingStore(pool) {
      * D-36). The raw token is returned ONCE; only its hash is stored.
      * A re-add of the same email is absorbed (UNIQUE rfp_id, email).
      */
+    /**
+     * Self-serve apply to an OPEN RFP (LINA-406): a bidder that discovered the
+     * RFP through the marketplace claims its own lane, the mirror of the issuer
+     * minting one with addRecipients. Idempotent and collision-safe:
+     *   - a re-apply hits UNIQUE (rfp_id, email) and the lane is returned as-is
+     *     (created=false), so a retry never forks a second lane;
+     *   - a prior email-only invite for the org's address (org_id NULL) is
+     *     ADOPTED — org_id and the proposal's bidder_org_id are backfilled — so
+     *     "the issuer emailed me, then I signed in and applied" lands on one lane.
+     * A token is minted only to satisfy the NOT NULL/UNIQUE token_hash column;
+     * it is never surfaced — the applicant is authenticated and drives the lane
+     * through the authed proposal endpoints, not the public link.
+     */
+    async applyToOpenRfp({ rfpId, projectId, orgId, email, actor }) {
+      return tx(async (client) => {
+        const token = randomBytes(32).toString('hex');
+        const { rows: recRows } = await client.query(
+          `INSERT INTO tendering.rfp_recipient (id, rfp_id, org_id, email, token_hash, expires_at)
+           VALUES ($1,$2,$3,$4,$5,
+             (SELECT submission_deadline + interval '14 days' FROM tendering.rfp WHERE id = $2))
+           ON CONFLICT (rfp_id, email) DO UPDATE
+             SET org_id = COALESCE(tendering.rfp_recipient.org_id, EXCLUDED.org_id)
+           RETURNING *`,
+          [randomUUID(), rfpId, orgId, email, sha256(token)],
+        );
+        const recipient = recRows[0];
+        let { rows: propRows } = await client.query(
+          'SELECT * FROM tendering.proposal WHERE recipient_id = $1',
+          [recipient.id],
+        );
+        let created = false;
+        if (!propRows.length) {
+          ({ rows: propRows } = await client.query(
+            `INSERT INTO tendering.proposal (id, rfp_id, recipient_id, bidder_org_id)
+             VALUES ($1,$2,$3,$4) RETURNING *`,
+            [randomUUID(), rfpId, recipient.id, orgId],
+          ));
+          created = true;
+        } else if (propRows[0].bidder_org_id == null) {
+          ({ rows: propRows } = await client.query(
+            'UPDATE tendering.proposal SET bidder_org_id = $2 WHERE id = $1 RETURNING *',
+            [propRows[0].id, orgId],
+          ));
+        }
+        if (created) {
+          await appendAuditEvent(client, {
+            projectId, actor,
+            category: 'tendering',
+            type: 'tendering.rfp.applied',
+            scope: { type: 'project', id: projectId },
+            object: { type: 'rfp', id: rfpId },
+            // D-29: bidder identity lives in tendering.*, never the ledger —
+            // the record only notes that a self-serve apply happened.
+            payload: {},
+            channel: actor.channel,
+          });
+        }
+        return { proposalId: propRows[0].id, created };
+      });
+    },
+
     async addRecipients({ rfpId, projectId, recipients, actor }) {
       return tx(async (client) => {
         const out = [];
@@ -730,6 +820,25 @@ export function createTenderingStore(pool) {
         });
         return { recipient: rows[0], token };
       });
+    },
+
+    /**
+     * Record that a recipient's invite email left for the provider (LINA-412).
+     * Moves the delivery breadcrumb `queued` → `sent`, stamps `sent_at`, and
+     * pins the provider's message id. Guarded on `status = 'queued'` so a
+     * late-arriving send never clobbers a recipient who has already OPENED the
+     * link or SUBMITTED a proposal (the open/submit writes win). Returns the
+     * updated row, or null when the guard skipped it (not queued any more).
+     */
+    async markRecipientSent({ rfpId, recipientId, messageId }) {
+      const { rows } = await pool.query(
+        `UPDATE tendering.rfp_recipient
+            SET status = 'sent', sent_at = now(), email_message_id = $3
+          WHERE id = $2 AND rfp_id = $1 AND status = 'queued'
+          RETURNING *`,
+        [rfpId, recipientId, messageId ?? null],
+      );
+      return rows[0] ?? null;
     },
 
     /** Guarded status move; null when `from` raced away (caller answers 409). */
@@ -938,6 +1047,59 @@ export function createTenderingStore(pool) {
           scope: { type: 'rfp_private', id: proposalId },
           object: { type: 'proposal', id: proposalId },
           payload: { rfp_id: rfpId, revision, total: totalCents },
+          channel: actor.channel,
+        });
+        await publishEvent(client, {
+          event_id: randomUUID(),
+          type: 'tendering.proposal.submitted',
+          project_id: projectId,
+          actor: { person_id: actor.personId, org_id: actor.orgId },
+          scope: { type: 'rfp_private', id: proposalId },
+          data: { rfp_id: rfpId, proposal_id: proposalId, bidder_org_id: bidderOrgId, revision },
+        });
+        return rows[0];
+      });
+    },
+
+    /**
+     * A signed-in self-serve bidder submits a SUMMARY bid in its own lane
+     * (LINA-406). Same stored shape as submitPublicProposal (summary total +
+     * duration + conditions + documents; no priced BoQ), but with a REAL actor
+     * — the submitting person+org, recorded on the ledger with `via: platform`
+     * — where the token submit is anonymous. `from` is the single-step guard:
+     * a concurrent submit that already moved the row returns null (caller 409s).
+     */
+    async submitOwnBid({ proposalId, from, revision, totalCents, durationWd,
+      conditions, validityUntil, referenceNotes, documentIds, projectId, rfpId, bidderOrgId, actor }) {
+      return tx(async (client) => {
+        const { rows } = await client.query(
+          `UPDATE tendering.proposal SET
+             status = 'submitted', current_revision = $3,
+             summary_total_cents = $4, summary_duration_wd = $5,
+             conditions = $6, validity_until = $7, document_ids = $8,
+             reference_notes = $9,
+             version = version + 1
+           WHERE id = $1 AND status = $2 RETURNING *`,
+          [proposalId, from, revision, totalCents, durationWd,
+            conditions, validityUntil, documentIds, referenceNotes ?? null],
+        );
+        if (!rows.length) return null;
+        await client.query(
+          `INSERT INTO tendering.proposal_revision (proposal_id, revision, total_cents)
+           VALUES ($1,$2,$3)`,
+          [proposalId, revision, totalCents],
+        );
+        await client.query(
+          `UPDATE tendering.rfp_recipient SET status = 'proposal_submitted' WHERE id = $2 AND rfp_id = $1`,
+          [rfpId, rows[0].recipient_id],
+        );
+        await appendAuditEvent(client, {
+          projectId, actor,
+          category: 'tendering',
+          type: 'tendering.proposal.submitted',
+          scope: { type: 'rfp_private', id: proposalId },
+          object: { type: 'proposal', id: proposalId },
+          payload: { rfp_id: rfpId, revision, total: totalCents, channel: 'platform', via: 'platform' },
           channel: actor.channel,
         });
         await publishEvent(client, {

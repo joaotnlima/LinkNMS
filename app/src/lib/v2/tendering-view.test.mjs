@@ -13,6 +13,8 @@ import {
   formatMoney, rfpStatusBadge, proposalStatusBadge, recipientStatusBadge,
   parseRecipients, createBlockedReason, publishBlockedReason,
   orderLanes, isLive, awardBlockedReason, packageSpecialties, eurosToCents,
+  compareRenderer, shortlistedLanes, compareBlockedReason,
+  serializeCompareIds, parseCompareIds, proposalDocumentDownloadPath,
 } from './tendering-view.ts';
 
 // ── money ─────────────────────────────────────────────────────────────────
@@ -166,4 +168,66 @@ test('eurosToCents: empty / non-numeric / negative → null', () => {
   assert.equal(eurosToCents('   '), null);
   assert.equal(eurosToCents('abc'), null);
   assert.equal(eurosToCents('-5'), 500); // the sign is stripped; the caller gates on ≥0 server-side
+});
+
+// ── Compare drill-down: renderer selection (D-39) ────────────────────────────
+test('compareRenderer: light (or design) → Docs, detailed → Matrix', () => {
+  assert.equal(compareRenderer({ mode: 'light', purpose: 'design' }), 'docs');
+  assert.equal(compareRenderer({ mode: 'detailed', purpose: 'execution' }), 'matrix');
+  // purpose is the backstop when an older row predates the mode column
+  assert.equal(compareRenderer({ mode: undefined, purpose: 'design' }), 'docs');
+  assert.equal(compareRenderer({ mode: undefined, purpose: 'execution' }), 'matrix');
+});
+
+// ── Compare gating: only post-shortlist, and only with ≥2 ────────────────────
+test('shortlistedLanes: shortlisted + awarded, in inbox order', () => {
+  const lanes = [
+    lane({ proposal_id: 'a', status: 'submitted' }), lane({ proposal_id: 'b', status: 'shortlisted' }),
+    lane({ proposal_id: 'c', status: 'awarded' }), lane({ proposal_id: 'd', status: 'declined' }),
+  ];
+  assert.deepEqual(shortlistedLanes(lanes).map((l) => l.proposal_id), ['c', 'b']);
+});
+
+test('compareBlockedReason: nothing shortlisted → asks to shortlist first', () => {
+  assert.match(compareBlockedReason([lane({ proposal_id: 'a', status: 'submitted' })]), /Shortlist the bids/);
+});
+
+test('compareBlockedReason: one shortlisted → asks for a second', () => {
+  assert.match(compareBlockedReason([
+    lane({ proposal_id: 'a', status: 'shortlisted' }), lane({ proposal_id: 'b', status: 'submitted' }),
+  ]), /at least two/);
+});
+
+test('compareBlockedReason: two shortlisted → null (Compare is on)', () => {
+  assert.equal(compareBlockedReason([
+    lane({ proposal_id: 'a', status: 'shortlisted' }), lane({ proposal_id: 'b', status: 'shortlisted' }),
+  ]), null);
+});
+
+// ── The shareable ?compare= param ─────────────────────────────────────────────
+test('serializeCompareIds: de-duplicates, joins with commas', () => {
+  assert.equal(serializeCompareIds(['a', 'b', 'a', 'c']), 'a,b,c');
+});
+
+test('parseCompareIds: keeps order, drops ids that are not lanes here', () => {
+  assert.deepEqual(parseCompareIds('b,a,ghost', ['a', 'b', 'c']), ['b', 'a']);
+});
+
+test('parseCompareIds: de-duplicates and tolerates whitespace / empty', () => {
+  assert.deepEqual(parseCompareIds(' a , a , b ', ['a', 'b']), ['a', 'b']);
+  assert.deepEqual(parseCompareIds('', ['a']), []);
+  assert.deepEqual(parseCompareIds(null, ['a']), []);
+});
+
+test('parse/serialize round-trips a valid set', () => {
+  const ids = ['x', 'y', 'z'];
+  assert.deepEqual(parseCompareIds(serializeCompareIds(ids), ids), ids);
+});
+
+// ── Portfolio download path: colon is a command, segments encoded ─────────────
+test('proposalDocumentDownloadPath: /api/v2 link, encoded segments, bare colon', () => {
+  assert.equal(
+    proposalDocumentDownloadPath('p 1', 'd/2'),
+    '/api/v2/proposals/p%201/documents/d%2F2:download',
+  );
 });

@@ -80,10 +80,19 @@ export interface PackageItem {
 }
 
 /** The scope-of-works, structure + quantities, that the recipient is asked to bid. */
+/** Design (pre-construction) vs execution — D-39. A design RFP is always
+ *  `light`: the bid is a fee + portfolio + references + PDF, never a BoQ. */
+export type RfpPurpose = 'design' | 'execution';
+export type RfpMode = 'light' | 'detailed';
+
 export interface RfpLinkRfp {
   title: string;
   scope_text?: string;
   specialties: string[];
+  /** The bid shape the form must render — light asks for a fee + references,
+   *  detailed for a priced BoQ (D-39). */
+  purpose: RfpPurpose;
+  mode: RfpMode;
   /** ISO datetime; absent when the RFP set no deadline. */
   submission_deadline?: string;
   package: { rows: PackageRow[]; items: PackageItem[] };
@@ -114,6 +123,8 @@ export interface ProposalEcho {
   conditions?: string;
   /** YYYY-MM-DD; absent when the bid named no validity date. */
   validity_until?: string;
+  /** Light-bid references (referenceable past work / client contacts). */
+  reference_notes?: string;
   document_ids: string[];
 }
 
@@ -142,6 +153,8 @@ export interface BidBody {
   duration_wd: number;
   conditions?: string;
   validity_until?: string;
+  /** Light-bid references — optional free text (≤4000 chars, BE-enforced). */
+  reference_notes?: string;
   /**
    * Ids of portfolio attachments uploaded via the token-scoped upload route
    * (LINA-375), each already proven `stored`. The BE refuses any id that is not
@@ -163,6 +176,12 @@ export interface BidDraft {
   conditions: string;
   /** An <input type=date> value: "" or YYYY-MM-DD. */
   validityUntil: string;
+  /**
+   * Light-bid references (LINA-407): comparable past work and who to call. Only
+   * the light form shows this box; a detailed bid leaves it empty and it is
+   * never sent, so an execution tender is unchanged.
+   */
+  referenceNotes: string;
 }
 
 export const EMPTY_DRAFT: BidDraft = {
@@ -171,11 +190,12 @@ export const EMPTY_DRAFT: BidDraft = {
   durationUnit: 'weeks',
   conditions: '',
   validityUntil: '',
+  referenceNotes: '',
 };
 
 /** The field-keyed errors the form renders beside the inputs that caused them. */
 export type BidErrors = Partial<
-  Record<'total' | 'durationValue' | 'validityUntil' | 'conditions', string>
+  Record<'total' | 'durationValue' | 'validityUntil' | 'conditions' | 'referenceNotes', string>
 >;
 
 /** The currency the whole v2 tender model records in; the BE refuses anything else. */
@@ -183,6 +203,8 @@ export const BID_CURRENCY = 'EUR';
 /** A working week, in working days — the conversion the weeks picker applies. */
 export const WORKING_DAYS_PER_WEEK = 5;
 export const MAX_CONDITIONS_CHARS = 4000;
+/** Light-bid references cap — mirrors the BE's ≤4000 (0010 / wire.mjs). */
+export const MAX_REFERENCE_NOTES_CHARS = 4000;
 /** Ten working years. Past that it is a typo, not an estimate. */
 const MAX_WORKING_DAYS = 2600;
 
@@ -301,6 +323,14 @@ export function validateBid(
     errors.conditions = 'That note is too long.';
   }
 
+  // Light-bid references (LINA-407): optional free text. The detailed form never
+  // shows the box, so this is '' there and nothing is sent — an execution bid is
+  // byte-for-byte unchanged. Only the length is guarded; the BE is the authority.
+  const referenceNotes = draft.referenceNotes.trim();
+  if (referenceNotes.length > MAX_REFERENCE_NOTES_CHARS) {
+    errors.referenceNotes = 'Those references are too long.';
+  }
+
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return {
     ok: true,
@@ -309,6 +339,7 @@ export function validateBid(
       duration_wd: durationWd,
       ...(conditions ? { conditions } : {}),
       ...(validityUntil ? { validity_until: validityUntil } : {}),
+      ...(referenceNotes ? { reference_notes: referenceNotes } : {}),
       document_ids: documentIds,
     },
   };

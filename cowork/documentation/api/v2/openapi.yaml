@@ -3285,11 +3285,13 @@ paths:
                       location: { type: string, nullable: true }
                   rfp:
                     type: object
-                    required: [title, specialties, submission_deadline, package]
+                    required: [title, specialties, purpose, mode, submission_deadline, package]
                     properties:
                       title: { type: string }
                       scope_text: { type: string }
                       specialties: { type: array, items: { type: string } }
+                      purpose: { type: string, enum: [design, execution], description: 'D-39: the tender purpose, so the form can label the bid.' }
+                      mode: { type: string, enum: [light, detailed], description: 'The bid shape the form must render (light = fee + references, detailed = BoQ).' }
                       submission_deadline: { type: string, format: date-time }
                       package:
                         type: object
@@ -3368,6 +3370,7 @@ paths:
                 duration_wd: { type: integer, minimum: 1, description: Working days to complete. }
                 conditions: { type: string, nullable: true }
                 validity_until: { type: string, format: date, nullable: true }
+                reference_notes: { type: string, nullable: true, maxLength: 4000, description: 'Light-bid references — referenceable past work / client contacts (D-39).' }
                 document_ids:
                   type: array
                   items: { type: string, format: uuid }
@@ -3702,6 +3705,60 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /rfps/{rfpId}/invite-email:preview:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Tendering
+      operationId: previewInviteEmail
+      summary: Preview the invite email before sending
+      description: 'Render the invite email (subject + HTML + plain text) the way a recipient
+        would receive it, so the issuer can review the copy BEFORE dispatching invites (LINA-412,
+        pen frame 986). Produced by the same renderer the dispatch uses, so the preview is the real
+        email — EXCEPT the secure link, which is a NON-secret placeholder: a preview never carries a
+        live personal-link token (LINA-373). `reissue=true` previews the rotated-link variant.
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** issuer'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: issuer
+      parameters:
+      - $ref: '#/components/parameters/rfpId'
+      - name: email
+        in: query
+        required: false
+        schema:
+          type: string
+          format: email
+        description: Sample recipient address shown in the preview's `to` field; defaults to an example.
+      - name: reissue
+        in: query
+        required: false
+        schema:
+          type: boolean
+        description: Preview the re-issued-link variant of the copy instead of the first-invite one.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteEmailPreview'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /rfps/{rfpId}/recipients/{recipientId}:reissue:
     parameters:
     - name: rfpId
@@ -3914,6 +3971,61 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Rfp'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '402':
+          $ref: '#/components/responses/NotEntitled'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /rfps/{rfpId}:apply:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Tendering
+      operationId: applyToOpenRfp
+      summary: Apply to an open RFP (self-serve)
+      description: 'A bidder that found an open, published RFP through the
+        marketplace claims its own proposal lane, instead of waiting for the
+        issuer to invite it. Idempotent: the first apply creates the lane
+        (`201`), re-applying returns the same lane (`200`). From here the
+        authed proposal endpoints (`putProposal`, `submitProposal`) carry the
+        lane exactly as an invited bidder''s.
+
+
+        **Clerk permission:** `org:tendering:bid`
+
+
+        **Relationship (LinkNMS):** none (any org that could bid on an open
+        listing, D-15)'
+      x-clerk-permission: org:tendering:bid
+      x-relationship: none
+      parameters:
+      - $ref: '#/components/parameters/rfpId'
+      responses:
+        '200':
+          description: The existing lane (already applied)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
+        '201':
+          description: A new lane was created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -4148,6 +4260,14 @@ paths:
                       type: array
                       items:
                         $ref: '#/components/schemas/ProposalLane'
+                    rfp:
+                      allOf:
+                      - $ref: '#/components/schemas/RfpWindow'
+                      nullable: true
+                      description: >-
+                        The governing RFP of this row, for the plan/Gantt
+                        procurement window (LINA-413). Null when the row has no
+                        live tender. Present on the first page only.
                   required:
                   - items
         '401':
@@ -4269,6 +4389,71 @@ paths:
           $ref: '#/components/responses/NotFound'
         '402':
           $ref: '#/components/responses/NotEntitled'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /proposals/{proposalId}:submit-bid:
+    parameters:
+    - name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Tendering
+      operationId: submitOwnBid
+      summary: 'Self-serve summary bid: price and send your own lane'
+      description: 'The authenticated twin of `submitProposalByToken`: a signed-in bidder that
+        claimed its lane through the open marketplace (`applyToOpenRfp`) sends a SUMMARY bid —
+        one total, a working-day duration, optional conditions/validity, portfolio document ids —
+        in a single call. Unlike the priced-BoQ `submit`, it stores summary fields directly (no
+        rows/lines). Unlike the token submit, the actor on the ledger is the real submitting
+        person+org (`via: platform`), never an anonymous `public_link`. `submit` is allowed from
+        invited/draft/submitted, so a bidder may revise its figure in place until the deadline;
+        each send bumps the revision.
+
+
+        **Clerk permission:** `org:tendering:bid`
+
+
+        **Relationship (LinkNMS):** author'
+      x-clerk-permission: org:tendering:bid
+      x-relationship: author
+      parameters:
+      - $ref: '#/components/parameters/proposalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [total, duration_wd]
+              properties:
+                total: { $ref: '#/components/schemas/Money' }
+                duration_wd: { type: integer, minimum: 1, description: Working days to complete. }
+                conditions: { type: string, nullable: true }
+                validity_until: { type: string, format: date, nullable: true }
+                reference_notes: { type: string, nullable: true, maxLength: 4000, description: 'Light-bid references — referenceable past work / client contacts (D-39).' }
+                document_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                  description: Portfolio / supporting document ids already uploaded.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -9113,6 +9298,20 @@ components:
           enum:
           - owner
           - sub
+        purpose:
+          type: string
+          description: 'D-39: design (pre-construction, a service) vs execution (the
+            as-is, built work priced as a BoQ).'
+          enum:
+          - design
+          - execution
+        mode:
+          type: string
+          description: 'Bid shape: light = fee lump-sum + portfolio + references +
+            PDF (no BoQ); detailed = priced BoQ. A design RFP is always light.'
+          enum:
+          - light
+          - detailed
         parent_contract_id: *id001
         root_task_ids:
           type: array
@@ -9216,6 +9415,18 @@ components:
           enum:
           - invite_only
           - open
+        purpose:
+          type: string
+          description: 'D-39. Omit for the as-is execution tender; design pins the
+            RFP light.'
+          enum:
+          - design
+          - execution
+        mode:
+          type: string
+          enum:
+          - light
+          - detailed
         questions_deadline: *id004
         submission_deadline: *id004
       required:
@@ -9273,10 +9484,33 @@ components:
         token:
           type: string
           description: 'Response-only, ONCE, in the addRecipients 201 and the reissue 200:
-            the raw personal-link token (only its SHA-256 is stored). Returned to the
-            issuer until the notifications module owns email delivery — same
-            rationale as ProjectInvitation.token.'
+            the raw personal-link token (only its SHA-256 is stored). The invite is also
+            emailed through the MailSender port (LINA-412) with the token ONLY in the body;
+            this echo lets the issuer re-send manually. Same rationale as
+            ProjectInvitation.token.'
       description: Visible to the issuer only.
+    InviteEmailPreview:
+      type: object
+      description: 'The rendered invite email (LINA-412, previewInviteEmail). The secure link in
+        the body is a non-secret placeholder — a preview never carries a live token (LINA-373).'
+      properties:
+        to:
+          type: string
+          format: email
+          description: The sample recipient the preview is addressed to.
+        subject:
+          type: string
+        html:
+          type: string
+          description: The HTML body; carries only the placeholder link, never a live token.
+        text:
+          type: string
+          description: The plain-text body; carries only the placeholder link, never a live token.
+      required:
+      - to
+      - subject
+      - html
+      - text
     Clarification:
       type: object
       properties:
@@ -9335,6 +9569,39 @@ components:
         url:
           type: string
       description: Pseudo-row drawn under the tendered task (D-36). Issuer sees all lanes; a bidder only its own.
+    RfpWindow:
+      type: object
+      description: >-
+        The governing RFP of a tendered row, as the plan/Gantt bridge paints it
+        (LINA-413): which tender, its lifecycle status, when tendering opened and
+        when bids are due. The "bids in / awarded" state the client derives from
+        the lanes. No money, no counts.
+      properties:
+        id: *id001
+        status:
+          type: string
+          enum:
+          - draft
+          - published
+          - closed
+          - awarded
+          - cancelled
+        opened_at:
+          type: string
+          format: date-time
+          description: When the tender was opened (the draft's creation).
+        submission_deadline:
+          type: string
+          format: date-time
+          description: Bids due by this instant.
+        awarded_proposal_id:
+          allOf:
+          - *id001
+          description: Present once the tender is awarded.
+      required:
+      - id
+      - status
+      - submission_deadline
     Proposal:
       type: object
       properties:
@@ -9410,6 +9677,10 @@ components:
         conditions:
           type: string
         validity_until: *id003
+        reference_notes:
+          type: string
+          description: 'Light-bid references (D-39); present only when the bidder
+            gave them.'
         document_ids:
           type: array
           items: *id001

@@ -1,5 +1,17 @@
 # 07 — Marketplace & billing
 
+## Build slices (D-40)
+
+This is a multi-slice epic, not one drop. The order is driven by what unblocks
+the open-marketplace tender flow (LINA-406) with the least new surface:
+
+| Slice | Scope | State |
+|---|---|---|
+| **1 — Self-serve apply** | A bidder that discovers an `open`, published RFP through the marketplace claims its **own proposal lane** (`POST /rfps/{rfpId}:apply`), instead of waiting for the issuer to invite it by email. Idempotent (first apply `201`, re-apply `200`); a prior email-only invite for the org's address is adopted, not duplicated. From there the existing authed proposal endpoints (`putProposal`, `submitProposal`) carry the lane exactly as an invited bidder's. This is the hinge that makes "convite aberto ao marketplace" actually function — the `open` visibility flag and `GET /marketplace/rfps` browse already shipped, but nothing could *act* on them. | **BE done** (LINA-406). FE (marketplace browse page + Apply → the bidder's lane) is the next slice. |
+| **2 — Directory FE + profiles** | `OrganizationProfile` (listed), specialty catalogue, service areas, completeness score, marketplace browse/search UI, and the before/after portfolio. Lets an owner *discover* companies and a company present itself. | Designed below; not built. |
+| **3 — Reputation** | Reviews + objective metrics (D-16, below). | Designed; not built. |
+| **4 — Billing** | Plans, subscriptions, entitlement enforcement incl. `proposal.submit_open` (D-05, below). Until this ships, apply is gated only by `org:tendering:bid`. | Designed; not built. |
+
 ## Directory
 
 **OrganizationProfile** (one per non-household org, public when `listed = true`):

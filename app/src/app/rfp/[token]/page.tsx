@@ -99,7 +99,7 @@ export default async function RfpTokenPage({
 
       <section className="rfp-sec">
         <h2>Your proposal</h2>
-        <ProposalForm token={token} />
+        <ProposalForm token={token} mode={view.rfp.mode} />
       </section>
     </RfpShell>
   );

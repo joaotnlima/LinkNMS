@@ -3,23 +3,32 @@
 // Phase 6 surface: the whole Tendering tag — RFP lifecycle, recipients,
 // clarifications, proposal lanes, comparison, award.
 import {
-  createRfp, getRfp, updateRfp, addRecipients, listRecipients, reissueRecipientLink, publishRfp,
-  addAddendum, closeRfp, cancelRfp, browseOpenRfps, listMyRfps,
+  createRfp, getRfp, updateRfp, addRecipients, listRecipients, previewInviteEmail,
+  reissueRecipientLink, publishRfp,
+  addAddendum, closeRfp, cancelRfp, browseOpenRfps, applyToOpenRfp, listMyRfps,
   askClarification, answerClarification, listProposalLanes, getProposal,
   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
-  getComparison, shortlistProposal, awardRfp,
+  submitOwnBid, getComparison, shortlistProposal, awardRfp,
   getRfpByToken, submitProposalByToken,
   reserveProposalDocumentByToken, completeProposalDocumentByToken, downloadProposalDocument,
 } from '../application/use-cases.mjs';
 
 /**
- * @param {{ store: object, storage: object, contractingAward: Function }} deps
+ * @param {{ store: object, storage: object, contractingAward: Function,
+ *           mailSender?: object, linkBaseUrl?: string|Function }} deps
  *   storage — the object-store port (documents module's R2 adapter), shared so
  *     token-scoped proposal attachments (LINA-370) live on the same bucket.
  *   contractingAward — the contracting module's award port
  *   (modules/contracting/application/award.mjs), run on the award transaction.
+ *   mailSender — the MailSender port (infra/mail-sender.mjs) the invite dispatch
+ *     sends each recipient's secure link through (LINA-412). Optional; absent in
+ *     DB-free unit tests, which assert dispatch via a capturing double instead.
+ *   linkBaseUrl — origin the `/rfp/{token}` link is built on; string or a thunk.
  */
-export function registerTendering(router, { store, storage, contractingAward }) {
+export function registerTendering(router, { store, storage, contractingAward, mailSender, linkBaseUrl } = {}) {
+  // The link origin may be supplied as a thunk (env read deferred to request
+  // time, as the project module's shareBaseUrl is); resolve it per call.
+  const baseUrl = () => (typeof linkBaseUrl === 'function' ? linkBaseUrl() : linkBaseUrl);
   // Public personal link (gap S1) — security: [], no viewer. The token is the
   // authority; the /api/v2 adapter lets these two through without a session
   // (path[0] === 'rfp-links'), exactly as it does the Clerk webhook.
@@ -52,17 +61,22 @@ export function registerTendering(router, { store, storage, contractingAward }) 
     updateRfp({ viewer, store, rfpId: params.rfpId, body, ifMatch: headers['if-match'] }));
 
   router.register('POST', '/rfps/{rfpId}/recipients', 'addRecipients', ({ viewer, params, body }) =>
-    addRecipients({ viewer, store, rfpId: params.rfpId, body }));
+    addRecipients({ viewer, store, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId, body }));
 
   router.register('GET', '/rfps/{rfpId}/recipients', 'listRecipients', ({ viewer, params, query }) =>
     listRecipients({ viewer, store, rfpId: params.rfpId, query }));
+
+  // Preview the invite email copy before sending (LINA-412, pen frame 986).
+  // Issuer-only; the previewed link is a non-secret placeholder (no live token).
+  router.register('GET', '/rfps/{rfpId}/invite-email:preview', 'previewInviteEmail', ({ viewer, params, query }) =>
+    previewInviteEmail({ viewer, store, linkBaseUrl: baseUrl(), rfpId: params.rfpId, query }));
 
   // Rotate a recipient's leaked/forwarded personal link: mint a fresh token,
   // kill the old (gap S1, LINA-373). Issuer-only; the token is in the response
   // ONCE, never the path.
   router.register('POST', '/rfps/{rfpId}/recipients/{recipientId}:reissue', 'reissueRecipientLink',
     ({ viewer, params }) =>
-      reissueRecipientLink({ viewer, store, rfpId: params.rfpId, recipientId: params.recipientId }));
+      reissueRecipientLink({ viewer, store, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId, recipientId: params.recipientId }));
 
   router.register('POST', '/rfps/{rfpId}:publish', 'publishRfp', ({ viewer, params }) =>
     publishRfp({ viewer, store, rfpId: params.rfpId }));
@@ -78,6 +92,11 @@ export function registerTendering(router, { store, storage, contractingAward }) 
 
   router.register('GET', '/marketplace/rfps', 'browseOpenRfps', ({ viewer, query }) =>
     browseOpenRfps({ viewer, store, query }));
+
+  // Self-serve apply: a bidder claims its own lane on an open RFP it found in
+  // the marketplace (LINA-406). The authed proposal endpoints take it from here.
+  router.register('POST', '/rfps/{rfpId}:apply', 'applyToOpenRfp', ({ viewer, params }) =>
+    applyToOpenRfp({ viewer, store, rfpId: params.rfpId }));
 
   router.register('GET', '/me/rfps', 'listMyRfps', ({ viewer, query }) =>
     listMyRfps({ viewer, store, query }));
@@ -99,6 +118,12 @@ export function registerTendering(router, { store, storage, contractingAward }) 
 
   router.register('POST', '/proposals/{proposalId}:submit', 'submitProposal', ({ viewer, params }) =>
     submitProposal({ viewer, store, proposalId: params.proposalId }));
+
+  // Self-serve SUMMARY bid (LINA-406): the authenticated twin of the public
+  // token submit — the bidder prices + sends a single-total bid in its own lane,
+  // actor recorded as the real person+org (not anonymous `public_link`).
+  router.register('POST', '/proposals/{proposalId}:submit-bid', 'submitOwnBid', ({ viewer, params, body }) =>
+    submitOwnBid({ viewer, store, proposalId: params.proposalId, body }));
 
   router.register('POST', '/proposals/{proposalId}:withdraw', 'withdrawProposal', ({ viewer, params }) =>
     withdrawProposal({ viewer, store, proposalId: params.proposalId }));

@@ -88,6 +88,8 @@ holidays are resolved from a shared `platform.holiday(date, scope: national|muni
 | project_id, issuer_org_id | uuid | |
 | level | text | `owner` · `sub` |
 | parent_contract_id | uuid | required iff `level = sub` |
+| purpose | text | `design` (pre-construction, a service) · `execution` (built work, a BoQ) — D-39 |
+| mode | text | `light` (fee + portfolio + references + PDF, no BoQ) · `detailed` (priced BoQ); a `design` RFP is always `light` |
 | title, scope_text | text | |
 | specialties | text[] | specialty codes |
 | visibility | text | `invite_only` · `open` |
@@ -116,6 +118,7 @@ holidays are resolved from a shared `platform.holiday(date, scope: national|muni
 | status | text | `invited` · `draft` · `submitted` · `withdrawn` · `shortlisted` · `awarded` · `declined` |
 | validity_until | date | |
 | conditions | text | |
+| reference_notes | text | light bids: referenceable past work / client contacts (D-39); nullable |
 
 **proposal_revision** — append-only, `UNIQUE(proposal_id, revision)`: `total_cents (derived, materialised)`, `submitted_at`.
 **proposal_line**: `proposal_revision_id, rfp_item_id (nullable for variants), is_variant bool, description, unit, quantity, unit_price_cents`.
