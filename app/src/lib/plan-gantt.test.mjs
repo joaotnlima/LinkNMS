@@ -15,6 +15,7 @@ import {
   ganttWindow, barGeom, daysFromPixels,
   moveBar, resizeStart, resizeEnd, applyDrag, scheduleWindow, clickDates,
   baseWindow, clipBarGeom, barRect, connectorPath, connectorMidpoint, fillWindow,
+  procurementState, procurementLocksSchedule, procurementGeom,
 } from './plan-gantt.ts';
 
 test('parseDay: UTC round-trip, rejects blanks and impossible days', () => {
@@ -376,4 +377,68 @@ test('connectorMidpoint: the arc-length midpoint lands in the middle of the arro
   assert.deepEqual(connectorMidpoint([]), { x: 0, y: 0 });
   assert.deepEqual(connectorMidpoint([{ x: 4, y: 7 }]), { x: 4, y: 7 });
   assert.deepEqual(connectorMidpoint([{ x: 3, y: 3 }, { x: 3, y: 3 }]), { x: 3, y: 3 });
+});
+
+// ── The tendering ⇄ schedule bridge (LINA-413) ───────────────────────────────
+
+test('procurementState: lifecycle folds to the four painted states', () => {
+  assert.equal(procurementState({ status: 'draft', submittedCount: 0 }), 'draft');
+  assert.equal(procurementState({ status: 'published', submittedCount: 0 }), 'tendering');
+  // A bid in flips published → bids_in without waiting for the deadline.
+  assert.equal(procurementState({ status: 'published', submittedCount: 2 }), 'bids_in');
+  // Closed is always bids_in — the deadline has passed, whatever the count.
+  assert.equal(procurementState({ status: 'closed', submittedCount: 0 }), 'bids_in');
+  assert.equal(procurementState({ status: 'awarded', submittedCount: 3 }), 'awarded');
+  // Cancelled leaves nothing to paint.
+  assert.equal(procurementState({ status: 'cancelled', submittedCount: 0 }), null);
+});
+
+test('procurementLocksSchedule: only an open tender locks the manual dates', () => {
+  assert.equal(procurementLocksSchedule('tendering'), true);
+  assert.equal(procurementLocksSchedule('draft'), false);
+  assert.equal(procurementLocksSchedule('bids_in'), false);
+  assert.equal(procurementLocksSchedule('awarded'), false);
+  assert.equal(procurementLocksSchedule(null), false);
+});
+
+test('procurementGeom: band + bids-due tick share the bars’ day→px math', () => {
+  // A 11-day window; 10px/day. Opened day 2, bids due day 6.
+  const win = { startDay: '2027-01-01', endDay: '2027-01-11', days: 11 };
+  const g = procurementGeom(win, 10, {
+    status: 'published', openedDay: '2027-01-03', bidsDueDay: '2027-01-07', submittedCount: 0,
+  });
+  assert.equal(g.state, 'tendering');
+  assert.equal(g.locked, true);
+  // clipBarGeom([03..07]) → offset 2, span 5 → barRect = x 21, width 48.
+  assert.deepEqual(g.band, { x: 21, width: 48, clipStart: false, clipEnd: false });
+  // bids-due tick at the END of day 6 (0-based offset 6) → (6+1)*10 = 70.
+  assert.equal(g.bidsDueX, 70);
+});
+
+test('procurementGeom: a window overhanging the view clips, flags the edge', () => {
+  const win = { startDay: '2027-01-05', endDay: '2027-01-10', days: 6 };
+  const g = procurementGeom(win, 8, {
+    // opened before the view, bids due after it.
+    status: 'closed', openedDay: '2027-01-01', bidsDueDay: '2027-01-20', submittedCount: 1,
+  });
+  assert.equal(g.state, 'bids_in');
+  assert.equal(g.band.clipStart, true);
+  assert.equal(g.band.clipEnd, true);
+  assert.equal(g.band.x, 1); // from day 0 of the window
+  // bids due (Jan 20) is off-canvas → no tick.
+  assert.equal(g.bidsDueX, null);
+});
+
+test('procurementGeom: cancelled paints nothing', () => {
+  const win = { startDay: '2027-01-01', endDay: '2027-01-11', days: 11 };
+  assert.equal(procurementGeom(win, 10, {
+    status: 'cancelled', openedDay: '2027-01-03', bidsDueDay: '2027-01-07', submittedCount: 0,
+  }), null);
+});
+
+test('procurementGeom: span wholly off-canvas and no tick → null', () => {
+  const win = { startDay: '2027-02-01', endDay: '2027-02-10', days: 10 };
+  assert.equal(procurementGeom(win, 10, {
+    status: 'published', openedDay: '2027-01-01', bidsDueDay: '2027-01-05', submittedCount: 0,
+  }), null);
 });

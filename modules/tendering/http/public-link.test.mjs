@@ -44,6 +44,7 @@ function fakeStore(over = {}) {
       id: REC, rfp_id: RFP, org_id: BIDDER_ORG, email: 'norte@canal.pt', status: 'sent',
       expires_at: null, revoked_at: null, title: 'Canalização', scope_text: 'Tubagem PEX',
       specialties: ['plumbing'], submission_deadline: '2027-06-01T00:00:00Z',
+      purpose: 'design', mode: 'light',
       rfp_status: 'published', project_id: PROJECT, package_version: 1,
       project_name: 'Casa Silva', project_location: 'Lote 12', proposal_id: PROPOSAL,
     },
@@ -82,6 +83,7 @@ function fakeStore(over = {}) {
         ...p, status: 'submitted', current_revision: args.revision,
         summary_total_cents: args.totalCents, summary_duration_wd: args.durationWd,
         conditions: args.conditions, validity_until: args.validityUntil, document_ids: args.documentIds,
+        reference_notes: args.referenceNotes,
       };
     },
   };
@@ -106,6 +108,9 @@ describe('RFP personal link — GET /rfp-links/{token}', () => {
     assert.equal(res.body.rfp.title, 'Canalização');
     assert.equal(res.body.recipient_email, 'norte@canal.pt');
     assert.equal(res.body.closed, false);
+    // D-39: the form keys its fields off the bid shape.
+    assert.equal(res.body.rfp.purpose, 'design');
+    assert.equal(res.body.rfp.mode, 'light');
     assert.equal(res.body.proposal, null, 'no proposal echoed while still invited');
     assert.equal(res.body.rfp.package.items.length, 1);
     // The view never leaks tender internals.
@@ -131,6 +136,7 @@ describe('RFP personal link — POST /rfp-links/{token}/proposal', () => {
   const goodBody = {
     total: { amount_cents: 890000, currency: 'EUR' },
     duration_wd: 60, conditions: 'IVA incluído', validity_until: '2027-07-01',
+    reference_notes: 'Moradia Quinta do Lago (2024) — ped. Eng. Sousa 9xx',
     document_ids: [DOC],
   };
 
@@ -140,6 +146,9 @@ describe('RFP personal link — POST /rfp-links/{token}/proposal', () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.status, 'submitted');
     assert.deepEqual(res.body.summary.total, { amount_cents: 890000, currency: 'EUR' });
+    // A light bid carries referenceable past work (D-39), round-tripped verbatim.
+    assert.equal(store.submitted[0].referenceNotes, 'Moradia Quinta do Lago (2024) — ped. Eng. Sousa 9xx');
+    assert.equal(res.body.reference_notes, 'Moradia Quinta do Lago (2024) — ped. Eng. Sousa 9xx');
     assert.equal(store.submitted.length, 1);
     assert.equal(store.submitted[0].recipientOrgId, BIDDER_ORG);
   });

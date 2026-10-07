@@ -29,10 +29,11 @@
 //    server's comparison projection; this surface formats them, never derives a
 //    ranking.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 import {
-  loadMyRfpsAction, loadComposerAction, loadInboxAction,
+  loadMyRfpsAction, loadComposerAction, loadInboxAction, loadCompareAction,
   createRfpAction, updateRfpAction, addRecipientsAction, publishRfpAction,
   closeRfpAction, shortlistAction, awardAction, recordOfflineAction,
   reserveProposalDocumentAction, completeProposalDocumentAction,
@@ -42,10 +43,12 @@ import {
   formatMoney, rfpStatusBadge, proposalStatusBadge, recipientStatusBadge,
   parseRecipients, createBlockedReason, publishBlockedReason,
   orderLanes, isLive, awardBlockedReason, packageSpecialties, eurosToCents,
+  compareRenderer, shortlistedLanes, compareBlockedReason,
+  serializeCompareIds, parseCompareIds, proposalDocumentDownloadPath,
   type V2Rfp, type V2Recipient, type V2ProposalLane, type V2Comparison,
-  type RfpVisibility, type RfpDraftInput,
+  type RfpVisibility, type RfpDraftInput, type RfpMode,
 } from '@/lib/v2/tendering-view';
-import type { Inbox } from '@/lib/v2/tendering';
+import type { Inbox, CompareEntry } from '@/lib/v2/tendering';
 import { digestSha256, putToTicket } from '@/lib/v2/upload-client';
 import './procurement.css';
 
@@ -57,6 +60,7 @@ export interface TaskOption {
 
 export function ProcurementSection({
   projectId, tasks, hasActiveOrg = true, initialMyRfps = null,
+  composeTaskId = null, composeMode = 'detailed',
 }: {
   projectId: string;
   /** Candidate root tasks (from the plan) the composer can put out to tender. */
@@ -70,12 +74,42 @@ export function ProcurementSection({
   hasActiveOrg?: boolean;
   /** The org's RFPs for this project, when the page already read them. */
   initialMyRfps?: V2Rfp[] | null;
+  /**
+   * A "Start tendering" deep-link (LINA-407): a plan package to open the composer
+   * on. When set (and an org is active), the composer opens straight away with
+   * this task pre-picked, in `composeMode`. Null → the normal list/empty state.
+   */
+  composeTaskId?: string | null;
+  /** The shape the deep-link asked for — `light` for a design tender. */
+  composeMode?: RfpMode;
 }) {
+  // The surface mirrors its place — which RFP is open (`?rfp=`) and, inside the
+  // inbox, which bids the Compare drill-down is over (`?compare=`) — into the
+  // address bar so a deep link is shareable and a reload lands where it left.
+  // We read the URL ONCE at mount to seed state, then own the state and mirror
+  // it back with the raw History API: a Next navigation here would re-run this
+  // route's (force-dynamic) server page and the revalidation would drop in-flight
+  // inbox state (the LINA-404 lesson).
+  const searchParams = useSearchParams();
+  const seeded = useRef(false);
+  const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get('rfp'));
+  const initialCompare = useRef<string | null>(searchParams.get('compare'));
+
   const [rfps, setRfps] = useState<V2Rfp[] | null>(initialMyRfps);
   const [loading, setLoading] = useState(hasActiveOrg && initialMyRfps === null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  // A deep-link lands straight in the composer (LINA-407). Only when an org is
+  // active — otherwise the no-org state below stands and the seed is moot.
+  const [creating, setCreating] = useState(hasActiveOrg && composeTaskId !== null);
+
+  // `?rfp=` ↔ selection. `?compare=` is written by the inbox (it owns which bids
+  // are drilled into); clearing the selection clears both.
+  const openRfp = useCallback((id: string | null) => {
+    setSelectedId(id);
+    initialCompare.current = null;
+    mirrorUrl(id, null);
+  }, []);
+  useEffect(() => { seeded.current = true; }, []);
 
   const refreshList = useCallback(async () => {
     setLoading(true);
@@ -120,7 +154,8 @@ export function ProcurementSection({
         key={selected.id}
         projectId={projectId}
         rfp={selected}
-        onBack={() => { setSelectedId(null); void refreshList(); }}
+        initialCompare={initialCompare.current}
+        onBack={() => { openRfp(null); void refreshList(); }}
         onChanged={(next) => {
           setRfps((prev) => (prev ? prev.map((r) => (r.id === next.id ? next : r)) : prev));
         }}
@@ -133,11 +168,13 @@ export function ProcurementSection({
       <NewRfp
         projectId={projectId}
         tasks={tasks}
+        initialMode={composeMode}
+        initialTaskIds={composeTaskId ? [composeTaskId] : []}
         onCancel={() => setCreating(false)}
         onCreated={(rfp) => {
           setRfps((prev) => [rfp, ...(prev ?? [])]);
           setCreating(false);
-          setSelectedId(rfp.id);
+          openRfp(rfp.id);
         }}
       />
     );
@@ -167,7 +204,7 @@ export function ProcurementSection({
               const badge = rfpStatusBadge(r.status);
               return (
                 <li key={r.id}>
-                  <button type="button" className="prc-rfp-item" onClick={() => setSelectedId(r.id)}>
+                  <button type="button" className="prc-rfp-item" onClick={() => openRfp(r.id)}>
                     <span className="prc-rfp-title">{r.title}</span>
                     <span className={`prc-badge ${badge.tone}`}>{badge.label}</span>
                   </button>
@@ -184,16 +221,32 @@ export function ProcurementSection({
 // ── Create ─────────────────────────────────────────────────────────────────
 
 function NewRfp({
-  projectId, tasks, onCancel, onCreated,
+  projectId, tasks, onCancel, onCreated, initialMode = 'detailed', initialTaskIds = [],
 }: {
   projectId: string;
   tasks: TaskOption[];
   onCancel: () => void;
   onCreated: (rfp: V2Rfp) => void;
+  /** Deep-link seed (LINA-407): a "Start tendering" link opens the composer
+   *  pre-set to Light design mode with the task already picked. */
+  initialMode?: RfpMode;
+  initialTaskIds?: string[];
 }) {
+  // Light (design) vs Detailed (execution) — D-39. Light raises a design RFP:
+  // the deliverable is the project itself (drawings + a spec), priced as a fee,
+  // so there is NO BoQ to assemble and the public form asks for a fee +
+  // portfolio + references, not a priced line list. Detailed is the as-is
+  // execution tender, byte-for-byte unchanged (purpose/mode omitted → the API
+  // back-fills execution/detailed).
+  const [mode, setMode] = useState<RfpMode>(initialMode);
+  const light = mode === 'light';
+
   const [title, setTitle] = useState('');
   const [scopeText, setScopeText] = useState('');
-  const [rootTaskIds, setRootTaskIds] = useState<string[]>([]);
+  // Only keep seeded ids that are real tasks on this plan.
+  const [rootTaskIds, setRootTaskIds] = useState<string[]>(
+    () => initialTaskIds.filter((id) => tasks.some((t) => t.id === id)),
+  );
   const [submissionDeadline, setSubmissionDeadline] = useState('');
   const [questionsDeadline, setQuestionsDeadline] = useState('');
   const [visibility, setVisibility] = useState<RfpVisibility>('invite_only');
@@ -217,6 +270,8 @@ function NewRfp({
       submissionDeadline: toIso(submissionDeadline),
       ...(questionsDeadline ? { questionsDeadline: toIso(questionsDeadline) } : {}),
       visibility,
+      // Detailed stays implicit (defaults); Light pins purpose=design, mode=light.
+      ...(light ? { purpose: 'design' as const, mode: 'light' as const } : {}),
     };
     const res = await createRfpAction(projectId, draft);
     setBusy(false);
@@ -233,6 +288,33 @@ function NewRfp({
       </div>
       {error ? <p role="alert" className="prc-error">{error}</p> : null}
 
+      {/* ── Light (design) / Detailed (execution) picker (LINA-407) ──────── */}
+      <div className="prc-field">
+        <span className="prc-label" id="prc-mode-label">What are you tendering?</span>
+        <div className="prc-seg" role="radiogroup" aria-labelledby="prc-mode-label">
+          <button
+            type="button"
+            className={`prc-seg-opt${!light ? ' is-on' : ''}`}
+            role="radio"
+            aria-checked={!light}
+            onClick={() => setMode('detailed')}
+          >
+            <span className="prc-seg-title">Detailed (build)</span>
+            <span className="prc-seg-sub">Price the plan line by line — a Bill of Quantities.</span>
+          </button>
+          <button
+            type="button"
+            className={`prc-seg-opt${light ? ' is-on' : ''}`}
+            role="radio"
+            aria-checked={light}
+            onClick={() => setMode('light')}
+          >
+            <span className="prc-seg-title">Light (design)</span>
+            <span className="prc-seg-sub">A pre-construction brief — bidders answer with a fee, portfolio and references.</span>
+          </button>
+        </div>
+      </div>
+
       <div className="prc-field">
         <label className="prc-label" htmlFor="prc-title">Title</label>
         <input
@@ -240,20 +322,22 @@ function NewRfp({
           className="prc-line"
           value={title}
           maxLength={200}
-          placeholder="e.g. Groundworks & foundations"
+          placeholder={light ? 'e.g. Architectural design — Casa Silva' : 'e.g. Groundworks & foundations'}
           onChange={(e) => setTitle(e.target.value)}
         />
         {fieldErrors.title ? <p className="prc-reject">{fieldErrors.title}</p> : null}
       </div>
 
       <div className="prc-field">
-        <label className="prc-label" htmlFor="prc-scope">Scope</label>
+        <label className="prc-label" htmlFor="prc-scope">{light ? 'Brief & deliverables' : 'Scope'}</label>
         <textarea
           id="prc-scope"
           className="prc-input"
           value={scopeText}
           maxLength={8000}
-          placeholder="What is being built and what a contractor must know to price it honestly."
+          placeholder={light
+            ? 'The design intent, the deliverables you expect (drawings, a material spec), and the constraints to work within.'
+            : 'What is being built and what a contractor must know to price it honestly.'}
           onChange={(e) => setScopeText(e.target.value)}
         />
       </div>
@@ -333,10 +417,12 @@ function NewRfp({
 // ── Detail: composer (draft) or inbox (published onward) ─────────────────────
 
 function RfpDetail({
-  projectId, rfp: initialRfp, onBack, onChanged,
+  projectId, rfp: initialRfp, initialCompare, onBack, onChanged,
 }: {
   projectId: string;
   rfp: V2Rfp;
+  /** The `?compare=` value at mount, applied once the inbox lanes have loaded. */
+  initialCompare: string | null;
   onBack: () => void;
   onChanged: (rfp: V2Rfp) => void;
 }) {
@@ -388,6 +474,7 @@ function RfpDetail({
           key={`${rfp.id}:${rfp.status}`}
           rfp={rfp}
           recipients={recipients}
+          initialCompare={initialCompare}
           onError={setError}
           onRfpChanged={setBoth}
         />
@@ -718,10 +805,11 @@ function TokenLink({ token }: { token: string }) {
 // ── The inbox (published / closed / awarded) ─────────────────────────────────
 
 function ProposalsInbox({
-  rfp, recipients, onError, onRfpChanged,
+  rfp, recipients, initialCompare, onError, onRfpChanged,
 }: {
   rfp: V2Rfp;
   recipients: V2Recipient[];
+  initialCompare: string | null;
   onError: (msg: string | null) => void;
   onRfpChanged: (rfp: V2Rfp) => void;
 }) {
@@ -731,6 +819,10 @@ function ProposalsInbox({
   const [picked, setPicked] = useState<string | null>(rfp.awarded_proposal_id ?? null);
   const [confirmingAward, setConfirmingAward] = useState(false);
   const [offlineFor, setOfflineFor] = useState<string | null>(null);
+  // The bids the Compare drill-down is over. [] = the card list; non-empty = the
+  // drill-down SURFACE. Seeded once from `?compare=` after the lanes load.
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const compareSeeded = useRef(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -742,6 +834,21 @@ function ProposalsInbox({
   useEffect(() => { void reload(); }, [reload]);
 
   const lanes = useMemo(() => orderLanes(inbox?.lanes ?? []), [inbox]);
+
+  // Open the drill-down and mirror the chosen bids into `?compare=`; [] closes it.
+  const openCompare = useCallback((ids: string[]) => {
+    setCompareIds(ids);
+    mirrorUrl(rfp.id, ids.length > 0 ? serializeCompareIds(ids) : null);
+  }, [rfp.id]);
+
+  // Apply `?compare=` once, after the lanes exist to validate it against (a stale
+  // link silently drops ids that are not bids on this RFP).
+  useEffect(() => {
+    if (compareSeeded.current || loading) return;
+    compareSeeded.current = true;
+    const ids = parseCompareIds(initialCompare, lanes.map((l) => l.proposal_id));
+    if (ids.length > 0) setCompareIds(ids);
+  }, [loading, initialCompare, lanes]);
   // A lane an emailed/online bid has actually landed on, vs one still only
   // invited. The invited lanes are where an issuer records an emailed bid; the
   // priced comparison and the award only ever consider the bids that are in.
@@ -751,6 +858,15 @@ function ProposalsInbox({
   const receiving = rfp.status === 'published' || rfp.status === 'closed';
   const winner = lanes.find((l) => l.proposal_id === picked) ?? null;
   const awardBlocked = awardBlockedReason(rfp, lanes, winner);
+  const shortlisted = useMemo(() => shortlistedLanes(lanes), [lanes]);
+  const compareBlocked = compareBlockedReason(lanes);
+  const comparing = compareIds.length > 0;
+  const comparedLanes = useMemo(
+    () => compareIds
+      .map((id) => lanes.find((l) => l.proposal_id === id))
+      .filter((l): l is V2ProposalLane => l != null),
+    [compareIds, lanes],
+  );
 
   const shortlist = async (proposalId: string) => {
     setBusy(`shortlist:${proposalId}`);
@@ -787,7 +903,7 @@ function ProposalsInbox({
       <div className="prc-composer-hd">
         <h3 className="prc-h">Proposals</h3>
         <span className="prc-count">{bids.length} in · {recipients.length} invited</span>
-        {rfp.status === 'published' ? (
+        {rfp.status === 'published' && !comparing ? (
           <button type="button" className="btn" disabled={busy === 'close'} onClick={close}>
             {busy === 'close' ? 'Closing…' : 'Close tender'}
           </button>
@@ -797,10 +913,34 @@ function ProposalsInbox({
       {inbox && !inbox.seesMoney ? (
         <p className="prc-quiet">
           You can see who bid, but not the amounts — that needs the money permission on this
-          organisation. Ask an owner to grant it to compare prices here.
+          organisation. Ask an owner to grant it to compare bids here.
         </p>
       ) : null}
 
+      {comparing ? (
+        <CompareSurface
+          rfp={rfp}
+          inbox={inbox}
+          comparedLanes={comparedLanes}
+          seesMoney={inbox?.seesMoney ?? false}
+          decided={decided}
+          picked={picked}
+          onPick={setPicked}
+          onBack={() => openCompare([])}
+          award={!decided ? (
+            <AwardBar
+              winner={winner}
+              awardBlocked={awardBlocked}
+              confirming={confirmingAward}
+              busy={busy === 'award'}
+              onStart={() => setConfirmingAward(true)}
+              onCancel={() => setConfirmingAward(false)}
+              onConfirm={award}
+            />
+          ) : null}
+        />
+      ) : (
+      <>
       {/* ── Bids that are in ─────────────────────────────────────────────── */}
       {loading ? (
         <p className="prc-quiet" role="status">Loading proposals…</p>
@@ -826,37 +966,31 @@ function ProposalsInbox({
         </ul>
       )}
 
-      {inbox?.comparison && inbox.seesMoney ? (
-        <ComparisonMatrix comparison={inbox.comparison} lanes={bids} />
+      {/* ── Shortlist → Compare: the drill-down opens only once bids are shortlisted ─ */}
+      {!loading && bids.length > 0 ? (
+        <div className="prc-actions">
+          <button
+            type="button"
+            className="btn"
+            disabled={compareBlocked !== null}
+            onClick={() => openCompare(shortlisted.map((l) => l.proposal_id))}
+          >
+            Compare shortlisted{shortlisted.length > 0 ? ` (${shortlisted.length})` : ''}
+          </button>
+          {compareBlocked ? <span className="prc-quiet">{compareBlocked}</span> : null}
+        </div>
       ) : null}
 
       {!decided && bids.length > 0 ? (
-        <div className="prc-actions">
-          {confirmingAward ? (
-            <div className="prc-confirm" role="group" aria-label="Confirm the award">
-              <p className="prc-quiet">
-                Awarding {winner?.bidder.name ?? winner?.bidder.email} closes the tender, declines every
-                other bid, and drafts their contract. It is recorded on the shared record.
-              </p>
-              <button type="button" className="btn" onClick={() => setConfirmingAward(false)}>Cancel</button>
-              <button type="button" className="btn primary" disabled={busy === 'award'} onClick={award}>
-                {busy === 'award' ? 'Awarding…' : 'Award it'}
-              </button>
-            </div>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={awardBlocked !== null}
-                onClick={() => setConfirmingAward(true)}
-              >
-                Award {winner ? `to ${winner.bidder.name ?? winner.bidder.email}` : 'the winner'}
-              </button>
-              {awardBlocked ? <span className="prc-quiet">{awardBlocked}</span> : null}
-            </>
-          )}
-        </div>
+        <AwardBar
+          winner={winner}
+          awardBlocked={awardBlocked}
+          confirming={confirmingAward}
+          busy={busy === 'award'}
+          onStart={() => setConfirmingAward(true)}
+          onCancel={() => setConfirmingAward(false)}
+          onConfirm={award}
+        />
       ) : null}
 
       {/* ── Still awaiting: invited lanes, each able to record an emailed bid ─ */}
@@ -911,7 +1045,283 @@ function ProposalsInbox({
           was asked and what came back.
         </p>
       ) : null}
+      </>
+      )}
     </section>
+  );
+}
+
+// ── Award bar (shared by the card list and the Compare drill-down) ────────────
+// An irreversible action confirms in place (never a modal): the bids stay on
+// screen behind the sentence. Greyed with its own reason when it cannot fire yet.
+
+function AwardBar({
+  winner, awardBlocked, confirming, busy, onStart, onCancel, onConfirm,
+}: {
+  winner: V2ProposalLane | null;
+  awardBlocked: string | null;
+  confirming: boolean;
+  busy: boolean;
+  onStart: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="prc-actions">
+      {confirming ? (
+        <div className="prc-confirm" role="group" aria-label="Confirm the award">
+          <p className="prc-quiet">
+            Awarding {winner?.bidder.name ?? winner?.bidder.email} closes the tender, declines every
+            other bid, and drafts their contract. It is recorded on the shared record.
+          </p>
+          <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn primary" disabled={busy} onClick={onConfirm}>
+            {busy ? 'Awarding…' : 'Award it'}
+          </button>
+        </div>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={awardBlocked !== null}
+            onClick={onStart}
+          >
+            Award {winner ? `to ${winner.bidder.name ?? winner.bidder.email}` : 'the winner'}
+          </button>
+          {awardBlocked ? <span className="prc-quiet">{awardBlocked}</span> : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Compare drill-down (a SURFACE, not a modal; LINA-411) ─────────────────────
+// Reached only after shortlisting, over the shortlisted bids (or whatever the
+// shared `?compare=` link named). Two renderers, keyed off the RFP's shape
+// (D-39): a DETAILED tender tabulates per-line prices in the Matrix; a LIGHT
+// tender — a design service, a fee not a BoQ — sets the bidders' references,
+// notes and portfolio PDFs side by side as Docs. Back returns to the cards.
+
+function CompareSurface({
+  rfp, inbox, comparedLanes, seesMoney, decided, picked, onPick, onBack, award,
+}: {
+  rfp: V2Rfp;
+  inbox: Inbox | null;
+  comparedLanes: V2ProposalLane[];
+  seesMoney: boolean;
+  decided: boolean;
+  picked: string | null;
+  onPick: (proposalId: string) => void;
+  onBack: () => void;
+  award: ReactNode;
+}) {
+  const renderer = compareRenderer(rfp);
+
+  return (
+    <section className="prc-compare" aria-label="Compare shortlisted proposals">
+      <div className="prc-composer-hd">
+        <button type="button" className="btn" onClick={onBack}>← Back to proposals</button>
+        <h4 className="prc-subh">
+          Comparing {comparedLanes.length} {comparedLanes.length === 1 ? 'bid' : 'bids'}
+          {renderer === 'docs' ? ' — references & portfolio' : ' — priced line by line'}
+        </h4>
+      </div>
+
+      {comparedLanes.length === 0 ? (
+        <p className="prc-quiet">None of the shortlisted bids are available to compare any more.</p>
+      ) : renderer === 'docs' ? (
+        <DocsCompare
+          comparedLanes={comparedLanes}
+          seesMoney={seesMoney}
+          decided={decided}
+          picked={picked}
+          onPick={onPick}
+        />
+      ) : (
+        <MatrixCompare
+          comparison={inbox?.comparison ?? null}
+          comparedLanes={comparedLanes}
+          seesMoney={seesMoney}
+          decided={decided}
+          picked={picked}
+          onPick={onPick}
+        />
+      )}
+
+      {award}
+    </section>
+  );
+}
+
+// ── Matrix renderer (detailed tender): the money-gated per-line price grid ─────
+
+function MatrixCompare({
+  comparison, comparedLanes, seesMoney, decided, picked, onPick,
+}: {
+  comparison: V2Comparison | null;
+  comparedLanes: V2ProposalLane[];
+  seesMoney: boolean;
+  decided: boolean;
+  picked: string | null;
+  onPick: (proposalId: string) => void;
+}) {
+  return (
+    <>
+      <ul className="prc-proposals">
+        {comparedLanes.map((lane) => (
+          <LaneCard
+            key={lane.proposal_id}
+            lane={lane}
+            seesMoney={seesMoney}
+            picked={picked === lane.proposal_id}
+            decided={decided}
+            busy={false}
+            onPick={() => onPick(lane.proposal_id)}
+            onShortlist={() => { /* already shortlisted; not offered in the drill-down */ }}
+            hideShortlist
+          />
+        ))}
+      </ul>
+      {!seesMoney ? (
+        <p className="prc-quiet">
+          The priced matrix needs the money permission on this organisation. You can still see who
+          was shortlisted and award the best fit.
+        </p>
+      ) : comparison ? (
+        <ComparisonMatrix comparison={comparison} lanes={comparedLanes} />
+      ) : (
+        <p className="prc-quiet">No priced lines to compare yet.</p>
+      )}
+    </>
+  );
+}
+
+// ── Docs renderer (light tender): references, notes and portfolio side by side ─
+
+function DocsCompare({
+  comparedLanes, seesMoney, decided, picked, onPick,
+}: {
+  comparedLanes: V2ProposalLane[];
+  seesMoney: boolean;
+  decided: boolean;
+  picked: string | null;
+  onPick: (proposalId: string) => void;
+}) {
+  const [entries, setEntries] = useState<Record<string, CompareEntry> | null>(null);
+  const ids = useMemo(() => comparedLanes.map((l) => l.proposal_id), [comparedLanes]);
+
+  useEffect(() => {
+    let live = true;
+    setEntries(null);
+    void loadCompareAction(ids).then((list) => {
+      if (!live) return;
+      setEntries(Object.fromEntries(list.map((e) => [e.detail.proposal_id, e])));
+    });
+    return () => { live = false; };
+  }, [ids]);
+
+  return (
+    <div className="prc-docs" role="group" aria-label="Bidder references side by side">
+      {comparedLanes.map((lane) => (
+        <DocsColumn
+          key={lane.proposal_id}
+          lane={lane}
+          entry={entries?.[lane.proposal_id] ?? null}
+          loading={entries === null}
+          seesMoney={seesMoney}
+          picked={picked === lane.proposal_id}
+          decided={decided}
+          onPick={() => onPick(lane.proposal_id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DocsColumn({
+  lane, entry, loading, seesMoney, picked, decided, onPick,
+}: {
+  lane: V2ProposalLane;
+  entry: CompareEntry | null;
+  loading: boolean;
+  seesMoney: boolean;
+  picked: boolean;
+  decided: boolean;
+  onPick: () => void;
+}) {
+  const badge = proposalStatusBadge(lane.status);
+  const name = lane.bidder.name ?? lane.bidder.email;
+  const detail = entry?.detail ?? null;
+  return (
+    <article className={`prc-doc-col${picked ? ' is-selected' : ''}`}>
+      <header className="prc-doc-col-hd">
+        <span className="prc-company">{name}</span>
+        <span className={`prc-badge ${badge.tone}`}>{badge.label}</span>
+      </header>
+
+      <dl className="prc-meta">
+        <div><dt>Fee</dt><dd>{seesMoney ? formatMoney(detail?.total) : '—'}</dd></div>
+        {detail?.duration_wd != null ? (
+          <div><dt>Lead time</dt><dd>{detail.duration_wd} working days</dd></div>
+        ) : null}
+        {detail?.validity_until ? (
+          <div><dt>Valid until</dt><dd>{formatWhen(detail.validity_until)}</dd></div>
+        ) : null}
+      </dl>
+
+      {loading ? (
+        <p className="prc-quiet" role="status">Loading…</p>
+      ) : (
+        <>
+          <div className="prc-doc-sec">
+            <span className="prc-label">References</span>
+            {detail?.reference_notes ? (
+              <p className="prc-comment">{detail.reference_notes}</p>
+            ) : (
+              <p className="prc-quiet">No references given.</p>
+            )}
+          </div>
+
+          {detail?.conditions ? (
+            <div className="prc-doc-sec">
+              <span className="prc-label">Conditions</span>
+              <p className="prc-comment">{detail.conditions}</p>
+            </div>
+          ) : null}
+
+          <div className="prc-doc-sec">
+            <span className="prc-label">Portfolio</span>
+            {entry && entry.documents.length > 0 ? (
+              <ul className="prc-doc-list">
+                {entry.documents.map((doc) => (
+                  <li key={doc.id} className="prc-doc">
+                    <a
+                      className="prc-doc-name"
+                      href={proposalDocumentDownloadPath(lane.proposal_id, doc.id)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {doc.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="prc-quiet">No files attached.</p>
+            )}
+          </div>
+        </>
+      )}
+
+      {!decided && isLive(lane) ? (
+        <div className="prc-actions">
+          <button type="button" className={`btn${picked ? ' primary' : ''}`} onClick={onPick}>
+            {picked ? 'Picked' : 'Pick to award'}
+          </button>
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -921,7 +1331,7 @@ function isAwaiting(lane: Pick<V2ProposalLane, 'status'>): boolean {
 }
 
 function LaneCard({
-  lane, seesMoney, picked, decided, busy, onPick, onShortlist,
+  lane, seesMoney, picked, decided, busy, onPick, onShortlist, hideShortlist = false,
 }: {
   lane: V2ProposalLane;
   seesMoney: boolean;
@@ -930,6 +1340,8 @@ function LaneCard({
   busy: boolean;
   onPick: () => void;
   onShortlist: () => void;
+  /** In the Compare drill-down the bids are already shortlisted; don't re-offer it. */
+  hideShortlist?: boolean;
 }) {
   const badge = proposalStatusBadge(lane.status);
   const name = lane.bidder.name ?? lane.bidder.email;
@@ -938,9 +1350,15 @@ function LaneCard({
       <div className="prc-proposal-hd">
         <span className="prc-company">{name}</span>
         <span className={`prc-badge ${badge.tone}`}>{badge.label}</span>
+        {/* price · lead time · portfolio — the three a card is read on */}
         {seesMoney ? <span className="prc-figure">{formatMoney(lane.total)}</span> : null}
         {lane.duration_wd != null ? (
           <span className="prc-figure quiet">{lane.duration_wd} working days</span>
+        ) : null}
+        {lane.document_count > 0 ? (
+          <span className="prc-figure quiet">
+            {lane.document_count} {lane.document_count === 1 ? 'file' : 'files'}
+          </span>
         ) : null}
         {lane.channel === 'email' ? <span className="prc-badge quiet">By email</span> : null}
         {lane.missing_lines > 0 ? (
@@ -948,7 +1366,7 @@ function LaneCard({
         ) : null}
         {!decided && isLive(lane) ? (
           <>
-            {lane.status === 'submitted' ? (
+            {!hideShortlist && lane.status === 'submitted' ? (
               <button type="button" className="btn" disabled={busy} onClick={onShortlist}>
                 {busy ? '…' : 'Shortlist'}
               </button>
@@ -1205,6 +1623,21 @@ function ComparisonMatrix({
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Mirror the surface's place into the address bar — `?rfp=` (which tender is
+ * open) and `?compare=` (which bids the drill-down is over) — using the raw
+ * History API so the URL is shareable and reload-safe without a Next navigation
+ * (which would re-run this force-dynamic route and revalidate away inbox state).
+ */
+function mirrorUrl(rfpId: string | null, compare: string | null): void {
+  if (typeof window === 'undefined') return;
+  const params = new URLSearchParams(window.location.search);
+  if (rfpId) params.set('rfp', rfpId); else params.delete('rfp');
+  if (compare) params.set('compare', compare); else params.delete('compare');
+  const qs = params.toString();
+  window.history.replaceState(window.history.state, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+}
 
 /** A `datetime-local` value ("2026-01-05T09:00") → an ISO instant for the wire. */
 function toIso(local: string): string {

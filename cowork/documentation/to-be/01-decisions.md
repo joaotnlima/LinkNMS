@@ -44,6 +44,7 @@ founder), **Proposed** (recommended by the review, awaiting explicit confirmatio
 | D-37 | MCP server as a client of /api/v2: acts as the person, dry-run → confirm, human-only acts excluded, tools generated from `x-mcp-tool` | Proposed |
 | D-38 | Cost roll-up per viewer is split by side: supplier ⇒ revenue, client ⇒ cost, margin = revenue − cost | Accepted (found by db/v2 checks) |
 | D-39 | Tendering has two purposes — `design` (pre-construction) and `execution` — on one RFP engine; a design award grants authoring rights on the shared design model, an execution award creates a contract + baseline. See [23](./23-design-tendering.md) | Accepted (LINA-406, founder confirmed 2026-10-05) |
+| D-40 | Marketplace is built in slices, not as one epic: **Slice 1 = self-serve apply** (a bidder that finds an `open` RFP claims its own proposal lane, `POST /rfps/{rfpId}:apply`) — the hinge that makes "convite aberto ao marketplace" work end-to-end on the lane model already shipped. Directory profiles / portfolio / reputation / billing of [07](./07-marketplace-and-billing.md) are later slices, not blockers for Slice 1. See [07 §Build slices](./07-marketplace-and-billing.md) | Accepted (LINA-406, founder "começa pelo 2" 2026-10-05) |
 
 ---
 

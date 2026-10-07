@@ -17,6 +17,7 @@ const GC_ORG = '01920000-0000-7000-8000-0000000000a2'; // participant, NOT issue
 const BIDDER_ORG = '01920000-0000-7000-8000-0000000000a3';
 const BIDDER2_ORG = '01920000-0000-7000-8000-0000000000a4';
 const STRANGER_ORG = '01920000-0000-7000-8000-0000000000a5';
+const APPLICANT_ORG = '01920000-0000-7000-8000-0000000000a6'; // bidder, never invited
 const PROJECT = '01920000-0000-7000-8000-0000000000b1';
 const TASK = '01920000-0000-7000-8000-0000000000d1';
 const RFP = '01920000-0000-7000-8000-0000000000e1';
@@ -39,6 +40,7 @@ function baseRfp(over = {}) {
     scope_text: null, specialties: ['plumbing'], visibility: 'invite_only',
     questions_deadline: null, submission_deadline: FUTURE,
     package_version: 1, status: 'published', awarded_proposal_id: null, version: 3,
+    created_at: '2026-12-01T09:00:00Z',
     ...over,
   };
 }
@@ -103,6 +105,7 @@ function fakeStore() {
     async getOrganization(id) {
       if (id === BIDDER2_ORG) return { id, kind: 'contractor', legal_name: 'Hidro Maia', billing_email: 'maia@hidro.pt' };
       if (id === BIDDER_ORG) return { id, kind: 'contractor', legal_name: 'Canalizações Norte', billing_email: 'norte@canal.pt' };
+      if (id === APPLICANT_ORG) return { id, kind: 'contractor', legal_name: 'Eléctrica Sul', billing_email: 'sul@electrica.pt' };
       return null;
     },
     async getTask(id) {
@@ -219,6 +222,19 @@ function fakeStore() {
       });
       return { items, nextCursor: null };
     },
+    // The governing RFP of a row (LINA-413) — same scoping as lanesForTask:
+    // issuer, or an org that holds a lane on it; cancelled excluded.
+    async rfpForTask(taskId, viewerOrgId) {
+      const candidates = [...rfps.values()].filter((r) => r.root_task_ids.includes(taskId)
+        && r.status !== 'cancelled'
+        && (r.issuer_org_id === viewerOrgId
+          || [...lanes.values()].some((p) => p.rfp_id === r.id && p.bidder_org_id === viewerOrgId)));
+      candidates.sort((a, b) => {
+        if ((b.status === 'awarded') - (a.status === 'awarded')) return (b.status === 'awarded') - (a.status === 'awarded');
+        return String(b.created_at).localeCompare(String(a.created_at));
+      });
+      return candidates[0] ?? null;
+    },
     async lanesOfRfp(rfpId) {
       return [...lanes.values()].filter((p) => p.rfp_id === rfpId);
     },
@@ -233,6 +249,19 @@ function fakeStore() {
         : [];
     },
     async browseOpenRfps() { return { items: [], nextCursor: null }; },
+    async applyToOpenRfp({ rfpId, orgId }) {
+      const existing = [...lanes.values()].find((l) => l.rfp_id === rfpId && l.bidder_org_id === orgId);
+      if (existing) return { proposalId: existing.id, created: false };
+      const newLane = lane2({
+        id: NEW_ID, recipient_id: NEW_ID, bidder_org_id: orgId, status: 'invited',
+        email: 'sul@electrica.pt', bidder_name: null, version: 1,
+        summary_total_cents: null, missing_lines: 1, has_plan: false,
+      });
+      lanes.set(NEW_ID, newLane);
+      docs.set(NEW_ID, { rows: [], links: [], lines: [] });
+      events.push('tendering.rfp.applied');
+      return { proposalId: NEW_ID, created: true };
+    },
     async listMyRfps(orgId) {
       return {
         items: [BIDDER_ORG, BIDDER2_ORG].includes(orgId) ? [rfps.get(RFP)] : [],
@@ -272,6 +301,20 @@ function fakeStore() {
       events.push('tendering.proposal.submitted');
       return withRfpFacts(next);
     },
+    async submitOwnBid({ proposalId, from, revision, totalCents, durationWd, conditions, validityUntil, documentIds }) {
+      const p = lanes.get(proposalId);
+      if (!p || p.status !== from) return null;
+      const next = {
+        ...p, status: 'submitted', current_revision: revision, version: p.version + 1,
+        summary_total_cents: totalCents, summary_duration_wd: durationWd,
+        conditions, validity_until: validityUntil, document_ids: documentIds,
+      };
+      lanes.set(proposalId, next);
+      ledger.push('tendering.proposal.submitted');
+      events.push('tendering.proposal.submitted');
+      return withRfpFacts(next);
+    },
+    async storedProposalDocumentIds() { return new Set(); },
     async transitionProposal({ proposalId, from, to, eventType }) {
       const p = lanes.get(proposalId);
       if (!p || p.status !== from) return null;
@@ -521,6 +564,23 @@ describe('tendering over the /api/v2 router', () => {
       assert.ok(!('total' in res.body.items.find((l) => l.proposal_id === LANE1)));
     });
 
+    test('the response carries the governing RFP window (LINA-413)', async () => {
+      const res = await dispatch('GET', `/tasks/${TASK}/proposal-lanes`, viewer(OWNER_ORG));
+      assert.equal(res.status, 200);
+      assert.ok(res.body.rfp, 'rfp window present');
+      assert.equal(res.body.rfp.id, RFP);
+      assert.equal(res.body.rfp.status, 'published');
+      assert.equal(res.body.rfp.submission_deadline, FUTURE);
+      assert.equal(res.body.rfp.opened_at, '2026-12-01T09:00:00Z');
+    });
+
+    test('a bidder on the tender sees the window; a stranger sees none', async () => {
+      const bidderRes = await dispatch('GET', `/tasks/${TASK}/proposal-lanes`, viewer(BIDDER_ORG));
+      assert.equal(bidderRes.body.rfp.id, RFP);
+      const strangerRes = await dispatch('GET', `/tasks/${TASK}/proposal-lanes`, viewer(GC_ORG));
+      assert.equal(strangerRes.body.rfp, null);
+    });
+
     test('getProposal: another bidder’s lane → 404', async () => {
       const res = await dispatch('GET', `/proposals/${LANE1}`, viewer(BIDDER2_ORG));
       assert.equal(res.status, 404);
@@ -671,6 +731,98 @@ describe('tendering over the /api/v2 router', () => {
     test('browseOpenRfps needs org:tendering:bid', async () => {
       const res = await dispatch('GET', '/marketplace/rfps', viewer(GC_ORG, { perms: [] }));
       assert.equal(res.status, 403);
+    });
+  });
+
+  describe('applyToOpenRfp (self-serve lane on an open RFP)', () => {
+    const openRfp = () => store.rfps.set(RFP, baseRfp({ visibility: 'open' }));
+
+    test('a bidder claims its own lane → 201', async () => {
+      openRfp();
+      const res = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(APPLICANT_ORG));
+      assert.equal(res.status, 201);
+      assert.equal(res.body.status, 'invited');
+      assert.ok(store.events.includes('tendering.rfp.applied'));
+    });
+
+    test('re-apply returns the same lane → 200 (idempotent)', async () => {
+      openRfp();
+      const res = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(BIDDER_ORG));
+      assert.equal(res.status, 200);
+      assert.equal(res.body.id, LANE1);
+    });
+
+    test('an invite-only RFP is not an existence oracle → 404', async () => {
+      const res = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(APPLICANT_ORG));
+      assert.equal(res.status, 404);
+    });
+
+    test('the issuer cannot bid on its own RFP → 422', async () => {
+      openRfp();
+      const res = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(OWNER_ORG));
+      assert.equal(res.status, 422);
+    });
+
+    test('needs org:tendering:bid → 403', async () => {
+      openRfp();
+      const res = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(APPLICANT_ORG, { perms: [] }));
+      assert.equal(res.status, 403);
+    });
+  });
+
+  describe('submitOwnBid (authenticated self-serve summary bid)', () => {
+    // LANE2 is BIDDER2_ORG's own invited lane — the shape a marketplace apply
+    // leaves behind, ready for its owner to price and send in one call.
+    const bid = { total: { amount_cents: 500000, currency: 'EUR' }, duration_wd: 20, document_ids: [] };
+
+    test('the bidder prices and sends its own lane → 200 submitted, summary set', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG), bid);
+      assert.equal(res.status, 200);
+      assert.equal(res.body.status, 'submitted');
+      assert.deepEqual(res.body.summary.total, { amount_cents: 500000, currency: 'EUR' });
+      assert.ok(store.events.includes('tendering.proposal.submitted'));
+    });
+
+    test('another bidder cannot submit in a lane it does not own → 404 (V8)', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER_ORG), bid);
+      assert.equal(res.status, 404);
+    });
+
+    test('a stranger never learns the lane exists → 404', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(STRANGER_ORG), bid);
+      assert.equal(res.status, 404);
+    });
+
+    test('needs org:tendering:bid → 403', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG, { perms: [] }), bid);
+      assert.equal(res.status, 403);
+    });
+
+    test('a missing total → 422 validation_failed', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG), { duration_wd: 20, document_ids: [] });
+      assert.equal(res.status, 422);
+      assert.ok(res.body.errors.total);
+    });
+
+    test('a non-EUR total → 422', async () => {
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG),
+        { ...bid, total: { amount_cents: 500000, currency: 'USD' } });
+      assert.equal(res.status, 422);
+      assert.ok(res.body.errors.total);
+    });
+
+    test('after the submission deadline → 409 invalid_transition', async () => {
+      store.rfps.set(RFP, baseRfp({ submission_deadline: '2020-01-01T00:00:00Z' }));
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG), bid);
+      assert.equal(res.status, 409);
+    });
+
+    test('once submitted, the bidder may revise its figure in place → 200', async () => {
+      await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG), bid);
+      const res = await dispatch('POST', `/proposals/${LANE2}:submit-bid`, viewer(BIDDER2_ORG),
+        { ...bid, total: { amount_cents: 480000, currency: 'EUR' } });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.summary.total.amount_cents, 480000);
     });
   });
 });

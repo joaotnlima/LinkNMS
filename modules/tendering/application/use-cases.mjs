@@ -1,6 +1,6 @@
 // Tendering module use cases (phase 6) — one function per operationId:
-//   createRfp, getRfp, updateRfp, addRecipients, listRecipients, publishRfp,
-//   addAddendum, closeRfp, cancelRfp, browseOpenRfps, listMyRfps,
+//   createRfp, getRfp, updateRfp, addRecipients, previewInviteEmail, listRecipients, publishRfp,
+//   addAddendum, closeRfp, cancelRfp, browseOpenRfps, applyToOpenRfp, listMyRfps,
 //   askClarification, answerClarification, listProposalLanes, getProposal,
 //   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
 //   getComparison, shortlistProposal, awardRfp.
@@ -29,8 +29,10 @@ import { visibilityOf, contractBody } from '../../contracting/domain/lifecycle.m
 import { rfpTransition, proposalTransition } from '../domain/lifecycle.mjs';
 import {
   rfpBody, packageBody, recipientBody, clarificationBody, laneBody, proposalBody, rfpLinkView,
+  rfpWindowBody,
 } from '../domain/wire.mjs';
 import { comparisonMatrix, missingLineCount } from '../domain/comparison.mjs';
+import { renderInviteEmail, PREVIEW_LINK_PLACEHOLDER_TOKEN } from '../domain/invite-email.mjs';
 import {
   validateAttachmentFile, attachmentStorageKey, uploadTicketBody, attachmentBody,
   MAX_ATTACHMENTS_PER_PROPOSAL,
@@ -40,6 +42,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const VISIBILITIES = new Set(['invite_only', 'open']);
+const PURPOSES = new Set(['design', 'execution']);
+const MODES = new Set(['light', 'detailed']);
 const ANCHORS = new Set(['start', 'end']);
 const ROW_KINDS = new Set(['task', 'summary', 'milestone']);
 
@@ -61,6 +65,14 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
   if (body?.visibility !== undefined && !VISIBILITIES.has(body.visibility)) {
     errors.visibility = 'invite_only or open';
   }
+  // Purpose / mode (D-39): design is always light (prices a service, no BoQ),
+  // execution defaults to detailed (the as-is). An explicit mode is honoured
+  // but may not contradict the design⇒light invariant the DB also pins.
+  const purpose = body?.purpose ?? 'execution';
+  if (!PURPOSES.has(purpose)) errors.purpose = 'design or execution';
+  const mode = body?.mode ?? (purpose === 'design' ? 'light' : 'detailed');
+  if (!MODES.has(mode)) errors.mode = 'light or detailed';
+  else if (purpose === 'design' && mode !== 'light') errors.mode = 'a design RFP is always light';
   validateDeadlines(body, errors, { submissionRequired: true });
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
@@ -102,6 +114,8 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
       issuerOrgId: viewer.orgId,
       level,
       parentContractId,
+      purpose,
+      mode,
       title: body.title.trim(),
       scopeText: body.scope_text ?? null,
       visibility: body.visibility ?? 'invite_only',
@@ -159,11 +173,56 @@ export async function getRfpByToken({ store, token }) {
     status: 200,
     body: rfpLinkView(
       { title: rec.title, scope_text: rec.scope_text, specialties: rec.specialties,
+        purpose: rec.purpose, mode: rec.mode,
         submission_deadline: rec.submission_deadline, status: rec.rfp_status },
       { pkg, project: { name: rec.project_name, location: rec.project_location },
         recipientEmail: rec.email, proposal },
     ),
   };
+}
+
+/**
+ * Validate a SUMMARY bid body — one total, a working-day duration, optional
+ * conditions/validity, and portfolio document ids. The single authority behind
+ * both the public-token submit (submitProposalByToken) and the authenticated
+ * self-serve submit (submitOwnBid), so the two simple-bid paths can never drift.
+ *
+ * The document-id check is async: each id must be a `stored` proposal_document
+ * of THIS proposal — a well-formed UUID that names someone else's file, or a
+ * ticket never completed, is refused here so a submit cannot smuggle a reference
+ * the download side would reject. Returns the field errors (empty when valid)
+ * and the de-duped document ids.
+ */
+async function validateSummaryBid({ store, proposalId, body }) {
+  const errors = {};
+  if (!Number.isInteger(body?.total?.amount_cents) || body.total.amount_cents < 0) {
+    errors.total = 'Money {amount_cents, currency}';
+  } else if (body.total.currency !== 'EUR') errors.total = 'currency must be EUR';
+  if (!Number.isInteger(body?.duration_wd) || body.duration_wd <= 0) {
+    errors.duration_wd = 'working days > 0';
+  }
+  const docs = body?.document_ids ?? [];
+  if (!Array.isArray(docs) || docs.some((d) => !UUID.test(d ?? ''))) {
+    errors.document_ids = 'document ids';
+  } else if (docs.length) {
+    const stored = await store.storedProposalDocumentIds(proposalId);
+    if (docs.some((d) => !stored.has(d))) {
+      errors.document_ids = 'each id must be a completed upload on this proposal';
+    }
+  }
+  if (body?.validity_until !== undefined && body?.validity_until !== null
+      && !DATE_ONLY.test(body.validity_until)) errors.validity_until = 'YYYY-MM-DD';
+  // Light-bid references (D-39): optional free text, capped so a single field
+  // can't be used to stuff the lane. Trimmed to null when blank.
+  let referenceNotes = body?.reference_notes;
+  if (referenceNotes !== undefined && referenceNotes !== null) {
+    if (typeof referenceNotes !== 'string') errors.reference_notes = 'text';
+    else {
+      referenceNotes = referenceNotes.trim() || null;
+      if (referenceNotes && referenceNotes.length > 4000) errors.reference_notes = '4000 chars max';
+    }
+  } else referenceNotes = null;
+  return { errors, docs: Array.isArray(docs) ? [...new Set(docs)] : [], referenceNotes };
 }
 
 /** operationId: submitProposalByToken — POST /rfp-links/{token}/proposal, security: []. */
@@ -184,28 +243,7 @@ export async function submitProposalByToken({ store, token, body }) {
     throw new ProblemError('invalid_transition', 'this RFP is no longer accepting proposals');
   }
 
-  const errors = {};
-  if (!Number.isInteger(body?.total?.amount_cents) || body.total.amount_cents < 0) {
-    errors.total = 'Money {amount_cents, currency}';
-  } else if (body.total.currency !== 'EUR') errors.total = 'currency must be EUR';
-  if (!Number.isInteger(body?.duration_wd) || body.duration_wd <= 0) {
-    errors.duration_wd = 'working days > 0';
-  }
-  // document_ids are the bidder's own uploaded attachments (LINA-370). Each
-  // must be a `stored` proposal_document of THIS proposal — a well-formed UUID
-  // that names someone else's file, or a ticket never completed, is refused
-  // here so a submit cannot smuggle a reference the download side would reject.
-  const docs = body?.document_ids ?? [];
-  if (!Array.isArray(docs) || docs.some((d) => !UUID.test(d ?? ''))) {
-    errors.document_ids = 'document ids';
-  } else if (docs.length) {
-    const stored = await store.storedProposalDocumentIds(proposal.id);
-    if (docs.some((d) => !stored.has(d))) {
-      errors.document_ids = 'each id must be a completed upload on this proposal';
-    }
-  }
-  if (body?.validity_until !== undefined && body?.validity_until !== null
-      && !DATE_ONLY.test(body.validity_until)) errors.validity_until = 'YYYY-MM-DD';
+  const { errors, docs, referenceNotes } = await validateSummaryBid({ store, proposalId: proposal.id, body });
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const outcome = proposalTransition(proposal.status, 'submit');
@@ -219,7 +257,8 @@ export async function submitProposalByToken({ store, token, body }) {
     durationWd: body.duration_wd,
     conditions: body.conditions ?? null,
     validityUntil: body.validity_until ?? null,
-    documentIds: [...new Set(docs)],
+    referenceNotes,
+    documentIds: docs,
     projectId: proposal.project_id,
     rfpId: proposal.rfp_id,
     recipientOrgId: rec.org_id ?? null,
@@ -398,8 +437,40 @@ export async function updateRfp({ viewer, store, rfpId, body, ifMatch }) {
   return { status: 200, body: rfpBody(updated) };
 }
 
+// ── invite email dispatch (LINA-412, slice E) ────────────────────────────────
+// The secure personal link a recipient receives. The token is placed ONLY here,
+// in the body the mail sender puts on the wire — never a path, a header, or a
+// log line (LINA-373/294). `/rfp/{token}` is the public, noindex form.
+function secureLinkUrl(linkBaseUrl, token) {
+  const base = String(linkBaseUrl || '').replace(/\/+$/, '');
+  return `${base}/rfp/${token}`;
+}
+
+/**
+ * Render + send one recipient's invite through the MailSender port, then record
+ * the delivery breadcrumb (status→sent, sent_at, email_message_id). Resilient:
+ * the dispatch runs AFTER the invite has committed, so a provider failure must
+ * not fail the invite — it is swallowed (never re-throwing the body/token) and
+ * the lane stays `queued` for a later re-issue to retry. Returns the (possibly
+ * updated) recipient row and the message id (null when nothing was sent).
+ */
+async function dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, token, reissue = false }) {
+  if (!mailSender || !token) return { recipient, messageId: null };
+  const email = renderInviteEmail({ rfp, linkUrl: secureLinkUrl(linkBaseUrl, token), reissue });
+  try {
+    const { id } = await mailSender.send({
+      to: recipient.email, subject: email.subject, html: email.html, text: email.text,
+    });
+    const updated = await store.markRecipientSent({ rfpId: rfp.id, recipientId: recipient.id, messageId: id });
+    return { recipient: updated ?? recipient, messageId: id };
+  } catch {
+    // Never surface the token-bearing body on an error path; leave it queued.
+    return { recipient, messageId: null };
+  }
+}
+
 /** operationId: addRecipients — each opens a lane; one personal token each. */
-export async function addRecipients({ viewer, store, rfpId, body }) {
+export async function addRecipients({ viewer, store, mailSender, linkBaseUrl, rfpId, body }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
   if (!['draft', 'published'].includes(rfp.status)) {
     throw new ProblemError('invalid_transition', `cannot invite on a ${rfp.status} RFP`);
@@ -442,13 +513,35 @@ export async function addRecipients({ viewer, store, rfpId, body }) {
     recipients: resolved,
     actor: actorOf(actor, viewer),
   });
-  return {
-    status: 201,
-    body: {
-      items: created.map(({ recipient, token }) => recipientBody(recipient, { token })),
-      next_cursor: null,
-    },
-  };
+  // Dispatch the invite email per freshly-minted link (token !== null). An
+  // existing recipient (ON CONFLICT → token null) is NOT re-sent here; use
+  // reissue for that. The token stays in the 201 body too (issuer sees it once).
+  const items = [];
+  for (const { recipient, token } of created) {
+    const out = token
+      ? await dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, token })
+      : { recipient };
+    items.push(recipientBody(out.recipient, { token }));
+  }
+  return { status: 201, body: { items, next_cursor: null } };
+}
+
+/**
+ * operationId: previewInviteEmail — the issuer previews the invite email copy
+ * BEFORE any send (pen frame 986). Rendered from the same renderer the dispatch
+ * uses, so the preview is byte-for-byte the real email — EXCEPT the link, which
+ * is a non-secret placeholder: a preview never carries a live token (LINA-373).
+ * `?reissue=true` previews the rotated-link variant; `?email=` sets the sample
+ * recipient shown in the `to` field. Issuer-only, same gate as addRecipients.
+ */
+export async function previewInviteEmail({ viewer, store, linkBaseUrl, rfpId, query }) {
+  const { rfp } = await requireIssuer({ viewer, store, rfpId });
+  const reissue = query?.reissue === 'true' || query?.reissue === true;
+  const to = EMAIL.test(query?.email ?? '') ? query.email : 'empreiteiro@exemplo.pt';
+  const email = renderInviteEmail({
+    rfp, linkUrl: secureLinkUrl(linkBaseUrl, PREVIEW_LINK_PLACEHOLDER_TOKEN), reissue,
+  });
+  return { status: 200, body: { to, subject: email.subject, html: email.html, text: email.text } };
 }
 
 /** operationId: listRecipients — per-recipient delivery status, issuer only. */
@@ -469,7 +562,7 @@ export async function listRecipients({ viewer, store, rfpId, query }) {
  * cancelled/closed RFP (nothing left to bid on) and on a SPENT link (a submitted
  * lane) — rotating a spent link would hand a second single-use submission.
  */
-export async function reissueRecipientLink({ viewer, store, rfpId, recipientId }) {
+export async function reissueRecipientLink({ viewer, store, mailSender, linkBaseUrl, rfpId, recipientId }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
   if (!UUID.test(recipientId ?? '')) throw new ProblemError('not_found', 'no such recipient');
   if (!['draft', 'published'].includes(rfp.status)) {
@@ -491,7 +584,12 @@ export async function reissueRecipientLink({ viewer, store, rfpId, recipientId }
   // Null means the lane raced to spent between the read and the rotate; answer
   // the same refusal the pre-check would have.
   if (!rotated) throw new ProblemError('invalid_transition', 'this recipient has already submitted — their link cannot be re-issued');
-  return { status: 200, body: recipientBody(rotated.recipient, { token: rotated.token }) };
+  // Send the fresh link so the issuer need not copy-paste it (LINA-412). The
+  // rotated token is still returned ONCE in the body, as before.
+  const out = await dispatchInvite({
+    store, mailSender, linkBaseUrl, rfp, recipient: rotated.recipient, token: rotated.token, reissue: true,
+  });
+  return { status: 200, body: recipientBody(out.recipient, { token: rotated.token }) };
 }
 
 /** operationId: publishRfp — human-only; one individual email per recipient. */
@@ -589,6 +687,52 @@ export async function browseOpenRfps({ viewer, store, query }) {
   return { status: 200, body: { items: items.map(rfpBody), next_cursor: nextCursor } };
 }
 
+/**
+ * operationId: applyToOpenRfp — the self-serve hinge of the open marketplace
+ * (D-15, LINA-406). A bidder that found an OPEN, published RFP through the
+ * directory claims its OWN lane, instead of waiting for the issuer to mint one.
+ * From here the authed proposal endpoints (putProposal, submitProposal) carry
+ * the lane exactly as they do an invited bidder's — the only thing the invite
+ * flow did that this skips is the emailed token (the applicant is signed in).
+ *
+ * Idempotent: the first apply creates the lane (201); re-applying returns the
+ * same lane (200), so a double-click or a retry never forks a second lane. A
+ * prior email-only invite for the org's address is adopted, not duplicated
+ * (store, UNIQUE (rfp_id, email)). This is the `proposal.submit_open`
+ * entitlement's surface; enforcement waits on billing (phase 8).
+ */
+export async function applyToOpenRfp({ viewer, store, rfpId }) {
+  requireActiveOrg(viewer);
+  if (!viewer.has('org:tendering:bid')) throw new ProblemError('forbidden', null, { reason: 'role' });
+  const rfp = await store.getRfp(rfpId);
+  // 404, not 403: an invite-only or unpublished RFP must not be an existence
+  // oracle to a stranger (V8) — only an OPEN published one is discoverable.
+  if (!rfp || rfp.visibility !== 'open' || rfp.status !== 'published') {
+    throw new ProblemError('not_found');
+  }
+  if (rfp.issuer_org_id === viewer.orgId) {
+    throw new ProblemError('validation_failed', null, { errors: { rfp: 'the issuer cannot bid on its own RFP' } });
+  }
+  if (new Date(rfp.submission_deadline) < new Date()) {
+    throw new ProblemError('invalid_transition', 'the submission deadline has passed');
+  }
+  const org = await store.getOrganization(viewer.orgId);
+  const email = org?.billing_email ?? org?.contact_email ?? null;
+  if (!email) {
+    throw new ProblemError('validation_failed', null, { errors: { org: 'your organisation needs a contact email before bidding' } });
+  }
+  const actor = await requireActor(store, viewer);
+  const { proposalId, created } = await store.applyToOpenRfp({
+    rfpId, projectId: rfp.project_id, orgId: viewer.orgId, email, actor: actorOf(actor, viewer),
+  });
+  const proposal = await store.getProposal(proposalId);
+  const doc = await store.proposalDoc(proposalId);
+  return {
+    status: created ? 201 : 200,
+    body: proposalBody(proposal, { ...doc, seesMoney: viewer.has('org:money:view') }),
+  };
+}
+
 /** operationId: listMyRfps — RFPs my org was invited to or applied to. */
 export async function listMyRfps({ viewer, store, query }) {
   requireActiveOrg(viewer);
@@ -678,8 +822,22 @@ export async function listProposalLanes({ viewer, store, taskId, query }) {
     cursor: query?.cursor ?? null,
     limit: clampLimit(query?.limit),
   });
+  // The governing RFP of this row, for the plan/Gantt procurement window
+  // (LINA-413). Read on the FIRST page only — the window is one fact about the
+  // row, not something that paginates with the lanes. Null when the row has no
+  // live tender (or the store predates this read).
+  const rfp = !query?.cursor && store.rfpForTask
+    ? await store.rfpForTask(taskId, viewer.orgId)
+    : null;
   const seesMoney = viewer.has('org:money:view');
-  return { status: 200, body: { items: items.map((l) => laneBody(l, { seesMoney })), next_cursor: nextCursor } };
+  return {
+    status: 200,
+    body: {
+      items: items.map((l) => laneBody(l, { seesMoney })),
+      rfp: rfp ? rfpWindowBody(rfp) : null,
+      next_cursor: nextCursor,
+    },
+  };
 }
 
 /** operationId: getProposal — issuer | author only (V8, 404 for anyone else). */
@@ -774,6 +932,66 @@ export async function submitProposal({ viewer, store, proposalId }) {
   if (!updated) throw new ProblemError('invalid_transition', 'someone moved this proposal first');
   const doc = await store.proposalDoc(proposalId);
   return { status: 200, body: proposalBody(updated, { ...doc, seesMoney: viewer.has('org:money:view') }) };
+}
+
+/**
+ * operationId: submitOwnBid — POST /proposals/{proposalId}:submit-bid.
+ *
+ * The authenticated twin of submitProposalByToken: a self-serve bidder that
+ * claimed its lane through the open marketplace (applyToOpenRfp, LINA-406) sends
+ * a SUMMARY bid — one total, a duration, optional conditions/validity — in one
+ * call, exactly the simple shape the public token form sends. It deliberately
+ * does NOT reuse the token submit: that records the bid to the ledger as an
+ * anonymous `public_link` with a null person, which would be a lie for a
+ * signed-in bidder. Here the actor is the real submitting person+org and the
+ * ledger notes `via: platform`.
+ *
+ * (The priced-BoQ path — putProposal/submitProposal — stays for bidders who build
+ * a full plan in their lane; this is the lump-sum lane the marketplace needs, and
+ * it stores summary fields directly with no rows/lines, the same honest shape the
+ * public-token and offline summaries take.)
+ *
+ * `submit` is allowed from invited/draft/submitted, so a bidder may revise its
+ * figure in place until the deadline; each send bumps the revision and the latest
+ * submitted revision is the one the issuer compares.
+ */
+export async function submitOwnBid({ viewer, store, proposalId, body }) {
+  requireActiveOrg(viewer);
+  if (!viewer.has('org:tendering:bid')) throw new ProblemError('forbidden', null, { reason: 'role' });
+  const { proposal, isAuthor } = await requireLane({ viewer, store, proposalId });
+  if (!isAuthor) throw new ProblemError('forbidden', 'only the bidder submits its lane', { reason: 'relationship' });
+  if (proposal.rfp_status !== 'published') {
+    throw new ProblemError('invalid_transition', 'the RFP is not open for submissions');
+  }
+  if (new Date(proposal.submission_deadline) < new Date()) {
+    throw new ProblemError('invalid_transition', 'the submission deadline has passed');
+  }
+  const { errors, docs, referenceNotes } = await validateSummaryBid({ store, proposalId: proposal.id, body });
+  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+
+  const outcome = proposalTransition(proposal.status, 'submit');
+  if (!outcome.ok) throw new ProblemError('invalid_transition', outcome.reason);
+
+  const actor = await requireActor(store, viewer);
+  const updated = await store.submitOwnBid({
+    proposalId: proposal.id,
+    from: proposal.status,
+    revision: proposal.current_revision + 1,
+    totalCents: body.total.amount_cents,
+    durationWd: body.duration_wd,
+    conditions: body.conditions ?? null,
+    validityUntil: body.validity_until ?? null,
+    referenceNotes,
+    documentIds: docs,
+    projectId: proposal.project_id,
+    rfpId: proposal.rfp_id,
+    bidderOrgId: viewer.orgId,
+    actor: actorOf(actor, viewer),
+  });
+  if (!updated) throw new ProblemError('invalid_transition', 'someone moved this proposal first');
+  const doc = await store.proposalDoc(proposal.id);
+  // The bidder always sees the money on their own proposal.
+  return { status: 200, body: proposalBody(updated, { ...doc, seesMoney: true }) };
 }
 
 /** operationId: withdrawProposal — bidder, before award. */

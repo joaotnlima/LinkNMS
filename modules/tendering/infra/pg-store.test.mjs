@@ -128,6 +128,36 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(ledger.length, 1);
   });
 
+  test('createRfp carries purpose/mode; a design RFP round-trips as light (D-39)', async () => {
+    const snapshot = await store.snapshotPackage(PROJECT, [ROOT_TASK]);
+    const designRfp = await store.createRfp({
+      id: randomUUID(), projectId: PROJECT, issuerOrgId: OWNER_ORG, level: 'owner',
+      parentContractId: null, purpose: 'design', mode: 'light',
+      title: 'Projeto de arquitetura — Casa Silva', scopeText: null,
+      visibility: 'open', questionsDeadline: null,
+      submissionDeadline: '2027-01-15T17:00:00Z',
+      rootTaskIds: [ROOT_TASK], packageRows: snapshot.rows, packageItems: snapshot.items,
+      actor: ACTOR,
+    });
+    assert.equal(designRfp.purpose, 'design');
+    assert.equal(designRfp.mode, 'light');
+
+    // The default (the as-is execution tender) is execution/detailed.
+    const execRfp = await pool.query('SELECT purpose, mode FROM tendering.rfp WHERE id = $1', [RFP]);
+    assert.equal(execRfp.rows[0].purpose, 'execution');
+    assert.equal(execRfp.rows[0].mode, 'detailed');
+
+    // The DB pins the invariant: a design RFP may never be detailed.
+    await assert.rejects(
+      pool.query(
+        `INSERT INTO tendering.rfp (id, project_id, issuer_org_id, level, purpose, mode, title, submission_deadline)
+         VALUES ($1,$2,$3,'owner','design','detailed','bad','2027-01-15T17:00:00Z')`,
+        [randomUUID(), PROJECT, OWNER_ORG],
+      ),
+      /rfp_design_is_light/,
+    );
+  });
+
   test('addRecipients opens one lane each; only the token HASH is stored', async () => {
     const created = await store.addRecipients({
       rfpId: RFP, projectId: PROJECT,

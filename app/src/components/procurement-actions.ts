@@ -19,11 +19,11 @@ import { revalidatePath } from 'next/cache';
 
 import { V2Error } from '@/lib/v2/client';
 import {
-  getMyRfps, getRfp, listRecipients, getInbox,
+  getMyRfps, getRfp, listRecipients, getInbox, getCompareEntries,
   createRfp, updateRfp, addRecipients, publishRfp, closeRfp, cancelRfp,
   shortlistProposal, awardRfp, recordOfflineProposal,
   reserveProposalDocument, completeProposalDocument,
-  type Inbox, type RfpPatch, type OfflineProposalInput, type ProposalUploadTicket,
+  type Inbox, type CompareEntry, type RfpPatch, type OfflineProposalInput, type ProposalUploadTicket,
 } from '@/lib/v2/tendering';
 import type { V2Rfp, V2Recipient, RfpDraftInput } from '@/lib/v2/tendering-view';
 
@@ -65,6 +65,11 @@ export async function loadComposerAction(rfpId: string): Promise<ComposerData | 
 
 export async function loadInboxAction(rfp: Pick<V2Rfp, 'id' | 'root_task_ids'>): Promise<Inbox> {
   return getInbox(rfp);
+}
+
+/** The Docs-renderer read: the shortlisted bids' detail + portfolio documents. */
+export async function loadCompareAction(proposalIds: string[]): Promise<CompareEntry[]> {
+  return getCompareEntries(proposalIds);
 }
 
 // ── Composer writes ───────────────────────────────────────────────────────────

@@ -15,6 +15,8 @@ export function rfpBody(row) {
     project_id: row.project_id,
     issuer_org_id: row.issuer_org_id,
     level: row.level,
+    purpose: row.purpose,
+    mode: row.mode,
     ...(row.parent_contract_id ? { parent_contract_id: row.parent_contract_id } : {}),
     root_task_ids: row.root_task_ids ?? [],
     title: row.title,
@@ -101,6 +103,11 @@ export function rfpLinkView(rfp, { pkg, project, recipientEmail, proposal, seesM
       title: rfp.title,
       scope_text: rfp.scope_text ?? undefined,
       specialties: rfp.specialties ?? [],
+      // The bid shape the form must render: a light RFP (design) asks for a fee
+      // + portfolio + references + PDF, a detailed one for a priced BoQ. The
+      // public form keys its fields off `mode` (and `purpose` for labelling).
+      purpose: rfp.purpose,
+      mode: rfp.mode,
       submission_deadline: iso(rfp.submission_deadline),
       package: packageBody(pkg.rows, pkg.items),
     },
@@ -149,6 +156,26 @@ export function laneBody(row, { seesMoney }) {
   };
 }
 
+/**
+ * #/components/schemas/RfpWindow — the governing RFP of a tendered row, as the
+ * plan/Gantt bridge needs it (LINA-413). Just the four facts that paint the
+ * procurement window on the task bar: which RFP, its lifecycle status, when
+ * tendering opened (`opened_at`, the draft's creation) and when bids are due
+ * (`submission_deadline`). The "bids in / awarded" refinement the FE derives
+ * from the lanes it already holds (a submitted lane; the awarded proposal) — no
+ * money, no counts on the wire. Null when the row has no live (non-cancelled)
+ * RFP; a cancelled tender leaves no window to paint.
+ */
+export function rfpWindowBody(row) {
+  return {
+    id: row.id,
+    status: row.status,
+    opened_at: iso(row.created_at),
+    submission_deadline: iso(row.submission_deadline),
+    ...(row.awarded_proposal_id ? { awarded_proposal_id: row.awarded_proposal_id } : {}),
+  };
+}
+
 /** #/components/schemas/Proposal — full document (issuer | author only). */
 export function proposalBody(row, { rows = [], links = [], lines = [], seesMoney }) {
   return {
@@ -192,6 +219,9 @@ export function proposalBody(row, { rows = [], links = [], lines = [], seesMoney
     } : {}),
     conditions: row.conditions ?? undefined,
     validity_until: dateOnly(row.validity_until),
+    // Light-bid references (referenceable past work / client contacts). Absent,
+    // never null, when the bidder left it blank — invariant §6.5.
+    reference_notes: row.reference_notes ?? undefined,
     document_ids: row.document_ids ?? [],
     version: row.version,
   };
