@@ -34,13 +34,13 @@ export function isEmailConfigured(env = process.env) {
 /**
  * Send one transactional email through Resend.
  *
- * @param {{ to: string|string[], subject: string, html: string, from?: string }} msg
+ * @param {{ to: string|string[], subject: string, html: string, text?: string, from?: string }} msg
  * @param {{ env?: Object, fetchImpl?: typeof fetch }} [opts]
  * @returns {Promise<{ id: string|null }>}  Resend's message id when it returns one.
  * @throws  503 `email_unconfigured` when RESEND_API_KEY is unset (fails closed);
  *          502 `email_send_failed`  when Resend rejects or the request errors.
  */
-export async function sendEmail({ to, subject, html, from }, { env = process.env, fetchImpl = fetch } = {}) {
+export async function sendEmail({ to, subject, html, text, from }, { env = process.env, fetchImpl = fetch } = {}) {
   const key = env.RESEND_API_KEY;
   if (!key) {
     // Loud, closed, and NEVER a link in the log — the whole point of ADR-0007 §5.
@@ -60,7 +60,9 @@ export async function sendEmail({ to, subject, html, from }, { env = process.env
         Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from: sender, to, subject, html }),
+      // `text` is an optional plaintext alternative; omitted from the payload
+      // when absent so existing html-only callers post exactly as before.
+      body: JSON.stringify({ from: sender, to, subject, html, ...(text ? { text } : {}) }),
     });
   } catch (cause) {
     // A network/DNS failure reaching Resend. Deliberately no body/link in scope.
