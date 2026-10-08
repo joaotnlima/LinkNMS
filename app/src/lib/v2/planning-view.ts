@@ -296,3 +296,23 @@ export function collectRowKeys(rows: StageRow[]): string[] {
   walk(rows);
   return out;
 }
+
+/**
+ * Every (id, name) in the grid tree, depth-first — the full set of tenderable
+ * packages the procurement composer can root an RFP at. LINA-420 made tendering
+ * per-task at ANY level (a pre-construction phase can carry several concurrent
+ * tenders — architecture, electrical, plumbing…), so a candidate list built from
+ * only the top-level rows would drop every nested task/sub-task and silently
+ * discard a "Start tendering" deep-link raised on one.
+ */
+export function collectRowOptions(rows: StageRow[]): Array<{ id: string; name: string }> {
+  const out: Array<{ id: string; name: string }> = [];
+  const walk = (nodes: StageRow[]): void => {
+    for (const n of nodes) {
+      out.push({ id: n.id, name: n.name });
+      if (n.children.length) walk(n.children);
+    }
+  };
+  walk(rows);
+  return out;
+}

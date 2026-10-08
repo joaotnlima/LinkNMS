@@ -62,7 +62,7 @@ export interface TaskOption {
 
 export function ProcurementSection({
   projectId, tasks, hasActiveOrg = true, initialMyRfps = null,
-  composeTaskId = null, composeMode = 'detailed',
+  composeTaskId = null, composeMode = 'detailed', openRfpId = null,
 }: {
   projectId: string;
   /** Candidate root tasks (from the plan) the composer can put out to tender. */
@@ -84,6 +84,14 @@ export function ProcurementSection({
   composeTaskId?: string | null;
   /** The shape the deep-link asked for — `light` for a design tender. */
   composeMode?: RfpMode;
+  /**
+   * A "Start tendering" deep-link raised on a task that is ALREADY out to tender
+   * (LINA-420): the mounting page resolved the task to its existing RFP so the
+   * owner lands on that tender's inbox — the submitted responses and Compare —
+   * rather than a blank composer. Takes precedence over `composeTaskId`, which
+   * the page leaves null in this case. Overridden by an explicit `?rfp=`.
+   */
+  openRfpId?: string | null;
 }) {
   // The surface mirrors its place — which RFP is open (`?rfp=`) and, inside the
   // inbox, which bids the Compare drill-down is over (`?compare=`) — into the
@@ -94,7 +102,9 @@ export function ProcurementSection({
   // inbox state (the LINA-404 lesson).
   const searchParams = useSearchParams();
   const seeded = useRef(false);
-  const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get('rfp'));
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => searchParams.get('rfp') ?? openRfpId,
+  );
   const initialCompare = useRef<string | null>(searchParams.get('compare'));
 
   const [rfps, setRfps] = useState<V2Rfp[] | null>(initialMyRfps);
