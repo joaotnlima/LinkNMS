@@ -1145,20 +1145,6 @@ export function PlanBuildEditor({
                     {copied ? 'Copied' : 'Copy link'}
                   </button>
                 ) : null}
-                {/* Quick-start a tender for this task straight from the drawer
-                    (LINA-420, the "both" entry — drawer + full-page composer).
-                    Saved rows only: the composer pre-selects a real task id. The
-                    kind (design vs execution) is the owner's choice in the composer. */}
-                {canStartTender && procurementHref && workspaceKey ? (
-                  <button
-                    type="button"
-                    className="pbx-icon"
-                    style={{ width: 'auto', padding: '0 10px' }}
-                    title="Start a tender for this task"
-                    aria-label="Start a tender for this task"
-                    onClick={() => router.push(`${procurementHref}?task=${encodeURIComponent(workspaceKey)}`)}
-                  >Start tendering</button>
-                ) : null}
                 <button
                   type="button"
                   className="pbx-icon"
@@ -1219,6 +1205,42 @@ export function PlanBuildEditor({
                 </div>
               );
             })()}
+
+            {/* ACTIONS — the prominent task-level tendering entry (LINA-420, the
+                "both" entry: this drawer + the grid-row ⤴ + the full composer).
+                The approved design (ticket mockup) makes "Start tendering" a first
+                -class action on the task, not a hidden icon. Shown only to a viewer
+                who may issue tenders (`org:tendering:issue`). A row the plan does
+                not yet hold has no real task id to package, so the action waits for
+                the next autosave and says so rather than opening the composer on a
+                phantom id. */}
+            {canStartTender && procurementHref ? (
+              <div className="pbx-drawer-actions-block" aria-label="Actions">
+                <p className="pbx-drawer-sectlabel">Actions</p>
+                {workspaceKey ? (
+                  <button
+                    type="button"
+                    className="pbx-tender-cta"
+                    onClick={() => router.push(`${procurementHref}?task=${encodeURIComponent(workspaceKey)}`)}
+                  >
+                    <span className="pbx-tender-cta-icon" aria-hidden="true">⤴</span>
+                    <span className="pbx-tender-cta-text">
+                      <span className="pbx-tender-cta-title">Start tendering</span>
+                      <span className="pbx-tender-cta-sub">Request proposals from external companies</span>
+                    </span>
+                    <span className="pbx-tender-cta-go" aria-hidden="true">›</span>
+                  </button>
+                ) : (
+                  <p className="pbx-tender-cta is-waiting">
+                    <span className="pbx-tender-cta-icon" aria-hidden="true">⤴</span>
+                    <span className="pbx-tender-cta-text">
+                      <span className="pbx-tender-cta-title">Start tendering</span>
+                      <span className="pbx-tender-cta-sub">Save the plan first — this task needs an id before it can go out to tender.</span>
+                    </span>
+                  </p>
+                )}
+              </div>
+            ) : null}
 
             <div className="pbx-drawer-meta">
               {/* Owner / Specialty now reuse the SAME Jira-style dropdown the grid

@@ -322,6 +322,31 @@
 .pbx-drawer-title { margin: 0; font-size: 20px; line-height: 1.2; }
 
 .pbx-drawer-status { display: flex; flex-direction: column; gap: var(--s2); }
+
+/* The task-level tendering action (LINA-420). A first-class, unmistakable entry
+   on the task — the ticket's approved design — in the --builder (tendering) hue,
+   not the plan-baseline blue the rest of the drawer uses. */
+.pbx-drawer-actions-block { display: flex; flex-direction: column; gap: 6px; margin-top: var(--s3); }
+.pbx-drawer-sectlabel {
+  margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted);
+}
+.pbx-tender-cta {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: start;
+  padding: 12px 14px; border-radius: 10px; border: 1px solid var(--builder);
+  background: var(--builder); color: #fff; cursor: pointer;
+}
+.pbx-tender-cta:hover { filter: brightness(0.95); }
+.pbx-tender-cta:focus-visible { outline: 2px solid var(--builder); outline-offset: 2px; }
+.pbx-tender-cta.is-waiting {
+  background: transparent; color: var(--muted); border-style: dashed;
+  border-color: var(--outline); cursor: default; margin: 0;
+}
+.pbx-tender-cta-icon { font-size: 18px; line-height: 1; flex: 0 0 auto; }
+.pbx-tender-cta-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; }
+.pbx-tender-cta-title { font-size: 14px; font-weight: 700; }
+.pbx-tender-cta-sub { font-size: 12px; opacity: 0.9; }
+.pbx-tender-cta-go { font-size: 20px; line-height: 1; flex: 0 0 auto; }
 .pbx-status-chip {
   align-self: flex-start; padding: 3px 10px; border-radius: 999px;
   border: 1px solid var(--outline); background: var(--sunken);
