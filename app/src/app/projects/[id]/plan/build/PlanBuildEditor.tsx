@@ -1052,11 +1052,13 @@ export function PlanBuildEditor({
         statusSettableKeys={statusSettableKeys}
         onStartTender={canStartTender && procurementHref
           ? (nodeKey) => router.push(
-            `${procurementHref}?task=${encodeURIComponent(nodeKey)}&mode=light`,
+            `${procurementHref}?task=${encodeURIComponent(nodeKey)}`,
           )
           : undefined}
         // Only server-persisted rows can be tendered — the composer pre-selects a
-        // real task id, so a not-yet-saved phase offers no "Start tendering" link.
+        // real task id, so a not-yet-saved row offers no "Start tendering" link.
+        // The kind (design vs execution) is the owner's choice in the composer
+        // (LINA-420), so the deep-link no longer pins a mode.
         tenderableKeys={saved}
         procurement={procurement}
       />
@@ -1142,6 +1144,20 @@ export function PlanBuildEditor({
                   >
                     {copied ? 'Copied' : 'Copy link'}
                   </button>
+                ) : null}
+                {/* Quick-start a tender for this task straight from the drawer
+                    (LINA-420, the "both" entry — drawer + full-page composer).
+                    Saved rows only: the composer pre-selects a real task id. The
+                    kind (design vs execution) is the owner's choice in the composer. */}
+                {canStartTender && procurementHref && workspaceKey ? (
+                  <button
+                    type="button"
+                    className="pbx-icon"
+                    style={{ width: 'auto', padding: '0 10px' }}
+                    title="Start a tender for this task"
+                    aria-label="Start a tender for this task"
+                    onClick={() => router.push(`${procurementHref}?task=${encodeURIComponent(workspaceKey)}`)}
+                  >Start tendering</button>
                 ) : null}
                 <button
                   type="button"

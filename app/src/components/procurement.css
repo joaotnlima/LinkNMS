@@ -82,7 +82,12 @@
 }
 .prc-rfp-item:hover { border-color: var(--plan-baseline-line); }
 .prc-rfp-item.is-active { border-color: var(--owner-fg); background: var(--owner-muted); }
-.prc-rfp-title { font-weight: 600; flex: 1 1 auto; }
+.prc-rfp-main { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.prc-rfp-title { font-weight: 600; }
+/* Per-task label (LINA-420, screen 7): the task(s) this tender roots at + kind. */
+.prc-rfp-tasks { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The Matrix | Docs override sits at the right of the compare header. */
+.prc-compare-toggle { margin-left: auto; }
 
 /* ── Task picker (root_task_ids at create) ────────────────────────────────── */
 .prc-tasks { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }

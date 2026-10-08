@@ -272,19 +272,22 @@ export interface PlanGridProps {
    */
   statusSettableKeys?: Set<string>;
   /**
-   * Raise a tender over a TOP-LEVEL row straight from the grid (LINA-407).
-   * `nodeKey` is the row's stable v2 id — the same value the composer lists as a
-   * tender package (`root_task_ids`), so the deep-link it builds pre-selects this
-   * row. Present only for a viewer with `org:tendering:issue`; absent → the
-   * "Start tendering" control is not rendered at all (the composer route is the
-   * BE-enforced door regardless).
+   * Raise a tender over ANY row — phase, task or sub-task — straight from the grid
+   * (LINA-407, broadened per LINA-420). Tendering is a per-task action: a build in
+   * pre-construction runs several concurrent tenders (architecture, electrical,
+   * plumbing…), each rooted at its own task. `nodeKey` is the row's stable v2 id —
+   * the same value the composer lists as a tender package (`root_task_ids`), so the
+   * deep-link it builds pre-selects this row. Present only for a viewer with
+   * `org:tendering:issue`; absent → the "Start tendering" control is not rendered at
+   * all (the composer route is the BE-enforced door regardless).
    */
   onStartTender?: (nodeKey: string) => void;
   /**
    * The node keys the server already persists (LINA-407). A tender is raised over
-   * a real server task, so the "Start tendering" control shows ONLY on a top-level
-   * row whose key is in here — a freshly-added, not-yet-saved phase has no server
-   * id the composer could pre-select, so it offers no link until the draft lands.
+   * a real server task, so the "Start tendering" control shows on any row — phase,
+   * task or sub-task — whose key is in here. A freshly-added, not-yet-saved row has
+   * no server id the composer could pre-select, so it offers no link until the
+   * draft lands.
    */
   tenderableKeys?: Set<string>;
   /**
@@ -1511,7 +1514,7 @@ export function PlanGrid(props: PlanGridProps) {
                         viewer who may issue tenders; it opens the composer pre-set
                         to Light (design) with this row already picked. */}
                     {props.onStartTender && props.tenderableKeys?.has(r.key) ? (
-                      <button type="button" className="pbx-icon" title="Start tendering (design)"
+                      <button type="button" className="pbx-icon" title="Start tendering"
                         aria-label={`Start tendering phase ${r.pi + 1}`}
                         onClick={(e) => { e.stopPropagation(); props.onStartTender!(r.key); }}>⤴</button>
                     ) : null}
@@ -1607,6 +1610,16 @@ export function PlanGrid(props: PlanGridProps) {
                 <span className="pgd-statuscol">{statusCell(counts, r.node, `${what[0].toUpperCase()}${what.slice(1)} ${id}`)}</span>
                 {colOrder.map(cellFor)}
                 <span className="pgd-ctl">
+                  {/* Tendering is a per-task action (LINA-420): a tender roots at
+                      ANY saved task or sub-task, not just a top-level phase, so a
+                      build can run several concurrent tenders (architecture,
+                      electrical, plumbing…). Shows only for a viewer with
+                      org:tendering:issue on a row the server already holds. */}
+                  {props.onStartTender && props.tenderableKeys?.has(r.key) ? (
+                    <button type="button" className="pbx-icon" title="Start tendering"
+                      aria-label={`Start tendering ${what} ${id}`}
+                      onClick={(e) => { e.stopPropagation(); props.onStartTender!(r.key); }}>⤴</button>
+                  ) : null}
                   {!sub ? (
                     <button type="button" className="pbx-icon" title="Add sub-task"
                       aria-label={`Add a sub-task under ${what} ${id}`} disabled={disabled}
