@@ -1052,11 +1052,13 @@ export function PlanBuildEditor({
         statusSettableKeys={statusSettableKeys}
         onStartTender={canStartTender && procurementHref
           ? (nodeKey) => router.push(
-            `${procurementHref}?task=${encodeURIComponent(nodeKey)}&mode=light`,
+            `${procurementHref}?task=${encodeURIComponent(nodeKey)}`,
           )
           : undefined}
         // Only server-persisted rows can be tendered — the composer pre-selects a
-        // real task id, so a not-yet-saved phase offers no "Start tendering" link.
+        // real task id, so a not-yet-saved row offers no "Start tendering" link.
+        // The kind (design vs execution) is the owner's choice in the composer
+        // (LINA-420), so the deep-link no longer pins a mode.
         tenderableKeys={saved}
         procurement={procurement}
       />
@@ -1203,6 +1205,42 @@ export function PlanBuildEditor({
                 </div>
               );
             })()}
+
+            {/* ACTIONS — the prominent task-level tendering entry (LINA-420, the
+                "both" entry: this drawer + the grid-row ⤴ + the full composer).
+                The approved design (ticket mockup) makes "Start tendering" a first
+                -class action on the task, not a hidden icon. Shown only to a viewer
+                who may issue tenders (`org:tendering:issue`). A row the plan does
+                not yet hold has no real task id to package, so the action waits for
+                the next autosave and says so rather than opening the composer on a
+                phantom id. */}
+            {canStartTender && procurementHref ? (
+              <div className="pbx-drawer-actions-block" aria-label="Actions">
+                <p className="pbx-drawer-sectlabel">Actions</p>
+                {workspaceKey ? (
+                  <button
+                    type="button"
+                    className="pbx-tender-cta"
+                    onClick={() => router.push(`${procurementHref}?task=${encodeURIComponent(workspaceKey)}`)}
+                  >
+                    <span className="pbx-tender-cta-icon" aria-hidden="true">⤴</span>
+                    <span className="pbx-tender-cta-text">
+                      <span className="pbx-tender-cta-title">Start tendering</span>
+                      <span className="pbx-tender-cta-sub">Request proposals from external companies</span>
+                    </span>
+                    <span className="pbx-tender-cta-go" aria-hidden="true">›</span>
+                  </button>
+                ) : (
+                  <p className="pbx-tender-cta is-waiting">
+                    <span className="pbx-tender-cta-icon" aria-hidden="true">⤴</span>
+                    <span className="pbx-tender-cta-text">
+                      <span className="pbx-tender-cta-title">Start tendering</span>
+                      <span className="pbx-tender-cta-sub">Save the plan first — this task needs an id before it can go out to tender.</span>
+                    </span>
+                  </p>
+                )}
+              </div>
+            ) : null}
 
             <div className="pbx-drawer-meta">
               {/* Owner / Specialty now reuse the SAME Jira-style dropdown the grid

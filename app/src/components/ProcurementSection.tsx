@@ -46,7 +46,7 @@ import {
   compareRenderer, shortlistedLanes, compareBlockedReason,
   serializeCompareIds, parseCompareIds, proposalDocumentDownloadPath,
   type V2Rfp, type V2Recipient, type V2ProposalLane, type V2Comparison,
-  type RfpVisibility, type RfpDraftInput, type RfpMode,
+  type RfpVisibility, type RfpDraftInput, type RfpMode, type CompareRenderer,
 } from '@/lib/v2/tendering-view';
 import type { Inbox, CompareEntry } from '@/lib/v2/tendering';
 import { digestSha256, putToTicket } from '@/lib/v2/upload-client';
@@ -62,7 +62,7 @@ export interface TaskOption {
 
 export function ProcurementSection({
   projectId, tasks, hasActiveOrg = true, initialMyRfps = null,
-  composeTaskId = null, composeMode = 'detailed',
+  composeTaskId = null, composeMode = 'detailed', openRfpId = null,
 }: {
   projectId: string;
   /** Candidate root tasks (from the plan) the composer can put out to tender. */
@@ -84,6 +84,14 @@ export function ProcurementSection({
   composeTaskId?: string | null;
   /** The shape the deep-link asked for — `light` for a design tender. */
   composeMode?: RfpMode;
+  /**
+   * A "Start tendering" deep-link raised on a task that is ALREADY out to tender
+   * (LINA-420): the mounting page resolved the task to its existing RFP so the
+   * owner lands on that tender's inbox — the submitted responses and Compare —
+   * rather than a blank composer. Takes precedence over `composeTaskId`, which
+   * the page leaves null in this case. Overridden by an explicit `?rfp=`.
+   */
+  openRfpId?: string | null;
 }) {
   // The surface mirrors its place — which RFP is open (`?rfp=`) and, inside the
   // inbox, which bids the Compare drill-down is over (`?compare=`) — into the
@@ -94,7 +102,9 @@ export function ProcurementSection({
   // inbox state (the LINA-404 lesson).
   const searchParams = useSearchParams();
   const seeded = useRef(false);
-  const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get('rfp'));
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => searchParams.get('rfp') ?? openRfpId,
+  );
   const initialCompare = useRef<string | null>(searchParams.get('compare'));
 
   const [rfps, setRfps] = useState<V2Rfp[] | null>(initialMyRfps);
@@ -204,10 +214,27 @@ export function ProcurementSection({
           <ul className="prc-rfp-list">
             {list.map((r) => {
               const badge = rfpStatusBadge(r.status);
+              // Per-task label (LINA-420, screen 7): which task(s) this tender roots
+              // at, plus its kind — "Structures · build" / "Electrical · design".
+              // Tendering is per-task now, so the task is the RFP's primary anchor.
+              const taskNames = r.root_task_ids
+                .map((id) => tasks.find((t) => t.id === id)?.name?.trim())
+                .filter((n): n is string => !!n);
+              const taskLabel = taskNames.length === 0
+                ? null
+                : taskNames.length <= 2
+                  ? taskNames.join(', ')
+                  : `${taskNames.slice(0, 2).join(', ')} +${taskNames.length - 2}`;
+              const kindLabel = r.purpose === 'design' ? 'design' : 'build';
               return (
                 <li key={r.id}>
                   <button type="button" className="prc-rfp-item" onClick={() => openRfp(r.id)}>
-                    <span className="prc-rfp-title">{r.title}</span>
+                    <span className="prc-rfp-main">
+                      <span className="prc-rfp-title">{r.title}</span>
+                      <span className="prc-rfp-tasks">
+                        {taskLabel ? `${taskLabel} · ${kindLabel}` : kindLabel}
+                      </span>
+                    </span>
                     <span className={`prc-badge ${badge.tone}`}>{badge.label}</span>
                   </button>
                 </li>
@@ -1133,7 +1160,12 @@ function CompareSurface({
   onBack: () => void;
   award: ReactNode;
 }) {
-  const renderer = compareRenderer(rfp);
+  // The renderer defaults by content (LINA-420): a light/design RFP compares as
+  // Documents, a detailed/execution RFP as the price Matrix. The owner can always
+  // override with the toggle — e.g. to read the attached PDFs of an execution bid
+  // side by side, or scan a design bid's (rare) priced lines. Null = follow auto.
+  const [override, setOverride] = useState<CompareRenderer | null>(null);
+  const renderer: CompareRenderer = override ?? compareRenderer(rfp);
 
   return (
     <section className="prc-compare" aria-label="Compare shortlisted proposals">
@@ -1143,6 +1175,18 @@ function CompareSurface({
           Comparing {comparedLanes.length} {comparedLanes.length === 1 ? 'bid' : 'bids'}
           {renderer === 'docs' ? ' — references & portfolio' : ' — priced line by line'}
         </h4>
+        <div className="prc-seg prc-compare-toggle" role="radiogroup" aria-label="Compare view">
+          <button
+            type="button" role="radio" aria-checked={renderer === 'matrix'}
+            className={`prc-seg-opt${renderer === 'matrix' ? ' is-on' : ''}`}
+            onClick={() => setOverride('matrix')}
+          >Matrix</button>
+          <button
+            type="button" role="radio" aria-checked={renderer === 'docs'}
+            className={`prc-seg-opt${renderer === 'docs' ? ' is-on' : ''}`}
+            onClick={() => setOverride('docs')}
+          >Docs</button>
+        </div>
       </div>
 
       {comparedLanes.length === 0 ? (
