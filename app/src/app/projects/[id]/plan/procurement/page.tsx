@@ -26,6 +26,7 @@ import { isSignedIn } from '@/lib/api';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContextV2 } from '@/lib/v2/shell';
 import { getPlanGrid } from '@/lib/v2/planning';
+import { collectRowOptions } from '@/lib/v2/planning-view';
 import { getRecordV2 } from '@/lib/v2/record';
 import { getMyRfps } from '@/lib/v2/tendering';
 import { viewerHasActiveOrg } from '@/lib/v2/profile';
@@ -63,18 +64,35 @@ export default async function ProcurementPage({
   const name = record?.name ?? 'This build';
   const shell = await buildShellContextV2(id, name);
 
-  // Candidate root tasks the composer tenders over → root_task_ids. The top-level
-  // WBS rows (the phases) are the natural packages; tendering one carries its whole
-  // subtree as a BoQ. Finer-grained sub-branch selection is a later refinement.
-  const tasks: TaskOption[] = grid.rows.map((r) => ({ id: r.id, name: r.name }));
+  // Candidate root tasks the composer tenders over → root_task_ids. Tendering is
+  // per-task at ANY level now (LINA-420): a pre-construction phase can run several
+  // concurrent tenders (architecture, electrical, plumbing…), each rooted at its
+  // own task or sub-task. So the candidate list is the WHOLE WBS tree flattened —
+  // not just the top-level phases — otherwise a "Start tendering" deep-link raised
+  // on a nested task is silently dropped (it fails the `tasks.some` check below)
+  // and lands on a bare list instead of the composer. This also lets the RFP list
+  // resolve a nested task's name for its per-task label.
+  const tasks: TaskOption[] = collectRowOptions(grid.rows);
 
   // getMyRfps is already org-scoped; narrow to this build so the section never
   // shows another project's tenders.
   const initialMyRfps = myRfps.filter((r) => r.project_id === id);
 
-  // A deep-link only auto-opens the composer when it names a real package on this
-  // plan (ProcurementSection re-checks too); `mode=light` picks the design shape.
-  const composeTaskId = task && tasks.some((t) => t.id === task) ? task : null;
+  // "Start tendering" from a task does two different things depending on whether
+  // that task is ALREADY out to tender:
+  //  • already tendered → open that RFP so the owner sees the responses submitted
+  //    and can compare them (the LINA-420 wake: "can't see the responses … nor
+  //    compare them"). We hand the section the existing RFP to select.
+  //  • not yet → open the composer pre-picked on that task to raise a new tender.
+  // A task may root more than one RFP over its life; we open the most recent
+  // (getMyRfps returns newest-first), which is the one the owner just means.
+  const existingForTask = task
+    ? initialMyRfps.find((r) => r.root_task_ids.includes(task)) ?? null
+    : null;
+
+  const composeTaskId =
+    !existingForTask && task && tasks.some((t) => t.id === task) ? task : null;
+  const openRfpId = existingForTask?.id ?? null;
   const composeMode = mode === 'light' ? 'light' : 'detailed';
 
   return (
@@ -100,6 +118,7 @@ export default async function ProcurementPage({
           initialMyRfps={initialMyRfps}
           composeTaskId={composeTaskId}
           composeMode={composeMode}
+          openRfpId={openRfpId}
         />
       </main>
     </PortalShell>
