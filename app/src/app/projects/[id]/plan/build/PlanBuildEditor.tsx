@@ -1186,17 +1186,17 @@ export function PlanBuildEditor({
                   </button>
                 ) : null}
                 {/* Quick-start a tender for this task straight from the drawer
-                    (LINA-420, the "both" entry — drawer + full-page composer).
-                    Saved rows only: the composer pre-selects a real task id. The
-                    kind (design vs execution) is the owner's choice in the composer. */}
-                {canStartTender && procurementHref && workspaceKey ? (
+                    header (LINA-420). Opens the in-place tendering modal over the
+                    plan (not a navigation) — same as the first-class Actions block
+                    below; saved rows only. */}
+                {canStartTender && workspaceKey ? (
                   <button
                     type="button"
                     className="pbx-icon"
                     style={{ width: 'auto', padding: '0 10px' }}
                     title="Start a tender for this task"
                     aria-label="Start a tender for this task"
-                    onClick={() => router.push(`${procurementHref}?task=${encodeURIComponent(workspaceKey)}`)}
+                    onClick={() => openTender(workspaceKey)}
                   >Start tendering</button>
                 ) : null}
                 <button
