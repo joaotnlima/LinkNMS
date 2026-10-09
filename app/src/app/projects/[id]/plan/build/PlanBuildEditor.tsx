@@ -1185,6 +1185,20 @@ export function PlanBuildEditor({
                     {copied ? 'Copied' : 'Copy link'}
                   </button>
                 ) : null}
+                {/* Quick-start a tender for this task straight from the drawer
+                    header (LINA-420). Opens the in-place tendering modal over the
+                    plan (not a navigation) — same as the first-class Actions block
+                    below; saved rows only. */}
+                {canStartTender && workspaceKey ? (
+                  <button
+                    type="button"
+                    className="pbx-icon"
+                    style={{ width: 'auto', padding: '0 10px' }}
+                    title="Start a tender for this task"
+                    aria-label="Start a tender for this task"
+                    onClick={() => openTender(workspaceKey)}
+                  >Start tendering</button>
+                ) : null}
                 <button
                   type="button"
                   className="pbx-icon"
