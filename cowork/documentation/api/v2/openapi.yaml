@@ -4341,11 +4341,19 @@ paths:
       tags:
       - Tendering
       operationId: listMyRfps
-      summary: RFPs I was invited to or applied to
+      summary: My org's tenders — issued, invited to, or applied to
       description: '**Clerk permission:** none beyond an authenticated session
 
 
-        **Relationship (LinkNMS):** none'
+        Every RFP my org issued, plus the ones it was invited to or bid on. The
+
+        issuer side is what the plan''s per-task tender bands and the "open the
+
+        existing tender" resolution read (LINA-420), so an issuer sees the tenders
+        it ran here, not only the ones it bids on.
+
+
+        **Relationship (LinkNMS):** issuer | recipient | bidder'
       parameters:
       - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/Limit'

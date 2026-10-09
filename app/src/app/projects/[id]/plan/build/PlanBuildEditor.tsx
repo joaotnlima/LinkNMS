@@ -47,7 +47,6 @@
 // /plan, which shows the "draft saved" stamp once and links to the audit trail.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 
 import {
   DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
@@ -71,6 +70,8 @@ import { PlanGrid } from './PlanGrid';
 import {
   StatusPicker, OwnerField, SpecialtyField, useSpecialtyCatalog,
 } from './plan-fields';
+import { ProcurementSection, type TaskOption } from '@/components/ProcurementSection';
+import type { V2Rfp } from '@/lib/v2/tendering-view';
 import '@/components/plan-build.css';
 
 // ── "Scheduling links" (LINA-233; typed by ADR-0020 / LINA-253) ─────────────
@@ -338,6 +339,7 @@ export function PlanBuildEditor({
   projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
   importHref = null, procurementHref = null, initialStageIds = {}, saveV2, reportProgressV2,
   canStartTender = false, procurement = {},
+  tenderInitialRfps = [], tenderTasks = [], tenderHasActiveOrg = true,
 }: {
   projectId: string;
   /**
@@ -404,8 +406,20 @@ export function PlanBuildEditor({
    * for a build with nothing out to tender. Forwarded straight to the grid.
    */
   procurement?: Record<string, ProcurementRfp>;
+  /**
+   * The in-place tendering modal's server bootstrap (LINA-420). "Start tendering"
+   * no longer navigates to /plan/procurement — it opens <ProcurementSection> in an
+   * overlay over the plan, so the owner never leaves the plan screen. These are the
+   * same reads that page did: the org's tenders for this build (`tenderInitialRfps`,
+   * used to resolve an already-tendered task to its existing tender so it opens on
+   * the responses + Compare, not a blank composer), the candidate tasks the
+   * composer can tender over (`tenderTasks`, the whole WBS flattened), and whether
+   * an org is selected (`tenderHasActiveOrg`, false → the "pick an org" state).
+   */
+  tenderInitialRfps?: V2Rfp[];
+  tenderTasks?: TaskOption[];
+  tenderHasActiveOrg?: boolean;
 }) {
-  const router = useRouter();
   const resuming = initialPhases != null && initialPhases.length > 0;
   // v2 mode (LINA-369): the save writes the build's live plan on the v2 record —
   // NOT the v1 private-draft-then-propose flow. The copy below drops the "only you
@@ -520,6 +534,36 @@ export function PlanBuildEditor({
   // (kept in stageIdByKey). Null until the plan holds this row.
   const workspaceTaskId = workspaceKey ? (stageIdByKey.get(workspaceKey) ?? workspaceKey) : null;
   const [copied, setCopied] = useState(false);
+
+  // The in-place tendering modal (LINA-420). Holds the task id the overlay is
+  // tendering over, or null when closed. "Start tendering" sets it instead of
+  // navigating to /plan/procurement, so the owner stays on the plan screen. The
+  // overlay mounts <ProcurementSection> scoped to that task.
+  const [tenderKey, setTenderKey] = useState<string | null>(null);
+  const openTender = useCallback((key: string) => setTenderKey(key), []);
+  const closeTender = useCallback(() => {
+    setTenderKey(null);
+    // ProcurementSection mirrors its selection into ?rfp=/?compare= via the raw
+    // History API; clear them on close so the plan URL does not keep a stale tender
+    // selection (the drawer's own ?task= is left untouched).
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('rfp');
+      params.delete('compare');
+      const qs = params.toString();
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+    }
+  }, []);
+  // Resolve the task the overlay is open on to an EXISTING tender (if any), exactly
+  // as the standalone procurement page did (LINA-420): an already-tendered task
+  // opens on its tender's inbox — responses + Compare — rather than a blank
+  // composer, and re-opening "Start tendering" lands there too (the "warn me a
+  // tender already exists / let me edit it" ask). A task may root more than one RFP
+  // over its life; getMyRfps is newest-first, so the first match is the live one.
+  const tenderExistingRfp = useMemo(
+    () => (tenderKey ? tenderInitialRfps.find((r) => r.root_task_ids.includes(tenderKey)) ?? null : null),
+    [tenderKey, tenderInitialRfps],
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1050,11 +1094,7 @@ export function PlanBuildEditor({
         onUnlinkDep={unlinkDep}
         onSetStatus={setStatus}
         statusSettableKeys={statusSettableKeys}
-        onStartTender={canStartTender && procurementHref
-          ? (nodeKey) => router.push(
-            `${procurementHref}?task=${encodeURIComponent(nodeKey)}`,
-          )
-          : undefined}
+        onStartTender={canStartTender ? openTender : undefined}
         // Only server-persisted rows can be tendered — the composer pre-selects a
         // real task id, so a not-yet-saved row offers no "Start tendering" link.
         // The kind (design vs execution) is the owner's choice in the composer
@@ -1146,17 +1186,17 @@ export function PlanBuildEditor({
                   </button>
                 ) : null}
                 {/* Quick-start a tender for this task straight from the drawer
-                    (LINA-420, the "both" entry — drawer + full-page composer).
-                    Saved rows only: the composer pre-selects a real task id. The
-                    kind (design vs execution) is the owner's choice in the composer. */}
-                {canStartTender && procurementHref && workspaceKey ? (
+                    header (LINA-420). Opens the in-place tendering modal over the
+                    plan (not a navigation) — same as the first-class Actions block
+                    below; saved rows only. */}
+                {canStartTender && workspaceKey ? (
                   <button
                     type="button"
                     className="pbx-icon"
                     style={{ width: 'auto', padding: '0 10px' }}
                     title="Start a tender for this task"
                     aria-label="Start a tender for this task"
-                    onClick={() => router.push(`${procurementHref}?task=${encodeURIComponent(workspaceKey)}`)}
+                    onClick={() => openTender(workspaceKey)}
                   >Start tendering</button>
                 ) : null}
                 <button
@@ -1228,23 +1268,36 @@ export function PlanBuildEditor({
                 not yet hold has no real task id to package, so the action waits for
                 the next autosave and says so rather than opening the composer on a
                 phantom id. */}
-            {canStartTender && procurementHref ? (
+            {canStartTender ? (
               <div className="pbx-drawer-actions-block" aria-label="Actions">
                 <p className="pbx-drawer-sectlabel">Actions</p>
-                {workspaceKey ? (
-                  <button
-                    type="button"
-                    className="pbx-tender-cta"
-                    onClick={() => router.push(`${procurementHref}?task=${encodeURIComponent(workspaceKey)}`)}
-                  >
-                    <span className="pbx-tender-cta-icon" aria-hidden="true">⤴</span>
-                    <span className="pbx-tender-cta-text">
-                      <span className="pbx-tender-cta-title">Start tendering</span>
-                      <span className="pbx-tender-cta-sub">Request proposals from external companies</span>
-                    </span>
-                    <span className="pbx-tender-cta-go" aria-hidden="true">›</span>
-                  </button>
-                ) : (
+                {workspaceKey ? (() => {
+                  // Does this task already have a tender? If so the action opens the
+                  // existing one (its responses + Compare, and the owner can edit /
+                  // add documents) instead of offering to raise a second — the
+                  // LINA-420 ask: "warn me a tender already exists, let me edit it".
+                  const existing = tenderInitialRfps.find((r) => r.root_task_ids.includes(workspaceKey));
+                  return (
+                    <button
+                      type="button"
+                      className="pbx-tender-cta"
+                      onClick={() => openTender(workspaceKey)}
+                    >
+                      <span className="pbx-tender-cta-icon" aria-hidden="true">⤴</span>
+                      <span className="pbx-tender-cta-text">
+                        <span className="pbx-tender-cta-title">
+                          {existing ? 'View tender' : 'Start tendering'}
+                        </span>
+                        <span className="pbx-tender-cta-sub">
+                          {existing
+                            ? 'This task already has a tender — see the responses, compare bids, or edit it.'
+                            : 'Request proposals from external companies — opens right here, over the plan.'}
+                        </span>
+                      </span>
+                      <span className="pbx-tender-cta-go" aria-hidden="true">›</span>
+                    </button>
+                  );
+                })() : (
                   <p className="pbx-tender-cta is-waiting">
                     <span className="pbx-tender-cta-icon" aria-hidden="true">⤴</span>
                     <span className="pbx-tender-cta-text">
@@ -1392,6 +1445,63 @@ export function PlanBuildEditor({
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {/* The in-place tendering modal (LINA-420). A full-height overlay over the
+          plan — the owner never leaves the plan screen. It mounts the SAME
+          <ProcurementSection> the standalone /plan/procurement page uses, scoped to
+          the task the drawer/row acted on: an already-tendered task opens on its
+          tender (responses + Compare, edit / add docs); a fresh one opens the
+          composer pre-picked on that task. ProcurementSection owns its own
+          ?rfp=/?compare= via the History API, so this does not navigate. */}
+      {tenderKey ? (
+        <div
+          className="pbx-tender-overlay"
+          role="presentation"
+          onClick={closeTender}
+        >
+          <aside
+            className="pbx-tender-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Tendering"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="pbx-tender-modal-hd">
+              <h2 className="pbx-tender-modal-title">Tendering</h2>
+              <div className="pbx-tender-modal-hdtools">
+                {procurementHref ? (
+                  <Link
+                    className="pbx-icon"
+                    href={`${procurementHref}${tenderExistingRfp ? `?rfp=${encodeURIComponent(tenderExistingRfp.id)}` : `?task=${encodeURIComponent(tenderKey)}`}`}
+                    style={{ width: 'auto', padding: '0 10px', display: 'inline-flex', alignItems: 'center' }}
+                    title="Open the full tendering page"
+                  >
+                    Open full page
+                  </Link>
+                ) : null}
+                <button
+                  type="button"
+                  className="pbx-icon"
+                  title="Close"
+                  aria-label="Close tendering"
+                  onClick={closeTender}
+                >✕</button>
+              </div>
+            </header>
+            <div className="pbx-tender-modal-body">
+              <ProcurementSection
+                projectId={projectId}
+                tasks={tenderTasks}
+                hasActiveOrg={tenderHasActiveOrg}
+                initialMyRfps={tenderInitialRfps}
+                composeTaskId={tenderExistingRfp ? null : tenderKey}
+                openRfpId={tenderExistingRfp?.id ?? null}
+                composeMode="detailed"
+              />
+            </div>
+          </aside>
         </div>
       ) : null}
     </main>

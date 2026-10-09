@@ -909,7 +909,7 @@ export async function applyToOpenRfp({ viewer, store, rfpId }) {
   };
 }
 
-/** operationId: listMyRfps — RFPs my org was invited to or applied to. */
+/** operationId: listMyRfps — RFPs my org issued, was invited to, or applied to. */
 export async function listMyRfps({ viewer, store, query }) {
   requireActiveOrg(viewer);
   const { items, nextCursor } = await store.listMyRfps(viewer.orgId, {

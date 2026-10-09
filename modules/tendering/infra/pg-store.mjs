@@ -560,13 +560,22 @@ export function createTenderingStore(pool) {
       return { items: page, nextCursor: rows.length > limit ? page[page.length - 1].id : null };
     },
 
-    /** RFPs the org was invited to or bid on (bidder home). */
+    /**
+     * The org's own tenders — every RFP it ISSUED, plus the ones it was invited
+     * to or bid on. The issuer clause is not optional: the plan's per-task tender
+     * bands and the "open the existing tender" resolution both read this list as
+     * the issuer's own tenders (app getProcurementWindows / procurement page), so
+     * an issuer-only RFP that this query dropped read to the owner as "no tender
+     * here at all" — the owner could not see a single submitted proposal on a
+     * tender they ran (LINA-420). Issuer OR recipient OR bidder, de-duplicated.
+     */
     async listMyRfps(orgId, { cursor, limit }) {
       const { rows } = await pool.query(
         `SELECT DISTINCT r.*,
                 coalesce((SELECT array_agg(task_id) FROM tendering.rfp_root WHERE rfp_id = r.id), '{}') AS root_task_ids
            FROM tendering.rfp r
-          WHERE (EXISTS (SELECT 1 FROM tendering.rfp_recipient rec
+          WHERE (r.issuer_org_id = $1
+              OR EXISTS (SELECT 1 FROM tendering.rfp_recipient rec
                           WHERE rec.rfp_id = r.id AND rec.org_id = $1)
               OR EXISTS (SELECT 1 FROM tendering.proposal p
                           WHERE p.rfp_id = r.id AND p.bidder_org_id = $1))
