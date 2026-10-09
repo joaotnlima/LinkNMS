@@ -40,7 +40,7 @@ import {
   type ComposerData,
 } from './procurement-actions';
 import {
-  formatMoney, rfpStatusBadge, proposalStatusBadge, recipientStatusBadge,
+  formatMoney, leadTimeWeeks, rfpStatusBadge, proposalStatusBadge, recipientStatusBadge,
   parseRecipients, createBlockedReason, publishBlockedReason,
   orderLanes, isLive, awardBlockedReason, packageSpecialties, eurosToCents,
   compareRenderer, shortlistedLanes, compareBlockedReason,
@@ -1414,7 +1414,9 @@ function LaneCard({
         {/* price · lead time · portfolio — the three a card is read on */}
         {seesMoney ? <span className="prc-figure">{formatMoney(lane.total)}</span> : null}
         {lane.duration_wd != null ? (
-          <span className="prc-figure quiet">{lane.duration_wd} working days</span>
+          <span className="prc-figure quiet" title={`${lane.duration_wd} working days`}>
+            {leadTimeWeeks(lane.duration_wd)}
+          </span>
         ) : null}
         {lane.document_count > 0 ? (
           <span className="prc-figure quiet">
@@ -1679,6 +1681,67 @@ function ComparisonMatrix({
           ))}
         </tbody>
       </table>
+      <ProgrammeBars comparison={comparison} byId={byId} cols={cols} />
+    </div>
+  );
+}
+
+/**
+ * The PROGRAMME section of the compare matrix (LINA-420, screen 8): each bidder's
+ * weeks-on-site as a proportional bar, read off `comparison.durations` (already on
+ * the wire; weeks via the same 5-wd week the cards speak). The shortest is tagged
+ * "fastest" — the one call this section exists to make. Nothing renders when no
+ * bidder gave a duration; it never invents a programme it wasn't told.
+ */
+function ProgrammeBars({
+  comparison, byId, cols,
+}: {
+  comparison: V2Comparison;
+  byId: Map<string, V2ProposalLane>;
+  cols: string[];
+}) {
+  // Per proposal: total working days summed over every packaged task it priced.
+  const totals = new Map<string, number>();
+  for (const id of cols) {
+    let wd = 0;
+    let any = false;
+    for (const d of comparison.durations) {
+      const v = d.by_proposal[id];
+      if (v != null && Number.isFinite(v)) { wd += v; any = true; }
+    }
+    if (any) totals.set(id, wd);
+  }
+  if (totals.size === 0) return null;
+
+  const values = [...totals.values()];
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+
+  return (
+    <div className="prc-programme">
+      <div className="prc-programme-hd">
+        Programme <span className="prc-median">weeks on site</span>
+      </div>
+      <ul className="prc-programme-rows">
+        {cols.filter((id) => totals.has(id)).map((id) => {
+          const wd = totals.get(id)!;
+          const pct = max > 0 ? Math.max(6, Math.round((wd / max) * 100)) : 0;
+          const fastest = wd === min && values.length > 1;
+          const name = byId.get(id)?.bidder.name ?? byId.get(id)?.bidder.email ?? id;
+          return (
+            <li key={id} className={`prc-programme-row${fastest ? ' is-fastest' : ''}`}>
+              <span className="prc-programme-name">{name}</span>
+              <span className="prc-programme-track" aria-hidden>
+                <span className="prc-programme-fill" style={{ width: `${pct}%` }} />
+              </span>
+              <span className="prc-programme-wks">
+                {leadTimeWeeks(wd)}
+                {fastest ? <span className="prc-badge good">fastest</span> : null}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
