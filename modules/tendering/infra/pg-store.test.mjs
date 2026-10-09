@@ -279,6 +279,21 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(stranger.items[0].bidder_org_id, BIDDER2_ORG);
   });
 
+  test('listMyRfps returns a tender to its ISSUER, not only to bidders (LINA-420)', async () => {
+    // The owner ran this RFP. Before the fix the query matched only recipient /
+    // bidder orgs, so the issuer's own list came back empty — the plan showed no
+    // tender band and the inbox was unreachable, i.e. "I cannot see the submitted
+    // offer on a tender I ran".
+    const issuer = await store.listMyRfps(OWNER_ORG, { cursor: null, limit: 50 });
+    assert.ok(issuer.items.some((r) => r.id === RFP), 'the issuer sees the RFP it issued');
+    // A bidder still sees a tender it was invited to.
+    const bidder = await store.listMyRfps(BIDDER_ORG, { cursor: null, limit: 50 });
+    assert.ok(bidder.items.some((r) => r.id === RFP), 'the bidder still sees a tender it was invited to');
+    // No double-counting: DISTINCT keeps one row even if the owner were also a bidder.
+    const ids = issuer.items.map((r) => r.id);
+    assert.equal(new Set(ids).size, ids.length, 'no duplicate rows');
+  });
+
   test('§6.4 hard case: a failing award transaction leaves NOTHING behind', async () => {
     await store.transitionRfp({
       rfpId: RFP, from: 'published', to: 'closed',

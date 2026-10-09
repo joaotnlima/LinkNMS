@@ -314,6 +314,28 @@
   padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3);
   box-shadow: -8px 0 32px color-mix(in srgb, var(--fg) 18%, transparent);
 }
+/* The in-place tendering modal (LINA-420): a large panel over the plan so the
+   owner raises a tender / reviews responses without leaving the plan screen. Sits
+   ABOVE the task drawer (z 70 > 60) since it is opened from it. */
+.pbx-tender-overlay {
+  position: fixed; inset: 0; z-index: 70;
+  background: color-mix(in srgb, var(--fg) 38%, transparent);
+  display: flex; align-items: stretch; justify-content: flex-end;
+}
+.pbx-tender-modal {
+  width: min(1040px, 100%); height: 100%; overflow-y: auto;
+  background: var(--paper); border-left: 1px solid var(--outline);
+  padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3);
+  box-shadow: -8px 0 40px color-mix(in srgb, var(--fg) 22%, transparent);
+}
+.pbx-tender-modal-hd {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  border-bottom: 1px solid var(--outline); padding-bottom: var(--s3);
+}
+.pbx-tender-modal-title { margin: 0; font-size: 20px; line-height: 1.2; }
+.pbx-tender-modal-hdtools { display: flex; align-items: center; gap: var(--s2); }
+.pbx-tender-modal-body { flex: 1; min-height: 0; }
+
 .pbx-drawer-hd { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); }
 .pbx-drawer-eyebrow {
   margin: 0 0 var(--s2); text-transform: uppercase; letter-spacing: 0.08em;
