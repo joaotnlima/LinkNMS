@@ -103,6 +103,30 @@
 .prc-matrix .prc-median { color: var(--muted); }
 .prc-matrix .prc-missing { color: var(--warn-fg); }
 
+/* ── Programme bars (LINA-420, screen 8) ───────────────────────────────────── */
+.prc-programme { margin-top: var(--s3); }
+.prc-programme-hd {
+  font-size: var(--size-caption); font-weight: 650; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--muted); margin-bottom: var(--s2);
+}
+.prc-programme-hd .prc-median { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.prc-programme-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.prc-programme-row {
+  display: grid; grid-template-columns: minmax(120px, 1fr) minmax(90px, 3fr) auto;
+  align-items: center; gap: var(--s2); font-size: var(--size-caption);
+}
+.prc-programme-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prc-programme-track { height: 8px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
+.prc-programme-fill {
+  display: block; height: 100%; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.prc-programme-row.is-fastest .prc-programme-fill { background: var(--ok-fg); }
+.prc-programme-wks {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  font-variant-numeric: tabular-nums; white-space: nowrap; justify-self: end;
+}
+
 /* ── Start / skip ────────────────────────────────────────────────────────── */
 .prc-start, .prc-composer, .prc-inbox {
   display: flex; flex-direction: column; gap: var(--s3);

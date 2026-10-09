@@ -748,6 +748,28 @@ select.pgd-tradesel:not(:disabled) { cursor: pointer; }
 .pgp-window.is-clip-start { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
 .pgp-window.is-clip-end   { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
 
+/* The in-row tender-state chip (LINA-420, screen 1): the band's state said in a
+   word, right on the task name. Toned with the SAME four colours as .pgp-window
+   above so the chip and the Gantt band always agree at a glance. A button when it
+   opens the tender, a plain span when the viewer can only read it — both look the
+   same, so the row reads consistently. */
+.pgd-tenderchip {
+  display: inline-flex; align-items: center; margin-inline-start: 6px;
+  padding: 1px 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; line-height: 1.5; white-space: nowrap;
+  --pgp-tone: var(--muted);
+  color: color-mix(in srgb, var(--pgp-tone) 85%, var(--fg));
+  background: color-mix(in srgb, var(--pgp-tone) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pgp-tone) 32%, transparent);
+}
+button.pgd-tenderchip { cursor: pointer; }
+button.pgd-tenderchip:hover { background: color-mix(in srgb, var(--pgp-tone) 22%, transparent); }
+button.pgd-tenderchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pgd-tenderchip.is-draft     { --pgp-tone: var(--muted); }
+.pgd-tenderchip.is-tendering { --pgp-tone: var(--warn-fg); }
+.pgd-tenderchip.is-bids-in   { --pgp-tone: var(--accent); }
+.pgd-tenderchip.is-awarded   { --pgp-tone: var(--success-fg, var(--success)); }
+
 /* The bids-due marker — a dotted vertical rule at the submission deadline, in the
    tender's "bids in" blue so it reads as the moment responses are due. */
 .pgp-bidsdue {

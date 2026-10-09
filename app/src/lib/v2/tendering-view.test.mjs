@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  formatMoney, rfpStatusBadge, proposalStatusBadge, recipientStatusBadge,
+  formatMoney, leadTimeWeeks, rfpStatusBadge, proposalStatusBadge, recipientStatusBadge,
   parseRecipients, createBlockedReason, publishBlockedReason,
   orderLanes, isLive, awardBlockedReason, packageSpecialties, eurosToCents,
   compareRenderer, shortlistedLanes, compareBlockedReason,
@@ -31,6 +31,28 @@ test('formatMoney: ABSENT money is "—", never €0 (the money gate at work)', 
 test('formatMoney: a non-EUR currency prints its code, negatives keep the sign', () => {
   assert.equal(formatMoney({ amount_cents: 5000, currency: 'USD' }), 'USD 50');
   assert.equal(formatMoney({ amount_cents: -2500, currency: 'EUR' }), '-€25');
+});
+
+// ── lead time in weeks (LINA-420) ───────────────────────────────────────────
+test('leadTimeWeeks: working days fold to whole weeks at 5 wd/wk', () => {
+  assert.equal(leadTimeWeeks(45), '9 wks');
+  assert.equal(leadTimeWeeks(40), '8 wks');
+  assert.equal(leadTimeWeeks(5), '1 wk');
+  assert.equal(leadTimeWeeks(7), '1 wk');   // rounds to nearest week
+  assert.equal(leadTimeWeeks(8), '2 wks');
+});
+
+test('leadTimeWeeks: a tiny-but-real duration never reads "0 wks"', () => {
+  assert.equal(leadTimeWeeks(1), '1 wk');
+  assert.equal(leadTimeWeeks(2), '1 wk');
+});
+
+test('leadTimeWeeks: absent / non-positive is "—", not a fabricated week', () => {
+  assert.equal(leadTimeWeeks(undefined), '—');
+  assert.equal(leadTimeWeeks(null), '—');
+  assert.equal(leadTimeWeeks(0), '—');
+  assert.equal(leadTimeWeeks(-5), '—');
+  assert.equal(leadTimeWeeks(Number.NaN), '—');
 });
 
 // ── badges ───────────────────────────────────────────────────────────────

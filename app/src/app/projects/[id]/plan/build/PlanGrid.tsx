@@ -64,9 +64,9 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 
 import {
   addDays, applyDrag, barRect, baseWindow, clickDates, clipBarGeom, connectorMidpoint, connectorPath,
-  fillWindow, formatDay, parseDay, procurementGeom, scheduleWindow,
+  fillWindow, formatDay, parseDay, procurementGeom, procurementState, scheduleWindow,
   type ConnectorEnd, type DragMode, type GanttWindow, type ProcurementGeom, type ProcurementRfp,
-  type TimeBase,
+  type ProcurementState, type TimeBase,
 } from '@/lib/plan-gantt';
 import {
   DEP_LABELS, childStatusCounts, criticalPathKeys, nodeIndex, nodeStatus, planLinks,
@@ -312,6 +312,17 @@ const PROC_LABEL: Record<ProcurementGeom['state'], string> = {
   tendering: 'Out to tender — bids open',
   bids_in: 'Bids in — comparing',
   awarded: 'Tender awarded',
+};
+
+/** The in-row tender-state chip (LINA-420, screen 1): the band's state said in a
+ *  word, right on the task name — so a row out to tender reads as such without
+ *  scrolling to its Gantt track (which clips off-view). `cls` tones it like the
+ *  band's colour; the full PROC_LABEL is the hover title. */
+const PROC_CHIP: Record<ProcurementState, { label: string; cls: string }> = {
+  draft: { label: 'Draft RFP', cls: 'is-draft' },
+  tendering: { label: 'Tendering', cls: 'is-tendering' },
+  bids_in: { label: 'Comparing', cls: 'is-bids-in' },
+  awarded: { label: 'Awarded', cls: 'is-awarded' },
 };
 
 /** How near (px) a link drag must come to a bar edge to snap onto it. */
@@ -1598,6 +1609,30 @@ export function PlanGrid(props: PlanGridProps) {
                     >▸</button>
                   ) : <span className="pgd-fold-spacer" aria-hidden />}
                   {name(r, id)}
+                  {/* The tender-state chip (LINA-420): the row's RFP lifecycle in a
+                      word, read straight off the `procurement` prop so it holds
+                      whether or not the Gantt band is in view. Clicking opens the
+                      tender when the viewer can (same as the ⤴ action). */}
+                  {(() => {
+                    const rfp = procurement?.[r.key];
+                    const st = rfp ? procurementState(rfp) : null;
+                    if (!st) return null;
+                    const chip = PROC_CHIP[st];
+                    const opener = props.onStartTender;
+                    return opener ? (
+                      <button
+                        type="button"
+                        className={`pgd-tenderchip ${chip.cls}`}
+                        title={PROC_LABEL[st]}
+                        aria-label={`${PROC_LABEL[st]} — open tender for ${what} ${id}`}
+                        onClick={(e) => { e.stopPropagation(); opener(r.key); }}
+                      >{chip.label}</button>
+                    ) : (
+                      <span className={`pgd-tenderchip ${chip.cls}`} title={PROC_LABEL[st]}>
+                        {chip.label}
+                      </span>
+                    );
+                  })()}
                   {/* The clay/amber tint is never the only signal (ADR-0023 §6):
                       the chip says it in words, for colour-blind readers and for
                       the screen reader walking an aria-disabled grid. */}

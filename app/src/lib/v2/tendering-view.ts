@@ -185,6 +185,19 @@ export function formatMoney(m: V2Money | null | undefined): string {
   })}`;
 }
 
+/**
+ * A proposal's lead time as whole weeks — the unit the compare cards and matrix
+ * speak (LINA-420 designs; "9 wks", not "45 working days"). The wire carries
+ * working days; a week is 5 working days (the platform's week, LINA-360). The
+ * raw working-days figure stays available as the element's title for precision.
+ * 0..4 wd still reads as "1 wk" so a short bid never shows "0 wks".
+ */
+export function leadTimeWeeks(durationWd: number | null | undefined): string {
+  if (durationWd == null || !Number.isFinite(durationWd) || durationWd <= 0) return '—';
+  const weeks = Math.max(1, Math.round(durationWd / 5));
+  return `${weeks} ${weeks === 1 ? 'wk' : 'wks'}`;
+}
+
 /** The tone a badge wears, shared vocabulary with the plan primitives. */
 export type BadgeTone = 'quiet' | 'live' | 'good' | 'off' | 'warn';
 
