@@ -43,12 +43,12 @@ import { getDefaultTemplateBody } from '@/lib/v2/plan-template';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContextV2 } from '@/lib/v2/shell';
 import { getPlanGrid, getAssignableParties } from '@/lib/v2/planning';
-import { collectRowKeys } from '@/lib/v2/planning-view';
+import { collectRowKeys, collectRowOptions } from '@/lib/v2/planning-view';
 import { planGridToDraft } from '@/lib/v2/planning-hydrate';
 import { savePlanV2, reportProgressV2 } from '@/lib/v2/plan-write';
-import { getProcurementWindows } from '@/lib/v2/tendering';
+import { getProcurementWindows, getMyRfps } from '@/lib/v2/tendering';
 import { getRecordV2 } from '@/lib/v2/record';
-import { viewerCanIssueTenders } from '@/lib/v2/profile';
+import { viewerCanIssueTenders, viewerHasActiveOrg } from '@/lib/v2/profile';
 import { getPhasesV2, getViewerPersonId } from '@/lib/v2/phases';
 import { executionPhase, signOffViewer } from '@/lib/v2/phases-view';
 import { countPlanTasks, isPlanLocked } from '@/lib/phase-signoff';
@@ -80,7 +80,7 @@ export default async function PlanPage({
   // reads. `getRecordV2` gives the shell name (fails closed to null); `getPlanGrid`
   // gives the WBS; `getPhasesV2` gives the sign-off state (fails closed to []); and
   // `getViewerPersonId` is the id the sign-off requests are keyed on.
-  const [grid, record, phaseList, myPersonId, parties, canStartTender, procurement] = await Promise.all([
+  const [grid, record, phaseList, myPersonId, parties, canStartTender, procurement, myRfps, tenderHasActiveOrg] = await Promise.all([
     getPlanGrid(id),
     getRecordV2(id),
     getPhasesV2(id),
@@ -88,7 +88,21 @@ export default async function PlanPage({
     getAssignableParties(id),
     viewerCanIssueTenders(),
     getProcurementWindows(id),
+    // The tendering surface now opens IN PLACE as a modal over the plan (LINA-420:
+    // "a modal, so I don't exit the plan screen") rather than navigating to the
+    // sibling /plan/procurement route. So the editor needs the same server reads
+    // that page did — the org's tenders for this build (first paint, not a
+    // spinner) and whether an org is even selected — to mount <ProcurementSection>
+    // in the overlay. Both fail closed (empty list / false).
+    getMyRfps(),
+    viewerHasActiveOrg(),
   ]);
+  // Narrow the org's RFPs to this build (getMyRfps is org-scoped across projects)
+  // and flatten the WHOLE WBS into the composer's candidate-task list — a tender
+  // can be raised on any task at any depth (LINA-420), so the list is not just the
+  // top-level phases.
+  const tenderInitialRfps = myRfps.filter((r) => r.project_id === id);
+  const tenderTasks = collectRowOptions(grid.rows);
   const name = record?.name ?? 'This build';
   const shell = await buildShellContextV2(id, name);
 
@@ -182,7 +196,10 @@ export default async function PlanPage({
           // The status picker's v2 progress-write door (LINA-384). Append-only,
           // keyed on the stable v2 task id; refusals roll the picker back inline.
           reportProgressV2={reportProgressV2}
-          // The door to the plan's Procurement surface (its own page, LINA-371).
+          // The door to the plan's Procurement surface. Since LINA-420 "Start
+          // tendering" opens IN PLACE as a modal over the plan (below) instead of
+          // navigating here; this href is kept only as the modal's "open the full
+          // tendering page" escape hatch.
           procurementHref={`/projects/${id}/plan/procurement`}
           // Gate the per-package "Start tendering" deep-link (LINA-407) on the
           // org-role permission, resolved server-side — not a client claim.
@@ -190,6 +207,14 @@ export default async function PlanPage({
           // The tendering⇄schedule bridge (LINA-413): the procurement window each
           // out-to-tender row paints on its Gantt bar, keyed by task id.
           procurement={procurement}
+          // The in-place tendering modal's server bootstrap (LINA-420): the org's
+          // tenders for this build, the candidate tasks (whole WBS), and whether an
+          // org is selected — so the overlay mounts <ProcurementSection> without a
+          // navigation. The owner now sees responses + Compare, and re-opening a
+          // tendered task lands on its existing tender, right over the plan.
+          tenderInitialRfps={tenderInitialRfps}
+          tenderTasks={tenderTasks}
+          tenderHasActiveOrg={tenderHasActiveOrg}
         />
       ) : (
         <main className="pi">
