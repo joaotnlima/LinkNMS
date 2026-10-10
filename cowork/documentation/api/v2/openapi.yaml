@@ -8929,6 +8929,12 @@ components:
           type: array
           items:
             type: string
+        assignable_roles:
+          type: array
+          description: The catalogue roles the active organisation can hand out (its kind's role set, doc 16 §4)
+            — what the member-management screen offers (PRD-12 N-9). Empty without an active org.
+          items:
+            $ref: '#/components/schemas/OrgRole'
         organizations:
           type: array
           items:

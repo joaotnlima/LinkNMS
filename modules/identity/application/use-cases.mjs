@@ -7,6 +7,7 @@
 // (invariant §6.4); a use case never half-commits.
 import { ProblemError } from '../../../platform/errors.mjs';
 import { commandFor } from '../domain/mirror.mjs';
+import { ROLE_SETS } from '../domain/access.mjs';
 import { verifySvix } from '../infra/svix.mjs';
 
 const CREATABLE_KINDS = new Set(['household', 'contractor', 'consultant']);
@@ -30,6 +31,8 @@ export async function getMe({ viewer, store }) {
       active_org: active ? orgBody(active.org) : null,
       org_role: active ? viewer.orgRole : null,
       permissions: active ? viewer.permissionList() : [],
+      // PRD-12 N-9: what the members screen may offer — doc 16 §4, never re-derived in the UI.
+      assignable_roles: active ? [...(ROLE_SETS[active.org.kind] ?? [])] : [],
       organizations: organizations.map((m) => ({ org: orgBody(m.org), org_role: m.org_role })),
       // project.project_invitation is phase-2 surface; until the project
       // module lands, there is nothing that could have invited this person.

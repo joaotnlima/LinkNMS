@@ -16,6 +16,7 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
   (`PATCH /organizations/{orgId}/members/{personId}`), `removeMember` (`DELETE …`) — Clerk invitation /
   membership through the identity module's Clerk gateway, role within the org kind's role set, the last admin
   protected, `seats` entitlement on invite (402). All `x-human-only`.
+- `getMe` gains `assignable_roles` — the active org kind's role set, so the members screen never re-derives doc 16 §4.
 - `listMembers` items are now `Member` (`Person` + `org_role`), which is what the handler always returned.
 - **New (Billing):** `getMySubscription` — `GET /billing/subscription`: the active org's subscription with its
   `plan` (404 when it never subscribed).
