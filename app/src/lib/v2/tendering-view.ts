@@ -26,6 +26,8 @@
 //     the server's comparison projection; this file formats them, it never
 //     derives a total or a ranking. The issuer ranks bids, we do not.
 
+import { formatCents } from '../format.ts';
+
 // ── Wire shapes (subset), verbatim against modules/tendering/domain/wire.mjs
 // and cowork/documentation/api/v2/openapi.yaml. Restated locally, the same
 // discipline as `record-view.ts`: a drift in the module's projection lands as a
@@ -177,12 +179,8 @@ export interface V2Comparison {
  */
 export function formatMoney(m: V2Money | null | undefined): string {
   if (!m || !Number.isFinite(m.amount_cents)) return '—';
-  const sign = m.amount_cents < 0 ? '-' : '';
-  const abs = Math.abs(m.amount_cents);
-  const symbol = m.currency === 'EUR' ? '€' : `${m.currency} `;
-  return `${sign}${symbol}${(abs / 100).toLocaleString('en-US', {
-    minimumFractionDigits: 0, maximumFractionDigits: 0,
-  })}`;
+  // The one shared formatter (lib/format.ts) — a bid and a budget read alike.
+  return formatCents(m.amount_cents, { currency: m.currency });
 }
 
 /**
