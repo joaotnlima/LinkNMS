@@ -71,12 +71,11 @@ export function rekeyWire(nodes: AuthoredNode[], idByKey: IdByKey): AuthoredNode
  */
 export function draftKeys(phases: PhaseDraft[]): string[] {
   const out: string[] = [];
+  // Every level, depth-first (PRD-01 G-1: the outline is up to 5 levels deep).
+  const visit = (t: TaskDraft) => { out.push(t.key); (t.children ?? []).forEach(visit); };
   for (const p of phases) {
     out.push(p.key);
-    for (const t of p.tasks) {
-      out.push(t.key);
-      for (const s of t.children ?? []) out.push(s.key);
-    }
+    p.tasks.forEach(visit);
   }
   return out;
 }

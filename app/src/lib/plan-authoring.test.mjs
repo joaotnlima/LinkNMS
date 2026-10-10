@@ -3,7 +3,8 @@
 // The screen is copy + layout; these seams are the logic:
 //   1. the seeded skeleton matches the pen (names only — no dates, no sub-tasks);
 //   2. the pure draft ops add / rename / reorder / remove without mutating;
-//   3. `toWire` enforces the depth contract (three levels, never four — LINA-243),
+//   3. `toWire` enforces the depth contract (MAX_DEPTH = 5 levels — PRD-01 G-1,
+//      was three under LINA-243),
 //      drops empty phases, refuses a nameless one, and normalises blank dates to
 //      null — exactly what the server re-validates, so the author sees the refusal
 //      beside the field.
@@ -27,6 +28,9 @@ import {
   // The third level (LINA-243).
   addSubtask, renameSubtask, setSubtaskDate, setSubtaskDates, setSubtaskDescription, removeSubtask,
   moveSubtask, reorderSubtask, subtaskCount,
+  // Path-addressed ops + the 5-level cap (PRD-01 G-1).
+  MAX_DEPTH, addChildAt, canAddChildAt, renameAt, setDatesAt, removeAt, reorderAt, taskAtPath, pathOfKey,
+  promoteAt, demoteAt, canDemoteAt, breakdownOf,
   // Owner + specialty (LINA-235/246).
   setAssignee, setTrade, stageMeta,
   // Child-status meter + WBS promote/demote (LINA-259).
@@ -685,18 +689,107 @@ test('toWire: a task emits its sub-tasks as children, blanks dropped, nameless r
   ]), (e) => e instanceof PlanAuthorError && e.code === 'invalid_name');
 });
 
-test('toWire: a FOURTH level is refused here, with the server’s own too_deep', () => {
+// A chain of nested tasks under one phase, `depth` levels in total (phase = 1).
+function chain(depth) {
+  let node = null;
+  for (let level = depth; level >= 2; level -= 1) {
+    node = {
+      key: `n${level}`, name: `Level ${level}`, start: '', end: '', description: '', dependsOn: [],
+      assigneePartyId: null, trade: '', children: node ? [node] : [],
+    };
+  }
+  return [{ key: 'p1', name: 'Phase A', dependsOn: [], assigneePartyId: null, trade: '', tasks: node ? [node] : [] }];
+}
+
+test('toWire: a SIXTH level is refused here with too_deep; five serialise recursively (PRD-01 G-1)', () => {
+  assert.equal(MAX_DEPTH, 5);
   // No editor op can build this — it is the belt to the braces, so a draft that
   // somehow nests deeper is refused before the round-trip rather than by the API.
-  assert.throws(() => toWire([
-    { key: 'p1', name: 'Phase A', dependsOn: [], tasks: [
-      { key: 't1', name: 'Framing', start: '', end: '', description: '', dependsOn: [], children: [
-        { key: 's1', name: 'Order the rebar', start: '', end: '', description: '', dependsOn: [], children: [
-          { key: 'x1', name: 'Too deep', start: '', end: '', description: '', dependsOn: [], children: [] },
-        ] },
-      ] },
-    ] },
-  ]), (e) => e instanceof PlanAuthorError && e.code === 'too_deep');
+  assert.throws(() => toWire(chain(6)), (e) => e instanceof PlanAuthorError && e.code === 'too_deep');
+  const wire = toWire(chain(5));
+  let n = wire[0];
+  for (let level = 2; level <= 5; level += 1) {
+    assert.equal(n.children.length, 1);
+    n = n.children[0];
+    assert.equal(n.name, `Level ${level}`);
+  }
+  assert.equal(n.children, undefined, 'a leaf omits children, as on a two-level plan');
+});
+
+test('a 5-level plan round-trips: toWire → hydrateDraft → toWire loses no row (PRD-01 G-1)', () => {
+  const asNodes = (nodes) => nodes.map((n) => ({
+    id: n.key, key: n.key, name: n.name, plannedStartDate: n.plannedStartDate ?? null,
+    plannedEndDate: n.plannedEndDate ?? null,
+    dependencies: n.dependsOn.map((d) => ({ on: d.key, type: d.type })),
+    children: asNodes(n.children ?? []),
+  }));
+  let phases = chain(5);
+  phases = setDependsOn(phases, 'n5', [{ on: 'n2', type: 'starts_with' }]);
+  const first = toWire(phases);
+  const back = hydrateDraft(asNodes(first));
+  assert.deepEqual(toWire(back), first);
+  assert.deepEqual(planNodes(back).map((x) => x.outline), ['1', '1.1', '1.1.1', '1.1.1.1', '1.1.1.1.1']);
+  assert.deepEqual(planNodes(back).map((x) => x.level), [1, 2, 3, 4, 5]);
+});
+
+test('path ops: add / rename / date / remove / reorder at level 5, and nothing past it', () => {
+  let phases = chain(4);
+  const p4 = pathOfKey(phases, 'n4');
+  assert.deepEqual(p4, [0, 0, 0, 0]);
+  assert.equal(canAddChildAt(p4), true);
+  phases = addChildAt(phases, p4);
+  phases = addChildAt(phases, p4);
+  const leafPath = [...p4, 1];
+  phases = renameAt(phases, leafPath, 'Deep B');
+  phases = setDatesAt(phases, leafPath, '2027-01-04', '2027-01-08');
+  assert.equal(taskAtPath(phases, leafPath).name, 'Deep B');
+  assert.equal(taskAtPath(phases, leafPath).end, '2027-01-08');
+  // Level 5 is the floor: no child may be added under it.
+  assert.equal(canAddChildAt(leafPath), false);
+  assert.equal(addChildAt(phases, leafPath), phases);
+  // Reorder within the level-4 parent, then remove one.
+  phases = reorderAt(phases, p4, 1, 0);
+  assert.equal(taskAtPath(phases, [...p4, 0]).name, 'Deep B');
+  phases = removeAt(phases, [...p4, 0]);
+  assert.equal(taskAtPath(phases, p4).children.length, 1);
+  assert.equal(subtaskCount(phases), 3);
+});
+
+test('promote/demote at every level respect MAX_DEPTH and carry the subtree', () => {
+  let phases = chain(4); // 1 > 1.1 > 1.1.1 > 1.1.1.1
+  phases = addChildAt(phases, [0]); // a second task, 1.2
+  const second = [0, 1];
+  // 1.2 indents under 1.1 → level 3; its subtree (none) fits.
+  assert.equal(canDemoteAt(phases, second), true);
+  let out = demoteAt(phases, second);
+  assert.equal(taskAtPath(out, [0, 0, 1]).key, taskAtPath(phases, second).key);
+  // 1.1.1 (with a child) can promote to level 2, carrying 1.1.1.1 with it.
+  out = promoteAt(phases, [0, 0, 0]);
+  assert.equal(taskAtPath(out, [0, 1]).key, 'n3');
+  assert.equal(taskAtPath(out, [0, 1, 0]).key, 'n4');
+  // A whole 4-level-deep subtree cannot indent past level 5.
+  let deep = chain(5);
+  deep = addChildAt(deep, [0]);
+  deep = renameAt(deep, [0, 1], 'Sibling');
+  // Moving the 1.1 subtree (height 3) under a sibling would put its leaf at level 6.
+  deep = reorderAt(deep, [0], 1, 0);
+  assert.equal(canDemoteAt(deep, [0, 1]), false);
+  assert.equal(demoteAt(deep, [0, 1]), deep);
+  assert.doesNotThrow(() => toWire(out));
+});
+
+test('roll-up and group shift reach every level (PRD-01 G-1)', () => {
+  let phases = chain(5);
+  phases = setDatesAt(phases, [0, 0, 0, 0, 0], '2027-02-01', '2027-02-05');
+  const rolled = enforceParentRollup(phases);
+  for (const path of [[0, 0], [0, 0, 0], [0, 0, 0, 0]]) {
+    assert.equal(taskAtPath(rolled, path).start, '2027-02-01');
+    assert.equal(taskAtPath(rolled, path).end, '2027-02-05');
+  }
+  const shifted = shiftGroup(rolled, 'n2', 3);
+  assert.equal(taskAtPath(shifted, [0, 0, 0, 0, 0]).start, '2027-02-04');
+  assert.equal(breakdownOf(taskAtPath(rolled, [0, 0])).count, 3);
+  assert.deepEqual(breakdownOf(rolled[0]), { count: 4, levels: 4 });
 });
 
 test('hydrateDraft: grandchildren come back as sub-tasks, with their edges re-keyed', () => {
@@ -723,14 +816,20 @@ test('hydrateDraft: grandchildren come back as sub-tasks, with their edges re-ke
   assert.deepEqual(wire[0].children[0].children[0].dependsOn,
     [{ key: wire[0].children[1].key, type: 'starts_with' }]);
 
-  // A server tree deeper than three levels cannot be edited here — the extra
-  // level is dropped rather than carried into a save the server would refuse.
+  // A server tree deeper than MAX_DEPTH (5) cannot be edited here — the extra
+  // level is dropped rather than carried into a save toWire would refuse. Level
+  // 4 and 5 now survive (PRD-01 G-1; they used to be dropped below level 3).
   const tooDeep = hydrateDraft([
     { id: 'h1', name: 'P', children: [
-      { id: 'h2', name: 'T', children: [{ id: 'h3', name: 'S', children: [{ id: 'h4', name: 'X' }] }] },
+      { id: 'h2', name: 'T', children: [{ id: 'h3', name: 'S', children: [
+        { id: 'h4', name: 'X', children: [{ id: 'h5', name: 'Y', children: [{ id: 'h6', name: 'Z' }] }] },
+      ] }] },
     ] },
   ]);
-  assert.deepEqual(tooDeep[0].tasks[0].children[0].children, []);
+  const l4 = tooDeep[0].tasks[0].children[0].children[0];
+  assert.equal(l4.name, 'X');
+  assert.equal(l4.children[0].name, 'Y');
+  assert.deepEqual(l4.children[0].children, [], 'level 6 is dropped');
   assert.doesNotThrow(() => toWire(tooDeep));
 });
 
@@ -929,7 +1028,7 @@ test('demoteNode: an L2 task nests under its preceding sibling as an L3 sub-task
   assert.equal(wire[0].children[0].children[0].name, 'B');
 });
 
-test('demoteNode: the guards — first sibling, a task with children, and an L3 sub are all no-ops', () => {
+test('demoteNode: the guards — first sibling is a no-op; a task with children and an L3 sub now indent (cap 5)', () => {
   let phases = [emptyPhase('Phase')];
   phases = addTask(phases, 0); // A
   phases = renameTask(phases, 0, 0, 'A');
@@ -940,9 +1039,11 @@ test('demoteNode: the guards — first sibling, a task with children, and an L3 
 
   // First sibling A has nothing to nest under.
   assert.equal(demoteNode(phases, 0, 0), phases);
-  // B has a child — demoting it would create a fourth level.
-  assert.equal(demoteNode(phases, 0, 1), phases);
-  // An L3 sub-task cannot demote further.
+  // B has a child — under the 5-level cap it may now indent, subtree and all.
+  const out = demoteNode(phases, 0, 1);
+  assert.equal(out[0].tasks[0].children[0].name, 'B');
+  assert.equal(out[0].tasks[0].children[0].children[0].name, 'B.1');
+  // B.1 is the FIRST child of B — nothing to nest under, so still a no-op.
   assert.equal(demoteNode(phases, 0, 1, 0), phases);
 });
 
