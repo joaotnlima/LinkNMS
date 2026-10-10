@@ -324,8 +324,12 @@ export function barRect(offsetDays: number, spanDays: number, col: number): { x:
 /** The RFP lifecycle, verbatim from the tendering schema. */
 export type RfpLifecycle = 'draft' | 'published' | 'closed' | 'awarded' | 'cancelled';
 
-/** The four states the bar paints — the lifecycle folded for the schedule's eye. */
-export type ProcurementState = 'draft' | 'tendering' | 'bids_in' | 'awarded';
+/**
+ * The lifecycle folded for the schedule's eye (PRD-01 G-8): draft · out for bids
+ * (`tendering`) · bids in · awarded · cancelled. The Gantt band paints the first
+ * four; `cancelled` paints no band but still reads as a chip in the Tender column.
+ */
+export type ProcurementState = 'draft' | 'tendering' | 'bids_in' | 'awarded' | 'cancelled';
 
 /**
  * The governing RFP of a row, as the bridge reads it off
@@ -341,12 +345,23 @@ export interface ProcurementRfp {
   bidsDueDay: string;
   /** How many lanes have actually been submitted — what makes "bids in" true. */
   submittedCount: number;
+  /**
+   * How many bidders the tender went to (every lane, whatever its state) — the
+   * `m` of the grid's `n/m in` chip (PRD-01 G-2). Optional: absent → the chip
+   * prints the submitted count alone.
+   */
+  invitedCount?: number;
+  /** The RFP's title — what a covered descendant's `↳ {RFP name}` marker prints (G-3). */
+  title?: string;
+  /** The awarded bidder's name, when awarded and known — `Awarded · {company}`. */
+  awardedTo?: string;
 }
 
 /**
- * Fold the RFP lifecycle (+ whether any bid has landed) into the state the bar
- * paints. Returns null when there is nothing to paint — a cancelled tender
- * leaves no window. A published tender with a bid already in reads as "bids in";
+ * Fold the RFP lifecycle (+ whether any bid has landed) into the state the grid
+ * shows. A cancelled tender is its own state (PRD-01 G-2) — it paints no Gantt
+ * window (procurementGeom returns null for it) but the Tender column still says
+ * so. Null only for an unknown status. A published tender with a bid already in reads as "bids in";
  * a closed one always does (its deadline has passed, the bids are in whatever
  * their count). An awarded tender is its own terminal state regardless of count.
  */
@@ -354,13 +369,68 @@ export function procurementState(
   rfp: Pick<ProcurementRfp, 'status' | 'submittedCount'>,
 ): ProcurementState | null {
   switch (rfp.status) {
-    case 'cancelled': return null;
+    case 'cancelled': return 'cancelled';
     case 'draft': return 'draft';
     case 'awarded': return 'awarded';
     case 'closed': return 'bids_in';
     case 'published': return rfp.submittedCount > 0 ? 'bids_in' : 'tendering';
     default: return null;
   }
+}
+
+/**
+ * The grid's Tender-column chip for a row's OWN tender (PRD-01 G-2): the state,
+ * a short label that always carries a WORD (never colour alone, G-8), and a
+ * longer title for hover. Null when the row has no tender.
+ */
+export function procurementChip(
+  rfp: ProcurementRfp | null | undefined,
+): { state: ProcurementState; label: string; title: string } | null {
+  if (!rfp) return null;
+  const state = procurementState(rfp);
+  if (state === null) return null;
+  const n = rfp.submittedCount;
+  const m = rfp.invitedCount;
+  switch (state) {
+    case 'draft':
+      return { state, label: 'Draft', title: 'Tender being prepared — not sent yet' };
+    case 'tendering': {
+      const counts = m ? ` · ${n}/${m} in` : '';
+      return { state, label: `Out for bids${counts}`, title: `Out for bids${m ? ` — ${n} of ${m} bids in` : ''}` };
+    }
+    // The first landed bid flips the state (procurementState), so an open tender
+    // with bids reads as "bids in" — in the same amber as its Gantt band.
+    case 'bids_in':
+      return {
+        state,
+        label: m && rfp.status === 'published' ? `Bids in · ${n}/${m} — your move` : 'Bids in — your move',
+        title: `Bids in (${n}${m ? ` of ${m}` : ''}) — compare and award`,
+      };
+    case 'awarded':
+      return {
+        state,
+        label: rfp.awardedTo ? `Awarded · ${rfp.awardedTo}` : 'Awarded',
+        title: rfp.awardedTo ? `Tender awarded to ${rfp.awardedTo}` : 'Tender awarded',
+      };
+    case 'cancelled':
+      return { state, label: 'Cancelled', title: 'Tender cancelled' };
+    default:
+      return null;
+  }
+}
+
+/**
+ * The panel's Tender tab state word (PRD-01 P-2): `none` / `draft` / `1/3` /
+ * `3 in` / `awarded` / `cancelled`.
+ */
+export function procurementTabLabel(rfp: ProcurementRfp | null | undefined): string {
+  const state = rfp ? procurementState(rfp) : null;
+  if (!rfp || state === null) return 'none';
+  // Still open for bids → `n/m` (how many of the invited have answered); once
+  // closed → `n in`.
+  if (rfp.status === 'published' && rfp.invitedCount) return `${rfp.submittedCount}/${rfp.invitedCount}`;
+  if (state === 'tendering' || state === 'bids_in') return `${rfp.submittedCount} in`;
+  return state;
 }
 
 /**
@@ -403,7 +473,8 @@ export function procurementGeom(
   win: GanttWindow, col: number, rfp: ProcurementRfp,
 ): ProcurementGeom | null {
   const state = procurementState(rfp);
-  if (state === null) return null;
+  // A cancelled tender leaves no window on the bar — only its chip remains.
+  if (state === null || state === 'cancelled') return null;
 
   const clip = clipBarGeom(win, rfp.openedDay, rfp.bidsDueDay);
   const band = clip

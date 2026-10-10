@@ -23,8 +23,16 @@
 //      draft, by design (status is derived, never authored — ADR-0019).
 //   6. Column HEADERS drag-reorder (specialty / owner / dates); the name column
 //      stays pinned first (session-persisted order).
-//   7. PROMOTE / DEMOTE a row in the WBS (a row menu), respecting the depth-3
-//      cap — the pure ops in plan-authoring.ts do the reparenting.
+//   7. PROMOTE / DEMOTE a row in the WBS (a row menu), respecting the outline
+//      cap (MAX_DEPTH = 5 since PRD-01 G-1) — the pure path ops in
+//      plan-authoring.ts do the reparenting.
+//
+// PRD-01 layers on: rows to FIVE levels, path-addressed (every callback takes a
+// `NodePath`, so a level-5 row folds, indents, renames and drags exactly like a
+// level-2 one); a dedicated TENDER column after Owner (chip per lifecycle state,
+// `↳ {RFP}` markers on rows an ancestor's tender covers, `＋ Tender` on hover); a
+// Tender filter; descendant counts on summary rows; and ID/Task cells pinned
+// while the table pane scrolls sideways (the timeline pane scrolls on its own).
 //
 // LINA-253 adds the DEPENDENCY ARROWS (ADR-0020 §6): the typed links the drawer
 // authors are drawn as elbow connectors in an SVG overlay above the bars,
@@ -64,13 +72,14 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 
 import {
   addDays, applyDrag, barRect, baseWindow, clickDates, clipBarGeom, connectorMidpoint, connectorPath,
-  fillWindow, formatDay, parseDay, procurementGeom, procurementState, scheduleWindow,
+  fillWindow, formatDay, parseDay, procurementChip, procurementGeom, procurementState, scheduleWindow,
   type ConnectorEnd, type DragMode, type GanttWindow, type ProcurementGeom, type ProcurementRfp,
   type ProcurementState, type TimeBase,
 } from '@/lib/plan-gantt';
 import {
-  DEP_LABELS, childStatusCounts, criticalPathKeys, nodeIndex, nodeStatus, planLinks,
-  type DepType, type PhaseDraft, type StageStatus, type StatusCounts, type TaskDraft,
+  DEP_LABELS, MAX_DEPTH, canAddChildAt, canDemoteAt, canPromoteAt, childStatusCounts, criticalPathKeys,
+  descendantCount, nodeIndex, nodeStatus, planLinks,
+  type DepType, type NodePath, type PhaseDraft, type StageStatus, type StatusCounts, type TaskDraft,
 } from '@/lib/plan-authoring';
 import { PendingChangeChip } from '@/components/SignOffPanel';
 import { partyIndex, roleWord, type PartyRef } from '@/lib/party-display';
@@ -139,6 +148,11 @@ const COL_TEMPLATE: Record<ColKey, string> = {
   trade: 'var(--pgdw-trade, 96px)',
   owner: '30px',
 };
+/** The Tender column (PRD-01 G-2), fixed after the middle columns. Long chips
+ *  ("Awarded · Acme Build") ellipsise; the full state is the hover title. */
+const TENDER_W = 136;
+/** Indent per outline level below a task (PRD-01 G-1: five levels stay readable). */
+const INDENT_PX = 14;
 
 // Session-only view state (LINA-259): the split and the column order live for
 // the tab, not the account — a reading preference, not part of the plan.
@@ -172,7 +186,7 @@ function weekday(iso: string): number {
   return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // Sun=0 → Mon=0
 }
 
-/** A phase's derived envelope: earliest start → latest finish of its stages. */
+/** A phase's derived envelope: earliest start → latest finish of its stages, any depth. */
 function phaseEnvelope(p: PhaseDraft): { start: string; end: string } | null {
   let lo: number | null = null;
   let hi: number | null = null;
@@ -182,18 +196,35 @@ function phaseEnvelope(p: PhaseDraft): { start: string; end: string } | null {
     lo = lo === null || ms < lo ? ms : lo;
     hi = hi === null || ms > hi ? ms : hi;
   };
-  p.tasks.forEach((t) => {
-    eat(t.start); eat(t.end);
-    (t.children ?? []).forEach((s) => { eat(s.start); eat(s.end); });
-  });
+  const visit = (t: TaskDraft) => { eat(t.start); eat(t.end); (t.children ?? []).forEach(visit); };
+  p.tasks.forEach(visit);
   if (lo === null || hi === null) return null;
   return { start: formatDay(lo), end: formatDay(hi) };
 }
 
+/** The nearest ancestor tender that covers a row (PRD-01 G-3). */
+type Cover = { key: string; rfp: ProcurementRfp } | null;
+
 type Row =
-  | { kind: 'phase'; pi: number; key: string; phase: PhaseDraft }
-  | { kind: 'task'; pi: number; ti: number; si?: number; key: string; node: TaskDraft }
+  | { kind: 'phase'; pi: number; path: NodePath; id: string; key: string; phase: PhaseDraft }
+  | {
+    kind: 'task'; pi: number; path: NodePath; id: string; key: string; node: TaskDraft;
+    /** 2 = task, 3..MAX_DEPTH = sub-tasks. */
+    level: number;
+    /** The tender of the nearest ancestor that has one — the `↳` marker. */
+    cover: Cover;
+  }
   | { kind: 'add'; pi: number };
+
+/** The Tender filter's choices (PRD-01 G-4). '' = any. */
+type TenderFilter = '' | 'none' | 'draft' | 'tendering' | 'bids_in' | 'awarded';
+const TENDER_FILTERS: Array<[TenderFilter, string]> = [
+  ['', 'Any'], ['none', 'None'], ['draft', 'Draft'], ['tendering', 'Out for bids'],
+  ['bids_in', 'Bids in'], ['awarded', 'Awarded'],
+];
+
+/** Path → a stable string, so drag state can compare "same parent". */
+const pathKey = (p: NodePath): string => p.join('.');
 
 export interface PlanGridProps {
   phases: PhaseDraft[];
@@ -211,12 +242,14 @@ export interface PlanGridProps {
   pendingChangeKeys?: Set<string>;
   /** Today as 'YYYY-MM-DD' — anchors the fallback window for undated plans. */
   todayIso: string;
-  /** Open the detail drawer for a phase (ti undefined), task or sub-task. */
-  onOpenRow: (pi: number, ti?: number, si?: number) => void;
-  onRename: (value: string, pi: number, ti?: number, si?: number) => void;
-  onSetDate: (field: 'start' | 'end', value: string, pi: number, ti: number, si?: number) => void;
+  /** Open the detail panel for the row at `path` (a 1-long path is a phase). */
+  onOpenRow: (path: NodePath) => void;
+  /** The row the docked panel is open on — highlighted, never dimmed (PRD-01 P-1). */
+  activeKey?: string | null;
+  onRename: (value: string, path: NodePath) => void;
+  onSetDate: (field: 'start' | 'end', value: string, path: NodePath) => void;
   /** Both dates at once — a drag result or an empty-track click plant. */
-  onDates: (pi: number, ti: number, start: string, end: string, si?: number) => void;
+  onDates: (path: NodePath, start: string, end: string) => void;
   /**
    * Slide a SUMMARY row and its whole subtree by `deltaDays` whole days (LINA-404) —
    * dragging a parent bar moves the group rigidly, children and all. `deltaDays` is
@@ -233,17 +266,15 @@ export interface PlanGridProps {
   onTrade: (nodeKey: string, trade: string) => void;
   /** Add ops return the NEW node's key so the grid can open rename on it. */
   onAddPhase: () => string;
-  onAddTask: (pi: number) => string;
-  onAddSubtask: (pi: number, ti: number) => string;
-  onRemovePhase: (pi: number) => void;
-  onRemoveTask: (pi: number, ti: number) => void;
-  onRemoveSubtask: (pi: number, ti: number, si: number) => void;
-  onReorderPhase: (from: number, to: number) => void;
-  onReorderTask: (pi: number, from: number, to: number) => void;
-  onReorderSubtask: (pi: number, ti: number, from: number, to: number) => void;
+  /** Add a child under the row at `parentPath` — a task under a phase, a sub-task under a task. */
+  onAddChild: (parentPath: NodePath) => string;
+  /** Remove the row at `path` (a phase or a task at any level) and its subtree. */
+  onRemove: (path: NodePath) => void;
+  /** Drag-drop within one parent; a parent path of [] reorders the phases. */
+  onReorder: (parentPath: NodePath, from: number, to: number) => void;
   /** Promote / demote a row in the WBS (LINA-259 ask 7). No-op when disallowed. */
-  onPromote: (pi: number, ti: number, si?: number) => void;
-  onDemote: (pi: number, ti: number, si?: number) => void;
+  onPromote: (path: NodePath) => void;
+  onDemote: (path: NodePath) => void;
   /**
    * Author a dependency by dragging one bar's edge onto another's (LINA-306).
    * `fromKey` is the DEPENDENT (it carries the link); `toKey` the predecessor.
@@ -309,21 +340,16 @@ const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
  *  band's hover title, so the colour has a name. */
 const PROC_LABEL: Record<ProcurementGeom['state'], string> = {
   draft: 'Tender being prepared',
-  tendering: 'Out to tender — bids open',
-  bids_in: 'Bids in — comparing',
+  tendering: 'Out for bids — bids open',
+  bids_in: 'Bids in — your move',
   awarded: 'Tender awarded',
+  cancelled: 'Tender cancelled',
 };
 
-/** The in-row tender-state chip (LINA-420, screen 1): the band's state said in a
- *  word, right on the task name — so a row out to tender reads as such without
- *  scrolling to its Gantt track (which clips off-view). `cls` tones it like the
- *  band's colour; the full PROC_LABEL is the hover title. */
-const PROC_CHIP: Record<ProcurementState, { label: string; cls: string }> = {
-  draft: { label: 'Draft RFP', cls: 'is-draft' },
-  tendering: { label: 'Tendering', cls: 'is-tendering' },
-  bids_in: { label: 'Comparing', cls: 'is-bids-in' },
-  awarded: { label: 'Awarded', cls: 'is-awarded' },
-};
+/** The lifecycle colour class shared by the Tender chip, the `↳` marker and the
+ *  Gantt band (PRD-01 G-8): draft neutral, out for bids owner-blue, bids in amber,
+ *  awarded green, cancelled red — and every one also carries a word. */
+const procCls = (st: ProcurementState): string => `is-${st.replace('_', '-')}`;
 
 /** How near (px) a link drag must come to a bar edge to snap onto it. */
 const LINK_SNAP = 14;
@@ -409,11 +435,15 @@ export function PlanGrid(props: PlanGridProps) {
   // here, so they stay open; the author expands a task to see its sub-tasks.
   // Lazy init: it seeds the initial view once, and every later fold/expand is
   // the author's own (adding a sub-task auto-expands its parent via `expand`).
+  // Since PRD-01 G-1 every container task at ANY level starts folded, so a deep
+  // plan still opens as a readable outline; expanding a task reveals its next
+  // level, whose own containers stay folded until asked.
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => {
     const seed = new Set<string>();
-    phases.forEach((p) => p.tasks.forEach((t) => {
-      if ((t.children ?? []).length > 0) seed.add(t.key);
-    }));
+    const visit = (t: TaskDraft) => {
+      if ((t.children ?? []).length > 0) { seed.add(t.key); t.children.forEach(visit); }
+    };
+    phases.forEach((p) => p.tasks.forEach(visit));
     return seed;
   });
   const toggleFold = useCallback((key: string) => {
@@ -445,9 +475,13 @@ export function PlanGrid(props: PlanGridProps) {
   const [statusFilter, setStatusFilter] = useState<'' | StageStatus>('');
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [blockedOnly, setBlockedOnly] = useState(false);
-  const filterActive = !!(search.trim() || ownerFilter || statusFilter || overdueOnly || blockedOnly);
+  // The Tender filter (PRD-01 G-4) reads a row's EFFECTIVE tender — its own, or
+  // the one an ancestor's RFP covers it with — so "none" means truly untendered.
+  const [tenderFilter, setTenderFilter] = useState<TenderFilter>('');
+  const filterActive = !!(search.trim() || ownerFilter || statusFilter || overdueOnly || blockedOnly || tenderFilter);
   const clearFilters = useCallback(() => {
     setSearch(''); setOwnerFilter(''); setStatusFilter(''); setOverdueOnly(false); setBlockedOnly(false);
+    setTenderFilter('');
   }, []);
 
   // ── Critical-path overlay (LINA-404) ────────────────────────────────────────
@@ -470,51 +504,74 @@ export function PlanGrid(props: PlanGridProps) {
     return e !== null && t !== null && e < t && nodeStatus(n) !== 'done';
   }, [todayIso]);
 
+  // A row's effective tender state: its own RFP's, else the covering ancestor's.
+  const tenderOf = useCallback((key: string, cover: Cover): ProcurementState | null => {
+    const own = procurement?.[key];
+    if (own) return procurementState(own);
+    return cover ? procurementState(cover.rfp) : null;
+  }, [procurement]);
+
   // Does one stage clear every ACTIVE filter? (An inactive filter never rejects.)
-  const nodePasses = useCallback((n: TaskDraft, id: string): boolean => {
+  const nodePasses = useCallback((n: TaskDraft, id: string, cover: Cover): boolean => {
     const q = search.trim().toLowerCase();
     if (q && !`${id} ${n.name}`.toLowerCase().includes(q)) return false;
     if (ownerFilter && n.assigneePartyId !== ownerFilter) return false;
     if (statusFilter && nodeStatus(n) !== statusFilter) return false;
     if (overdueOnly && !isOverdue(n)) return false;
     if (blockedOnly && nodeStatus(n) !== 'blocked') return false;
+    if (tenderFilter) {
+      const st = tenderOf(n.key, cover);
+      if (tenderFilter === 'none' ? (st !== null && st !== 'cancelled') : st !== tenderFilter) return false;
+    }
     return true;
-  }, [search, ownerFilter, statusFilter, overdueOnly, blockedOnly, isOverdue]);
+  }, [search, ownerFilter, statusFilter, overdueOnly, blockedOnly, isOverdue, tenderFilter, tenderOf]);
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
-    phases.forEach((p, pi) => {
-      // Gather the phase's visible tasks first, so a phase with no surviving task
-      // drops out entirely under a filter (its own row would be an empty header).
-      type Vis = { t: TaskDraft; ti: number; subs: Array<{ s: TaskDraft; si: number }> };
-      const visTasks: Vis[] = [];
-      p.tasks.forEach((t, ti) => {
-        const tid = `${pi + 1}.${ti + 1}`;
-        const subs = (t.children ?? []).map((s, si) => ({ s, si }))
-          .filter(({ s, si }) => !filterActive || nodePasses(s, `${tid}.${si + 1}`));
-        const selfPass = !filterActive || nodePasses(t, tid);
-        // Keep the task if it matches OR carries a matching sub-task (as context).
-        if (selfPass || subs.length > 0) visTasks.push({ t, ti, subs });
+    // One recursive walk serves every level (PRD-01 G-1). A row is kept when it
+    // passes the filters OR carries a matching descendant (shown as context);
+    // folding hides a row's subtree unless a live filter is on.
+    const visit = (t: TaskDraft, path: number[], id: string, level: number, cover: Cover): Row[] | null => {
+      const own = procurement?.[t.key];
+      // A cancelled tender covers nothing below it.
+      const childCover: Cover = own && procurementState(own) !== 'cancelled' ? { key: t.key, rfp: own } : cover;
+      const below: Row[] = [];
+      (t.children ?? []).forEach((c, ci) => {
+        const r = visit(c, [...path, ci], `${id}.${ci + 1}`, level + 1, childCover);
+        if (r) below.push(...r);
       });
-      if (filterActive && visTasks.length === 0) return; // whole phase filtered out
-
-      out.push({ kind: 'phase', pi, key: p.key, phase: p });
+      if (filterActive && !nodePasses(t, id, cover) && below.length === 0) return null;
+      const self: Row = { kind: 'task', pi: path[0], path, id, key: t.key, node: t, level, cover };
+      return filterActive || !collapsed.has(t.key) ? [self, ...below] : [self];
+    };
+    phases.forEach((p, pi) => {
+      const own = procurement?.[p.key];
+      const cover: Cover = own && procurementState(own) !== 'cancelled' ? { key: p.key, rfp: own } : null;
+      const tasks: Row[] = [];
+      p.tasks.forEach((t, ti) => {
+        const r = visit(t, [pi, ti], `${pi + 1}.${ti + 1}`, 2, cover);
+        if (r) tasks.push(...r);
+      });
+      // A phase with no surviving task drops out under a filter (its own row would
+      // be an empty header).
+      if (filterActive && tasks.length === 0) return;
+      out.push({ kind: 'phase', pi, path: [pi], id: `P${pi + 1}`, key: p.key, phase: p });
       // Folding is a reading preference; a live filter overrides it so every match
       // is shown, then folding returns when the filters clear.
       if (!filterActive && collapsed.has(p.key)) return;
-      visTasks.forEach(({ t, ti, subs }) => {
-        out.push({ kind: 'task', pi, ti, key: t.key, node: t });
-        if (filterActive) {
-          subs.forEach(({ s, si }) => out.push({ kind: 'task', pi, ti, si, key: s.key, node: s }));
-        } else if (!collapsed.has(t.key)) {
-          (t.children ?? []).forEach((s, si) =>
-            out.push({ kind: 'task', pi, ti, si, key: s.key, node: s }));
-        }
-      });
+      out.push(...tasks);
       if (!filterActive) out.push({ kind: 'add', pi }); // no "+ add" while filtering
     });
     return out;
-  }, [phases, collapsed, filterActive, nodePasses]);
+  }, [phases, collapsed, filterActive, nodePasses, procurement]);
+
+  // The ID column grows with the deepest visible outline number (`2.5.2.2.1`
+  // must stay readable at level 5) instead of clipping it.
+  const idW = useMemo(() => {
+    let longest = 2;
+    for (const r of rows) if (r.kind !== 'add') longest = Math.max(longest, r.id.length);
+    return Math.max(34, Math.ceil(longest * 6.6) + 6);
+  }, [rows]);
 
   // ── The time base (founder follow-up, 2026-09-11; LINA-404): the author picks
   // a reading ZOOM — Fit / Weeks / Months / Quarters / Years — or types an exact
@@ -694,9 +751,15 @@ export function PlanGrid(props: PlanGridProps) {
   }, []);
 
   // The grid template, name pinned, then the fixed STATUS column (LINA-306),
-  // then the three middle columns in the chosen order — one CSS var the header
-  // and every row read. STATUS sits right after the name, as the pen lays it out.
-  const colsTemplate = `20px 34px minmax(120px, var(--pgdw-name, 1fr)) 120px ${colOrder.map((c) => COL_TEMPLATE[c]).join(' ')} 92px`;
+  // then the middle columns in the chosen order, then the TENDER column (PRD-01
+  // G-2, after Owner) — one CSS var the header and every row read. STATUS sits
+  // right after the name, as the pen lays it out. The ID column widens with the
+  // deepest visible outline number.
+  const colsTemplate = `20px ${idW}px minmax(120px, var(--pgdw-name, 1fr)) 120px ${colOrder.map((c) => COL_TEMPLATE[c]).join(' ')} ${TENDER_W}px 92px`;
+  // The table's natural minimum (every fixed column + the name floor + gaps +
+  // padding). Below it the TABLE pane scrolls sideways with ID/Task pinned
+  // (PRD-01 G-6); the timeline pane always scrolls on its own.
+  const tableMinW = 20 + idW + 120 + 120 + (colW.trade ?? 96) + 30 + TENDER_W + 92 + 8 * 8 + 16;
 
   // ── The table / Gantt split divider (LINA-259 ask 2): a draggable seam that
   // resizes the two panes, persisted for the session. Seeded from the rendered
@@ -852,29 +915,29 @@ export function PlanGrid(props: PlanGridProps) {
   // ⋯ button offering Promote / Demote, each enabled only when the pure op
   // would actually move the row (the same guards demoteNode/promoteNode keep).
   const [menu, setMenu] = useState<
-    null | { pi: number; ti: number; si?: number; x: number; y: number; canPromote: boolean; canDemote: boolean }
+    null | { path: NodePath; x: number; y: number; canPromote: boolean; canDemote: boolean }
   >(null);
 
   const openMenu = useCallback((e: React.MouseEvent, r: Extract<Row, { kind: 'task' }>) => {
     e.stopPropagation();
-    const sub = r.si != null;
-    const hasChildren = (r.node.children ?? []).length > 0;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setMenu({
-      pi: r.pi, ti: r.ti, si: r.si,
+      path: r.path,
       x: rect.right, y: rect.bottom + 2,
-      canPromote: sub, // an L3 sub promotes to L2; an L2 task has no room above
-      canDemote: !sub && r.ti > 0 && !hasChildren, // nest under the row above, never past depth 3
+      // The same guards the pure ops keep: a level-3+ row may outdent; a row may
+      // indent under the row above while its subtree still fits MAX_DEPTH.
+      canPromote: canPromoteAt(phases, r.path),
+      canDemote: canDemoteAt(phases, r.path),
     });
-  }, []);
+  }, [phases]);
 
   // ── Rename-in-place (ask 4): the ✎ button, and only it, opens the input. ──
   const [editing, setEditing] = useState<string | null>(null);
 
-  // ── Grip drag-to-reorder — same scoping as the old list view. ─────────────
+  // ── Grip drag-to-reorder — same scoping as the old list view: a row only
+  // drops among its OWN siblings (same parent path), at any level. ─────────────
   const [dragPhase, setDragPhase] = useState<number | null>(null);
-  const [dragTask, setDragTask] = useState<{ pi: number; ti: number } | null>(null);
-  const [dragSub, setDragSub] = useState<{ pi: number; ti: number; si: number } | null>(null);
+  const [dragRow, setDragRow] = useState<{ parent: string; index: number } | null>(null);
 
   // ── Bar drag (LINA-236/244): origin captured at pointer-down. A SUMMARY bar is
   // draggable as a GROUP (LINA-404) — `group` routes the move to onShiftGroup, which
@@ -882,7 +945,7 @@ export function PlanGrid(props: PlanGridProps) {
   // last pointermove so the shift never double-counts. ──
   const drag = useRef<
     null | {
-      pi: number; ti: number; si?: number; key: string; mode: DragMode;
+      path: NodePath; key: string; mode: DragMode;
       startX: number; start: string; end: string; group: boolean; lastDeltaDays: number;
     }
   >(null);
@@ -893,7 +956,7 @@ export function PlanGrid(props: PlanGridProps) {
     // A summary task (one with sub-tasks) can be MOVED as a group but never RESIZED
     // — its span derives from its children (LINA-404). So only a 'move' drag starts
     // on it, and it needs an onShiftGroup handler to go anywhere.
-    const isSummary = r.si == null && (r.node.children ?? []).length > 0;
+    const isSummary = (r.node.children ?? []).length > 0;
     if (disabled || e.button !== 0) return;
     // While a row is actively out to tender its MANUAL dates are locked (LINA-413):
     // they belong to the procurement until a bid is in or it is awarded.
@@ -903,7 +966,7 @@ export function PlanGrid(props: PlanGridProps) {
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     drag.current = {
-      pi: r.pi, ti: r.ti, si: r.si, key: r.key, mode,
+      path: r.path, key: r.key, mode,
       startX: e.clientX, start: r.node.start, end: r.node.end,
       group: isSummary, lastDeltaDays: 0,
     };
@@ -924,7 +987,7 @@ export function PlanGrid(props: PlanGridProps) {
       return;
     }
     const next = applyDrag(d.mode, d.start, d.end, e.clientX - d.startX, col);
-    props.onDates(d.pi, d.ti, next.start, next.end, d.si);
+    props.onDates(d.path, next.start, next.end);
   }, [props, col]);
 
   const onBarUp = useCallback((e: React.PointerEvent) => {
@@ -945,7 +1008,7 @@ export function PlanGrid(props: PlanGridProps) {
     if (procGeom.get(r.key)?.locked) return; // tendering locks manual dates (LINA-413)
     const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
     const d = clickDates(w, x / col);
-    props.onDates(r.pi, r.ti, d.start, d.end, r.si);
+    props.onDates(r.path, d.start, d.end);
   }, [disabled, props, col, procGeom]);
 
   // ── Draw-a-dependency on the Gantt (LINA-306) ──────────────────────────────
@@ -1044,7 +1107,7 @@ export function PlanGrid(props: PlanGridProps) {
   const onRowClick = useCallback((e: React.MouseEvent, r: Row) => {
     if (r.kind === 'add') return;
     if ((e.target as HTMLElement).closest('input, select, button, label, a')) return;
-    props.onOpenRow(r.pi, r.kind === 'task' ? r.ti : undefined, r.kind === 'task' ? r.si : undefined);
+    props.onOpenRow(r.path);
   }, [props]);
 
   // The axis ticks at a granularity that keeps labels ~>=56px apart at the
@@ -1092,7 +1155,7 @@ export function PlanGrid(props: PlanGridProps) {
   // 'rowH' before initialization" (the LINA-306 dev crash). Declarations hoist to
   // the top of the component scope, so every caller — early or late — sees it.
   function rowH(r: Row) {
-    return r.kind === 'phase' ? H.phase : r.kind === 'add' ? H.add : r.si != null ? H.sub : H.task;
+    return r.kind === 'phase' ? H.phase : r.kind === 'add' ? H.add : r.level >= 3 ? H.sub : H.task;
   }
 
   // ── Dependency connectors (ADR-0020 §6, LINA-253) ──────────────────────────
@@ -1121,7 +1184,7 @@ export function PlanGrid(props: PlanGridProps) {
         if (bar) m.set(r.key, { ...barRect(bar.offsetDays, bar.spanDays, col), y: top + BAR_MID.phase });
       } else if (r.kind === 'task') {
         const bar = clipBarGeom(win, r.node.start, r.node.end);
-        const mid = r.si != null ? BAR_MID.sub : BAR_MID.task;
+        const mid = r.level >= 3 ? BAR_MID.sub : BAR_MID.task;
         if (bar) m.set(r.key, { ...barRect(bar.offsetDays, bar.spanDays, col), y: top + mid });
       }
       top += h;
@@ -1132,6 +1195,46 @@ export function PlanGrid(props: PlanGridProps) {
   // The labels the arrows answer to: a connector is thin and muted by design, so
   // its meaning lives in the title a hover/AT reveals, not in its shape.
   const labels = useMemo(() => nodeIndex(phases), [phases]);
+
+  // The Tender column cell (PRD-01 G-2/G-3): the row's OWN tender as a chip; else
+  // the `↳ {RFP}` marker of the ancestor tender that covers it, in that tender's
+  // lifecycle colour; else, for a viewer who may tender a saved row, a
+  // `＋ Tender` that shows on row hover only. Every state says itself in words.
+  const tenderCell = (r: Extract<Row, { kind: 'phase' | 'task' }>, what: string) => {
+    const chip = procurementChip(procurement?.[r.key]);
+    const opener = props.onStartTender;
+    if (chip) {
+      const cls = `pgd-tenderchip ${procCls(chip.state)}`;
+      return opener ? (
+        <button
+          type="button" className={cls} title={chip.title}
+          aria-label={`${chip.title} — open the tender for ${what}`}
+          onClick={(e) => { e.stopPropagation(); opener(r.key); }}
+        >{chip.label}</button>
+      ) : <span className={cls} title={chip.title}>{chip.label}</span>;
+    }
+    const cover = r.kind === 'task' ? r.cover : null;
+    const cst = cover ? procurementState(cover.rfp) : null;
+    if (cover && cst) {
+      const owner = labels.get(cover.key)?.label ?? 'a parent row';
+      const name = cover.rfp.title?.trim() || owner;
+      return (
+        <span className={`pgd-tendermark ${procCls(cst)}`} title={`Covered by the tender on ${owner} — ${PROC_LABEL[cst]}`}>
+          ↳ {name}
+        </span>
+      );
+    }
+    if (opener && !disabled && props.tenderableKeys?.has(r.key)) {
+      return (
+        <button
+          type="button" className="pgd-tenderadd" title="Request proposals for this work"
+          aria-label={`Start a tender for ${what}`}
+          onClick={(e) => { e.stopPropagation(); opener(r.key); }}
+        >＋ Tender</button>
+      );
+    }
+    return null;
+  };
 
   const connectors = useMemo(() => planLinks(phases).flatMap((l) => {
     const from = anchors.get(l.from);
@@ -1168,10 +1271,7 @@ export function PlanGrid(props: PlanGridProps) {
             aria-label={`${isPhase ? 'Phase' : 'Task'} ${id} name`}
             autoFocus
             disabled={disabled}
-            onChange={(e) => props.onRename(
-              e.target.value, r.pi,
-              r.kind === 'task' ? r.ti : undefined, r.kind === 'task' ? r.si : undefined,
-            )}
+            onChange={(e) => { if (r.kind !== 'add') props.onRename(e.target.value, r.path); }}
             onBlur={() => setEditing(null)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setEditing(null); }}
           />
@@ -1347,6 +1447,8 @@ export function PlanGrid(props: PlanGridProps) {
       className="pgd"
       style={{
         '--pgd-cols': colsTemplate,
+        '--pgd-minw': `${tableMinW}px`,
+        '--pgd-idw': `${idW}px`,
         '--pgdw-name': colW.name ? `${colW.name}px` : undefined,
         '--pgdw-trade': colW.trade ? `${colW.trade}px` : undefined,
         '--pgdw-dates': colW.dates ? `${colW.dates}px` : undefined,
@@ -1392,6 +1494,15 @@ export function PlanGrid(props: PlanGridProps) {
               {STATUS_ORDER.map((s) => (
                 <option key={s} value={s}>{STATUS_META[s].label}</option>
               ))}
+            </select>
+          </label>
+          <label className="pgd-fsel">
+            <span className="pgd-fsel-lbl">Tender</span>
+            <select
+              className="pgd-fsel-in" value={tenderFilter} aria-label="Filter by tender state"
+              onChange={(e) => setTenderFilter(e.target.value as TenderFilter)}
+            >
+              {TENDER_FILTERS.map(([v, l]) => <option key={v || 'any'} value={v}>{l}</option>)}
             </select>
           </label>
           <span className="pgd-fdiv" aria-hidden />
@@ -1448,6 +1559,7 @@ export function PlanGrid(props: PlanGridProps) {
             <span className="pgd-hcell"><span aria-hidden>Task</span>{resizer('name', 'task name')}</span>
             <span className="pgd-hcell pgd-hcell-status" aria-hidden>Status</span>
             {colOrder.map(headerCell)}
+            <span className="pgd-hcell" aria-hidden>Tender</span>
             <span />
           </div>
 
@@ -1456,13 +1568,13 @@ export function PlanGrid(props: PlanGridProps) {
               return (
                 <div key={`add-${r.pi}`} className="pgd-addrow" style={{ height: H.add }}>
                   <button type="button" className="pgd-add" disabled={disabled}
-                    onClick={() => setEditing(props.onAddTask(r.pi))}>+ Add task</button>
+                    onClick={() => setEditing(props.onAddChild([r.pi]))}>+ Add task</button>
                 </div>
               );
             }
 
             if (r.kind === 'phase') {
-              const id = `P${r.pi + 1}`;
+              const id = r.id;
               const counts = childStatusCounts(r.phase);
               const isFolded = collapsed.has(r.key);
               const hasChildren = r.phase.tasks.length > 0;
@@ -1485,14 +1597,14 @@ export function PlanGrid(props: PlanGridProps) {
               return (
                 <div
                   key={r.key}
-                  className={`pgd-row pgd-row-phase${dragPhase === r.pi ? ' is-dragging' : ''}${litRows.has(r.key) ? ' is-cycle' : ''}`}
+                  className={`pgd-row pgd-row-phase${dragPhase === r.pi ? ' is-dragging' : ''}${litRows.has(r.key) ? ' is-cycle' : ''}${props.activeKey === r.key ? ' is-active' : ''}`}
                   style={{ height: H.phase }}
                   onClick={(e) => onRowClick(e, r)}
                   onDragOver={(e) => { if (dragPhase !== null) e.preventDefault(); }}
                   onDrop={(e) => {
                     if (dragPhase === null) return;
                     e.preventDefault();
-                    if (dragPhase !== r.pi) props.onReorderPhase(dragPhase, r.pi);
+                    if (dragPhase !== r.pi) props.onReorder([], dragPhase, r.pi);
                     setDragPhase(null);
                   }}
                 >
@@ -1517,35 +1629,41 @@ export function PlanGrid(props: PlanGridProps) {
                       onClick={(e) => { e.stopPropagation(); toggleFold(r.key); }}
                     >▸</button>
                     {name(r, id)}
+                    {hasChildren ? (
+                      <span className="pgd-desccount" title="Rows under this phase">
+                        ({r.phase.tasks.reduce((n, t) => n + 1 + descendantCount(t), 0)})
+                      </span>
+                    ) : null}
                   </span>
                   <span className="pgd-statuscol">{statusCell(counts, null, `Phase ${r.pi + 1}`)}</span>
                   {colOrder.map(cellFor)}
+                  {/* The Tender column (PRD-01 G-2). Raising a tender over this
+                      package (LINA-407) is its `＋ Tender`, shown on hover to a
+                      viewer who may issue tenders. */}
+                  <span className="pgd-tendercol">{tenderCell(r, `phase ${r.pi + 1}`)}</span>
                   <span className="pgd-ctl">
-                    {/* Raise a tender over this package (LINA-407). Shown only to a
-                        viewer who may issue tenders; it opens the composer pre-set
-                        to Light (design) with this row already picked. */}
-                    {props.onStartTender && props.tenderableKeys?.has(r.key) ? (
-                      <button type="button" className="pbx-icon" title="Start tendering"
-                        aria-label={`Start tendering phase ${r.pi + 1}`}
-                        onClick={(e) => { e.stopPropagation(); props.onStartTender!(r.key); }}>⤴</button>
-                    ) : null}
+                    <button type="button" className="pbx-icon" title="Add task"
+                      aria-label={`Add a task under phase ${r.pi + 1}`} disabled={disabled}
+                      onClick={() => { expand(r.key); setEditing(props.onAddChild(r.path)); }}>＋</button>
                     <button type="button" className="pbx-icon pbx-del" title="Remove phase"
-                      disabled={disabled} onClick={() => props.onRemovePhase(r.pi)}>✕</button>
+                      disabled={disabled} onClick={() => props.onRemove(r.path)}>✕</button>
                   </span>
                 </div>
               );
             }
 
-            const sub = r.si != null;
-            const id = sub ? `${r.pi + 1}.${r.ti + 1}.${(r.si as number) + 1}` : `${r.pi + 1}.${r.ti + 1}`;
+            const sub = r.level >= 3;
+            const id = r.id;
             const what = sub ? 'sub-task' : 'task';
-            const isTaskDrag = !sub && dragTask?.pi === r.pi;
-            const isSubDrag = sub && dragSub?.pi === r.pi && dragSub.ti === r.ti;
-            const counts = sub ? null : childStatusCounts(r.node);
+            const parent = pathKey(r.path.slice(0, -1));
+            const index = r.path[r.path.length - 1];
+            const isSiblingDrag = dragRow?.parent === parent;
+            const hasKids = (r.node.children ?? []).length > 0;
+            const counts = hasKids ? childStatusCounts(r.node) : null;
             // The DATES column is gone (LINA-404): a row's start/finish now live on
-            // its Gantt bar (hover shows both edges) and in the detail drawer. So the
+            // its Gantt bar (hover shows both edges) and in the detail panel. So the
             // table carries only Specialty and Owner; dates are edited by dragging
-            // the bar, clicking an undated track, or the drawer's date fields.
+            // the bar, clicking an undated track, or the panel's date fields.
             const cellFor = (c: ColKey) => {
               if (c === 'trade') {
                 return (
@@ -1565,20 +1683,16 @@ export function PlanGrid(props: PlanGridProps) {
             return (
               <div
                 key={r.key}
-                className={`pgd-row${sub ? ' pgd-row-sub' : ''}${litRows.has(r.key) ? ' is-cycle' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}${(isTaskDrag && dragTask?.ti === r.ti) || (isSubDrag && dragSub?.si === r.si) ? ' is-dragging' : ''}`}
+                className={`pgd-row${sub ? ' pgd-row-sub' : ''}${litRows.has(r.key) ? ' is-cycle' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}${isSiblingDrag && dragRow?.index === index ? ' is-dragging' : ''}${props.activeKey === r.key ? ' is-active' : ''}`}
                 style={{ height: rowH(r) }}
+                data-level={r.level}
                 onClick={(e) => onRowClick(e, r)}
-                onDragOver={(e) => { if (isTaskDrag || isSubDrag) e.preventDefault(); }}
+                onDragOver={(e) => { if (isSiblingDrag) e.preventDefault(); }}
                 onDrop={(e) => {
-                  if (isTaskDrag) {
-                    e.preventDefault();
-                    if (dragTask && dragTask.ti !== r.ti) props.onReorderTask(r.pi, dragTask.ti, r.ti);
-                    setDragTask(null);
-                  } else if (isSubDrag) {
-                    e.preventDefault();
-                    if (dragSub && dragSub.si !== r.si) props.onReorderSubtask(r.pi, r.ti, dragSub.si, r.si as number);
-                    setDragSub(null);
-                  }
+                  if (!isSiblingDrag || !dragRow) return;
+                  e.preventDefault();
+                  if (dragRow.index !== index) props.onReorder(r.path.slice(0, -1), dragRow.index, index);
+                  setDragRow(null);
                 }}
               >
                 <span
@@ -1586,53 +1700,33 @@ export function PlanGrid(props: PlanGridProps) {
                   aria-label={`Drag to reorder ${what}`} title="Drag to reorder"
                   draggable={!disabled}
                   onDragStart={(e) => {
-                    if (sub) setDragSub({ pi: r.pi, ti: r.ti, si: r.si as number });
-                    else setDragTask({ pi: r.pi, ti: r.ti });
+                    setDragRow({ parent, index });
                     e.dataTransfer.effectAllowed = 'move';
                   }}
-                  onDragEnd={() => { setDragTask(null); setDragSub(null); }}
+                  onDragEnd={() => setDragRow(null)}
                 >⠿</span>
                 <span className="pgd-id">{id}</span>
-                <span className="pgd-name">
-                  {/* A task that has grown sub-tasks becomes an accordion too
-                      (LINA-306). A leaf task (or any sub-task) gets a spacer of
-                      the caret's width instead, so names stay aligned down the
-                      column whether or not a row folds. */}
-                  {!sub && (r.node.children ?? []).length > 0 ? (
+                {/* Each level below a task indents one step, so five levels read
+                    as an outline (PRD-01 G-1). */}
+                <span className="pgd-name" style={{ paddingLeft: (r.level - 2) * INDENT_PX }}>
+                  {/* Any row that has children is an accordion (LINA-306), at every
+                      level. A leaf gets a spacer of the caret's width instead, so
+                      names stay aligned down the column whether or not a row folds. */}
+                  {hasKids ? (
                     <button
                       type="button"
                       className={`pbx-icon pgd-fold${collapsed.has(r.key) ? '' : ' is-open'}`}
                       aria-expanded={!collapsed.has(r.key)}
                       aria-label={`${collapsed.has(r.key) ? 'Expand' : 'Collapse'} ${what} ${id}`}
-                      title={collapsed.has(r.key) ? 'Expand task' : 'Collapse task'}
+                      title={collapsed.has(r.key) ? 'Expand' : 'Collapse'}
                       onClick={(e) => { e.stopPropagation(); toggleFold(r.key); }}
                     >▸</button>
                   ) : <span className="pgd-fold-spacer" aria-hidden />}
                   {name(r, id)}
-                  {/* The tender-state chip (LINA-420): the row's RFP lifecycle in a
-                      word, read straight off the `procurement` prop so it holds
-                      whether or not the Gantt band is in view. Clicking opens the
-                      tender when the viewer can (same as the ⤴ action). */}
-                  {(() => {
-                    const rfp = procurement?.[r.key];
-                    const st = rfp ? procurementState(rfp) : null;
-                    if (!st) return null;
-                    const chip = PROC_CHIP[st];
-                    const opener = props.onStartTender;
-                    return opener ? (
-                      <button
-                        type="button"
-                        className={`pgd-tenderchip ${chip.cls}`}
-                        title={PROC_LABEL[st]}
-                        aria-label={`${PROC_LABEL[st]} — open tender for ${what} ${id}`}
-                        onClick={(e) => { e.stopPropagation(); opener(r.key); }}
-                      >{chip.label}</button>
-                    ) : (
-                      <span className={`pgd-tenderchip ${chip.cls}`} title={PROC_LABEL[st]}>
-                        {chip.label}
-                      </span>
-                    );
-                  })()}
+                  {/* G-5: a summary row says how many rows hang below it. */}
+                  {hasKids ? (
+                    <span className="pgd-desccount" title={`Rows under ${id}`}>({descendantCount(r.node)})</span>
+                  ) : null}
                   {/* The clay/amber tint is never the only signal (ADR-0023 §6):
                       the chip says it in words, for colour-blind readers and for
                       the screen reader walking an aria-disabled grid. */}
@@ -1640,35 +1734,27 @@ export function PlanGrid(props: PlanGridProps) {
                   {r.node.description.trim() ? <span className="pgt-lbl-dot" aria-hidden /> : null}
                 </span>
                 {/* A parent task (counts.total > 0) shows its child meter; a leaf
-                    (counts null on a sub, or total 0 on a childless task) shows
-                    its own derived status. statusCell picks between them. */}
+                    shows its own derived status. statusCell picks between them. */}
                 <span className="pgd-statuscol">{statusCell(counts, r.node, `${what[0].toUpperCase()}${what.slice(1)} ${id}`)}</span>
                 {colOrder.map(cellFor)}
+                {/* The Tender column (PRD-01 G-2/G-3) — the chip that used to sit
+                    inside the name cell (LINA-420) lives here now. Tendering is a
+                    per-task action at ANY level: a build runs several concurrent
+                    tenders, each rooted at its own task. */}
+                <span className="pgd-tendercol">{tenderCell(r, `${what} ${id}`)}</span>
                 <span className="pgd-ctl">
-                  {/* Tendering is a per-task action (LINA-420): a tender roots at
-                      ANY saved task or sub-task, not just a top-level phase, so a
-                      build can run several concurrent tenders (architecture,
-                      electrical, plumbing…). Shows only for a viewer with
-                      org:tendering:issue on a row the server already holds. */}
-                  {props.onStartTender && props.tenderableKeys?.has(r.key) ? (
-                    <button type="button" className="pbx-icon" title="Start tendering"
-                      aria-label={`Start tendering ${what} ${id}`}
-                      onClick={(e) => { e.stopPropagation(); props.onStartTender!(r.key); }}>⤴</button>
-                  ) : null}
-                  {!sub ? (
+                  {canAddChildAt(r.path) ? (
                     <button type="button" className="pbx-icon" title="Add sub-task"
                       aria-label={`Add a sub-task under ${what} ${id}`} disabled={disabled}
-                      onClick={() => { expand(r.key); setEditing(props.onAddSubtask(r.pi, r.ti)); }}>＋</button>
-                  ) : null}
+                      onClick={() => { expand(r.key); setEditing(props.onAddChild(r.path)); }}>＋</button>
+                  ) : <span className="pgd-ctl-spacer" aria-hidden title={`Level ${MAX_DEPTH} is the deepest level`} />}
                   <button type="button" className="pbx-icon" title="Move in outline (promote / demote)"
                     aria-label={`Move ${what} ${id} in the outline`} aria-haspopup="menu"
                     disabled={disabled}
                     onClick={(e) => openMenu(e, r)}>⋯</button>
                   <button type="button" className="pbx-icon pbx-del" title={`Remove ${what}`}
                     disabled={disabled}
-                    onClick={() => (sub
-                      ? props.onRemoveSubtask(r.pi, r.ti, r.si as number)
-                      : props.onRemoveTask(r.pi, r.ti))}>✕</button>
+                    onClick={() => props.onRemove(r.path)}>✕</button>
                 </span>
               </div>
             );
@@ -1733,7 +1819,7 @@ export function PlanGrid(props: PlanGridProps) {
                 // (drag the body → onShiftGroup slides the whole subtree) but cannot
                 // be RESIZED — its span derives from its children — so it shows no
                 // edge handles. A leaf drags and resizes as before.
-                const isSummary = r.si == null && (r.node.children ?? []).length > 0;
+                const isSummary = (r.node.children ?? []).length > 0;
                 // The procurement window this row paints, if it is out to tender
                 // (LINA-413). Drawn under the bar as a backdrop band + a bids-due
                 // tick; while `locked` (actively tendering) the bar cannot move.
@@ -1741,7 +1827,7 @@ export function PlanGrid(props: PlanGridProps) {
                 return (
                   <div
                     key={`tt-${r.key}`}
-                    className={`pgt-track${r.si != null ? ' is-sub' : ''}${undated && !disabled ? ' is-clickable' : ''}`}
+                    className={`pgt-track${r.level >= 3 ? ' is-sub' : ''}${undated && !disabled ? ' is-clickable' : ''}`}
                     style={{ height: rowH(r) }}
                     title={undated ? 'Click a day to schedule this — the bar starts there and runs one week; drag it after' : undefined}
                     onClick={(e) => onTrackClick(e, win, r)}
@@ -1757,7 +1843,7 @@ export function PlanGrid(props: PlanGridProps) {
                         bar so the task bar sits on top of its own window. */}
                     {proc?.band ? (
                       <div
-                        className={`pgp-window is-${proc.state.replace('_', '-')}${proc.band.clipStart ? ' is-clip-start' : ''}${proc.band.clipEnd ? ' is-clip-end' : ''}`}
+                        className={`pgp-window ${procCls(proc.state)}${proc.band.clipStart ? ' is-clip-start' : ''}${proc.band.clipEnd ? ' is-clip-end' : ''}`}
                         style={{ left: proc.band.x, width: proc.band.width }}
                         aria-hidden
                         title={PROC_LABEL[proc.state]} />
@@ -1768,11 +1854,11 @@ export function PlanGrid(props: PlanGridProps) {
                     ) : null}
                     {bar && box ? (
                       <div
-                        className={`pgt-bar${r.si != null ? ' is-sub' : ''}${isSummary ? ' is-summary' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${proc?.locked ? ' is-tender-locked' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}${criticalOnly ? (criticalKeys.has(r.key) ? ' is-critical' : ' is-dimmed') : ''}`}
+                        className={`pgt-bar${r.level >= 3 ? ' is-sub' : ''}${isSummary ? ' is-summary' : ''}${bar.open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${proc?.locked ? ' is-tender-locked' : ''}${pendingChange.has(r.key) ? ' is-pending-change' : ''}${criticalOnly ? (criticalKeys.has(r.key) ? ' is-critical' : ' is-dimmed') : ''}`}
                         style={{ left: box.x, width: box.width }}
                         role="button" tabIndex={-1}
                         aria-label={
-                          `${r.node.name.trim() || (r.si != null ? 'Sub-task' : 'Task')}: `
+                          `${r.node.name.trim() || (r.level >= 3 ? 'Sub-task' : 'Task')}: `
                           + `${r.node.start || 'no start'} → ${r.node.end || 'no finish'}. `
                           + (proc?.locked
                             ? 'Dates locked while out to tender.'
@@ -1996,12 +2082,12 @@ export function PlanGrid(props: PlanGridProps) {
             <button
               type="button" role="menuitem" className="pgd-menu-item"
               disabled={disabled || !activeMenuRow.canPromote}
-              onClick={() => { props.onPromote(activeMenuRow.pi, activeMenuRow.ti, activeMenuRow.si); setMenu(null); }}
+              onClick={() => { props.onPromote(activeMenuRow.path); setMenu(null); }}
             >⇤ Promote (outdent)</button>
             <button
               type="button" role="menuitem" className="pgd-menu-item"
               disabled={disabled || !activeMenuRow.canDemote}
-              onClick={() => { props.onDemote(activeMenuRow.pi, activeMenuRow.ti, activeMenuRow.si); setMenu(null); }}
+              onClick={() => { props.onDemote(activeMenuRow.path); setMenu(null); }}
             >⇥ Demote (indent)</button>
           </div>
         </>

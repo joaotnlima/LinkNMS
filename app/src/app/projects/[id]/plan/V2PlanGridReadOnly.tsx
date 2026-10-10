@@ -55,14 +55,9 @@ export function V2PlanGridReadOnly({
       onAssign={noop}
       onTrade={noop}
       onAddPhase={noopKey}
-      onAddTask={noopKey}
-      onAddSubtask={noopKey}
-      onRemovePhase={noop}
-      onRemoveTask={noop}
-      onRemoveSubtask={noop}
-      onReorderPhase={noop}
-      onReorderTask={noop}
-      onReorderSubtask={noop}
+      onAddChild={noopKey}
+      onRemove={noop}
+      onReorder={noop}
       onPromote={noop}
       onDemote={noop}
       onLinkDep={noop}

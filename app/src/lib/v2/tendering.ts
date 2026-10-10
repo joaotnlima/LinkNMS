@@ -251,9 +251,9 @@ function isLandedBid(status: ProposalStatus): boolean {
  * Every tendered task of a project, mapped to the procurement window its Gantt
  * bar paints (LINA-413), keyed by task id (= the plan row's stable key in v2).
  *
- * Scope is the ISSUER's own tenders (`getMyRfps`), filtered to this project and
- * excluding cancelled ones — which is exactly who the plan editor serves (the GC
- * authoring the plan is the tender's issuer; a bidder never sees the editor). We
+ * Scope is the ISSUER's own tenders (`getMyRfps`), filtered to this project
+ * (cancelled ones included — the Tender column reports them) — which is exactly
+ * who the plan editor serves (the GC authoring the plan is the tender's issuer; a bidder never sees the editor). We
  * discover WHICH tasks are out to tender from the RFP list, then read each root
  * task's lanes to get the `rfp` block (its `opened_at`, the draft's creation) and
  * count the bids that have landed. One read per tendered task, in parallel; a
@@ -265,9 +265,10 @@ function isLandedBid(status: ProposalStatus): boolean {
 export async function getProcurementWindows(
   projectId: string,
 ): Promise<Record<string, ProcurementRfp>> {
-  const rfps = (await getMyRfps()).filter(
-    (r) => r.project_id === projectId && r.status !== 'cancelled',
-  );
+  // Cancelled tenders are kept (PRD-01 G-2): they paint no Gantt window
+  // (procurementGeom drops them) but the grid's Tender column still says
+  // "Cancelled" on the row.
+  const rfps = (await getMyRfps()).filter((r) => r.project_id === projectId);
   // The union of root tasks across the project's live tenders — one read each.
   const taskIds = [...new Set(rfps.flatMap((r) => r.root_task_ids))];
   if (taskIds.length === 0) return {};
@@ -280,11 +281,21 @@ export async function getProcurementWindows(
       });
       const rfp = res.rfp;
       if (!rfp?.opened_at) return; // no live tender on this row (or pre-LINA-413 store)
+      const lanes = res.items ?? [];
+      // The title comes from the RFP list we already hold (no extra read): the
+      // governing RFP by id, else the newest one rooted on this task.
+      const listed = rfps.find((r) => r.id === rfp.id)
+        ?? rfps.find((r) => r.root_task_ids.includes(taskId));
+      const winner = lanes.find((l) => l.status === 'awarded');
       windows[taskId] = {
         status: rfp.status,
         openedDay: rfp.opened_at.slice(0, 10),
         bidsDueDay: rfp.submission_deadline.slice(0, 10),
-        submittedCount: (res.items ?? []).filter((l) => isLandedBid(l.status)).length,
+        submittedCount: lanes.filter((l) => isLandedBid(l.status)).length,
+        // The `m` of the grid's `n/m in` chip (PRD-01 G-2): every bidder it went to.
+        invitedCount: lanes.length,
+        ...(listed?.title ? { title: listed.title } : {}),
+        ...(winner ? { awardedTo: winner.bidder.name || winner.bidder.email } : {}),
       };
     } catch (err) {
       if (err instanceof V2Error) return;

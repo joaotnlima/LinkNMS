@@ -5,9 +5,15 @@
 // Pen: "S · (new) · Build the plan — schedule (Gantt)" / "Interaction spec —
 // Create & organise tasks". The screen is copy + layout only — every edit is a
 // pure operation from @/lib/plan-authoring (unit-tested under node --test), and
-// the single write is authorPlan(). Three levels, never four (LINA-243,
-// ADR-0019): a phase holds tasks, a task holds sub-tasks, a sub-task holds
-// nothing. The screen refuses the fourth level by never drawing an "add" for it.
+// the single write is the v2 autosave. Up to five levels (ADR-0019, lifted from
+// three by PRD-01 G-1): a phase holds tasks, a task holds sub-tasks, and so on
+// down to MAX_DEPTH. The screen refuses a sixth level by never drawing an "add"
+// for it; every tree op is path-addressed so each level behaves the same.
+//
+// PRD-01 P-1/P-2: the task detail is a DOCKED right panel (480px, 640px when a
+// step needs room), not an overlay — the grid stays visible, undimmed and
+// clickable, and clicking another row switches the panel. It has four tabs,
+// Plan · Tender · Conversation · Files, each label carrying its state.
 //
 // SINCE LINA-248 THERE IS ONE VIEW, NOT TWO. The old List/Timeline toggle is
 // gone: the plan is a single grid (PlanGrid) — an editable table on the left
@@ -50,19 +56,17 @@ import Link from 'next/link';
 
 import {
   DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
-  addPhase, addSubtask, addTask, criticalPathKeys, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, enforceLink, enforceParentRollup, nodeIndex,
-  nodeStatus,
-  promoteNode,
-  removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
-  reorderPhase, reorderSubtask, reorderTask,
+  addChildAt, addPhase, breakdownOf, canAddChildAt, criticalPathKeys, demoteAt, dependencyChoices, dependsOnOf, detectCycle,
+  enforceDependencies, enforceLink, enforceParentRollup, nodeAtPath, nodeIndex, nodeStatus, pathOfKey,
+  promoteAt, removeAt, renameAt, reorderAt,
   saveMyDefaultTemplate, seedFromTemplate, seedSkeleton,
-  setAssignee, setDependencyType, setSubtaskDate, setSubtaskDates, setSubtaskDescription,
-  setTaskDate, setTaskDates, setTaskDescription, setTrade, shiftGroup,
-  subtaskCount, taskCount, toggleDependency, toTemplateBody, toWire,
-  type AuthoredNode, type DepType, type PhaseDraft, type PlanNodeRef, type StageStatus, type TaskDraft, type TemplatePhase,
+  setAssignee, setDateAt, setDatesAt, setDependencyType, setDescriptionAt, setTrade, shiftGroup,
+  subtaskCount, taskAtPath, taskCount, toggleDependency, toTemplateBody, toWire,
+  type AuthoredNode, type DepType, type NodePath, type PhaseDraft, type PlanNodeRef, type StageStatus, type TaskDraft,
+  type TemplatePhase,
 } from '@/lib/plan-authoring';
 import { rekeyDraft, rekeyWire, draftKeys } from '@/lib/v2/plan-rekey';
-import type { ProcurementRfp } from '@/lib/plan-gantt';
+import { procurementChip, procurementTabLabel, type ProcurementRfp } from '@/lib/plan-gantt';
 import { partyIndex, type PartyRef } from '@/lib/party-display';
 import { TaskWorkspace } from '@/components/TaskWorkspace';
 import { taskHref, planHref } from '@/lib/task-workspace';
@@ -72,7 +76,7 @@ import {
 } from './plan-fields';
 import { ProcurementSection, type TaskOption } from '@/components/ProcurementSection';
 import { TenderDrawerTab } from '@/components/TenderDrawerTab';
-import { rfpStatusBadge, type V2Rfp } from '@/lib/v2/tendering-view';
+import type { V2Rfp } from '@/lib/v2/tendering-view';
 import '@/components/plan-build.css';
 
 // ── "Scheduling links" (LINA-233; typed by ADR-0020 / LINA-253) ─────────────
@@ -200,63 +204,32 @@ function SchedulingLinks({
 }
 
 /**
- * Where a stage key sits in the draft — the permalink's `{pi, ti, si}`.
- *
- * Null when the key names nothing here: the permalink page has already refused
- * an unknown key with `notFound()`, so this is the narrow case where the editor
- * scaffolded a different plan than the link was written against, and the honest
- * answer is to open no drawer rather than the wrong one.
- */
-function rowOfKey(
-  phases: PhaseDraft[], key: string,
-): { pi: number; ti?: number; si?: number } | null {
-  for (let pi = 0; pi < phases.length; pi += 1) {
-    if (phases[pi].key === key) return { pi };
-    const tasks = phases[pi].tasks;
-    for (let ti = 0; ti < tasks.length; ti += 1) {
-      if (tasks[ti].key === key) return { pi, ti };
-      const kids = tasks[ti].children ?? [];
-      for (let si = 0; si < kids.length; si += 1) {
-        if (kids[si].key === key) return { pi, ti, si };
-      }
-    }
-  }
-  return null;
-}
-
-/**
  * Where a key sits in the status hierarchy (LINA-404 FIX 1): its ANCESTOR keys
- * (phase first, then task), its descendant LEAF keys, whether it HAS children, and
- * the node itself. Null when the key names nothing here. Used by the status
- * cascade — marking a parent done fans out to its leaves, and reopening a leaf
- * reopens its done ancestors.
+ * (phase first, then each task down), its descendant LEAF keys, whether it HAS
+ * children, and the node itself — at any depth (PRD-01 G-1). Null when the key
+ * names nothing here. Used by the status cascade — marking a parent done fans
+ * out to its leaves, and reopening a leaf reopens its done ancestors.
  */
 function locateStatusNode(
   phases: PhaseDraft[], key: string,
 ): { ancestors: string[]; descendantLeaves: string[]; hasChildren: boolean; node: PhaseDraft | TaskDraft } | null {
-  for (const phase of phases) {
-    if (phase.key === key) {
-      const leaves: string[] = [];
-      for (const t of phase.tasks) {
-        const kids = t.children ?? [];
-        if (kids.length) leaves.push(...kids.map((s) => s.key));
-        else leaves.push(t.key);
-      }
-      return { ancestors: [], descendantLeaves: leaves, hasChildren: phase.tasks.length > 0, node: phase };
-    }
-    for (const t of phase.tasks) {
-      if (t.key === key) {
-        const kids = t.children ?? [];
-        return { ancestors: [phase.key], descendantLeaves: kids.map((s) => s.key), hasChildren: kids.length > 0, node: t };
-      }
-      for (const s of t.children ?? []) {
-        if (s.key === key) {
-          return { ancestors: [phase.key, t.key], descendantLeaves: [], hasChildren: false, node: s };
-        }
-      }
-    }
+  const path = pathOfKey(phases, key);
+  if (!path) return null;
+  const node = nodeAtPath(phases, path);
+  if (!node) return null;
+  const ancestors: string[] = [];
+  for (let d = 1; d < path.length; d += 1) {
+    const a = nodeAtPath(phases, path.slice(0, d));
+    if (a) ancestors.push(a.key);
   }
-  return null;
+  const leaves: string[] = [];
+  const collect = (t: TaskDraft) => {
+    const kids = t.children ?? [];
+    if (kids.length) kids.forEach(collect); else leaves.push(t.key);
+  };
+  const children = 'tasks' in node ? node.tasks : (node.children ?? []);
+  children.forEach(collect);
+  return { ancestors, descendantLeaves: leaves, hasChildren: children.length > 0, node };
 }
 
 /** The status of a node by key — a phase/task derives nothing here (status is the
@@ -275,27 +248,24 @@ function statusOfKey(phases: PhaseDraft[], key: string): StageStatus | null {
  * reload (the founder's "the page should never refresh … each change saved
  * atomically"). Pure and copy-on-write: only the touched nodes (and their
  * ancestors' array spines) are rebuilt, and an update that changes nothing returns
- * the same ref. Phases, tasks and sub-tasks are all addressable (the cascade and
- * the ancestor-reopen both target mixed levels).
+ * the same ref. Every level is addressable (the cascade and the ancestor-reopen
+ * both target mixed levels).
  */
 function applyStatusPatch(phases: PhaseDraft[], updates: Map<string, StageStatus>): PhaseDraft[] {
   if (updates.size === 0) return phases;
+  const patch = (t: TaskDraft): TaskDraft => {
+    const before = t.children ?? [];
+    const kids = before.map(patch);
+    const kidsChanged = kids.some((k, i) => k !== before[i]);
+    const ns = updates.get(t.key);
+    const own = ns && ns !== t.status;
+    if (!own && !kidsChanged) return t;
+    return { ...t, ...(own ? { status: ns } : {}), children: kidsChanged ? kids : before };
+  };
   let anyPhase = false;
   const nextPhases = phases.map((p) => {
-    let phaseChanged = false;
-    const tasks = p.tasks.map((t) => {
-      let taskChanged = false;
-      const kids = (t.children ?? []).map((s) => {
-        const ns = updates.get(s.key);
-        if (ns && ns !== s.status) { taskChanged = true; return { ...s, status: ns }; }
-        return s;
-      });
-      const tns = updates.get(t.key);
-      let nt: TaskDraft = t;
-      if (tns && tns !== t.status) { nt = { ...t, status: tns }; taskChanged = true; }
-      if (taskChanged) { phaseChanged = true; return { ...nt, children: kids }; }
-      return t;
-    });
+    const tasks = p.tasks.map(patch);
+    const phaseChanged = tasks.some((t, i) => t !== p.tasks[i]);
     const pns = updates.get(p.key);
     const cur = (p as PhaseDraft & { status?: StageStatus }).status;
     if (pns && pns !== cur) { anyPhase = true; return { ...p, status: pns, tasks } as PhaseDraft; }
@@ -485,19 +455,33 @@ export function PlanBuildEditor({
   // once per mount — a plan authored across midnight keeps its canvas.
   const [todayIso] = useState(() => new Date().toISOString().slice(0, 10));
 
-  // The detail drawer (LINA-234). Holds the open row's index: {pi} alone for a
-  // PHASE (LINA-248 — phases open the same drawer, minus dates/description),
-  // plus `ti` for a task and `si` for a sub-task (LINA-243).
+  // The detail panel (LINA-234; docked since PRD-01 P-1). Holds the open row's
+  // KEY, and derives its PATH each render — [pi] alone for a PHASE (LINA-248 —
+  // phases open the same panel, minus dates/description), deeper for a task at
+  // any level (PRD-01 G-1). Keyed, not indexed, so reordering / indenting other
+  // rows never re-points the panel at a different task; a save that rekeys a
+  // created row carries the panel along (see the flush).
   // Opened on mount when a permalink named a task (LINA-250) — the row is found
   // in the hydrated draft, whose keys are the server's since LINA-250 made
-  // hydration reuse them.
-  const [openRow, setOpenRow] = useState<{ pi: number; ti?: number; si?: number } | null>(
-    () => (openStageKey ? rowOfKey(initialPhases ?? [], openStageKey) : null),
+  // hydration reuse them; an unknown key opens nothing.
+  const [openKey, setOpenKey] = useState<string | null>(
+    () => (openStageKey && pathOfKey(initialPhases ?? [], openStageKey) ? openStageKey : null),
   );
-  const activePhase = openRow ? phases[openRow.pi] ?? null : null;
-  const activeTask = openRow?.ti != null ? activePhase?.tasks[openRow.ti] ?? null : null;
-  const active = openRow?.si != null ? activeTask?.children[openRow.si] ?? null : activeTask;
-  const activeKey = openRow?.ti == null ? activePhase?.key : active?.key;
+  const openRow = useMemo<NodePath | null>(
+    () => (openKey ? pathOfKey(phases, openKey) : null),
+    [openKey, phases],
+  );
+  const setOpenRow = useCallback((path: NodePath | null) => {
+    setOpenKey(path ? nodeAtPath(phasesRef.current, path)?.key ?? null : null);
+  }, []);
+  const isTaskRow = openRow != null && openRow.length >= 2;
+  const activePhase = openRow ? phases[openRow[0]] ?? null : null;
+  // The open TASK (level ≥ 2), or null for a phase / a stale path.
+  const active = isTaskRow ? taskAtPath(phases, openRow!) : null;
+  // The open task's parent task (level ≥ 3) — the panel's "Under …" line.
+  const activeParent = openRow && openRow.length >= 3 ? taskAtPath(phases, openRow.slice(0, -1)) : null;
+  const isSubRow = openRow != null && openRow.length >= 3;
+  const activeKey = isTaskRow ? active?.key : activePhase?.key;
 
   // "Depends on" (LINA-233). `openDeps` is the key of the row whose picker is
   // open — one at a time. `serverCycle` holds the stages the SERVER named on a
@@ -536,21 +520,25 @@ export function PlanBuildEditor({
   const workspaceTaskId = workspaceKey ? (stageIdByKey.get(workspaceKey) ?? workspaceKey) : null;
   const [copied, setCopied] = useState(false);
 
-  // The drawer is tabbed (LINA-420): Plan (the planning content — status, owner,
-  // dates, links, description), Tender (the per-task tender summary), and
-  // Conversation (the task's thread + files). It opens on Plan and resets there
-  // whenever a different row opens, so a tender tab left open on one task does
-  // not bleed onto the next.
-  const [drawerTab, setDrawerTab] = useState<'plan' | 'tender' | 'conversation'>('plan');
+  // The panel is tabbed (LINA-420; four tabs since PRD-01 P-2): Plan (status,
+  // owner, dates, links, description, breakdown), Tender (the per-task tender
+  // summary), Conversation (the task's thread) and Files (the task's files). It
+  // opens on Plan and resets there whenever a different row opens, so a tender
+  // tab left open on one task does not bleed onto the next.
+  const [drawerTab, setDrawerTab] = useState<'plan' | 'tender' | 'conversation' | 'files'>('plan');
   useEffect(() => { setDrawerTab('plan'); }, [activeKey]);
+  // The open task's file count, reported by the workspace once it loads — the
+  // Files tab label carries it (P-2). Reset when the row changes.
+  const [fileCount, setFileCount] = useState<number | null>(null);
+  useEffect(() => { setFileCount(null); }, [activeKey]);
 
   // The live tender rooted on the open task, if any (same resolution the in-place
   // modal uses). A phase never tenders — only a task/sub-task row carries one.
   const activeRfp = useMemo(
-    () => (activeKey && openRow?.ti != null
+    () => (activeKey && isTaskRow
       ? tenderInitialRfps.find((r) => r.root_task_ids.includes(activeKey)) ?? null
       : null),
-    [activeKey, openRow?.ti, tenderInitialRfps],
+    [activeKey, isTaskRow, tenderInitialRfps],
   );
 
   // Which rows drive the build's finish (CPM) — read off the SAME draft the grid
@@ -559,13 +547,15 @@ export function PlanBuildEditor({
 
   // The Tender tab shows for a task/sub-task row the viewer may tender, or any
   // row that already has a tender to read. Phases never tender.
-  const showTenderTab = openRow?.ti != null && (canStartTender || !!activeRfp);
+  const showTenderTab = isTaskRow && (canStartTender || !!activeRfp);
 
   // The in-place tendering modal (LINA-420). Holds the task id the overlay is
   // tendering over, or null when closed. "Start tendering" sets it instead of
   // navigating to /plan/procurement, so the owner stays on the plan screen. The
   // overlay mounts <ProcurementSection> scoped to that task.
   const [tenderKey, setTenderKey] = useState<string | null>(null);
+  const tenderKeyRef = useRef<string | null>(null);
+  tenderKeyRef.current = tenderKey;
   const openTender = useCallback((key: string) => setTenderKey(key), []);
   const closeTender = useCallback(() => {
     setTenderKey(null);
@@ -725,6 +715,8 @@ export function PlanBuildEditor({
           const rekeyed = rekeyDraft(phasesRef.current, idByKey);
           phasesRef.current = rekeyed;
           setPhases(rekeyed);
+          // The open panel follows its row onto the minted id.
+          setOpenKey((k) => (k && idByKey[k] ? idByKey[k] : k));
           lastSavedWireRef.current = rekeyWire(stages, idByKey);
           // A created row's key is now its stable v2 id — record id→id so its
           // status is settable this session without a reload (LINA-404 FIX 1).
@@ -962,32 +954,41 @@ export function PlanBuildEditor({
     }
   }, [phases]);
 
-  const rename = useCallback((value: string, pi: number, ti?: number, si?: number) => {
-    apply(ti == null
-      ? renamePhase(phases, pi, value)
-      : si == null
-        ? renameTask(phases, pi, ti, value)
-        : renameSubtask(phases, pi, ti, si, value));
+  const rename = useCallback((value: string, path: NodePath) => {
+    apply(renameAt(phases, path, value));
   }, [apply, phases]);
 
-  const setDate = useCallback((
-    field: 'start' | 'end', value: string, pi: number, ti: number, si?: number,
-  ) => {
-    applyDeps(si == null
-      ? setTaskDate(phases, pi, ti, field, value)
-      : setSubtaskDate(phases, pi, ti, si, field, value));
+  const setDate = useCallback((field: 'start' | 'end', value: string, path: NodePath) => {
+    applyDeps(setDateAt(phases, path, field, value));
   }, [applyDeps, phases]);
 
   // A Gantt drag or an empty-track click lands here: write the row's start and
-  // finish in one op. Same draft, same tested vocabulary the table's date
+  // finish in one op. Same draft, same tested vocabulary the panel's date
   // inputs use — the timeline just computes the dates from a pointer.
-  const setDates = useCallback((
-    pi: number, ti: number, start: string, end: string, si?: number,
-  ) => {
-    applyDeps(si == null
-      ? setTaskDates(phases, pi, ti, start, end)
-      : setSubtaskDates(phases, pi, ti, si, start, end));
+  const setDates = useCallback((path: NodePath, start: string, end: string) => {
+    applyDeps(setDatesAt(phases, path, start, end));
   }, [applyDeps, phases]);
+
+  // Add a child under any row (a task under a phase, a sub-task under a task, to
+  // MAX_DEPTH) and hand back its key so the grid opens rename on it.
+  const addChild = useCallback((parentPath: NodePath): string => {
+    const next = addChildAt(phases, parentPath);
+    if (next === phases) return '';
+    apply(next);
+    const parent = nodeAtPath(next, parentPath);
+    const list = parent ? ('tasks' in parent ? parent.tasks : parent.children) : [];
+    return list[list.length - 1]?.key ?? '';
+  }, [apply, phases]);
+
+  // Close the panel on Escape — there is no scrim to click any more (P-1).
+  useEffect(() => {
+    if (!openRow) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !tenderKeyRef.current) { setOpenRow(null); setOpenDeps(null); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openRow]);
 
   // Drag a SUMMARY bar to move the whole group (LINA-404, founder's ask: "if I move
   // the parent task, the tasks inside move with it"). `shiftGroup` slides the named
@@ -1006,8 +1007,22 @@ export function PlanBuildEditor({
   }, [applyDeps]);
   const endGroupShift = useCallback(() => { groupBaseRef.current = null; }, []);
 
+  // The docked panel's derived bits (PRD-01 P-1/P-2). `panelOpen` guards a
+  // stale key (a removed row) so nothing renders half a panel.
+  const panelOpen = openRow != null && activePhase != null && (!isTaskRow || active != null);
+  const panelWhat = !isTaskRow ? 'Phase details' : isSubRow ? 'Sub-task details' : 'Task details';
+  // The bridge's window when it has one; else the bare RFP status from the list
+  // (a tender whose lanes read failed still says what state it is in).
+  const activeProc: ProcurementRfp | undefined = (activeKey ? procurement[activeKey] : undefined)
+    ?? (activeRfp
+      ? { status: activeRfp.status, openedDay: '', bidsDueDay: '', submittedCount: 0, title: activeRfp.title }
+      : undefined);
+  const activeChip = procurementChip(activeProc);
+  // Comparing bids wants room: the Tender tab widens the panel once bids are in.
+  const panelWide = drawerTab === 'tender' && (activeChip?.state === 'bids_in' || activeChip?.state === 'awarded');
+
   return (
-    <main className="pbx pbx--grid">
+    <main className={`pbx pbx--grid${panelOpen ? (panelWide ? ' has-panel is-wide' : ' has-panel') : ''}`}>
       <header className="pbx-head">
         <div>
           <p className="pbx-eyebrow">{resuming ? 'Your draft' : 'New plan'}</p>
@@ -1084,7 +1099,8 @@ export function PlanBuildEditor({
         litRows={litRows}
         disabled={false}
         todayIso={todayIso}
-        onOpenRow={(pi, ti, si) => setOpenRow({ pi, ti, si })}
+        onOpenRow={(path) => setOpenRow([...path])}
+        activeKey={activeKey ?? null}
         onRename={rename}
         onSetDate={setDate}
         onDates={setDates}
@@ -1097,25 +1113,16 @@ export function PlanBuildEditor({
           apply(next);
           return next[next.length - 1].key;
         }}
-        onAddTask={(pi) => {
-          const next = addTask(phases, pi);
-          apply(next);
-          return next[pi].tasks[next[pi].tasks.length - 1].key;
+        onAddChild={addChild}
+        onRemove={(path) => {
+          // Removing the open row (or an ancestor of it) closes the panel rather
+          // than leaving it pointed at a path that now names a different row.
+          if (openRow && path.every((v, i) => openRow[i] === v)) setOpenKey(null);
+          apply(removeAt(phases, path));
         }}
-        onAddSubtask={(pi, ti) => {
-          const next = addSubtask(phases, pi, ti);
-          apply(next);
-          const kids = next[pi].tasks[ti].children ?? [];
-          return kids[kids.length - 1].key;
-        }}
-        onRemovePhase={(pi) => apply(removePhase(phases, pi))}
-        onRemoveTask={(pi, ti) => apply(removeTask(phases, pi, ti))}
-        onRemoveSubtask={(pi, ti, si) => apply(removeSubtask(phases, pi, ti, si))}
-        onReorderPhase={(from, to) => apply(reorderPhase(phases, from, to))}
-        onReorderTask={(pi, from, to) => apply(reorderTask(phases, pi, from, to))}
-        onReorderSubtask={(pi, ti, from, to) => apply(reorderSubtask(phases, pi, ti, from, to))}
-        onPromote={(pi, ti, si) => apply(promoteNode(phases, pi, ti, si))}
-        onDemote={(pi, ti, si) => apply(demoteNode(phases, pi, ti, si))}
+        onReorder={(parentPath, from, to) => apply(reorderAt(phases, parentPath, from, to))}
+        onPromote={(path) => apply(promoteAt(phases, path))}
+        onDemote={(path) => apply(demoteAt(phases, path))}
         onLinkDep={linkDep}
         onUnlinkDep={unlinkDep}
         onSetStatus={setStatus}
@@ -1169,39 +1176,38 @@ export function PlanBuildEditor({
         </p>
       )}
 
-      {openRow && activePhase && (openRow.ti == null || active) ? (
-        <div
-          className="pbx-drawer-scrim"
-          role="presentation"
-          onClick={() => { setOpenRow(null); setOpenDeps(null); }}
+      {panelOpen && openRow && activePhase ? (
+        // The DOCKED task panel (PRD-01 P-1): no scrim, no dimming — the grid
+        // beside it stays live, and clicking another row switches the panel.
+        // Escape or ✕ closes it. 480px; 640px (`is-wide`) when the Tender tab
+        // has bids to compare.
+        <aside
+          className={`pbx-drawer pbx-panel${panelWide ? ' is-wide' : ''}`}
+          role="complementary"
+          aria-label={panelWhat}
         >
-          <aside
-            className="pbx-drawer"
-            role="dialog"
-            aria-modal="true"
-            aria-label={openRow.ti == null ? 'Phase details' : openRow.si != null ? 'Sub-task details' : 'Task details'}
-            onClick={(e) => e.stopPropagation()}
-          >
             <header className="pbx-drawer-hd">
               <div>
                 <p className="pbx-drawer-eyebrow">
-                  {openRow.ti == null ? 'Phase details' : openRow.si != null ? 'Sub-task details' : 'Task details'}
+                  {panelWhat}
+                  {isTaskRow ? <span className="pbx-drawer-outline"> · {index.get(activeKey ?? '')?.outline}</span> : null}
                 </p>
                 <h2 className="pbx-drawer-title">
-                  {(openRow.ti == null ? activePhase.name : active!.name).trim()
-                    || (openRow.ti == null ? 'Untitled phase' : openRow.si != null ? 'Untitled sub-task' : 'Untitled task')}
+                  {(isTaskRow ? active!.name : activePhase.name).trim()
+                    || (!isTaskRow ? 'Untitled phase' : isSubRow ? 'Untitled sub-task' : 'Untitled task')}
                 </h2>
-                {openRow.si != null && activeTask ? (
+                {isSubRow && activeParent ? (
                   <p className="pbx-drawer-under">
-                    Under {activeTask.name.trim() || 'an untitled task'}
+                    Under {activeParent.name.trim() || 'an untitled task'}
                   </p>
                 ) : null}
-                {/* The tender's lifecycle, said once at the top (LINA-420) — the
-                    design's "Out for bids" pill beside the title. */}
-                {activeRfp ? (() => {
-                  const b = rfpStatusBadge(activeRfp.status);
-                  return <span className={`pbx-drawer-statuspill ${b.tone}`}>{b.label}</span>;
-                })() : null}
+                {/* The tender's lifecycle, said once at the top (LINA-420) — in the
+                    SAME lifecycle colour and words as the grid chip (PRD-01 G-8). */}
+                {activeChip ? (
+                  <span className={`pgd-tenderchip is-${activeChip.state.replace('_', '-')} pbx-drawer-chip`}>
+                    {activeChip.label}
+                  </span>
+                ) : null}
               </div>
               <div className="pbx-drawer-hdtools">
                 {/* Shown only for a SAVED task: a link to a row that exists
@@ -1217,9 +1223,6 @@ export function PlanBuildEditor({
                     {copied ? 'Copied' : 'Copy link'}
                   </button>
                 ) : null}
-                {/* Tendering is no longer a header icon — it is the drawer's
-                    "Tender" tab now (LINA-420), so the header carries only the
-                    link and close. */}
                 <button
                   type="button"
                   className="pbx-icon"
@@ -1230,9 +1233,10 @@ export function PlanBuildEditor({
               </div>
             </header>
 
-            {/* The drawer's tabs (LINA-420): Plan is the planning content; Tender
-                the per-task tender summary (only for a task row that has or may
-                have a tender); Conversation the task thread + files. */}
+            {/* The panel's four tabs (PRD-01 P-2): Plan · Tender · Conversation ·
+                Files. Each label carries its state: Tender none / draft / n/m /
+                n in / awarded; Files its count. Tender shows for a task row that
+                has, or may have, a tender; Conversation and Files for any task. */}
             <div className="pbx-drawer-tabs" role="tablist" aria-label="Task detail sections">
               <button
                 type="button" role="tab" id="pbx-tab-plan"
@@ -1248,18 +1252,29 @@ export function PlanBuildEditor({
                   onClick={() => setDrawerTab('tender')}
                 >
                   Tender
-                  {activeRfp && (activeRfp.status === 'published' || activeRfp.status === 'closed')
-                    ? <span className="pbx-drawer-tabcount">{procurement[activeKey ?? '']?.submittedCount ?? 0}</span>
-                    : null}
+                  <span className={`pbx-drawer-tabcount${activeChip ? ` is-${activeChip.state.replace('_', '-')}` : ''}`}>
+                    {procurementTabLabel(activeProc)}
+                  </span>
                 </button>
               ) : null}
-              {openRow.ti != null ? (
+              {isTaskRow ? (
                 <button
                   type="button" role="tab" id="pbx-tab-conversation"
                   className={`pbx-drawer-tab${drawerTab === 'conversation' ? ' is-active' : ''}`}
                   aria-selected={drawerTab === 'conversation'}
                   onClick={() => setDrawerTab('conversation')}
                 >Conversation</button>
+              ) : null}
+              {isTaskRow ? (
+                <button
+                  type="button" role="tab" id="pbx-tab-files"
+                  className={`pbx-drawer-tab${drawerTab === 'files' ? ' is-active' : ''}`}
+                  aria-selected={drawerTab === 'files'}
+                  onClick={() => setDrawerTab('files')}
+                >
+                  Files
+                  {fileCount != null ? <span className="pbx-drawer-tabcount">{fileCount}</span> : null}
+                </button>
               ) : null}
             </div>
 
@@ -1274,10 +1289,10 @@ export function PlanBuildEditor({
             {(() => {
               const statusKey = activeKey ?? null;
               const settable = !!statusKey && statusSettableKeys.has(statusKey);
-              const isPhase = openRow.ti == null;
+              const isPhase = !isTaskRow;
               const isParent = isPhase
                 ? (activePhase?.tasks.length ?? 0) > 0
-                : (openRow.si == null && (active?.children ?? []).length > 0);
+                : (active?.children ?? []).length > 0;
               const isLeaf = !!active && !isParent;
               return (
                 <div className="pbx-drawer-status">
@@ -1299,7 +1314,7 @@ export function PlanBuildEditor({
                         nodeKey={statusKey!}
                         value={nodeStatus(active!)}
                         over={false}
-                        what={openRow.si != null ? 'Sub-task' : 'Task'}
+                        what={isSubRow ? 'Sub-task' : 'Task'}
                         onSet={setStatus}
                       />
                       <span className="pbx-status-hint">Records one attributed progress report on the shared record.</span>
@@ -1322,7 +1337,7 @@ export function PlanBuildEditor({
                   stretched the panel; these size to their content. */}
               <span className="pbx-drawer-label">Owner</span>
               <OwnerField
-                value={(openRow.ti == null ? activePhase.assigneePartyId : active!.assigneePartyId) ?? null}
+                value={(isTaskRow ? active!.assigneePartyId : activePhase.assigneePartyId) ?? null}
                 parties={parties}
                 dir={dir}
                 disabled={parties.length === 0 || !activeKey}
@@ -1333,7 +1348,7 @@ export function PlanBuildEditor({
 
               <span className="pbx-drawer-label">Specialty</span>
               <SpecialtyField
-                value={openRow.ti == null ? activePhase.trade : active!.trade}
+                value={isTaskRow ? active!.trade : activePhase.trade}
                 options={specialties}
                 disabled={!activeKey}
                 ariaLabel="Specialty (trade)"
@@ -1341,11 +1356,11 @@ export function PlanBuildEditor({
                 onRemember={rememberSpecialty}
               />
 
-              {openRow.ti != null && active ? (
+              {isTaskRow && active ? (
                 // A summary task (one with sub-tasks) derives its dates from its
                 // children (LINA-404), so its date fields are read-only here too.
                 (() => {
-                  const derived = openRow.si == null && (active.children ?? []).length > 0;
+                  const derived = (active.children ?? []).length > 0;
                   return (
                     <>
                       <span className="pbx-drawer-label">Start</span>
@@ -1353,18 +1368,28 @@ export function PlanBuildEditor({
                         type="date" className="pbx-date" value={active.start}
                         aria-label="Start date" disabled={derived}
                         title={derived ? 'Derived from the sub-tasks' : undefined}
-                        onChange={(e) => setDate('start', e.target.value, openRow.pi, openRow.ti!, openRow.si)}
+                        onChange={(e) => setDate('start', e.target.value, openRow)}
                       />
                       <span className="pbx-drawer-label">Finish</span>
                       <input
                         type="date" className="pbx-date" value={active.end}
                         aria-label="Finish date" disabled={derived}
                         title={derived ? 'Derived from the sub-tasks' : undefined}
-                        onChange={(e) => setDate('end', e.target.value, openRow.pi, openRow.ti!, openRow.si)}
+                        onChange={(e) => setDate('end', e.target.value, openRow)}
                       />
                     </>
                   );
                 })()
+              ) : null}
+
+              {/* P-3: the Schedule row — whether this row drives the build's finish. */}
+              {activeKey ? (
+                <>
+                  <span className="pbx-drawer-label">Schedule</span>
+                  <span className={`pbx-drawer-sched${criticalKeys.has(activeKey) ? ' is-critical' : ''}`}>
+                    {criticalKeys.has(activeKey) ? '◆ Critical path' : 'Not on the critical path'}
+                  </span>
+                </>
               ) : null}
 
               <span className="pbx-drawer-label">Scheduling links</span>
@@ -1383,7 +1408,7 @@ export function PlanBuildEditor({
               ) : null}
             </div>
 
-            {openRow.ti != null && active ? (
+            {isTaskRow && active ? (
               <>
                 <label className="pbx-drawer-label" htmlFor="pbx-task-desc">Description</label>
                 <textarea
@@ -1393,9 +1418,7 @@ export function PlanBuildEditor({
                   placeholder="What is this task? Add scope, context, anything the other party should know."
                   maxLength={4000}
                   disabled={false}
-                  onChange={(e) => apply(openRow.si != null
-                    ? setSubtaskDescription(phases, openRow.pi, openRow.ti!, openRow.si, e.target.value)
-                    : setTaskDescription(phases, openRow.pi, openRow.ti!, e.target.value))}
+                  onChange={(e) => apply(setDescriptionAt(phases, openRow, e.target.value))}
                 />
               </>
             ) : (
@@ -1403,6 +1426,33 @@ export function PlanBuildEditor({
                 A phase’s dates are read off its tasks — schedule those and the phase bar follows.
               </p>
             )}
+
+            {/* P-3: the Breakdown block — how much hangs under this row, and the
+                way to add the next level (never past MAX_DEPTH). */}
+            {(() => {
+              const node = isTaskRow ? active : activePhase;
+              if (!node) return null;
+              const b = breakdownOf(node);
+              const childWord = isTaskRow ? 'sub-task' : 'task';
+              return (
+                <div className="pbx-drawer-breakdown">
+                  <span className="pbx-drawer-label">Breakdown</span>
+                  <span className="pbx-status-hint">
+                    {b.count === 0
+                      ? `No ${childWord}s yet.`
+                      : `${b.count} ${b.count === 1 ? childWord : `${childWord}s`} across ${b.levels} ${b.levels === 1 ? 'level' : 'levels'}`}
+                  </span>
+                  {canAddChildAt(openRow) ? (
+                    <button
+                      type="button" className="pgd-add"
+                      onClick={() => { addChild(openRow); }}
+                    >＋ Add {childWord}</button>
+                  ) : (
+                    <span className="pbx-status-hint">This is the deepest level the plan holds.</span>
+                  )}
+                </div>
+              );
+            })()}
             </>
             ) : null}
 
@@ -1413,8 +1463,8 @@ export function PlanBuildEditor({
             {drawerTab === 'tender' && showTenderTab && activeKey ? (
               <TenderDrawerTab
                 taskName={(active?.name ?? activePhase.name).trim() || 'this task'}
-                taskStart={openRow.ti != null ? active?.start : undefined}
-                taskEnd={openRow.ti != null ? active?.end : undefined}
+                taskStart={isTaskRow ? active?.start : undefined}
+                taskEnd={isTaskRow ? active?.end : undefined}
                 rfp={activeRfp}
                 proc={procurement[activeKey]}
                 onCriticalPath={criticalKeys.has(activeKey)}
@@ -1426,20 +1476,25 @@ export function PlanBuildEditor({
               />
             ) : null}
 
-            {/* The Conversation tab (LINA-250): the thread and files on this task.
-                `workspaceKey` is null until the plan holds this row — the section
-                then says so rather than collecting comments locally that no reload
-                would bring back. */}
-            {drawerTab === 'conversation' && openRow.ti != null ? (
-              <TaskWorkspace taskId={workspaceTaskId} parties={parties} />
+            {/* Conversation (the thread) and Files (the task's files) are two
+                faces of ONE workspace read (LINA-250/399): it stays mounted for
+                any open task so the Files label can carry its count, and shows
+                the section the active tab names. `workspaceKey` is null until the
+                plan holds this row — the section then says so. */}
+            {isTaskRow ? (
+              <TaskWorkspace
+                taskId={workspaceTaskId}
+                parties={parties}
+                section={drawerTab === 'conversation' ? 'conversation' : drawerTab === 'files' ? 'files' : 'none'}
+                onFileCount={setFileCount}
+              />
             ) : null}
 
             <div className="pbx-drawer-actions">
               <button type="button" className="btn primary"
                 onClick={() => { setOpenRow(null); setOpenDeps(null); }}>Done</button>
             </div>
-          </aside>
-        </div>
+        </aside>
       ) : null}
 
       {/* The "mark everything below done" confirm (LINA-404 FIX 1). Self-contained
