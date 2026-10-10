@@ -144,12 +144,13 @@ export function PortalShell({
             </span>
           )}
 
-          {/* Cross-build, org-scoped: the open marketplace (LINA-406). A plain
-              link in both modes — it is not a build section, it is where a company
-              discovers tendering work it was never emailed about. */}
-          <Link className="psh-nav-item" href="/marketplace">
+          {/* Cross-build, org-scoped: the company inbox (PRD-04 X-9/X-10, D-47 —
+              it replaced the marketplace). A plain link in both modes — it is not
+              a build section, it is where a company finds the requests made to it
+              and the open requests it can ask to bid on. */}
+          <Link className="psh-nav-item" href="/requests">
             <StoreIcon />
-            Marketplace
+            Requests
           </Link>
 
           <span className="psh-nav-group">This build</span>

@@ -1,8 +1,8 @@
 // /settings/organization/profile — the company's public directory profile
 // (PRD-03 R-17, R-19, R-20; to-be/20): its listing over the last 30 days, the
 // completeness checklist (never a ranking input, D-46), the editor and the
-// stated portfolio. Requests for you / open requests near you arrive with
-// PRD-04 (the company inbox).
+// stated portfolio. Requests for you / open requests near you are the company
+// inbox at /requests (PRD-04 X-9, X-10).
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -75,6 +75,7 @@ export default async function CompanyProfileSettingsPage({
               ? <Link className="set-link" href={`/companies/${profile.slug}`}>View your public profile (/companies/{profile.slug})</Link>
               : 'Not shown in the directory — tick “Show my company in the directory” below.'}
           </p>
+          <p><Link className="set-link" href="/requests">Requests for you and open requests near you →</Link></p>
         </section>
       ) : null}
 

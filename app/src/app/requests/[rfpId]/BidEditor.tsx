@@ -1,8 +1,9 @@
 'use client';
 
-// /marketplace/bid/[rfpId] — the self-serve bid editor (LINA-406, Slice 3). The
-// discovery surface (Slice 2) let a company find an open RFP and claim a lane;
-// this is where it finally PRICES and SENDS that bid. It is the authenticated
+// /requests/[rfpId] — the in-app bid editor (LINA-406; the company inbox's
+// "Open and price" since PRD-04 X-11). A company invited from the directory, by
+// e-mail (once its profile is claimed) or after an approved request to bid
+// PRICES and SENDS its bid here. It is the authenticated
 // twin of the public token form (`/rfp/[token]`), and deliberately shares the
 // SAME pure `validateBid` so the two bid surfaces give identical field feedback
 // and the server re-runs the same authority.
@@ -29,11 +30,11 @@ import {
   type BidErrors,
   type DurationUnit,
 } from '@/lib/v2/rfp-link-view';
-import type { AppliedLane } from '@/lib/v2/marketplace';
+import type { AppliedLane } from '@/lib/v2/company-inbox';
 import type { V2Rfp } from '@/lib/v2/tendering-view';
 
 import { bidAction } from './actions';
-import '../../marketplace.css';
+import '../requests.css';
 
 /** The lane's stored figure → the editable draft, so a revise opens pre-filled. */
 function draftFromLane(lane: AppliedLane): BidDraft {
@@ -46,7 +47,7 @@ function draftFromLane(lane: AppliedLane): BidDraft {
     durationUnit: 'wd',
     conditions: lane.conditions ?? '',
     validityUntil: lane.validity_until ?? '',
-    // The marketplace lane view does not echo references back, so a revise opens
+    // The lane view does not echo references back, so a revise opens
     // this empty; the figure/conditions above still pre-fill (LINA-407).
     referenceNotes: '',
   };
@@ -98,8 +99,8 @@ export function BidEditor({ rfp, lane }: { rfp: V2Rfp; lane: AppliedLane }) {
   return (
     <div className="mkt">
       <header className="mkt-head">
-        <button type="button" className="bid-back" onClick={() => router.push('/marketplace')}>
-          ← Back to marketplace
+        <button type="button" className="bid-back" onClick={() => router.push('/requests')}>
+          ← Back to your requests
         </button>
         <h1>{rfp.title}</h1>
         {rfp.scope_text ? <p className="mkt-sub">{rfp.scope_text}</p> : null}

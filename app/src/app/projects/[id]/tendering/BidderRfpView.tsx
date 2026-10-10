@@ -45,13 +45,12 @@ export function BidderRfpView({ projectId, rfp, myProposalStatus }: {
         {items.length > 0 ? <p className="tnd-note">{items.length} priced lines asked for — prices are yours to give.</p> : null}
       </section>
       {rfp.status === 'published' ? (
-        rfp.visibility === 'open' ? (
-          <div className="tnd-row">
-            <Link className="btn primary sm" href={`/marketplace/bid/${rfp.id}`}>Price and send your bid →</Link>
-          </div>
-        ) : (
-          <p className="tnd-note">Send your bid from the personal link in your invitation email.</p>
-        )
+        // PRD-04 X-11: an invited company prices in-app from its inbox, or
+        // from the personal link in its invitation email.
+        <div className="tnd-row">
+          <Link className="btn primary sm" href={`/requests/${rfp.id}`}>Price and send your bid →</Link>
+          <span className="tnd-note">or use the personal link in your invitation email.</span>
+        </div>
       ) : null}
       <BidderClarifications
         items={rfp.clarifications ?? []}
