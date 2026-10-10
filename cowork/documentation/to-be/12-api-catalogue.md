@@ -11,8 +11,9 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 |---|---|---|
 | Who am I, my orgs, my pending invites | ANY | `GET /me` |
 | Create organization (on sign-up) | ANY | `POST /organizations` |
-| Invite person to my org / change role / remove | org admin | `POST /organizations/{id}/members`, `PATCH …/members/{personId}`, `DELETE …` |
-| Accept org invitation | invitee | `POST /org-invitations/{token}:accept` |
+| Members of my org with their roles | org admin | `GET /organizations/{id}/members` |
+| Invite person to my org / change role / remove (Clerk invitation + membership, PRD-12 N-9) | org admin | `POST /organizations/{id}/invitations`, `PATCH /organizations/{id}/members/{personId}`, `DELETE …` |
+| Accept org invitation | invitee | Clerk's hosted invitation flow (doc 16 §2) — no LinkNMS endpoint |
 | Staff people on a project | org admin/manager | `PUT /projects/{id}/staffing/{personId}` · `DELETE …` |
 
 ## Directory (marketplace)
@@ -134,7 +135,7 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Open questions addressed to me | ANY | `GET /me/questions?status=open` |
 | Meeting minutes | participant | `POST /projects/{id}/minutes` · `:circulate` · `:acknowledge` |
 | Activity feed | participant | `GET /projects/{id}/activity?cursor=` |
-| Notifications & preferences | ANY | `GET /me/notifications` · `POST /notifications:mark-read` · `PUT /me/notification-preferences` |
+| Notifications (deep link in `object_ref.url`, `unread_count` for the bell) & preferences | ANY | `GET /me/notifications?unread=&category=&cursor=&limit=` · `POST /notifications:mark-read` · `GET`/`PUT /me/notification-preferences` |
 
 ## Record
 | Use case | Actor | Endpoint |
@@ -155,6 +156,7 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Use case | Actor | Endpoint |
 |---|---|---|
 | Plans for my org kind | org admin | `GET /billing/plans` |
+| My subscription and its plan | org admin | `GET /billing/subscription` |
 | Subscribe / change / cancel | org admin | `POST /billing/subscriptions` · `PATCH …/{id}` · `:cancel` |
 | Usage vs entitlements | org admin | `GET /billing/usage` |
 | Buy add-ons (open-RFP credits, promotion) | org admin | `POST /billing/add-ons` |

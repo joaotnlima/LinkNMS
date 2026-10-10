@@ -2,6 +2,24 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-10 — Notification centre and settings (PRD-12 N-1, N-2, N-8..N-10; additive + two body fixes)
+
+- **New (Collaboration):** `getNotificationPreferences` — `GET /me/notification-preferences`: the effective
+  set, one item per `NotificationCategory` × channel, defaults (enabled) filled in. `putNotificationPreferences`
+  now answers the same full set and refuses an unknown category (422).
+- `listNotifications` gains `category` and `limit`, and `unread_count` (the bell). `Notification.category` is
+  the new `NotificationCategory` enum (`bids`, `tendering`, `variations`, `invitations`, `questions`,
+  `quality`); `object_ref` documents `project_id`, `url` (the deep link, now always present) and `count`.
+- **Fix:** `markNotificationsRead` request body was mis-typed as `Decision`; it is `{ids[]} | {all: true}` as
+  implemented since phase 7.
+- **New (Identity & Access):** `inviteMember` (`POST /organizations/{orgId}/invitations`), `updateMemberRole`
+  (`PATCH /organizations/{orgId}/members/{personId}`), `removeMember` (`DELETE …`) — Clerk invitation /
+  membership through the identity module's Clerk gateway, role within the org kind's role set, the last admin
+  protected, `seats` entitlement on invite (402). All `x-human-only`.
+- `listMembers` items are now `Member` (`Person` + `org_role`), which is what the handler always returned.
+- **New (Billing):** `getMySubscription` — `GET /billing/subscription`: the active org's subscription with its
+  `plan` (404 when it never subscribed).
+
 ## 2026-10-10 — Tendering at its own address, and clarifications (PRD-08; additive)
 
 - **New (Tendering):** `listProjectRfps` — `GET /projects/{projectId}/rfps`. The tendering home in one read:

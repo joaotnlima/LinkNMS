@@ -195,7 +195,7 @@ paths:
                     items:
                       type: array
                       items:
-                        $ref: '#/components/schemas/Person'
+                        $ref: '#/components/schemas/Member'
                   required:
                   - items
         '401':
@@ -204,6 +204,170 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /organizations/{orgId}/invitations:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Identity & Access
+      operationId: inviteMember
+      summary: Invite a colleague into my organisation with a catalogue role (Clerk organisation invitation)
+      description: '**Clerk permission:** `org:members:manage`
+
+
+        **Relationship (LinkNMS):** none — your own organisation only (403 otherwise)
+
+
+        **Entitlement:** `seats` (402 `not_entitled` when the plan''s seat limit is reached; D-05, doc 16 §10)
+
+
+        **Human-only:** never exposed as an MCP tool (a person must do this in the UI).
+
+
+        Clerk sends and tracks the invitation (doc 16 §2). The catalogue role must belong to the org kind''s role
+        set (doc 16 §4, 422 otherwise); on the free tier it rides on the invitation''s `public_metadata.org_role`
+        and the membership webhook mirrors it on acceptance (D-38). PRD-12 N-9.'
+      x-clerk-permission: org:members:manage
+      x-human-only: true
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                org_role:
+                  $ref: '#/components/schemas/OrgRole'
+              required:
+              - email
+              - org_role
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberInvitation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '402':
+          $ref: '#/components/responses/NotEntitled'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /organizations/{orgId}/members/{personId}:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: personId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    patch:
+      tags:
+      - Identity & Access
+      operationId: updateMemberRole
+      summary: Change a colleague's catalogue role (Clerk membership + mirror)
+      description: '**Clerk permission:** `org:members:manage`
+
+
+        **Relationship (LinkNMS):** none — your own organisation only
+
+
+        **Human-only:** never exposed as an MCP tool (a person must do this in the UI).
+
+
+        The role must be in the org kind''s role set (422). The last admin cannot be demoted (409
+        `invalid_transition`). Clerk holds `org:admin` for admins and `org:member` + `public_metadata.org_role`
+        for every finer role (D-38); the mirror is written at once and converges with the webhook.
+        Permissions follow at the next token refresh (doc 16 §8). PRD-12 N-9.'
+      x-clerk-permission: org:members:manage
+      x-human-only: true
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/personId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                org_role:
+                  $ref: '#/components/schemas/OrgRole'
+              required:
+              - org_role
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags:
+      - Identity & Access
+      operationId: removeMember
+      summary: Remove a colleague from my organisation (Clerk membership deleted; staffing cleared by the webhook)
+      description: '**Clerk permission:** `org:members:manage`
+
+
+        **Relationship (LinkNMS):** none — your own organisation only
+
+
+        **Human-only:** never exposed as an MCP tool (a person must do this in the UI).
+
+
+        The last admin cannot be removed (409 `invalid_transition`). Past actions stay attributed in the
+        ledger (doc 16 §8). PRD-12 N-9.'
+      x-clerk-permission: org:members:manage
+      x-human-only: true
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/personId'
+      responses:
+        '204':
+          description: No content
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /projects/{projectId}/staffing/{personId}:
     parameters:
     - name: projectId
@@ -7479,18 +7643,27 @@ paths:
       description: '**Clerk permission:** none beyond an authenticated session
 
 
-        **Relationship (LinkNMS):** none'
+        **Relationship (LinkNMS):** none
+
+
+        Newest first. Every item carries its deep link in `object_ref.url` (PRD-12 N-1). `unread_count` is the
+        person''s total unread across all pages and filters — the shell bell reads it with `limit=1`.'
       parameters:
       - name: unread
         in: query
         required: false
         schema:
           type: string
-      - name: cursor
+          enum:
+          - 'true'
+          - 'false'
+      - name: category
         in: query
         required: false
         schema:
-          type: string
+          $ref: '#/components/schemas/NotificationCategory'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
       responses:
         '200':
           description: OK
@@ -7505,8 +7678,12 @@ paths:
                       type: array
                       items:
                         $ref: '#/components/schemas/Notification'
+                    unread_count:
+                      type: integer
+                      minimum: 0
                   required:
                   - items
+                  - unread_count
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -7518,17 +7695,26 @@ paths:
       tags:
       - Collaboration
       operationId: markNotificationsRead
-      summary: Mark read
+      summary: 'Mark read — some (`ids`) or all (`all: true`)'
       description: '**Clerk permission:** none beyond an authenticated session
 
 
-        **Relationship (LinkNMS):** none'
+        **Relationship (LinkNMS):** none — only the caller''s own notifications are touched; foreign ids are
+        ignored. Idempotent.'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Decision'
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                all:
+                  type: boolean
       responses:
         '204':
           description: No content
@@ -7545,6 +7731,41 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /me/notification-preferences:
+    get:
+      tags:
+      - Collaboration
+      operationId: getNotificationPreferences
+      summary: My effective preferences — every category × channel, defaults filled in
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** none
+
+
+        One item per `NotificationCategory` × channel (`in_app`, `email`), in catalogue order. A pair the person
+        never set answers its default: enabled (doc 08). PRD-12 N-2, N-8.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/NotificationPreference'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     put:
       tags:
       - Collaboration
@@ -7553,13 +7774,29 @@ paths:
       description: '**Clerk permission:** none beyond an authenticated session
 
 
-        **Relationship (LinkNMS):** none'
+        **Relationship (LinkNMS):** none
+
+
+        Upserts the pairs sent (`{items: [...]}` or a bare list) and answers the full effective set, like
+        `getNotificationPreferences`. An unknown category is 422. `email` off stops the e-mail for that
+        category; `in_app` off stops the notification row itself.'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NotificationPreference'
+              oneOf:
+              - type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotificationPreference'
+                required:
+                - items
+              - type: array
+                items:
+                  $ref: '#/components/schemas/NotificationPreference'
       responses:
         '200':
           description: OK
@@ -8130,6 +8367,42 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /billing/subscription:
+    get:
+      tags:
+      - Billing
+      operationId: getMySubscription
+      summary: My organisation's subscription (one per org), with its plan
+      description: '**Clerk permission:** `org:billing:manage`
+
+
+        **Relationship (LinkNMS):** none — the active organisation''s own subscription
+
+
+        404 `not_found` when the organisation has never subscribed. A canceled subscription is still
+        answered (status `canceled`) until a new one replaces it. `plan` is the catalogue entry as stored;
+        no price is computed here. PRD-12 N-10.'
+      x-clerk-permission: org:billing:manage
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Subscription'
+                - type: object
+                  properties:
+                    plan:
+                      oneOf:
+                      - $ref: '#/components/schemas/Plan'
+                      - type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /billing/usage:
     get:
       tags:
@@ -8669,6 +8942,47 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ProjectInvitation'
+    OrgRole:
+      type: string
+      description: Catalogue role inside an organisation (doc 16 §4); each org kind hands out its role set only.
+      enum:
+      - admin
+      - manager
+      - representative
+      - site_lead
+      - finance
+      - member
+      - inspector
+    Member:
+      description: A person in my organisation with their catalogue role (PRD-12 N-9).
+      allOf:
+      - $ref: '#/components/schemas/Person'
+      - type: object
+        properties:
+          org_role:
+            $ref: '#/components/schemas/OrgRole'
+        required:
+        - org_role
+    MemberInvitation:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Clerk invitation id
+        email:
+          type: string
+          format: email
+        org_role:
+          $ref: '#/components/schemas/OrgRole'
+        status:
+          type: string
+          enum:
+          - pending
+      required:
+      - id
+      - email
+      - org_role
+      - status
     Person:
       type: object
       properties:
@@ -11478,32 +11792,60 @@ components:
         object_type:
           type: string
         object_id: *id001
+    NotificationCategory:
+      type: string
+      description: 'What a notification is about — the unit of preferences (PRD-12 N-2). `bids` proposals
+        received (issuer); `tendering` clarifications answered, tender awarded / not selected / cancelled
+        (bidders); `variations` the 15-minute change digest (owner and client of the row); `invitations`
+        project invitations accepted (inviter); `questions`, `quality` collaboration and quality items.'
+      enum:
+      - bids
+      - tendering
+      - variations
+      - invitations
+      - questions
+      - quality
     Notification:
       type: object
       properties:
         id: *id001
         category:
-          type: string
+          $ref: '#/components/schemas/NotificationCategory'
         title:
           type: string
         object_ref:
           type: object
+          description: The object the notification is about, with the deep link that opens it (`url`,
+            app-relative, e.g. `/projects/{id}/plan?task={taskId}&tab=tender`). `count` on a variation digest.
           properties:
             type:
               type: string
             id: *id001
+            project_id: *id001
             url:
               type: string
+            count:
+              type: integer
+          required:
+          - type
+          - id
+          - url
         created_at: *id004
         read_at:
           oneOf:
           - *id004
           - type: 'null'
+      required:
+      - id
+      - category
+      - title
+      - object_ref
+      - created_at
     NotificationPreference:
       type: object
       properties:
         category:
-          type: string
+          $ref: '#/components/schemas/NotificationCategory'
         channel:
           type: string
           enum:

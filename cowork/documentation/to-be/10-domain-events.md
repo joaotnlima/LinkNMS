@@ -14,7 +14,8 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 |---|---|---|---|
 | `project.created`, `project.status_changed` | Project | Feed, Billing (usage) | ● |
 | `project.location_changed` | Project | Planning | ● |
-| `tendering.rfp.published`, `.addendum_issued`, `.closed`, `.awarded`, `.cancelled` | Tendering | Notifications, Directory (open listing), Planning (`.awarded` → baseline at award, D-43) | ● |
+| `project.invitation.accepted` | Project | Notifications (inviter org) | ● |
+| `tendering.rfp.published`, `.addendum_issued`, `.closed`, `.awarded`, `.cancelled` | Tendering | Notifications (`.awarded`, `.cancelled` → bidders), Directory (open listing), Planning (`.awarded` → baseline at award, D-43) | ● |
 | `tendering.clarification.answered` | Tendering | Notifications | ● |
 | `tendering.proposal.submitted`, `.withdrawn` | Tendering | Notifications (issuer) | ● (scope: rfp issuer + bidder) |
 | `contracting.contract.created`, `.signed`, `.activated`, `.provisionally_received`, `.closed`, `.terminated` | Contracting | Project (participation), Planning (bind + baseline — a no-op when the award already took it), Reputation, Billing | ● |
@@ -54,3 +55,29 @@ takes the awarded branch's baseline v1 (reason `award`) from these facts alone; 
 
 Ledgered events store their `data` as the ledger payload with the event's `scope`; the ledger is
 written by the producing module inside its transaction, the outbox row in the same transaction.
+
+**`project.invitation.accepted` data (PRD-12 N-1):** `invitation_id, org_id, invited_by_org_id, invite_capacity` — scope
+`project`. Published in the acceptance transaction (it was ledger-only before PRD-12).
+
+### Notification centre (PRD-12 N-1, N-2)
+
+Collaboration owns `collaboration.notification` and turns events into per-person rows. It never reads another
+module's tables to find recipients: each owning module publishes a **notification port** (application layer),
+injected at the composition root (`app/src/server/v2/dispatcher.ts`):
+
+| Event | Category | Recipients | Port that names them | Deep link (`object_ref.url`) |
+|---|---|---|---|---|
+| `tendering.proposal.submitted` | `bids` | issuer org | tendering `rfpAudience` | `/projects/{p}/plan?task={root}&tab=tender` |
+| `tendering.clarification.answered` | `tendering` | bidder orgs with an account (never the issuer) | tendering `rfpAudience` | `/projects/{p}/tendering/rfps/{rfp}?tab=clarifications` |
+| `tendering.rfp.awarded` | `tendering` | winner org ("won"), every other bidder org ("not selected") | tendering `rfpAudience` | `/projects/{p}/tendering/rfps/{rfp}` |
+| `tendering.rfp.cancelled` | `tendering` | bidder orgs | tendering `rfpAudience` | `/projects/{p}/tendering/rfps/{rfp}` |
+| `planning.variation.recorded`, `.updated` | `variations` (15-min digest) | owner + client of the row's contract, narrowed by `collaboration.variation_subscription` | planning `variationAudience` | `/projects/{p}/plan` |
+| `project.invitation.accepted` | `invitations` | inviter org | — (on the event) | `/projects/{p}` |
+| `collaboration.question.*`, `quality.nonconformity.raised` | `questions`, `quality` | addressee / asker / assigned org | — (on the event) | `/projects/{p}` |
+
+People inside a recipient org come from the identity port `projectAudience(projectId, orgId)` (staffed on the
+project, or admin/manager — the same rule as reading the project) or `orgAudience(orgId, permission)` for bidders,
+who are not project participants. A person with `in_app` off for the category gets no row; with `email` on
+(the default) a new row is also mailed through the shared MailSender port, after the row is written — a replayed
+event inserts nothing and so mails nothing.
+
