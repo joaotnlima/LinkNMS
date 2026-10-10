@@ -107,7 +107,9 @@ export async function getInbox(rfp: Pick<V2Rfp, 'id' | 'root_task_ids'>): Promis
   // needs those invited lanes to offer "record an emailed bid" against them, and
   // for a money-viewer the per-task read still carries `total` (LINA-372). The
   // comparison call is then only the money-gated per-line matrix.
-  const lanes = await gatherLanes(rfp.root_task_ids);
+  // A task tendered more than once has lanes of several RFPs; keep this one's
+  // (lanes carry `rfp_id` since PRD-02 — an older server's lanes all pass).
+  const lanes = (await gatherLanes(rfp.root_task_ids)).filter((l) => !l.rfp_id || l.rfp_id === rfp.id);
   try {
     const cmp = await v2<V2Comparison>({
       method: 'GET', path: `/rfps/${encodeURIComponent(rfp.id)}/comparison`,
@@ -286,6 +288,7 @@ export async function createRfp(projectId: string, draft: RfpDraftInput): Promis
       ...(draft.purpose ? { purpose: draft.purpose } : {}),
       ...(draft.mode ? { mode: draft.mode } : {}),
       ...(draft.questionsDeadline ? { questions_deadline: draft.questionsDeadline } : {}),
+      ...(draft.excludedTaskIds?.length ? { excluded_task_ids: draft.excludedTaskIds } : {}),
       submission_deadline: draft.submissionDeadline,
     },
   });
@@ -302,6 +305,10 @@ export interface RfpPatch {
   questionsDeadline?: string | null;
   submissionDeadline?: string;
   visibility?: RfpVisibility;
+  /** The package's roots (PRD-02 "+ Add tasks from the plan"); re-snapshots it. */
+  rootTaskIds?: string[];
+  /** Rows left out of the package (T-3 "Include it" removes one). */
+  excludedTaskIds?: string[];
 }
 
 export async function updateRfp(rfpId: string, patch: RfpPatch, version: number): Promise<V2Rfp> {
@@ -311,10 +318,14 @@ export async function updateRfp(rfpId: string, patch: RfpPatch, version: number)
   if (patch.questionsDeadline !== undefined) body.questions_deadline = patch.questionsDeadline;
   if (patch.submissionDeadline !== undefined) body.submission_deadline = patch.submissionDeadline;
   if (patch.visibility !== undefined) body.visibility = patch.visibility;
+  if (patch.rootTaskIds !== undefined) body.root_task_ids = patch.rootTaskIds;
+  if (patch.excludedTaskIds !== undefined) body.excluded_task_ids = patch.excludedTaskIds;
+  // The RFP is a versioned aggregate: the version rides as If-Match (doc 11).
   return v2<V2Rfp>({
     method: 'PATCH',
     path: `/rfps/${encodeURIComponent(rfpId)}`,
-    body: { ...body, version },
+    ifMatch: version,
+    body,
   });
 }
 
@@ -345,9 +356,13 @@ export async function closeRfp(rfpId: string): Promise<V2Rfp> {
   return v2<V2Rfp>({ method: 'POST', path: `/rfps/${encodeURIComponent(rfpId)}:close` });
 }
 
-/** POST /rfps/{rfpId}:cancel — abandon the tender (draft/published/closed). */
-export async function cancelRfp(rfpId: string): Promise<V2Rfp> {
-  return v2<V2Rfp>({ method: 'POST', path: `/rfps/${encodeURIComponent(rfpId)}:cancel` });
+/** POST /rfps/{rfpId}:cancel — abandon the tender (draft/published/closed), optionally saying why (T-19). */
+export async function cancelRfp(rfpId: string, reason?: string): Promise<V2Rfp> {
+  return v2<V2Rfp>({
+    method: 'POST',
+    path: `/rfps/${encodeURIComponent(rfpId)}:cancel`,
+    ...(reason?.trim() ? { body: { reason: reason.trim() } } : {}),
+  });
 }
 
 // ── Writes: the inbox / evaluation ───────────────────────────────────────────

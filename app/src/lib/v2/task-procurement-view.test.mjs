@@ -25,7 +25,7 @@ test('keys by task id, slices timestamps to calendar days, carries counts + titl
   assert.deepEqual(Object.keys(out), [T1, T2]);
   assert.deepEqual(out[T1], {
     status: 'published', openedDay: '2026-11-01', bidsDueDay: '2027-01-15',
-    submittedCount: 1, invitedCount: 3, title: 'Canalização',
+    submittedCount: 1, invitedCount: 3, title: 'Canalização', rfpId: 'r1',
   });
 });
 
@@ -50,4 +50,14 @@ test('chip and tab words are unchanged: n/m in, bids in, cancelled', () => {
 test('an item with nothing to paint is dropped; empty in → empty out', () => {
   assert.deepEqual(toProcurementWindows([item({ opened_at: '' })]), {});
   assert.deepEqual(toProcurementWindows([]), {});
+});
+
+test('PRD-02: the governing RFP id, the left-out rows and a cancel reason ride along', () => {
+  const out = toProcurementWindows([item({
+    status: 'cancelled', excluded_task_ids: ['t9'], cancel_reason: 'Owner changed the roof design',
+  })])[T1];
+  assert.equal(out.rfpId, item().rfp_id);
+  assert.deepEqual(out.excludedTaskIds, ['t9']);
+  assert.equal(out.cancelReason, 'Owner changed the roof design');
+  assert.equal(procurementChip(out).title, 'Tender cancelled — Owner changed the roof design');
 });

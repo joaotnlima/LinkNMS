@@ -117,6 +117,16 @@ export interface V2Rfp {
   package_version: number;
   status: RfpStatus;
   awarded_proposal_id?: string;
+  /** PRD-02 T-3: descendants of the roots left out of the package. */
+  excluded_task_ids?: string[];
+  /** PRD-02 T-10: lifecycle stamps (absent until the step happened). */
+  created_at?: string;
+  published_at?: string;
+  closed_at?: string;
+  awarded_at?: string;
+  cancelled_at?: string;
+  /** PRD-02 T-19: the issuer's reason, when cancelled with one. */
+  cancel_reason?: string;
   version: number;
   package?: V2Package;
 }
@@ -143,6 +153,10 @@ export interface V2ProposalLane {
   duration_wd?: number;
   start?: string;
   finish?: string;
+  /** Until when the bid holds (PRD-02 T-14). */
+  validity_until?: string;
+  /** The RFP this lane answers (a re-tendered task has lanes of several). */
+  rfp_id?: string;
   missing_lines: number;
   variant_lines: number;
   document_count: number;
@@ -299,6 +313,8 @@ export interface RfpDraftInput {
   /** D-39. Omit for the as-is execution tender; `design` pins the RFP light. */
   purpose?: RfpPurpose;
   mode?: RfpMode;
+  /** PRD-02 T-3: rows inside the roots' sub-trees left out of the package. */
+  excludedTaskIds?: string[];
 }
 
 /**

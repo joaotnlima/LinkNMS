@@ -356,6 +356,12 @@ export interface ProcurementRfp {
   title?: string;
   /** The awarded bidder's name, when awarded and known — `Awarded · {company}`. */
   awardedTo?: string;
+  /** The governing RFP's id — the panel opens that tender (PRD-02). */
+  rfpId?: string;
+  /** Rows inside the tendered sub-tree LEFT OUT of the package (PRD-02 T-3): no `↳` marker. */
+  excludedTaskIds?: string[];
+  /** The issuer's reason when the tender was cancelled (PRD-02 T-19). */
+  cancelReason?: string;
 }
 
 /**
@@ -414,7 +420,11 @@ export function procurementChip(
         title: rfp.awardedTo ? `Tender awarded to ${rfp.awardedTo}` : 'Tender awarded',
       };
     case 'cancelled':
-      return { state, label: 'Cancelled', title: 'Tender cancelled' };
+      return {
+        state,
+        label: 'Cancelled',
+        title: rfp.cancelReason ? `Tender cancelled — ${rfp.cancelReason}` : 'Tender cancelled',
+      };
     default:
       return null;
   }
@@ -474,15 +484,16 @@ export function procurementGeom(
   win: GanttWindow, col: number, rfp: ProcurementRfp,
 ): ProcurementGeom | null {
   const state = procurementState(rfp);
-  // A cancelled tender leaves no window on the bar — only its chip remains.
-  if (state === null || state === 'cancelled') return null;
+  // A cancelled tender keeps its (red) window so the bar says what happened
+  // (PRD-02 T-19), but locks nothing and has no live bids-due tick.
+  if (state === null) return null;
 
   const clip = clipBarGeom(win, rfp.openedDay, rfp.bidsDueDay);
   const band = clip
     ? { ...barRect(clip.offsetDays, clip.spanDays, col), clipStart: clip.clipStart, clipEnd: clip.clipEnd }
     : null;
 
-  const due = parseDay(rfp.bidsDueDay);
+  const due = state === 'cancelled' ? null : parseDay(rfp.bidsDueDay);
   const winStart = parseDay(win.startDay);
   let bidsDueX: number | null = null;
   if (due !== null && winStart !== null) {

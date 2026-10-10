@@ -568,7 +568,10 @@ export function PlanGrid(props: PlanGridProps) {
     // One recursive walk serves every level (PRD-01 G-1). A row is kept when it
     // passes the filters OR carries a matching descendant (shown as context);
     // folding hides a row's subtree unless a live filter is on.
-    const visit = (t: TaskDraft, path: number[], id: string, level: number, cover: Cover): Row[] | null => {
+    const visit = (t: TaskDraft, path: number[], id: string, level: number, inherited: Cover): Row[] | null => {
+      // A row LEFT OUT of the ancestor's package (PRD-02 T-3) — and its sub-tree
+      // — is not covered by that tender: no `↳` marker.
+      const cover: Cover = inherited && inherited.rfp.excludedTaskIds?.includes(t.key) ? null : inherited;
       const own = procurement?.[t.key];
       // A cancelled tender covers nothing below it.
       const childCover: Cover = own && procurementState(own) !== 'cancelled' ? { key: t.key, rfp: own } : cover;

@@ -28,6 +28,10 @@ import {
   type ModelUploadTicket,
 } from '@/lib/v2/tendering';
 import type { V2Rfp, V2Recipient, RfpDraftInput } from '@/lib/v2/tendering-view';
+import {
+  getTenderWindow, getTenderFollow, removeRecipient, reissueRecipientLink, type TenderFollow,
+} from '@/lib/v2/tender-flow';
+import type { V2TenderWindow } from '@/lib/v2/tender-flow-view';
 
 // ── Result ───────────────────────────────────────────────────────────────────
 
@@ -98,8 +102,31 @@ export async function closeRfpAction(rfpId: string): Promise<Result<V2Rfp>> {
   return guard('The RFP did not close. Try again.', () => closeRfp(rfpId));
 }
 
-export async function cancelRfpAction(rfpId: string): Promise<Result<V2Rfp>> {
-  return guard('The RFP did not cancel. Try again.', () => cancelRfp(rfpId));
+export async function cancelRfpAction(rfpId: string, reason?: string): Promise<Result<V2Rfp>> {
+  return guard('The RFP did not cancel. Try again.', () => cancelRfp(rfpId, reason));
+}
+
+// ── The tender flow (PRD-02): panel + workspace ───────────────────────────────
+
+/** Planning's view of tendering these rows — coverage, window, critical path, award-by. */
+export async function loadTenderWindowAction(
+  projectId: string, taskIds: string[], opts: { include?: string[]; bidsDue?: string | null } = {},
+): Promise<V2TenderWindow | null> {
+  return getTenderWindow(projectId, taskIds, opts);
+}
+
+/** One tender's bidders + its own lanes (money-gated). */
+export async function loadTenderFollowAction(rfp: Pick<V2Rfp, 'id' | 'root_task_ids'>): Promise<TenderFollow> {
+  return getTenderFollow(rfp);
+}
+
+export async function removeRecipientAction(rfpId: string, recipientId: string): Promise<Result<null>> {
+  return guard('That bidder was not removed. Try again.', async () => { await removeRecipient(rfpId, recipientId); return null; });
+}
+
+/** A fresh personal link for a bidder who has not opened theirs (T-11); the token comes back once. */
+export async function reissueLinkAction(rfpId: string, recipientId: string): Promise<Result<V2Recipient>> {
+  return guard('A fresh link could not be made. Try again.', () => reissueRecipientLink(rfpId, recipientId));
 }
 
 // ── Inbox / evaluation writes ──────────────────────────────────────────────────

@@ -81,6 +81,11 @@ export interface V2Request {
   /** Sets the `Idempotency-Key` header the write handlers dedupe on. */
   idempotencyKey?: string;
   /**
+   * Sets `If-Match` — the current `version` of a versioned aggregate (an RFP, a
+   * contract, a proposal; doc 11 "Concurrency"). A stale value is a 409.
+   */
+  ifMatch?: string | number;
+  /**
    * Allow a null viewer (a `security: []` route such as the future public RFP
    * token form, S5). Defaults false: like the /api/v2 route, an unauthenticated
    * caller on a members-only route is a 401 BEFORE dispatch, never a leak.
@@ -136,6 +141,7 @@ async function callInProcess(req: V2Request): Promise<{ status: number; body: un
 
   const headers: Record<string, string> = Object.fromEntries((await requestHeaders()).entries());
   if (req.idempotencyKey) headers['idempotency-key'] = req.idempotencyKey;
+  if (req.ifMatch !== undefined) headers['if-match'] = String(req.ifMatch);
 
   const result = await getRouter().dispatch({
     method: req.method,
@@ -179,6 +185,7 @@ async function callHttp(req: V2Request): Promise<{ status: number; body: unknown
       cookie: jar.toString(),
       ...(hasBody ? { 'content-type': 'application/json' } : {}),
       ...(req.idempotencyKey ? { 'idempotency-key': req.idempotencyKey } : {}),
+      ...(req.ifMatch !== undefined ? { 'if-match': String(req.ifMatch) } : {}),
     },
     body: hasBody ? JSON.stringify(req.body) : undefined,
     cache: 'no-store',

@@ -23,6 +23,13 @@ export interface V2TaskProcurement {
   invited_count: number;
   submitted_count: number;
   awarded_to: { org_id: string | null; name: string } | null;
+  /** PRD-02 additions (absent on an older server). */
+  excluded_task_ids?: string[];
+  published_at?: string | null;
+  closed_at?: string | null;
+  awarded_at?: string | null;
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
 }
 
 /** The projection's items → the plan's `procurement` map, keyed by task id. */
@@ -40,6 +47,9 @@ export function toProcurementWindows(
       invitedCount: item.invited_count,
       ...(item.title ? { title: item.title } : {}),
       ...(item.awarded_to?.name ? { awardedTo: item.awarded_to.name } : {}),
+      rfpId: item.rfp_id,
+      ...(item.excluded_task_ids?.length ? { excludedTaskIds: [...item.excluded_task_ids] } : {}),
+      ...(item.cancel_reason ? { cancelReason: item.cancel_reason } : {}),
     };
   }
   return windows;
