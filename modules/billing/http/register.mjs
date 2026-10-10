@@ -5,7 +5,7 @@
 // webhook. The entitlements PORT other modules consume is
 // application/entitled.mjs, not a route.
 import {
-  listPlans, subscribe, changeSubscription, cancelSubscription,
+  listPlans, getMySubscription, subscribe, changeSubscription, cancelSubscription,
   getUsage, buyAddOn, billingWebhook,
 } from '../application/use-cases.mjs';
 
@@ -15,6 +15,9 @@ import {
 export function registerBilling(router, { store }) {
   router.register('GET', '/billing/plans', 'listPlans', ({ viewer, query }) =>
     listPlans({ viewer, store, query }));
+
+  router.register('GET', '/billing/subscription', 'getMySubscription', ({ viewer }) =>
+    getMySubscription({ viewer, store }));
 
   router.register('POST', '/billing/subscriptions', 'subscribe', ({ viewer, body, headers }) =>
     subscribe({ viewer, store, body, idempotencyKey: headers['idempotency-key'] }));

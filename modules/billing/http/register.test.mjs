@@ -253,6 +253,30 @@ describe('billing over the /api/v2 router', () => {
     });
   });
 
+  describe('getMySubscription (PRD-12 N-10)', () => {
+    test('200: the org\'s subscription with its catalogue plan', async () => {
+      mount({ subscription: liveSub() });
+      const res = await dispatch('GET', '/billing/subscription', viewer());
+      assert.equal(res.status, 200);
+      assert.equal(res.body.id, SUB_ID);
+      assert.equal(res.body.status, 'active');
+      assert.equal(res.body.plan.code, 'gc-starter');
+      assert.deepEqual(res.body.plan.price, { amount_cents: 4900, currency: 'EUR' });
+    });
+
+    test('404 when the org never subscribed; another org\'s subscription is never answered', async () => {
+      mount({ subscription: liveSub({ org_id: OTHER_ORG }) });
+      const res = await dispatch('GET', '/billing/subscription', viewer());
+      assert.equal(res.status, 404);
+    });
+
+    test('403 role without org:billing:manage', async () => {
+      mount({ subscription: liveSub() });
+      const res = await dispatch('GET', '/billing/subscription', viewer({ permissions: [] }));
+      assert.equal(res.status, 403);
+    });
+  });
+
   describe('getUsage', () => {
     test('limit (plan + add-ons) and used per metered key', async () => {
       mount({ subscription: liveSub() });

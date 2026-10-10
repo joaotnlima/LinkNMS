@@ -1,6 +1,6 @@
 // Billing module use cases (phase 8) — one function per operationId:
-//   listPlans, subscribe, changeSubscription, cancelSubscription, getUsage,
-//   buyAddOn, billingWebhook.
+//   listPlans, getMySubscription, subscribe, changeSubscription,
+//   cancelSubscription, getUsage, buyAddOn, billingWebhook.
 //
 // Authorization (contract + doc 16): listPlans needs only a session with an
 // active org (the catalogue is filtered by viewer.orgKind); every command and
@@ -33,6 +33,21 @@ export async function listPlans({ viewer, store, query }) {
     limit: clampLimit(query?.limit),
   });
   return { status: 200, body: { items: items.map(planBody), next_cursor: nextCursor } };
+}
+
+/**
+ * operationId: getMySubscription — the active org's one subscription with its
+ * catalogue plan (PRD-12 N-10). 404 when the org never subscribed; a canceled
+ * one is still answered until a new subscription replaces it. Nothing priced
+ * here: `plan` is the catalogue entry as stored.
+ */
+export async function getMySubscription({ viewer, store }) {
+  requireActiveOrg(viewer);
+  requireBillingManage(viewer);
+  const sub = await store.getSubscriptionByOrg(viewer.orgId);
+  if (!sub) throw new ProblemError('not_found', 'this organisation has no subscription yet');
+  const plan = await store.getPlan(sub.plan_code);
+  return { status: 200, body: { ...subscriptionBody(sub), plan: plan ? planBody(plan) : null } };
 }
 
 /** operationId: subscribe — human-only; one subscription per org. */
