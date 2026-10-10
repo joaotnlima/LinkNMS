@@ -26,7 +26,7 @@ export type PanelCounts = { invited?: number; submitted?: number; awardedTo?: st
 
 export function TenderPanel({
   projectId, taskId, taskName, rfp, tasks, canIssue, saved, todayIso,
-  onRfpChanged, onOpenWorkspace, onFaceChange, openQuestions = 0,
+  onRfpChanged, onOpenWorkspace, onFaceChange, openQuestions = 0, specialtyCode = null, specialtyName = null,
 }: {
   projectId: string;
   taskId: string;
@@ -44,6 +44,9 @@ export function TenderPanel({
   onFaceChange?: (face: PanelFace) => void;
   /** Bidders' questions waiting for an answer (task-procurement, PRD-08 H-7). */
   openQuestions?: number;
+  /** PRD-04 X-1: the task's directory specialty code and its label. */
+  specialtyCode?: string | null;
+  specialtyName?: string | null;
 }) {
   const [composing, setComposing] = useState(false);
   // A fresh composer per attempt; a save that turns "new" into a draft keeps it mounted.
@@ -99,6 +102,7 @@ export function TenderPanel({
         key={`${taskId}:${attempt}`}
         projectId={projectId} taskId={taskId} taskName={taskName} tasks={tasks}
         rfp={live && live.status === 'draft' ? live : null} variant="panel"
+        specialtyCode={specialtyCode} specialtyName={specialtyName}
         onChanged={(next, c) => onRfpChanged(next, { invited: c.invited })}
         onSent={(next, c) => { setComposing(false); onRfpChanged(next, { invited: c.invited, submitted: 0 }); }}
         onDiscarded={(gone) => { setComposing(false); setAttempt((n) => n + 1); if (gone) onRfpChanged(gone, {}); }}
@@ -140,6 +144,7 @@ export function TenderPanel({
         <TenderFollow
           rfp={live} data={follow.data} window={window} taskName={taskName} todayIso={todayIso}
           canIssue={canIssue} onRfpChanged={(next) => onRfpChanged(next, {})} onReload={follow.reload}
+          specialtyCode={specialtyCode}
         />
       ) : (
         <TenderCompare

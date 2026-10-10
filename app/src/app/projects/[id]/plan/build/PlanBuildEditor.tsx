@@ -1627,6 +1627,8 @@ export function PlanBuildEditor({
                 onOpenWorkspace={(section) => { if (workspaceKey) openTender(workspaceKey, section); }}
                 onFaceChange={setPanelFace}
                 openQuestions={activeProc?.openQuestions ?? 0}
+                specialtyCode={(active ?? activePhase).tradeCode || null}
+                specialtyName={(active ?? activePhase).trade || null}
               />
             ) : null}
 

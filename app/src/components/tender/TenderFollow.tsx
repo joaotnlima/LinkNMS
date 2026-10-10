@@ -4,9 +4,13 @@
 // with dates, bids due, what it covers, the locked plan dates, the award-by
 // alert, the bidders (Copy link for those who have not opened theirs), "invite
 // more", recording an emailed bid INLINE, and the proposals that are in.
-// Shared by the panel and the workspace's Overview.
+// Shared by the panel and the workspace's Overview. PRD-04 X-5: bidders carry
+// their source tag, "Asking to bid" lists the companies that asked from the
+// open request (Approve / Decline), and "＋ Find more in the directory" opens
+// the search prefilled from the task, adding to this tender and coming back.
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 
 import { addRecipientsAction, closeRfpAction, reissueLinkAction } from '../procurement-actions';
 import type { TenderFollow as FollowData } from '@/lib/v2/tender-flow';
@@ -17,12 +21,15 @@ import {
 import {
   formatMoney, parseRecipients, recipientStatusBadge, type V2ProposalLane, type V2Rfp,
 } from '@/lib/v2/tendering-view';
+import { directoryHref } from '@/lib/v2/rfp-directory-view';
+import { AskingToBid } from './AskingToBid';
 import { CancelTender } from './CancelTender';
+import { BidderRow } from './DirectoryBits';
 import { RecordOfflineForm } from './RecordOfflineForm';
 import { CriticalAlert, TenderStepper } from './TenderBits';
 
 export function TenderFollow({
-  rfp, data, window, taskName, todayIso, canIssue, onRfpChanged, onReload,
+  rfp, data, window, taskName, todayIso, canIssue, onRfpChanged, onReload, specialtyCode = null,
 }: {
   rfp: V2Rfp;
   data: FollowData | null;
@@ -32,6 +39,8 @@ export function TenderFollow({
   canIssue: boolean;
   onRfpChanged: (rfp: V2Rfp) => void;
   onReload: () => Promise<void>;
+  /** PRD-04: the task's directory specialty, for "Find more in the directory". */
+  specialtyCode?: string | null;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
@@ -104,11 +113,23 @@ export function TenderFollow({
       <CriticalAlert window={window} taskName={taskName} phase="follow" />
       {error ? <p className="tnd-err" role="alert">{error}</p> : null}
 
+      {rfp.listed || rfp.visibility === 'open' ? (
+        <AskingToBid rfpId={rfp.id} canDecide={canIssue && receiving} onDecided={() => void onReload()} />
+      ) : null}
+
       <section className="tnd" style={{ gap: 8 }} aria-label="Bidders">
         <div className="tnd-row is-split">
           <b className="tnd-h">Bidders ({recipients.length})</b>
           {canIssue && receiving ? (
-            <button type="button" className="btn sm" onClick={() => setInviting((v) => !v)}>＋ Invite more</button>
+            <span className="tnd-row">
+              {rfp.root_task_ids[0] ? (
+                <Link className="btn sm" href={directoryHref({
+                  projectId: rfp.project_id, taskId: rfp.root_task_ids[0], rfpId: rfp.id,
+                  specialtyCode: specialtyCode ?? rfp.specialty_codes?.[0] ?? null,
+                })}>＋ Find more in the directory</Link>
+              ) : null}
+              <button type="button" className="btn sm" onClick={() => setInviting((v) => !v)}>＋ Invite by email</button>
+            </span>
           ) : null}
         </div>
         {inviting ? (
@@ -124,15 +145,14 @@ export function TenderFollow({
           </div>
         ) : null}
         {recipients.length === 0 ? (
-          <p className="tnd-note">{data ? 'No one invited by email.' : 'Loading bidders…'}</p>
+          <p className="tnd-note">{data ? 'No bidders yet.' : 'Loading bidders…'}</p>
         ) : (
           <div className="tnd-card">
             {recipients.map((r) => {
               const badge = recipientStatusBadge(r.status);
               const lane = laneByEmail.get(r.email.toLowerCase());
               return (
-                <div key={r.id} className="tnd-inv">
-                  <span className="e">{r.email}</span>
+                <BidderRow key={r.id} recipient={r}>
                   <span className={`tnd-badge ${badge.tone === 'quiet' ? '' : badge.tone}`}>{badge.label}</span>
                   {lane?.total ? <b className="tnd-num">{formatMoney(lane.total)}</b> : null}
                   {canIssue && receiving && offersCopyLink(r) && (!lane || lane.status === 'invited' || lane.status === 'draft') ? (
@@ -142,7 +162,7 @@ export function TenderFollow({
                       {copied === r.id ? 'Copied' : 'Copy link'}
                     </button>
                   ) : null}
-                </div>
+                </BidderRow>
               );
             })}
           </div>

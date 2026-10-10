@@ -12,12 +12,14 @@ import {
 import { CompanyCard } from './CompanyCard';
 
 export function SearchResults({
-  result, params, taxonomy, base = '/companies',
+  result, params, taxonomy, base = '/companies', addTo = null,
 }: {
   result: V2DirectorySearch;
   params: SearchParams;
   taxonomy: readonly V2Specialty[];
   base?: string;
+  /** PRD-04 X-1: opened from a task's tender. */
+  addTo?: { rfpId: string; returnTo: string } | null;
 }) {
   const family = familyCodes(params.specialty, taxonomy);
   const ranked = result.items.filter((c) => c.record.ranked);
@@ -36,9 +38,9 @@ export function SearchResults({
         <p className="dempty">No company matches yet. Try a wider radius or the whole specialty.</p>
       ) : null}
       {ranked.length ? <h2 className="dgroup">With verified clients</h2> : null}
-      {ranked.map((c) => <CompanyCard key={c.org_id} card={c} taxonomy={taxonomy} family={family} />)}
+      {ranked.map((c) => <CompanyCard key={c.org_id} card={c} taxonomy={taxonomy} family={family} addTo={addTo} />)}
       {unranked.length ? <h2 className="dgroup">No verified clients yet</h2> : null}
-      {unranked.map((c) => <CompanyCard key={c.org_id} card={c} taxonomy={taxonomy} family={family} />)}
+      {unranked.map((c) => <CompanyCard key={c.org_id} card={c} taxonomy={taxonomy} family={family} addTo={addTo} />)}
       {result.next_cursor ? (
         <div className="dpager">
           <Link className="btn" href={hrefWith({ ...params, cursor: result.next_cursor }, base)}>More companies</Link>

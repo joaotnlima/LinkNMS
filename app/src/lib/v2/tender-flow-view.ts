@@ -11,7 +11,7 @@
 
 import { formatMoney } from './tendering-view.ts';
 import type {
-  RfpMode, RfpStatus, RfpVisibility, V2ProposalLane, V2Recipient, V2Rfp,
+  RfpMode, RfpStatus, V2ProposalLane, V2Recipient, V2Rfp,
 } from './tendering-view.ts';
 
 // ── Wire: #/components/schemas/TenderWindow (planning) ──────────────────────
@@ -104,10 +104,6 @@ export function modeLabel(mode: RfpMode): string {
   return mode === 'light' ? 'Light (design)' : 'Detailed (build)';
 }
 
-export function visibilityLabel(v: RfpVisibility): string {
-  return v === 'open' ? 'open to the marketplace' : 'invite only';
-}
-
 /** "Roofing + 9 sub-tasks" from the covered rows (roots + kept descendants). */
 export function coversLabel(taskName: string, coveredCount: number, rootCount = 1): string {
   const extra = Math.max(0, coveredCount - rootCount);
@@ -133,12 +129,11 @@ export function workWindowLine(w: V2TenderWindow | null): string {
 
 /** One-line summary of a completed Scope step (T-8). */
 export function scopeSummary(input: {
-  mode: RfpMode; taskName: string; deadline: string | null | undefined; visibility: RfpVisibility;
+  mode: RfpMode; taskName: string; deadline: string | null | undefined;
 }): string {
-  return [
-    modeLabel(input.mode), input.taskName, `bids due ${fmtDeadline(input.deadline)}`,
-    visibilityLabel(input.visibility),
-  ].join(' · ');
+  // Who bids — invited, and whether it is also an open request (PRD-04 X-3) —
+  // is the Bidders step's to say, not the scope's.
+  return [modeLabel(input.mode), input.taskName, `bids due ${fmtDeadline(input.deadline)}`].join(' · ');
 }
 
 /**
@@ -175,17 +170,17 @@ export type ComposeStep = 1 | 2 | 3;
 /**
  * The three composer steps' states (T-8). The current step is open; a step is
  * COMPLETE when its facts hold — Scope: a saved draft; Bidders: at least one
- * bidder, or the RFP is open to the marketplace (publish's own rule); Review is
+ * bidder, or the RFP is listed as an open request (publish's own rule); Review is
  * never "complete" (sending ends the composer). A step other than the current
  * one shows as done (collapsed, with Edit) when it and every step before it is
  * complete; otherwise it is locked and cannot be opened yet.
  */
 export function composeSteps(
-  current: ComposeStep, facts: { hasDraft: boolean; bidders: number; visibility: RfpVisibility },
+  current: ComposeStep, facts: { hasDraft: boolean; bidders: number; listed: boolean },
 ): Record<ComposeStep, StepState> {
   const complete: Record<ComposeStep, boolean> = {
     1: facts.hasDraft,
-    2: facts.hasDraft && (facts.bidders > 0 || facts.visibility === 'open'),
+    2: facts.hasDraft && (facts.bidders > 0 || facts.listed),
     3: false,
   };
   const at = (n: ComposeStep): StepState => {
@@ -198,10 +193,10 @@ export function composeSteps(
 
 /** Can the composer move past `step`? Null when yes, else the reason. */
 export function continueBlocked(
-  step: ComposeStep, facts: { hasDraft: boolean; bidders: number; visibility: RfpVisibility },
+  step: ComposeStep, facts: { hasDraft: boolean; bidders: number; listed: boolean },
 ): string | null {
   if (step === 1 && !facts.hasDraft) return 'Save the scope first.';
-  if (step === 2 && facts.bidders === 0 && facts.visibility !== 'open') return 'Add at least one contractor.';
+  if (step === 2 && facts.bidders === 0 && !facts.listed) return 'Add at least one contractor, or list it as an open request.';
   return null;
 }
 
@@ -211,11 +206,17 @@ export function biddersCaption(recipients: readonly Pick<V2Recipient, 'id'>[]): 
 }
 
 /** T-7: the one confirmation that says what sending does. */
-export function sendConfirmation(input: { bidders: number; taskName: string; visibility: RfpVisibility }): string {
+export function sendConfirmation(input: {
+  bidders: number; taskName: string; listed: boolean; emailInvitees?: number;
+}): string {
   const who = input.bidders === 1 ? '1 bidder' : `${input.bidders} bidders`;
-  const listing = input.visibility === 'open'
-    ? ' It is also listed on the marketplace for matching companies.' : '';
-  return `This sends a personal link to ${who} and locks the dates of ${input.taskName} until you award.${listing}`;
+  const listing = input.listed
+    ? ' It is also listed as an open request: matching companies can ask to bid, and nobody gets a link until you approve them.'
+    : '';
+  const unclaimed = input.emailInvitees
+    ? ` ${input.emailInvitees === 1 ? 'The email invitee also gets' : 'The email invitees also get'} an unclaimed directory profile they can claim.`
+    : '';
+  return `This sends a personal link to ${who} and locks the dates of ${input.taskName} until you award.${listing}${unclaimed}`;
 }
 
 export function sendLabel(bidders: number): string {

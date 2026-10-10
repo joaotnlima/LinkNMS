@@ -5,8 +5,11 @@
 // `?near_project=` — distances from the build's point, through the project's
 // own access rule (a build you are not on answers 404 and the search says so).
 // The order, the facet counts and every "on the record" number are the API's
-// (D-46); this page lays them out.
+// (D-46); this page lays them out. Opened from a task's tender (PRD-04 X-1:
+// `?for_rfp=&return_to=`), each card can be added to that draft and the page
+// leads back to the task panel.
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { DirectoryFrame } from '@/components/directory/DirectoryFrame';
 import { SearchForm } from '@/components/directory/SearchForm';
@@ -14,7 +17,8 @@ import { Facets } from '@/components/directory/Facets';
 import { SearchResults } from '@/components/directory/SearchResults';
 import { V2Error } from '@/lib/v2/client';
 import { listSpecialties, searchCompanies } from '@/lib/v2/directory';
-import { cleanParams, type V2DirectorySearch } from '@/lib/v2/directory-view';
+import { apiParams, cleanParams, type V2DirectorySearch } from '@/lib/v2/directory-view';
+import { safeReturnTo } from '@/lib/v2/rfp-directory-view';
 import { sessionState } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -34,7 +38,7 @@ export default async function CompaniesPage({
   let result: V2DirectorySearch | null = null;
   let problem: string | null = null;
   try {
-    result = await searchCompanies(params);
+    result = await searchCompanies(apiParams(params));
   } catch (err) {
     if (!(err instanceof V2Error)) throw err;
     problem = err.code === 'not_found'
@@ -44,12 +48,16 @@ export default async function CompaniesPage({
         : err.errors ? `Check the search: ${Object.entries(err.errors).map(([k, v]) => `${k} — ${v}`).join('; ')}` : err.message;
   }
   const nearLabel = result?.near?.source === 'project' ? result.near.label : undefined;
+  const returnTo = safeReturnTo(params.return_to);
+  const addTo = state.kind !== 'anonymous' && params.for_rfp && returnTo ? { rfpId: params.for_rfp, returnTo } : null;
 
   return (
     <DirectoryFrame
       on="search"
       signedIn={state.kind !== 'anonymous'}
-      context={nearLabel ? <span>Finding companies near <b>{nearLabel}</b></span> : undefined}
+      context={addTo ? (
+        <span>Adding bidders to your request{nearLabel ? <> near <b>{nearLabel}</b></> : null} · <Link href={addTo.returnTo}>← Back to the task</Link></span>
+      ) : nearLabel ? <span>Finding companies near <b>{nearLabel}</b></span> : undefined}
     >
       <section className="dhero">
         <h1>Who should do this work?</h1>
@@ -58,7 +66,7 @@ export default async function CompaniesPage({
       <div className="dwrap">
         {result ? <Facets facets={result.facets} params={params} taxonomy={taxonomy} /> : <div />}
         {problem ? <p className="derr" role="alert">{problem}</p> : null}
-        {result ? <SearchResults result={result} params={params} taxonomy={taxonomy} /> : null}
+        {result ? <SearchResults result={result} params={params} taxonomy={taxonomy} addTo={addTo} /> : null}
       </div>
     </DirectoryFrame>
   );

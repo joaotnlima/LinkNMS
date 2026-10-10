@@ -29,7 +29,7 @@ import type { ProcurementRfp } from '../plan-gantt';
 import { v2, V2Error } from './client';
 import type { V2Me } from './profile-view';
 import type {
-  V2Model, V2Rfp, V2Recipient, V2ProposalLane, V2Comparison, RfpDraftInput, RfpVisibility,
+  V2Model, V2Rfp, V2Recipient, V2ProposalLane, V2Comparison, RfpDraftInput,
   V2Money, V2ProposalDetail, V2ProposalDocument,
 } from './tendering-view';
 import type { V2UploadTicket } from './task-workspace-view';
@@ -284,7 +284,7 @@ export async function createRfp(projectId: string, draft: RfpDraftInput): Promis
       root_task_ids: draft.rootTaskIds,
       title: draft.title.trim(),
       ...(draft.scopeText.trim() ? { scope_text: draft.scopeText.trim() } : {}),
-      visibility: draft.visibility,
+      listed: draft.listed,
       ...(draft.purpose ? { purpose: draft.purpose } : {}),
       ...(draft.mode ? { mode: draft.mode } : {}),
       ...(draft.questionsDeadline ? { questions_deadline: draft.questionsDeadline } : {}),
@@ -295,7 +295,7 @@ export async function createRfp(projectId: string, draft: RfpDraftInput): Promis
 }
 
 /**
- * PATCH /rfps/{rfpId} — edit a draft's title/scope/deadlines/visibility. The
+ * PATCH /rfps/{rfpId} — edit a draft's title/scope/deadlines/listing. The
  * `version` becomes the `If-Match` the handler uses for optimistic concurrency;
  * a stale version is a 409 the caller re-reads on. Only a draft is editable.
  */
@@ -304,7 +304,8 @@ export interface RfpPatch {
   scopeText?: string;
   questionsDeadline?: string | null;
   submissionDeadline?: string;
-  visibility?: RfpVisibility;
+  /** PRD-04 X-3: also list it as an open request. */
+  listed?: boolean;
   /** The package's roots (PRD-02 "+ Add tasks from the plan"); re-snapshots it. */
   rootTaskIds?: string[];
   /** Rows left out of the package (T-3 "Include it" removes one). */
@@ -317,7 +318,7 @@ export async function updateRfp(rfpId: string, patch: RfpPatch, version: number)
   if (patch.scopeText !== undefined) body.scope_text = patch.scopeText.trim();
   if (patch.questionsDeadline !== undefined) body.questions_deadline = patch.questionsDeadline;
   if (patch.submissionDeadline !== undefined) body.submission_deadline = patch.submissionDeadline;
-  if (patch.visibility !== undefined) body.visibility = patch.visibility;
+  if (patch.listed !== undefined) body.listed = patch.listed;
   if (patch.rootTaskIds !== undefined) body.root_task_ids = patch.rootTaskIds;
   if (patch.excludedTaskIds !== undefined) body.excluded_task_ids = patch.excludedTaskIds;
   // The RFP is a versioned aggregate: the version rides as If-Match (doc 11).

@@ -23,7 +23,7 @@ const window = {
 };
 
 describe('compose steps (T-8)', () => {
-  const facts = (over = {}) => ({ hasDraft: false, bidders: 0, visibility: 'invite_only', ...over });
+  const facts = (over = {}) => ({ hasDraft: false, bidders: 0, listed: false, ...over });
 
   test('a fresh composer: Scope open, the rest locked', () => {
     assert.deepEqual(composeSteps(1, facts()), { 1: 'open', 2: 'locked', 3: 'locked' });
@@ -31,8 +31,8 @@ describe('compose steps (T-8)', () => {
 
   test('saved scope, on Bidders: Scope done (Edit), Review locked until a bidder', () => {
     assert.deepEqual(composeSteps(2, facts({ hasDraft: true })), { 1: 'done', 2: 'open', 3: 'locked' });
-    assert.equal(continueBlocked(2, facts({ hasDraft: true })), 'Add at least one contractor.');
-    assert.equal(continueBlocked(2, facts({ hasDraft: true, visibility: 'open' })), null);
+    assert.equal(continueBlocked(2, facts({ hasDraft: true })), 'Add at least one contractor, or list it as an open request.');
+    assert.equal(continueBlocked(2, facts({ hasDraft: true, listed: true })), null);
   });
 
   test('editing Scope again keeps a complete Bidders step collapsed as done', () => {
@@ -51,8 +51,8 @@ describe('scope phrases (T-2..T-5)', () => {
   });
 
   test('the step summary is one line', () => {
-    const line = scopeSummary({ mode: 'detailed', taskName: 'Roofing', deadline: '2027-01-20T18:00:00', visibility: 'invite_only' });
-    assert.equal(line, 'Detailed (build) · Roofing · bids due 20 Jan 2027, 18:00 · invite only');
+    const line = scopeSummary({ mode: 'detailed', taskName: 'Roofing', deadline: '2027-01-20T18:00:00' });
+    assert.equal(line, 'Detailed (build) · Roofing · bids due 20 Jan 2027, 18:00');
   });
 
   test('the critical alert speaks planning\'s numbers, in the words of each step', () => {
@@ -72,9 +72,13 @@ describe('scope phrases (T-2..T-5)', () => {
 describe('review & send (T-7)', () => {
   test('one confirmation says what sending does', () => {
     assert.equal(
-      sendConfirmation({ bidders: 3, taskName: 'Roofing', visibility: 'invite_only' }),
+      sendConfirmation({ bidders: 3, taskName: 'Roofing', listed: false }),
       'This sends a personal link to 3 bidders and locks the dates of Roofing until you award.',
     );
+    // PRD-04 X-3/X-2: the open request and the e-mail invitee's unclaimed profile are said too.
+    const both = sendConfirmation({ bidders: 4, taskName: 'Roofing', listed: true, emailInvitees: 1 });
+    assert.match(both, /ask to bid, and nobody gets a link until you approve them/);
+    assert.match(both, /The email invitee also gets an unclaimed directory profile/);
     assert.equal(sendLabel(1), 'Send to 1 bidder');
   });
 });

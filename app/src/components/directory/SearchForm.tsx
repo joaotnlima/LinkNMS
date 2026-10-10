@@ -49,6 +49,9 @@ export function SearchForm({
         <span>Can start by</span>
         <input id="d-start" name="can_start_by" type="date" defaultValue={params.can_start_by ?? ''} />
       </label>
+      {/* PRD-04 X-1: opened from a task's tender — keep adding to it, and the way back. */}
+      {params.for_rfp ? <input type="hidden" name="for_rfp" value={params.for_rfp} /> : null}
+      {params.return_to ? <input type="hidden" name="return_to" value={params.return_to} /> : null}
       <button type="submit">Search</button>
     </form>
   );

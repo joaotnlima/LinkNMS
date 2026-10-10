@@ -1,16 +1,19 @@
 'use client';
 
-// Composer step 2 · Bidders (PRD-02 T-6). Add by email (a pasted column works);
-// each bidder shows `Queued` until the RFP is sent, and can be removed while it
-// is a draft. Finding companies in the directory arrives with PRD-04: it slots
-// in through `suggestions`, above the email box, without reshaping this step.
+// Composer step 2 · Bidders (PRD-02 T-6, PRD-04 X-1..X-3). Each bidder is
+// tagged by where it came from (Directory / Email) and shows `Queued` until the
+// RFP is sent; it can be removed while it is a draft. Suggested companies from
+// the directory slot in through `suggestions`, above the email box; the
+// "Also list it as an open request" toggle through `listing`, below it.
 
 import { useMemo, useState, type ReactNode } from 'react';
 
+import { recipientName } from '@/lib/v2/rfp-directory-view';
 import { parseRecipients, recipientStatusBadge, type V2Recipient } from '@/lib/v2/tendering-view';
+import { BidderRow } from './DirectoryBits';
 
 export function BiddersStep({
-  recipients, onAdd, onRemove, busy, suggestions = null, onContinue, continueBlocked,
+  recipients, onAdd, onRemove, busy, suggestions = null, listing = null, onContinue, continueBlocked,
 }: {
   recipients: V2Recipient[];
   /** Resolves true when the addresses were saved. */
@@ -19,6 +22,8 @@ export function BiddersStep({
   busy: boolean;
   /** PRD-04 "Suggested companies" (directory) — rendered above the email box. */
   suggestions?: ReactNode;
+  /** PRD-04 X-3 "Also list it as an open request" — rendered below the email box. */
+  listing?: ReactNode;
   onContinue: () => void;
   continueBlocked: string | null;
 }) {
@@ -41,12 +46,11 @@ export function BiddersStep({
           {recipients.map((r) => {
             const badge = recipientStatusBadge(r.status);
             return (
-              <div key={r.id} className="tnd-inv">
-                <span className="e">{r.email}</span>
+              <BidderRow key={r.id} recipient={r}>
                 <span className={`tnd-badge ${badge.tone === 'quiet' ? '' : badge.tone}`}>{badge.label}</span>
                 <button type="button" className="btn sm" disabled={busy}
-                  aria-label={`Remove ${r.email}`} onClick={() => onRemove(r.id)}>✕</button>
-              </div>
+                  aria-label={`Remove ${recipientName(r)}`} onClick={() => onRemove(r.id)}>✕</button>
+              </BidderRow>
             );
           })}
         </div>
@@ -57,7 +61,7 @@ export function BiddersStep({
       {suggestions}
 
       <div className="tnd-field">
-        <label className="tnd-label" htmlFor="tnd-add">Add contractors by email</label>
+        <label className="tnd-label" htmlFor="tnd-add">Someone not on LinkNMS? Add them by email</label>
         <textarea
           id="tnd-add" className="tnd-input" value={draft} disabled={busy}
           placeholder="ana@obra.pt, joao@construcoes.pt — or paste a column from a spreadsheet"
@@ -78,6 +82,8 @@ export function BiddersStep({
           </span>
         ) : null}
       </div>
+
+      {listing}
 
       <div className="tnd-row">
         <button type="button" className="btn primary sm" disabled={continueBlocked !== null} onClick={onContinue}>

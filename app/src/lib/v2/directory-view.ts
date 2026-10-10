@@ -240,12 +240,21 @@ export interface SearchParams {
   size?: string;
   claimed?: string;
   cursor?: string;
+  /** PRD-04 X-1: opened from a task's tender — add to this RFP, then return. View state only, never sent to the search. */
+  for_rfp?: string;
+  return_to?: string;
 }
 
 const KEYS: (keyof SearchParams)[] = [
   'specialty', 'near_project', 'municipality', 'lat', 'lng', 'radius_km', 'can_start_by', 'q',
-  'work_type', 'proof', 'size', 'claimed', 'cursor',
+  'work_type', 'proof', 'size', 'claimed', 'cursor', 'for_rfp', 'return_to',
 ];
+
+/** The search's own params — without the PRD-04 hand-off (for_rfp, return_to). */
+export function apiParams(params: SearchParams): SearchParams {
+  const { for_rfp: _f, return_to: _r, ...rest } = params;
+  return rest;
+}
 
 /** Only the known, non-empty params — what is passed on to the API. */
 export function cleanParams(raw: Record<string, string | string[] | undefined>): SearchParams {

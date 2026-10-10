@@ -3,13 +3,14 @@
 // Composer step 1 · Scope (PRD-02 T-2..T-5). Pure presentation over the
 // composer's state: the mode (D-39), what the package covers and what it LEAVES
 // OUT (with why, and "Include it"), extra rows from the plan, the bids-due date
-// and time, invite only / open (D-15), the plan's work window and the
+// and time, the plan's work window and the
 // critical-path alert. Every plan fact shown here is planning's
-// (getTenderWindow) — this component never computes a date.
+// (getTenderWindow) — this component never computes a date. Who may bid —
+// invites, and "also list it as an open request" (PRD-04 X-3) — is step 2's.
 
 import { useState } from 'react';
 
-import type { RfpMode, RfpVisibility } from '@/lib/v2/tendering-view';
+import type { RfpMode } from '@/lib/v2/tendering-view';
 import {
   coversLabel, leftOutLine, workWindowLine, type V2TenderWindow,
 } from '@/lib/v2/tender-flow-view';
@@ -26,7 +27,6 @@ export interface ScopeValue {
   deadlineTime: string;
   /** Optional: when bidders stop asking questions (workspace only). */
   questionsDay: string;
-  visibility: RfpVisibility;
 }
 
 export function ScopeStep({
@@ -149,15 +149,6 @@ export function ScopeStep({
           <label className="tnd-label" htmlFor="tnd-due-time">at</label>
           <input id="tnd-due-time" className="tnd-input" type="time" value={value.deadlineTime}
             onChange={(e) => onChange({ deadlineTime: e.target.value })} />
-        </div>
-        <div className="tnd-field">
-          <span className="tnd-label" id="tnd-vis">Who can bid</span>
-          <div className="tnd-seg" role="radiogroup" aria-labelledby="tnd-vis">
-            <button type="button" role="radio" aria-checked={value.visibility === 'invite_only'}
-              onClick={() => onChange({ visibility: 'invite_only' })}>Invite only</button>
-            <button type="button" role="radio" aria-checked={value.visibility === 'open'}
-              onClick={() => onChange({ visibility: 'open' })}>Open</button>
-          </div>
         </div>
       </div>
       {fieldErrors.submission_deadline ? <span className="tnd-err">{fieldErrors.submission_deadline}</span> : null}

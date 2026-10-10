@@ -51,7 +51,11 @@ export type RecipientStatus =
 
 export type Channel = 'platform' | 'email';
 
+/** Deprecated by `listed` (D-47, PRD-04) — still on the wire, in step with it. */
 export type RfpVisibility = 'invite_only' | 'open';
+
+/** Where a bidder came from (PRD-04 §3). */
+export type RecipientSource = 'directory' | 'email' | 'asked_to_bid';
 
 export type RfpLevel = 'owner' | 'sub';
 
@@ -129,7 +133,12 @@ export interface V2Rfp {
   title: string;
   scope_text?: string;
   specialties: string[];
+  /** Deprecated — `listed` says the same (D-47). */
   visibility: RfpVisibility;
+  /** PRD-04 X-3: also listed as an open request companies can ask to bid on. */
+  listed?: boolean;
+  /** PRD-04: the package's taxonomy codes (what open requests match on). */
+  specialty_codes?: string[];
   questions_deadline?: string;
   submission_deadline?: string;
   package_version: number;
@@ -157,6 +166,10 @@ export interface V2Recipient {
   id: string;
   org_id?: string;
   email: string;
+  /** PRD-04 §3 (absent on an older server → email). */
+  source?: RecipientSource;
+  /** The directory name, when added from the directory. */
+  company_name?: string;
   status: RecipientStatus;
   sent_at?: string;
   opened_at?: string;
@@ -330,7 +343,8 @@ export interface RfpDraftInput {
   rootTaskIds: string[];
   submissionDeadline: string; // ISO date-time
   questionsDeadline?: string;
-  visibility: RfpVisibility;
+  /** PRD-04 X-3: also list it as an open request (replaces visibility = open). */
+  listed: boolean;
   /** D-39. Omit for the as-is execution tender; `design` pins the RFP light. */
   purpose?: RfpPurpose;
   mode?: RfpMode;

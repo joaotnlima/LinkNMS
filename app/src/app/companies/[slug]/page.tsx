@@ -3,12 +3,15 @@
 // Header (claimed or not, base, radius, size, on LinkNMS since), the "On the
 // record" block from the directory read model, then what the company STATES —
 // labelled as such, and absent on an unclaimed profile, which offers the claim
-// path instead. Public and indexable; unlisted profiles are a 404.
+// path instead. Public and indexable; unlisted profiles are a 404. A
+// signed-in visitor can "Ask for a proposal" (PRD-04 X-6/X-7): the company is
+// added to an RFP draft of one of the visitor's builds — nothing is sent.
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { DirectoryFrame } from '@/components/directory/DirectoryFrame';
+import { AskForProposal } from '@/components/directory/AskForProposal';
 import { OnRecord } from '@/components/directory/OnRecord';
 import { getCompanyBySlug, listSpecialties } from '@/lib/v2/directory';
 import { TEAM_SIZE_LABEL, formatDay, specialtyLabel } from '@/lib/v2/directory-view';
@@ -49,6 +52,15 @@ export default async function CompanyProfilePage({ params }: { params: Promise<{
                   : <span className="badge neutral">Unclaimed profile</span>}
               </div>
               <p className="where" style={{ fontSize: 14 }}>{where}</p>
+              {state.kind === 'party' ? (
+                <AskForProposal
+                  companyId={profile.org_id} companyName={profile.display_name}
+                  companySpecialties={profile.specialties} taxonomy={taxonomy}
+                  where={profile.specialties.slice(0, 3).map((c) => specialtyLabel(c, taxonomy)).join(' · ')}
+                />
+              ) : state.kind === 'anonymous' ? (
+                <p className="cap"><Link href={`/sign-in?next=/companies/${profile.slug}`}>Sign in</Link> to ask this company for a proposal.</p>
+              ) : null}
               {profile.specialties.length ? (
                 <div className="chips">
                   {profile.specialties.map((c) => (
