@@ -46,6 +46,15 @@ founder), **Proposed** (recommended by the review, awaiting explicit confirmatio
 | D-39 | Tendering has two purposes — `design` (pre-construction) and `execution` — on one RFP engine; a design award grants authoring rights on the shared design model, an execution award creates a contract + baseline. See [23](./23-design-tendering.md) | Accepted (LINA-406, founder confirmed 2026-10-05) |
 | D-40 | Marketplace is built in slices, not as one epic: **Slice 1 = self-serve apply** (a bidder that finds an `open` RFP claims its own proposal lane, `POST /rfps/{rfpId}:apply`) — the hinge that makes "convite aberto ao marketplace" work end-to-end on the lane model already shipped. Directory profiles / portfolio / reputation / billing of [07](./07-marketplace-and-billing.md) are later slices, not blockers for Slice 1. See [07 §Build slices](./07-marketplace-and-billing.md) | Accepted (LINA-406, founder "começa pelo 2" 2026-10-05) |
 | D-41 | BIM depth is **view-only**: an IFC 3D viewer (web-ifc + Three.js, read-only) embedded in the project RFP package, so specialties can see the model before pricing. Full collaborative authoring/versioning (LINA-406 result #2) is a deferred future epic. The IFC is a Documents-module document (`scope_type='rfp'`, `kind='bim'`, no schema change); authorization reuses the RFP invite-only/open rule; bytes delivered via short-TTL presigned **inline** GET. See [24](./24-bim-viewer.md) | Accepted (LINA-406, founder chose `viewer` 2026-10-06) |
+| D-42 | Tender from the task lives in **both** a docked task panel (compose, review & send, follow, compare & award with the plan visible) and a redesigned modal for the full workspace. Amends the LINA-420 modal-only flow. See [prd/PRD-02](../prd/PRD-02-tender-in-the-task-panel.md) | Accepted (founder, 2026-10-10) |
+| D-43 | **Baseline is taken at award** for the awarded branch, with start and duration from the winning proposal (specialty-by-specialty: one per award; turnkey: the owner awards the GC once the plan is accepted). Amends D-13 (signature) while contracts are parked | Accepted (founder, 2026-10-10) |
+| D-44 | A task not closed past its finish **overruns to today** as a drawn segment; successors show the push as a **projection only** — no dates are written until someone sets a new finish or closes the task | Accepted (founder, 2026-10-10) |
+| D-45 | Shared project model: awarded companies edit **record-side only** (element ↔ task links, issue pins, new versions by upload). Nothing is written into the IFC. Amends D-41 (view-only) | Accepted (founder, 2026-10-10) |
+| D-46 | Directory ranking within a specialty comes **only from clients verified by the platform** (clients with an awarded contract on LinkNMS); completeness and payment never change the order. Licences stay self-declared. Amends D-17 | Accepted (founder, 2026-10-10) |
+| D-47 | Open RFPs become **ask-to-bid with owner approval** (`rfp.listed` + bid request); `/marketplace` becomes the company inbox. Amends D-40 Slice 1 | Accepted (founder, 2026-10-10) |
+| D-48 | A task with required deliverables can't be marked done until all are approved (gate); starting before predecessors are done asks for a reason and is recorded (warn, D-23) | Accepted (founder, 2026-10-10) |
+| D-49 | DWG preview by server-side conversion with **LibreDWG** (GPL — legal check before release); PDF via a client-side renderer; upload cap 100 MB | Accepted (founder, 2026-10-10; cap is the default, unconfirmed) |
+| D-50 | Record, money and change-order **pages are parked**: the APIs stay; schedule changes are shown and managed in the plan (clay extension, overrun, acknowledge). See [prd/PRD-13](../prd/PRD-13-baseline-changes-in-the-plan.md) | Accepted (founder, 2026-10-10) |
 
 ---
 
@@ -325,3 +334,9 @@ reach the mirror without the add-on via this contract:
 - `viewer.ts` already prefers the mirror role over the session role (D-38), so no viewer change was
   needed — the mirror simply receives the right role. `admin`/`member` invites need no metadata and are
   unaffected.
+
+### D-42 to D-50 — Screen-library review (2026-10-10)
+Decided while turning the design canvas ("LinkNMS Screen Library") into PRDs (`cowork/documentation/prd/`).
+Each row above links its PRD; the PRD's §7 holds the reasoning and the alternatives that were rejected.
+Recorded dissent (once): D-46 deepens the cold start — a company with no verified clients has no rank —
+accepted by the founder as the price of ranking the owner can trust.
