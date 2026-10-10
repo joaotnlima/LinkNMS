@@ -38,13 +38,14 @@ import {
   taskBody, linkBody, planHealth, projectionCtx, variationBody, handoverBody,
 } from './projection.mjs';
 import { assertDeliverablesApproved } from './deliverables.mjs';
+import { assertSpecialtyCodes, onRecordFacts } from './specialty-code.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DATING_MODES = new Set(['dated', 'undated', 'external']);
 const ANCHORS = new Set(['start', 'end']);
 const DELTA_FIELDS = new Set([
-  'name', 'description', 'kind', 'specialty', 'location_id', 'dating_mode',
+  'name', 'description', 'kind', 'specialty', 'specialty_code', 'location_id', 'dating_mode',
   'start', 'finish', 'duration_wd', 'assignee_org_id', 'assignee_person_id',
   'acceptance_criteria',
 ]);
@@ -194,7 +195,7 @@ export async function listAssignableParties({ viewer, store, projectId }) {
 // ── row writes ─────────────────────────────────────────────────────────────
 
 /** operationId: createTask */
-export async function createTask({ viewer, store, projectId, body, idempotencyKey }) {
+export async function createTask({ viewer, store, specialties, projectId, body, idempotencyKey }) {
   const { actor } = await requireEditor({ viewer, store, projectId });
   await assertPlanEditable(store, projectId);
   const errors = {};
@@ -206,6 +207,7 @@ export async function createTask({ viewer, store, projectId, body, idempotencyKe
     if (body?.[f] != null && !ISO_DATE.test(body[f])) errors[f] = 'an ISO date';
   }
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+  await assertSpecialtyCodes(specialties, [['specialty_code', body?.specialty_code]]);
 
   return store.idempotent(
     { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'createTask', body },
@@ -231,7 +233,7 @@ export async function createTask({ viewer, store, projectId, body, idempotencyKe
 }
 
 /** operationId: updateTask — D-26 field-level delta, LWW, propagation. */
-export async function updateTask({ viewer, store, taskId, body }) {
+export async function updateTask({ viewer, store, specialties, taskId, body }) {
   const existing = await store.getTask(taskId);
   if (!existing) throw new ProblemError('not_found');
   if (existing.deletedAt) throw new ProblemError('gone', 'this row was deleted meanwhile');
@@ -249,6 +251,7 @@ export async function updateTask({ viewer, store, taskId, body }) {
       errors: { changes: unknown.length ? `unknown fields: ${unknown.join(', ')}` : 'at least one field' },
     });
   }
+  if (changes.specialty_code) await assertSpecialtyCodes(specialties, [['specialty_code', changes.specialty_code.value]]);
 
   return store.withPlanTx(existing.projectId, async (plan) => {
     const task = plan.tasks.get(taskId);
@@ -422,13 +425,16 @@ function notifiedBy(snapshot, task) {
 // ── structural batch ───────────────────────────────────────────────────────
 
 /** operationId: applySchedule */
-export async function applySchedule({ viewer, store, projectId, body, idempotencyKey }) {
+export async function applySchedule({ viewer, store, specialties, projectId, body, idempotencyKey }) {
   const { actor } = await requireEditor({ viewer, store, projectId });
   await assertPlanEditable(store, projectId);
   const ops = body?.operations;
   if (!Array.isArray(ops) || !ops.length) {
     throw new ProblemError('validation_failed', null, { errors: { operations: 'a non-empty list' } });
   }
+  await assertSpecialtyCodes(specialties, ops.flatMap((op, i) =>
+    (['create_rows', 'paste_rows'].includes(op?.op) ? op.rows ?? [] : [])
+      .map((r, j) => [`operations[${i}].rows[${j}].specialty_code`, r?.specialty_code])));
   const dryRun = body?.dry_run === true;
 
   const run = () => store.withPlanTx(projectId, async (plan) => {
@@ -993,6 +999,8 @@ export async function reportProgress({ viewer, store, taskId, body }) {
       viewer, store, actor, taskId, progress, actualFinish: body.actual_finish ?? today(),
     });
   }
+  // PRD-03: a done report carries the directory's on-record facts (to-be/10).
+  if (body.status === 'done') progress.onRecord = onRecordFacts(snapshot.tasks, taskId, world(snapshot).contracts);
   const report = await store.insertProgress(progress);
   return { status: 201, body: progressBody(report) };
 }
@@ -1027,6 +1035,7 @@ async function closeWithProgress({ viewer, store, actor, taskId, progress, actua
         data: { task_id: taskId, fields: Object.keys(patch) },
       });
     }
+    if (progress.status === 'done') progress.onRecord = onRecordFacts(plan.tasks, taskId, world(plan).contracts);
     const report = await plan.write.insertProgress(progress);
     return { status: 201, body: progressBody(report) };
   });
@@ -1459,6 +1468,7 @@ function buildRow({ plan, cal, projectId, spec, actor }) {
     name: spec.name.trim(),
     description: spec.description ?? null,
     specialty: spec.specialty ?? null,
+    specialtyCode: spec.specialty_code ?? null,
     locationId: spec.location_id ?? null,
     contractId: null,
     branchContractId: parent ? (parent.contractId ?? parent.branchContractId ?? null) : null,
@@ -1490,7 +1500,7 @@ function applyDelta({ plan, task, cal, changes, viewer, actor, clientChangeId })
   const fieldChanges = [];
   const FIELD_KEYS = {
     name: 'name', description: 'description', kind: 'kind', specialty: 'specialty',
-    location_id: 'locationId', dating_mode: 'datingMode', start: 'start', finish: 'finish',
+    specialty_code: 'specialtyCode', location_id: 'locationId', dating_mode: 'datingMode', start: 'start', finish: 'finish',
     duration_wd: 'durationWd', assignee_org_id: 'assigneeOrgId', assignee_person_id: 'assigneePersonId',
     acceptance_criteria: 'acceptanceCriteria',
   };
@@ -2042,7 +2052,7 @@ const SYSTEM_SPECIALTIES = [
 
 const MAX_LABEL = 120;
 
-export async function listSpecialties({ viewer, store }) {
+export async function listSpecialtyLabels({ viewer, store }) {
   if (!viewer.orgId) throw new ProblemError('unauthenticated', 'active org required');
   const orgLabels = await store.listSpecialties(viewer.orgId);
   const seen = new Set(SYSTEM_SPECIALTIES.map((s) => s.toLowerCase()));
@@ -2050,10 +2060,12 @@ export async function listSpecialties({ viewer, store }) {
     ...SYSTEM_SPECIALTIES,
     ...orgLabels.filter((l) => !seen.has(l.toLowerCase())),
   ].sort((a, b) => a.localeCompare(b));
-  return { specialties: merged.map((label) => ({ label })) };
+  // { status, body } like every handler — the bare object answered a null body
+  // through the router, so the plan picker never learned the labels.
+  return { status: 200, body: { specialties: merged.map((label) => ({ label })) } };
 }
 
-export async function createUserSpecialty({ viewer, store, body }) {
+export async function createSpecialtyLabel({ viewer, store, body }) {
   if (!viewer.orgId) throw new ProblemError('unauthenticated', 'active org required');
   const raw = body?.label;
   if (typeof raw !== 'string' || !raw.trim()) {
@@ -2064,5 +2076,5 @@ export async function createUserSpecialty({ viewer, store, body }) {
     throw new ProblemError('validation_failed', null, { errors: { label: `must be ≤ ${MAX_LABEL} chars` } });
   }
   const stored = await store.createUserSpecialty({ orgId: viewer.orgId, label });
-  return { specialty: { label: stored } };
+  return { status: 200, body: { specialty: { label: stored } } };
 }

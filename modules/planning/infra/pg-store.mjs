@@ -18,7 +18,7 @@ import { deliverableQueries } from './pg-deliverables.mjs';
 const D = (col) => `to_char(${col}, 'YYYY-MM-DD')`;
 const TASK_SELECT = `
   SELECT id, project_id, parent_id, depth, position, kind, name, description,
-         specialty, location_id, contract_id, branch_contract_id,
+         specialty, specialty_code, location_id, contract_id, branch_contract_id,
          assignee_org_id, assignee_person_id, assignee_inherited, dating_mode,
          ${D('start')} AS start, ${D('finish')} AS finish, duration_wd,
          ${D('actual_start')} AS actual_start, ${D('actual_finish')} AS actual_finish,
@@ -30,7 +30,7 @@ const TASK_SELECT = `
 
 const TASK_COLS = {
   parentId: 'parent_id', depth: 'depth', position: 'position', kind: 'kind',
-  name: 'name', description: 'description', specialty: 'specialty',
+  name: 'name', description: 'description', specialty: 'specialty', specialtyCode: 'specialty_code',
   locationId: 'location_id', contractId: 'contract_id', branchContractId: 'branch_contract_id',
   assigneeOrgId: 'assignee_org_id', assigneePersonId: 'assignee_person_id',
   assigneeInherited: 'assignee_inherited', datingMode: 'dating_mode',
@@ -46,7 +46,7 @@ function taskN(r) {
   return {
     id: r.id, projectId: r.project_id, parentId: r.parent_id, depth: r.depth,
     position: r.position, kind: r.kind, name: r.name, description: r.description,
-    specialty: r.specialty, locationId: r.location_id, contractId: r.contract_id,
+    specialty: r.specialty, specialtyCode: r.specialty_code ?? null, locationId: r.location_id, contractId: r.contract_id,
     branchContractId: r.branch_contract_id, assigneeOrgId: r.assignee_org_id,
     assigneePersonId: r.assignee_person_id, assigneeInherited: r.assignee_inherited,
     datingMode: r.dating_mode, start: r.start, finish: r.finish, durationWd: r.duration_wd,
@@ -219,14 +219,14 @@ export function createPlanningStore(pool) {
             location_id, contract_id, branch_contract_id, assignee_org_id, assignee_person_id,
             assignee_inherited, dating_mode, start, finish, duration_wd, actual_start,
             actual_finish, acceptance_criteria, schedule_state, last_changed_by_person_id,
-            last_changed_by_org_id, last_changed_at, last_change_cause)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,now(),$26)`,
+            last_changed_by_org_id, last_changed_at, last_change_cause, specialty_code)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,now(),$26,$27)`,
         [
           t.id, t.projectId, t.parentId, t.depth, t.position, t.kind, t.name, t.description,
           t.specialty, t.locationId, t.contractId, t.branchContractId, t.assigneeOrgId,
           t.assigneePersonId, t.assigneeInherited, t.datingMode, t.start, t.finish, t.durationWd,
           t.actualStart, t.actualFinish, t.acceptanceCriteria, t.scheduleState,
-          t.lastChangedByPersonId, t.lastChangedByOrgId, t.lastChangeCause,
+          t.lastChangedByPersonId, t.lastChangedByOrgId, t.lastChangeCause, t.specialtyCode ?? null,
         ],
       ),
       patchTask: (id, patch) => {
@@ -1118,7 +1118,7 @@ async function acknowledgeOn(client, variationIds, actor) {
 }
 
 /** Append-only progress + planning.progress.reported, on the caller's client. */
-async function insertProgressOn(client, { taskId, projectId, status, percent, note, photoDocumentIds, taskName, criteria, actor }) {
+async function insertProgressOn(client, { taskId, projectId, status, percent, note, photoDocumentIds, taskName, criteria, onRecord, actor }) {
   const { rows } = await client.query(
     `INSERT INTO planning.progress_report
        (task_id, seq, status, percent, note, photo_document_ids, reported_by_org_id, reported_by_person_id)
@@ -1155,6 +1155,9 @@ async function insertProgressOn(client, { taskId, projectId, status, percent, no
       ...(note ? { note } : {}),
       reported_by_org_id: actor.orgId,
       ...(criteria ? { criteria } : {}),
+      // PRD-03: done carries assignee_org_id, contract_id, baseline_finish,
+      // actual_finish for the directory's "On the record" read model.
+      ...(status === 'done' && onRecord ? onRecord : {}),
     },
   });
   return progressN(report);

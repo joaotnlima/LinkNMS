@@ -685,3 +685,62 @@ describe('planning over the /api/v2 router', () => {
     });
   });
 });
+
+describe('specialty_code — the directory taxonomy on a row (PRD-03 R-2)', () => {
+  const specialties = { exists: async (code) => ['roofing', 'roofing-tiled'].includes(code) };
+  let router;
+  let store;
+  beforeEach(() => {
+    router = createRouter();
+    store = fakeStore();
+    registerPlanning(router, { store, specialties });
+  });
+  const dispatch = (method, path, v, body) => router.dispatch({ method, path, viewer: v, body, headers: {} });
+
+  test('a row is created and re-coded with a taxonomy code; the free-text label stays', async () => {
+    const id = uuid();
+    const created = await dispatch('POST', `/projects/${PROJECT}/tasks`, viewer(GC_ORG), {
+      id, parent_id: GC_ROOT, name: 'Telhado', specialty: 'Telhados (sub)', specialty_code: 'roofing',
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.task.specialty, 'Telhados (sub)');
+    assert.equal(created.body.task.specialty_code, 'roofing');
+    const patched = await dispatch('PATCH', `/tasks/${id}`, viewer(GC_ORG), {
+      client_change_id: uuid(), changes: { specialty_code: { value: 'roofing-tiled', base: 'roofing' } },
+    });
+    assert.equal(patched.status, 200);
+    assert.equal(patched.body.task.specialty_code, 'roofing-tiled');
+    const cleared = await dispatch('PATCH', `/tasks/${id}`, viewer(GC_ORG), {
+      client_change_id: uuid(), changes: { specialty_code: { value: null } },
+    });
+    assert.equal(cleared.body.task.specialty_code, undefined);
+  });
+
+  test('an unknown or malformed code is 422; without the taxonomy port a code is refused', async () => {
+    const bad = await dispatch('POST', `/projects/${PROJECT}/tasks`, viewer(GC_ORG), {
+      id: uuid(), parent_id: GC_ROOT, name: 'X', specialty_code: 'made-up',
+    });
+    assert.equal(bad.status, 422);
+    assert.ok(bad.body.errors.specialty_code);
+    const malformed = await dispatch('PATCH', `/tasks/${TASK_A}`, viewer(GC_ORG), {
+      client_change_id: uuid(), changes: { specialty_code: { value: 'Roofing!' } },
+    });
+    assert.equal(malformed.status, 422);
+    const bare = createRouter();
+    registerPlanning(bare, { store: fakeStore() });
+    const noPort = await bare.dispatch({
+      method: 'POST', path: `/projects/${PROJECT}/tasks`, viewer: viewer(GC_ORG), headers: {},
+      body: { id: uuid(), parent_id: GC_ROOT, name: 'X', specialty_code: 'roofing' },
+    });
+    assert.equal(noPort.status, 422);
+  });
+
+  test('specialty labels moved to /specialty-labels', async () => {
+    store.listSpecialties = async () => ['Telhados de xisto'];
+    const res = await dispatch('GET', '/specialty-labels', viewer(GC_ORG));
+    assert.equal(res.status, 200);
+    assert.ok(res.body.specialties.some((s) => s.label === 'Roofing'));
+    assert.ok(res.body.specialties.some((s) => s.label === 'Telhados de xisto'));
+    assert.equal(router.match('GET', '/specialties'), null);
+  });
+});

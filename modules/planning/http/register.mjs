@@ -7,7 +7,7 @@ import {
   listCostLines, createCostLine, updateCostLine, deleteCostLine,
   listVariations, getVariation, acknowledgeVariation, questionVariation,
   reportProgress, listProgress,
-  listSpecialties, createUserSpecialty,
+  listSpecialtyLabels, createSpecialtyLabel,
   resolvePlanTemplate, savePlanTemplate,
 } from '../application/use-cases.mjs';
 import { acknowledgeVariations } from '../application/baseline-changes.mjs';
@@ -18,11 +18,13 @@ import {
 } from '../application/deliverables.mjs';
 
 /**
- * @param {{ store: object, documents?: { versionFacts: Function } }} deps
+ * @param {{ store: object, documents?: { versionFacts: Function }, specialties?: { exists: Function } }} deps
  *   `documents` — the documents query port: a deliverable submission binds a
  *   proven document version without planning reading documents.* (PRD-05).
+ *   `specialties` — the directory's taxonomy port: a row's `specialty_code` is
+ *   checked through it (PRD-03 R-2); without it a code is refused (422).
  */
-export function registerPlanning(router, { store, documents }) {
+export function registerPlanning(router, { store, documents, specialties }) {
   router.register('GET', '/projects/{projectId}/schedule', 'getSchedule', ({ viewer, params, query }) =>
     getSchedule({ viewer, store, projectId: params.projectId, query }));
 
@@ -44,13 +46,13 @@ export function registerPlanning(router, { store, documents }) {
     listAssignableParties({ viewer, store, projectId: params.projectId }));
 
   router.register('POST', '/projects/{projectId}/tasks', 'createTask', ({ viewer, params, body, headers }) =>
-    createTask({ viewer, store, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
+    createTask({ viewer, store, specialties, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('GET', '/tasks/{taskId}', 'getTask', ({ viewer, params }) =>
     getTask({ viewer, store, taskId: params.taskId }));
 
   router.register('PATCH', '/tasks/{taskId}', 'updateTask', ({ viewer, params, body }) =>
-    updateTask({ viewer, store, taskId: params.taskId, body }));
+    updateTask({ viewer, store, specialties, taskId: params.taskId, body }));
 
   router.register('POST', '/tasks/{taskId}:preview-move', 'previewMove', ({ viewer, params, body }) =>
     previewMove({ viewer, store, taskId: params.taskId, body }));
@@ -59,7 +61,7 @@ export function registerPlanning(router, { store, documents }) {
     recordActual({ viewer, store, taskId: params.taskId, body }));
 
   router.register('POST', '/projects/{projectId}/schedule:apply', 'applySchedule', ({ viewer, params, body, headers }) =>
-    applySchedule({ viewer, store, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
+    applySchedule({ viewer, store, specialties, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('POST', '/tasks/{taskId}/links', 'createLink', ({ viewer, params, body }) =>
     createLink({ viewer, store, taskId: params.taskId, body }));
@@ -132,12 +134,13 @@ export function registerPlanning(router, { store, documents }) {
   router.register('POST', '/deliverables/{deliverableId}:request-changes', 'requestDeliverableChanges', ({ viewer, params, body }) =>
     requestDeliverableChanges({ viewer, store, deliverableId: params.deliverableId, body }));
 
-  // ── Specialty catalog (LINA-380) ───────────────────────────────────────────
-  router.register('GET', '/specialties', 'listSpecialties', ({ viewer }) =>
-    listSpecialties({ viewer, store }));
+  // ── Specialty labels (LINA-380) — the plan's free-text picker. /specialties
+  // is the directory taxonomy (PRD-03); the labels moved here.
+  router.register('GET', '/specialty-labels', 'listSpecialtyLabels', ({ viewer }) =>
+    listSpecialtyLabels({ viewer, store }));
 
-  router.register('POST', '/specialties', 'createUserSpecialty', ({ viewer, body }) =>
-    createUserSpecialty({ viewer, store, body }));
+  router.register('POST', '/specialty-labels', 'createSpecialtyLabel', ({ viewer, body }) =>
+    createSpecialtyLabel({ viewer, store, body }));
 
   // Plan template "my default" (LINA-383) — per-person, project-independent,
   // names-only (LINA-241, ADR-0018). Gated on the identity mirror only (no org),

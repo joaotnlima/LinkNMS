@@ -40,6 +40,7 @@ export function taskBody(task, ctx) {
     name: task.name,
     description: task.description ?? undefined,
     specialty: task.specialty ?? undefined,
+    specialty_code: task.specialtyCode ?? undefined,
     location_id: task.locationId ?? undefined,
     assignee: assignee
       ? {

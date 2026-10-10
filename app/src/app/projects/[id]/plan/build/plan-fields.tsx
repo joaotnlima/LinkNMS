@@ -364,7 +364,7 @@ export function OwnerField({
 
 // ── Specialty catalog (lifted from PlanGrid so the drawer shares it) ──────────
 // The caller's known trades: the seeded system set ∪ anything they have typed,
-// across every project (GET /api/v2/specialties). Committing a brand-new label
+// across every project (GET /api/v2/specialty-labels). Committing a brand-new label
 // remembers it (POST, idempotent) so it is offered next time. Enhancement-only —
 // a failure never loses the typed label (the stage already holds it); the picker
 // just does not learn it.
@@ -372,7 +372,7 @@ export function useSpecialtyCatalog(): { specialties: string[]; remember: (label
   const [specialties, setSpecialties] = useState<string[]>([]);
   useEffect(() => {
     let live = true;
-    fetch('/api/v2/specialties', { headers: { accept: 'application/json' } })
+    fetch('/api/v2/specialty-labels', { headers: { accept: 'application/json' } })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { specialties?: Array<{ label: string }> } | null) => {
         if (live && d?.specialties) setSpecialties(d.specialties.map((s) => s.label));
@@ -388,7 +388,7 @@ export function useSpecialtyCatalog(): { specialties: string[]; remember: (label
       if (prev.some((s) => s.toLowerCase() === label.toLowerCase())) return prev;
       return [...prev, label].sort((a, b) => a.localeCompare(b));
     });
-    fetch('/api/v2/specialties', {
+    fetch('/api/v2/specialty-labels', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ label }),
