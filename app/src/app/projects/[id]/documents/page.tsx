@@ -5,8 +5,8 @@
 //
 // Three module reads in one round (no N+1): the files (Documents), the
 // deliverables (Planning) and the schedule (task names). A viewer who is not on
-// the build gets the sentence, never a crash. Rows open the file (PRD-06 renders
-// PDF/DWG in place later; until then the download behind the V6 check).
+// the build gets the sentence, never a crash. PDF / DWG / DXF names open the
+// drawing viewer (PRD-06); other files open the download behind the V6 check.
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 
@@ -18,10 +18,10 @@ import { getPlanGrid } from '@/lib/v2/planning';
 import { collectRowOptions } from '@/lib/v2/planning-view';
 import { fetchProjectFiles, fetchProjectDeliverables } from '@/lib/v2/task-files';
 import {
-  DELIVERABLE_STATE, PROJECT_FILE_FILTERS, deliverableStateByDocument,
+  PROJECT_FILE_FILTERS, deliverableStateByDocument,
   type FileType, type FileView, type V2Deliverable,
 } from '@/lib/v2/task-files-view';
-import { FileTypeTag, Badge } from '@/components/files/FileBits';
+import { ProjectFilesTable } from '@/components/files/ProjectFilesTable';
 import '@/components/files/files.css';
 
 export const dynamic = 'force-dynamic';
@@ -98,32 +98,8 @@ export default async function ProjectDocumentsPage({
         ) : null}
 
         {files.length ? (
-          <table className="pfl-table">
-            <thead>
-              <tr><th>Type</th><th>Name</th><th>Version</th><th>Used on</th><th>Deliverable</th><th>Preview</th></tr>
-            </thead>
-            <tbody>
-              {files.map((f) => {
-                const state = stateOf.get(f.id);
-                return (
-                  <tr key={f.id}>
-                    <td><FileTypeTag type={f.fileType} tag={f.tag} /></td>
-                    <td>{f.openPath ? <a href={f.openPath} target="_blank" rel="noreferrer">{f.title}</a> : f.title}</td>
-                    <td>{f.versionLabel}</td>
-                    <td>
-                      {f.usedOn.length ? f.usedOn.map((u) => (
-                        <Link key={u.taskId} href={`/projects/${id}/plan?task=${encodeURIComponent(u.taskId)}&tab=files`} style={{ display: 'block' }}>
-                          {taskName.get(u.taskId) ?? 'A task'}{u.role === 'deliverable' ? ' · deliverable' : ''}{u.inherited ? ' · inherited' : ''}
-                        </Link>
-                      )) : <span className="tfl-note">Project file</span>}
-                    </td>
-                    <td>{state ? <Badge tone={DELIVERABLE_STATE[state].tone}>{DELIVERABLE_STATE[state].label}</Badge> : <span className="tfl-note">—</span>}</td>
-                    <td>{f.preview.tone === 'ok' ? <span className="tfl-note">{f.preview.label}</span> : <Badge tone={f.preview.tone}>{f.preview.label}</Badge>}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <ProjectFilesTable projectId={id} files={files} taskNames={Object.fromEntries(taskName)}
+            deliverableStates={Object.fromEntries(stateOf)} />
         ) : null}
         {nextCursor ? <Link className="btn sm" href={href({ cursor: nextCursor })} style={{ alignSelf: 'flex-start' }}>Next page</Link> : null}
       </main>

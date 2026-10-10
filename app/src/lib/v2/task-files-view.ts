@@ -23,6 +23,7 @@ export interface V2FileVersion {
   uploaded_by: V2Actor;
   uploaded_at: string;
   note?: string;
+  base_version_no?: number;
   change_kind?: string;
 }
 
@@ -37,6 +38,8 @@ export interface V2FileDocument {
   title: string;
   file_type: FileType;
   preview_status: PreviewStatus;
+  /** PRD-06 V-14: why a DWG/DXF has no preview (with `unavailable`). */
+  preview_reason?: string;
   current_version: number;
   versions: V2FileVersion[];
   used_on?: V2DocumentUse[];
@@ -116,8 +119,12 @@ export interface FileView {
   uploadedAt: string | null;
   uploaderOrgId: string | null;
   downloadPath: string | null;
-  /** PRD-06 renders PDFs and DWGs in place; until then a row opens the download. */
+  /** The download behind the V6 check; PDF / DWG / DXF rows open the viewer instead (PRD-06). */
   openPath: string | null;
+  /** Every proven version, oldest first (the viewer's version picker and overlay, PRD-06 V-2, V-7). */
+  versions: V2FileVersion[];
+  /** Why there is no preview (`preview_status: unavailable`), as the wire says it. */
+  previewReason: string | null;
   role: LinkRole;
   inherited: boolean;
   attached: boolean;
@@ -140,6 +147,8 @@ export function toFileView(d: V2FileDocument): FileView {
     uploaderOrgId: latest?.uploaded_by.org_id ?? null,
     downloadPath: download,
     openPath: download,
+    versions: d.versions,
+    previewReason: d.preview_reason ?? null,
     role: d.role ?? 'reference',
     inherited: d.inherited === true,
     attached: d.attached === true,

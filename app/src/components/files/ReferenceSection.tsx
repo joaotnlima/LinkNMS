@@ -18,7 +18,7 @@ const FILTERS: Array<{ key: ReferenceFilter; label: string }> = [
 ];
 
 export function ReferenceSection({
-  taskId, files, canEdit, taskName, orgName, onAdd, onChanged,
+  taskId, files, canEdit, taskName, orgName, onAdd, onChanged, onOpen,
 }: {
   taskId: string;
   files: FileView[];
@@ -27,6 +27,8 @@ export function ReferenceSection({
   orgName: (id: string | null) => string | null;
   onAdd: () => void;
   onChanged: () => void;
+  /** Opens a PDF / DWG / DXF in the drawing viewer (PRD-06). */
+  onOpen?: (file: FileView) => void;
 }) {
   const [filter, setFilter] = useState<ReferenceFilter>('all');
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +69,7 @@ export function ReferenceSection({
       {shown.length ? (
         <div className="tfl-card">
           {shown.map((f) => (
-            <ReferenceRow key={f.id} file={f} taskId={taskId} taskName={taskName} orgName={orgName}
+            <ReferenceRow key={f.id} file={f} taskId={taskId} taskName={taskName} orgName={orgName} onOpen={onOpen}
               onUnlink={canEdit ? (file) => { void unlink(file); } : undefined} />
           ))}
         </div>

@@ -15,6 +15,7 @@ import type { DeliverableView, TaskFilesView } from '@/lib/v2/task-files-view';
 import { AddFilesDialog } from './AddFilesDialog';
 import { DeliverablesSection } from './DeliverablesSection';
 import { ReferenceSection } from './ReferenceSection';
+import { FileViewer } from '@/components/viewer/FileViewer';
 import './files.css';
 
 export interface TaskFilesSummary {
@@ -40,6 +41,8 @@ export function TaskFiles({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [dialog, setDialog] = useState<{ deliverable: DeliverableView | null } | null>(null);
+  // PRD-06: the drawing viewer, opened on one of the task's files.
+  const [viewing, setViewing] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const reload = useCallback(() => setTick((t) => t + 1), []);
 
@@ -91,9 +94,16 @@ export function TaskFiles({
           <DeliverablesSection taskId={taskId} view={d} orgName={orgNameOf} onChanged={reload}
             onSubmitFile={(deliverable) => setDialog({ deliverable })} />
           <ReferenceSection taskId={taskId} files={current.files} canEdit={canEditTask}
-            taskName={taskNameOf} orgName={orgNameOf} onAdd={() => setDialog({ deliverable: null })} onChanged={reload} />
+            taskName={taskNameOf} orgName={orgNameOf} onAdd={() => setDialog({ deliverable: null })} onChanged={reload}
+            onOpen={(f) => setViewing(f.id)} />
           <p className="tfl-note">Deliverables are what you approve. Reference files are what the work is built from.</p>
         </>
+      ) : null}
+      {viewing && current && current.files.some((f) => f.id === viewing) ? (
+        <FileViewer
+          projectId={projectId} taskId={taskId} label={`Files on ${taskName}`} files={current.files}
+          initialFileId={viewing} orgName={orgNameOf} onClose={() => setViewing(null)} onChanged={reload}
+        />
       ) : null}
       {dialog ? (
         <AddFilesDialog
