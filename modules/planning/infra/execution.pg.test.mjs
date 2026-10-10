@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 
 import { createPlanningStore } from './pg-store.mjs';
 import { planningConsumers } from '../application/consumers.mjs';
+import { createPlanningAudience } from '../application/audience.mjs';
 import {
   createTask, updateTask, reportProgress, listVariations, getVariation,
   createCostLine, getSchedule,
@@ -156,6 +157,16 @@ describe('phase-5 planning over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(digests[0].net_project_finish_delta_wd, 3);
     assert.equal(digests[0].net_cost_delta_cents, null); // no visible money moved (absent beats zero)
     assert.equal(digests[0].sent_at, null); // ruling 14: e-mail is a later phase
+  });
+
+  test('PRD-12 N-1: the variation audience port names owner + client of the row, never the supplier', async () => {
+    const { rows: open } = await pool.query('SELECT id FROM planning.variation WHERE task_id = $1', [TASK_A]);
+    const a = await createPlanningAudience(store).variationAudience(open[0].id);
+    assert.equal(a.project_id, PROJECT);
+    assert.equal(a.task_id, TASK_A);
+    assert.equal(a.kind, 'time');
+    assert.deepEqual(a.org_ids, [OWNER_ORG], 'owner is the prime client here — once; the GC is not told about itself');
+    assert.equal(await createPlanningAudience(store).variationAudience(randomUUID()), null);
   });
 
   test('the change-order consumer re-baselines from time entries, idempotently', async () => {

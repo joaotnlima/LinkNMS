@@ -19,6 +19,7 @@ import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { publishEvent } from '../../../platform/outbox.mjs';
 import { withIdempotency } from '../../../platform/idempotency.mjs';
 import { clarificationQueries } from './pg-clarifications.mjs';
+import { audienceQueries } from './pg-audience.mjs';
 
 export function createTenderingStore(pool) {
   async function tx(fn) {
@@ -89,6 +90,8 @@ export function createTenderingStore(pool) {
   return {
     // Clarifications + the tendering home (PRD-08) — infra/pg-clarifications.mjs.
     ...clarificationQueries(pool, tx),
+    // The notification audience port's reads (PRD-12) — infra/pg-audience.mjs.
+    ...audienceQueries(pool),
 
     // ── cross-schema reads (query ports) ─────────────────────────────────
     async getPersonByClerkId(clerkUserId) {

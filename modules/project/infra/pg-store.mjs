@@ -5,8 +5,11 @@
 // (identity.person for the actor, contracting.contract for guards and the
 // D-35 derivation, planning.task for the location-in-use guard) are the
 // module's query ports; it never WRITES outside project.* + the ledger.
+import { randomUUID } from 'node:crypto';
+
 import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { withIdempotency } from '../../../platform/idempotency.mjs';
+import { publishEvent } from '../../../platform/outbox.mjs';
 
 export function createProjectStore(pool) {
   async function tx(fn) {
@@ -449,6 +452,21 @@ export function createProjectStore(pool) {
           object: { type: 'project_invitation', id: invitationId },
           payload: { org_id: orgId, invite_capacity: inviteCapacity },
           channel: actor.channel,
+        });
+        // PRD-12 N-1: the inviter hears that its invitation was taken up — the
+        // notification centre consumes this (doc 10), same transaction.
+        await publishEvent(client, {
+          event_id: randomUUID(),
+          type: 'project.invitation.accepted',
+          project_id: projectId,
+          actor: { person_id: actor.personId ?? null, org_id: actor.orgId ?? orgId },
+          scope: { type: 'project', id: projectId },
+          data: {
+            invitation_id: invitationId,
+            org_id: orgId,
+            invited_by_org_id: rows[0].invited_by_org_id,
+            invite_capacity: inviteCapacity,
+          },
         });
         const { rows: participant } = await client.query(
           `SELECT pa.project_id, pa.org_id, pa.capacity, pa.source, pa.contract_id,

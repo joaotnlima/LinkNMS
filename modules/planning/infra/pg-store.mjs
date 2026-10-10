@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { publishEvent } from '../../../platform/outbox.mjs';
 import { withIdempotency } from '../../../platform/idempotency.mjs';
+import { audienceQueries } from './pg-audience.mjs';
 
 const D = (col) => `to_char(${col}, 'YYYY-MM-DD')`;
 const TASK_SELECT = `
@@ -338,6 +339,9 @@ export function createPlanningStore(pool) {
   }
 
   return {
+    // The notification audience port's read (PRD-12) — infra/pg-audience.mjs.
+    ...audienceQueries(pool),
+
     // ── plain reads ────────────────────────────────────────────────────────
     async getPersonByClerkId(clerkUserId) {
       const { rows } = await pool.query('SELECT * FROM identity.person WHERE clerk_user_id = $1', [clerkUserId]);

@@ -8,6 +8,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createIdentityStore } from './pg-store.mjs';
+import { createIdentityAudience } from '../application/audience.mjs';
 
 const url = process.env.DATABASE_URL;
 const skip = url ? false : 'set DATABASE_URL to run the identity Postgres suite';
@@ -116,5 +117,34 @@ describe('identity store over Postgres (v2 migrations)', { skip }, () => {
     );
     assert.equal(await store.orgHasSignedContracts(org.id), true);
     assert.equal(await store.orgHasSignedContracts(other.id), true);
+  });
+
+  test('notification audience port: staffed or all-project roles; org audience by permission (PRD-12)', async () => {
+    const org = await store.upsertOrganization({ clerkOrgId: 'org_aud', orgKind: 'contractor', legalName: 'Aud Lda', approvalPolicy: 'any' });
+    const boss = await store.upsertPerson({ clerkUserId: 'user_boss', email: 'boss@aud.pt', name: 'Boss' });
+    const crew = await store.upsertPerson({ clerkUserId: 'user_crew', email: 'crew@aud.pt', name: 'Crew' });
+    const lead = await store.upsertPerson({ clerkUserId: 'user_lead', email: 'lead@aud.pt', name: 'Lead' });
+    await store.upsertMembership({ clerkOrgId: 'org_aud', clerkUserId: 'user_boss', orgRole: 'manager' });
+    await store.upsertMembership({ clerkOrgId: 'org_aud', clerkUserId: 'user_crew', orgRole: 'member' });
+    await store.upsertMembership({ clerkOrgId: 'org_aud', clerkUserId: 'user_lead', orgRole: 'site_lead' });
+    await pool.query(
+      "INSERT INTO identity.project_staffing (project_id, org_id, person_id, staffed_by) VALUES ($1, $2, $3, $4)",
+      [PROJECT, org.id, lead.id, boss.id],
+    );
+    const audience = createIdentityAudience(store);
+    const onProject = await audience.projectAudience(PROJECT, org.id);
+    assert.deepEqual(onProject.map((p) => p.email).sort(), ['boss@aud.pt', 'lead@aud.pt'],
+      'manager reads every project; the staffed site lead too; unstaffed crew does not');
+    assert.ok(onProject.every((p) => p.locale && p.name && p.person_id));
+
+    const bidders = await audience.orgAudience(org.id, 'org:tendering:bid');
+    assert.deepEqual(bidders.map((p) => p.email), ['boss@aud.pt'], 'only roles holding the permission');
+    assert.deepEqual(await audience.projectAudience(null, org.id), []);
+
+    // A removed member hears nothing.
+    await store.removeMembership({ clerkOrgId: 'org_aud', clerkUserId: 'user_boss' });
+    assert.deepEqual((await audience.orgAudience(org.id, 'org:tendering:bid')), []);
+    assert.equal((await store.getMember(org.id, crew.id)).org_role, 'member');
+    assert.equal(await store.countAdmins(org.id), 0);
   });
 });

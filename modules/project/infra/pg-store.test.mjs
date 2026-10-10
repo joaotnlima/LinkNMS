@@ -143,6 +143,14 @@ describe('project store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(participant.capacity, 'consultant');
     assert.equal(participant.invite_capacity, 'inspection');
     assert.equal((await store.getInvitationByTokenHash(tokenHash)).status, 'accepted');
+    // PRD-12 N-1: the acceptance is on the outbox for the inviter's notification.
+    const { rows: evts } = await pool.query(
+      `SELECT data FROM platform.outbox WHERE type = 'project.invitation.accepted' AND project_id = $1`, [id],
+    );
+    assert.equal(evts.length, 1);
+    assert.equal(evts[0].data.invited_by_org_id, OWNER_ORG);
+    assert.equal(evts[0].data.org_id, GC_ORG);
+    assert.equal(evts[0].data.invitation_id, inv.id);
     // Spent token: the preview now reads 'accepted', which the use case 404s.
     assert.equal((await store.getInvitationPreviewByTokenHash(tokenHash)).status, 'accepted');
     await assert.rejects(() => store.acceptInvitation({

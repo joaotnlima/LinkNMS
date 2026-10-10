@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
 import { createTenderingStore } from './pg-store.mjs';
+import { createTenderingAudience } from '../application/audience.mjs';
 
 const url = process.env.DATABASE_URL;
 const skip = url ? false : 'set DATABASE_URL to run the tendering Postgres suite';
@@ -165,5 +166,21 @@ describe('PRD-08 clarifications + tendering home over Postgres', { skip }, () =>
     const mine = bidder.find((r) => r.id === rfp.id);
     assert.ok(mine.my_proposal_id, "the bidder's own lane comes back");
     assert.deepEqual(await store.projectRfps(PROJECT, randomUUID()), []);
+  });
+
+  test('PRD-12 N-1: the audience port names issuer, package roots and bidder ORGS only', async () => {
+    const { rfp } = await published();
+    const audience = createTenderingAudience(store);
+    const a = await audience.rfpAudience(rfp.id);
+    assert.equal(a.issuer_org_id, OWNER_ORG);
+    assert.equal(a.project_id, PROJECT);
+    assert.deepEqual(a.root_task_ids, [ROOT_TASK]);
+    assert.deepEqual(a.bidders.map((b) => b.org_id), [BIDDER_ORG], 'the link-only recipient has no org — not here');
+    assert.equal(a.bidders[0].active, true);
+    assert.ok(!('email' in a.bidders[0]), 'no contact data crosses the port');
+
+    await pool.query(`UPDATE tendering.rfp_recipient SET status = 'declined' WHERE rfp_id = $1 AND org_id = $2`, [rfp.id, BIDDER_ORG]);
+    assert.equal((await audience.rfpAudience(rfp.id)).bidders[0].active, false, 'a declined invitation is out of the tender');
+    assert.equal(await audience.rfpAudience(randomUUID()), null);
   });
 });

@@ -94,6 +94,64 @@ export function createIdentityStore(pool) {
       return rows.length > 0;
     },
 
+    async getOrg(orgId) {
+      const { rows } = await pool.query('SELECT * FROM identity.organization WHERE id = $1', [orgId]);
+      return rows[0] ?? null;
+    },
+
+    /** An active member of the org, person row + role (member management). */
+    async getMember(orgId, personId) {
+      const { rows } = await pool.query(
+        `SELECT p.*, m.org_role FROM identity.org_membership m
+           JOIN identity.person p ON p.id = m.person_id
+          WHERE m.org_id = $1 AND m.person_id = $2 AND m.status = 'active'`,
+        [orgId, personId],
+      );
+      return rows[0] ?? null;
+    },
+
+    async countAdmins(orgId) {
+      const { rows } = await pool.query(
+        `SELECT count(*)::int AS n FROM identity.org_membership
+          WHERE org_id = $1 AND status = 'active' AND org_role = 'admin'`,
+        [orgId],
+      );
+      return rows[0].n;
+    },
+
+    // ── notification audience reads (application/audience.mjs, PRD-12) ──
+    /**
+     * Active members of `orgId` who work `projectId`: staffed on it, or in a
+     * role in `allProjectRoles` (they read every project of their org).
+     */
+    async projectAudienceRows(projectId, orgId, allProjectRoles) {
+      const { rows } = await pool.query(
+        `SELECT p.id AS person_id, p.email, p.name, p.locale, m.org_role
+           FROM identity.org_membership m
+           JOIN identity.person p ON p.id = m.person_id
+          WHERE m.org_id = $2 AND m.status = 'active'
+            AND (m.org_role = ANY($3::text[])
+                 OR EXISTS (SELECT 1 FROM identity.project_staffing s
+                             WHERE s.project_id = $1 AND s.org_id = m.org_id AND s.person_id = m.person_id))
+          ORDER BY p.id`,
+        [projectId, orgId, allProjectRoles],
+      );
+      return rows;
+    },
+
+    /** Active members of `orgId` whose role is one of `roles`. */
+    async orgAudienceRows(orgId, roles) {
+      const { rows } = await pool.query(
+        `SELECT p.id AS person_id, p.email, p.name, p.locale, m.org_role
+           FROM identity.org_membership m
+           JOIN identity.person p ON p.id = m.person_id
+          WHERE m.org_id = $1 AND m.status = 'active' AND m.org_role = ANY($2::text[])
+          ORDER BY p.id`,
+        [orgId, roles],
+      );
+      return rows;
+    },
+
     async mirrorReady(clerkOrgId, clerkUserId) {
       const { rows } = await pool.query(
         `SELECT (SELECT count(*) FROM identity.organization WHERE clerk_org_id = $1)
