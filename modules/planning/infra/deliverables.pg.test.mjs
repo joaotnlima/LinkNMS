@@ -240,6 +240,15 @@ describe('deliverables over Postgres (PRD-05, D-48)', { skip }, () => {
     const all = await listProjectDeliverables({ viewer: viewer(OWNER_ORG), store, projectId: PROJECT });
     assert.equal(all.body.items.length, 3);
     assert.deepEqual(await createPlanningTaskPort(store).descendantIds(DESIGN), [CHILD]);
+    // PRD-07 M-8: the model edit scope over real rows — the sub its branch, the
+    // GC (client up the chain) the same rows; the owner apart (whole model).
+    const scopes = await createPlanningTaskPort(store).modelScopes(PROJECT);
+    assert.equal(scopes.owner_org_id, OWNER_ORG);
+    assert.deepEqual(scopes.tasks.map((t) => [t.code, t.name]), [['1', 'Structural design'], ['1.1', 'Truss study']]);
+    const editors = Object.fromEntries(scopes.editors.map((e) => [e.org_id, e.task_ids.slice().sort()]));
+    assert.deepEqual(editors[SUB_ORG], [DESIGN, CHILD].sort());
+    assert.deepEqual(editors[GC_ORG], [DESIGN, CHILD].sort());
+    assert.equal(editors[OWNER_ORG], undefined);
     const owners = await createPlanningAudience(store).taskOwners([DESIGN, CHILD]);
     assert.deepEqual(owners.map((o) => o.org_id), [SUB_ORG, SUB_ORG], 'the inherited assignee owns the child row');
   });
