@@ -238,6 +238,27 @@ describe('directory store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(Number(stats.profile_views), 1);
   });
 
+  test('PRD-04: the claim publishes directory.profile.claimed with the address; a claimed address is never re-seeded', async () => {
+    const { rows } = await pool.query(`SELECT data, scope FROM platform.outbox WHERE type = 'directory.profile.claimed'`);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].data.org_id, ORG.claimant);
+    assert.equal(rows[0].data.email, 'geral@silva.pt');
+    assert.equal(rows[0].scope.type, 'org_private');
+    const again = await store.insertUnclaimedProfile({
+      orgId: randomUUID(), displayName: 'Silva Roofing', contactEmail: 'geral@silva.pt', slugBase: 'silva-roofing', specialties: [],
+    });
+    assert.equal(again.org_id, ORG.claimant, 'the claimed company, not a second unclaimed profile');
+  });
+
+  test('PRD-04: profiles by id with on-record facts and the distance from a build', async () => {
+    const rows = await store.profilesByOrgIds([ORG.telhados, ORG.porto], { lat: 38.8029, lng: -9.3817 });
+    const byId = new Map(rows.map((r) => [r.org_id, r]));
+    assert.ok(Number(byId.get(ORG.telhados).distance_km) < 10);
+    assert.ok(Number(byId.get(ORG.porto).distance_km) > 250);
+    assert.equal(Number(byId.get(ORG.porto).verified_clients ?? 0) >= 0, true);
+    assert.deepEqual(await store.profilesByOrgIds([]), []);
+  });
+
   test('listing stats: impressions and proposals over the window', async () => {
     const before = Number((await store.listingStats({ orgId: ORG.vale, days: 30 })).shown_in_searches);
     await store.recordStat({ orgIds: [ORG.vale, ORG.vale], kind: 'search_impression' });

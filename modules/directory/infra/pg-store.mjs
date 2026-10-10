@@ -4,8 +4,12 @@
 // Directory writes are not ledgered: a profile is the organisation's own
 // public page, not a fact of a build (the ledger is project-scoped, doc 08),
 // and the read model only mirrors facts other modules already ledgered.
-// Directory publishes no events (to-be/10).
+// Directory publishes one event (to-be/10, PRD-04): directory.profile.claimed,
+// on the outbox in the claim transaction.
+import { randomUUID } from 'node:crypto';
+
 import { ProblemError } from '../../../platform/errors.mjs';
+import { publishEvent } from '../../../platform/outbox.mjs';
 import { withIdempotency } from '../../../platform/idempotency.mjs';
 import { slugCandidate } from '../domain/profile.mjs';
 import { createRecordStore } from './pg-record.mjs';
@@ -112,6 +116,16 @@ export function createDirectoryStore(pool) {
         [contactEmail],
       );
       if (existing.length) return existing[0];
+      // An address whose profile was already claimed is that company now: no
+      // second, unclaimed profile for it (PRD-04 X-2 seeds on every send).
+      const { rows: claimed } = await pool.query(
+        `SELECT p.* FROM directory.profile_claim c
+           JOIN directory.organization_profile p ON p.org_id = c.claimant_org_id
+          WHERE lower(c.sent_to) = $1 AND c.accepted_at IS NOT NULL
+          ORDER BY c.accepted_at DESC LIMIT 1`,
+        [contactEmail],
+      );
+      if (claimed.length) return claimed[0];
       return insertWithSlug(slugBase, async (slug) => {
         const { rows } = await pool.query(
           `INSERT INTO directory.organization_profile
@@ -211,7 +225,7 @@ export function createDirectoryStore(pool) {
      * the link used — one transaction. null when the profile is no longer
      * unclaimed or the claimant has a profile of its own by now.
      */
-    async acceptClaim({ claimId, profileOrgId, claimantOrgId, kind }) {
+    async acceptClaim({ claimId, profileOrgId, claimantOrgId, kind, actor = null }) {
       return tx(async (client) => {
         const { rows: used } = await client.query(
           `UPDATE directory.profile_claim SET accepted_at = now()
@@ -234,6 +248,18 @@ export function createDirectoryStore(pool) {
         if (!rows.length) return null;
         await client.query('UPDATE directory.portfolio_entry SET org_id = $2 WHERE org_id = $1', [profileOrgId, claimantOrgId]);
         await client.query('UPDATE directory.listing_stat SET org_id = $2 WHERE org_id = $1', [profileOrgId, claimantOrgId]);
+        // PRD-04 §6 criterion 3: tendering back-fills the organisation on every
+        // past invite to the claimed address. The address travels on the
+        // outbox (directory events are not ledgered) — never on the ledger.
+        const { rows: sent } = await client.query('SELECT sent_to FROM directory.profile_claim WHERE id = $1', [claimId]);
+        await publishEvent(client, {
+          event_id: randomUUID(),
+          type: 'directory.profile.claimed',
+          project_id: null,
+          actor: { person_id: actor?.personId ?? null, org_id: claimantOrgId },
+          scope: { type: 'org_private', id: claimantOrgId },
+          data: { org_id: claimantOrgId, previous_profile_id: profileOrgId, slug: rows[0].slug, email: String(sent[0].sent_to).toLowerCase() },
+        });
         return rows[0];
       });
     },

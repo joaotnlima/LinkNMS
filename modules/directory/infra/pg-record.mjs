@@ -89,6 +89,24 @@ export function createRecordStore(pool, tx) {
       return rows;
     },
 
+    /**
+     * Profiles by org id with their on-record facts and, given a point, the
+     * distance to each base (the company port's proof lines, PRD-04).
+     */
+    async profilesByOrgIds(orgIds, near = null) {
+      if (!orgIds.length) return [];
+      const { rows } = await pool.query(
+        `SELECT ${PROFILE_COLUMNS}, ${FACT_COLUMNS},
+                CASE WHEN $2::numeric IS NULL OR p.base_lat IS NULL THEN NULL
+                     ELSE directory.distance_km($2::numeric, $3::numeric, p.base_lat, p.base_lng) END AS distance_km
+           FROM directory.organization_profile p
+           ${RECORD_FACTS}
+          WHERE p.org_id = ANY($1::uuid[])`,
+        [orgIds, near?.lat ?? null, near?.lng ?? null],
+      );
+      return rows;
+    },
+
     /** One public profile (by slug or org id) with its on-record facts. */
     async getPublicProfile({ slug = null, orgId = null }) {
       const { rows } = await pool.query(

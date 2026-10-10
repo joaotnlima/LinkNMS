@@ -71,16 +71,20 @@ export async function acceptProfileClaim({ viewer, store, token, now = new Date(
   if (claim.claimant_org_id !== viewer.orgId) {
     throw new ProblemError('forbidden', 'switch to the organisation that asked for this claim', { reason: 'relationship' });
   }
-  const row = await store.acceptClaim({ claimId: claim.id, profileOrgId: claim.profile_org_id, claimantOrgId: viewer.orgId, kind: viewer.orgKind });
+  const row = await store.acceptClaim({
+    claimId: claim.id, profileOrgId: claim.profile_org_id, claimantOrgId: viewer.orgId, kind: viewer.orgKind,
+    actor: { personId: viewer.personId ?? null },
+  });
   if (!row) throw new ProblemError('invalid_transition', 'the profile was claimed meanwhile, or your organisation now has one');
   return { status: 200, body: ownerProfileBody(row) };
 }
 
 /**
- * Seed port for PRD-04 (RFP invitations by e-mail): one unclaimed, listed
- * profile per e-mail; a second call with the same e-mail returns the first.
- * Not an HTTP operation — the tendering side calls it through the
- * composition root when PRD-04 lands.
+ * Seed port for PRD-04 X-2 (RFP invitations by e-mail): one unclaimed, listed
+ * profile per e-mail; a second call with the same e-mail returns the first,
+ * and an address whose profile was claimed returns that company's profile.
+ * Not an HTTP operation — the directory's own consumer of
+ * tendering.rfp.published / .recipients_added calls it (application/consumers.mjs).
  */
 export function createUnclaimedProfileSeeder(store) {
   return {

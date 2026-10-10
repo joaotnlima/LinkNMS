@@ -452,5 +452,16 @@ describe('project over the v2 router', () => {
       assert.deepEqual(await port.ownedBuild({ viewer: owner(), projectId: PROJECT }), { name: 'Casa da Maia' });
       await assert.rejects(port.ownedBuild({ viewer: gc(), projectId: PROJECT }), (e) => e.problem.code === 'forbidden');
     });
+
+    test('factsOf names several builds with their point, no viewer (PRD-04 inbox)', async () => {
+      store.getProjects = async (ids) => ids.map((id) => store.projects?.get?.(id)).filter(Boolean);
+      const port = createBuildPort(store);
+      const facts = await port.factsOf([PROJECT, PROJECT]);
+      assert.equal(facts.length, 1);
+      assert.equal(facts[0].project_id, PROJECT);
+      assert.equal(facts[0].name, 'Casa da Maia');
+      assert.equal(facts[0].municipality_code, '1306');
+      assert.deepEqual(await port.factsOf([]), []);
+    });
   });
 });

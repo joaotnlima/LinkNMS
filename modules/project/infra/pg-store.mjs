@@ -39,6 +39,13 @@ export function createProjectStore(pool) {
       return rows[0] ?? null;
     },
 
+    /** Several builds at once (the build port's factsOf, PRD-04). */
+    async getProjects(projectIds) {
+      if (!projectIds.length) return [];
+      const { rows } = await pool.query('SELECT * FROM project.project WHERE id = ANY($1::uuid[])', [projectIds]);
+      return rows;
+    },
+
     async isParticipant(projectId, orgId) {
       const { rows } = await pool.query(
         `SELECT 1 FROM project.participation WHERE project_id = $1 AND org_id = $2 AND status = 'active'`,
