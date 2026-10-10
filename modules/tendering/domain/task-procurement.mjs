@@ -50,7 +50,8 @@ export function laneCounts(histogram) {
  * @param rows  one per (task_id, RFP) pair: the RFP columns (id, title, status,
  *              created_at, submission_deadline, root_task_ids, excluded_task_ids,
  *              the lifecycle stamps, cancel_reason) + `lane_counts`
- *              ({status: n}) + `awarded_org_id` / `awarded_name`
+ *              ({status: n}) + `open_question_count` + `awarded_org_id` /
+ *              `awarded_name`
  * @returns     TaskProcurement[] — one per task, ordered by task id
  */
 export function taskProcurement(rows) {
@@ -82,6 +83,9 @@ export function taskProcurementBody(row) {
     cancel_reason: row.status === 'cancelled' ? (row.cancel_reason ?? null) : null,
     invited_count: invited,
     submitted_count: submitted,
+    // PRD-08 H-7: questions on the governing RFP still waiting for an answer
+    // (the panel's Tender-tab badge).
+    open_question_count: Number(row.open_question_count ?? 0),
     awarded_to: awarded ? { org_id: row.awarded_org_id ?? null, name: row.awarded_name } : null,
   };
 }

@@ -6,7 +6,7 @@ import {
   createRfp, getRfp, updateRfp, addRecipients, listRecipients, previewInviteEmail,
   reissueRecipientLink, publishRfp,
   addAddendum, closeRfp, cancelRfp, browseOpenRfps, applyToOpenRfp, listMyRfps,
-  askClarification, answerClarification, listProposalLanes, getProposal,
+  askClarification, askClarificationByToken, answerClarification, listProposalLanes, getProposal,
   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
   submitOwnBid, getComparison, shortlistProposal, awardRfp,
   getRfpByToken, submitProposalByToken,
@@ -14,6 +14,7 @@ import {
   reserveRfpModel, completeRfpModel, removeRfpModel, rfpModelViewUrl, rfpModelViewUrlByToken,
 } from '../application/use-cases.mjs';
 import { listTaskProcurement } from '../application/task-procurement.mjs';
+import { listProjectRfps } from '../application/project-rfps.mjs';
 import { removeRecipient } from '../application/recipients.mjs';
 
 /**
@@ -50,6 +51,11 @@ export function registerTendering(router, { store, storage, documentsStore, cont
   router.register('POST', '/rfp-links/{token}/proposal', 'submitProposalByToken', ({ params, body }) =>
     submitProposalByToken({ store, token: params.token, body }));
 
+  // A link-only bidder asks a question (PRD-08 H-6) — security: [], the token
+  // is the authority; refused after the questions deadline (H-9).
+  router.register('POST', '/rfp-links/{token}/clarifications', 'askClarificationByToken', ({ params, body }) =>
+    askClarificationByToken({ store, token: params.token, body }));
+
   // Token-scoped portfolio-image upload (LINA-370) — also security: [], the
   // token is the authority. Reserve a presigned PUT, then prove the bytes.
   router.register('POST', '/rfp-links/{token}/documents', 'reserveProposalDocumentByToken', ({ params, body }) =>
@@ -68,6 +74,11 @@ export function registerTendering(router, { store, storage, documentsStore, cont
 
   // The plan's per-task procurement projection (PRD-01 G-2/G-3): one read for
   // the Tender column + Gantt band, issuer-scoped, no money.
+  // The tendering home (PRD-08 H-1): every RFP the viewer can see on the
+  // project, with covered tasks, bids due, n/m in and open questions — one read.
+  router.register('GET', '/projects/{projectId}/rfps', 'listProjectRfps', ({ viewer, params }) =>
+    listProjectRfps({ viewer, store, projectId: params.projectId }));
+
   router.register('GET', '/projects/{projectId}/task-procurement', 'listTaskProcurement', ({ viewer, params }) =>
     listTaskProcurement({ viewer, store, projectId: params.projectId }));
 
@@ -141,7 +152,7 @@ export function registerTendering(router, { store, storage, documentsStore, cont
     askClarification({ viewer, store, rfpId: params.rfpId, body }));
 
   router.register('POST', '/clarifications/{clarificationId}:answer', 'answerClarification', ({ viewer, params, body }) =>
-    answerClarification({ viewer, store, clarificationId: params.clarificationId, body }));
+    answerClarification({ viewer, store, mailSender, clarificationId: params.clarificationId, body }));
 
   router.register('GET', '/tasks/{taskId}/proposal-lanes', 'listProposalLanes', ({ viewer, params, query }) =>
     listProposalLanes({ viewer, store, taskId: params.taskId, query }));

@@ -59,6 +59,7 @@ function fakeStore(over = {}) {
       return { ...r, rfp_status: over.rfp_status ?? r.rfp_status };
     },
     async markRecipientOpened(id) { opened.push(id); },
+    async clarificationsOf() { return []; },
     async packageOf() {
       return {
         rows: [{ task_id: TASK, parent_task_id: null, name: 'Canalização', scope_text: null, specialty: 'plumbing', position: 'aa' }],

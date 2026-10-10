@@ -72,7 +72,7 @@ describe('taskProcurement', () => {
       root_task_ids: [T1, T2], excluded_task_ids: [],
       published_at: null, closed_at: null, awarded_at: null, cancelled_at: null,
       cancel_reason: null,
-      invited_count: 3, submitted_count: 2, awarded_to: null,
+      invited_count: 3, submitted_count: 2, open_question_count: 0, awarded_to: null,
     });
   });
 

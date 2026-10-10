@@ -18,6 +18,7 @@ import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { publishEvent } from '../../../platform/outbox.mjs';
 import { withIdempotency } from '../../../platform/idempotency.mjs';
+import { clarificationQueries } from './pg-clarifications.mjs';
 
 export function createTenderingStore(pool) {
   async function tx(fn) {
@@ -86,6 +87,9 @@ export function createTenderingStore(pool) {
   }
 
   return {
+    // Clarifications + the tendering home (PRD-08) — infra/pg-clarifications.mjs.
+    ...clarificationQueries(pool, tx),
+
     // ── cross-schema reads (query ports) ─────────────────────────────────
     async getPersonByClerkId(clerkUserId) {
       const { rows } = await pool.query('SELECT * FROM identity.person WHERE clerk_user_id = $1', [clerkUserId]);
@@ -208,19 +212,6 @@ export function createTenderingStore(pool) {
       return { rows, items };
     },
 
-    async clarificationsOf(rfpId) {
-      const { rows } = await pool.query(
-        'SELECT * FROM tendering.clarification WHERE rfp_id = $1 ORDER BY id',
-        [rfpId],
-      );
-      return rows;
-    },
-
-    async getClarification(clarificationId) {
-      const { rows } = await pool.query('SELECT * FROM tendering.clarification WHERE id = $1', [clarificationId]);
-      return rows[0] ?? null;
-    },
-
     async isRecipient(rfpId, orgId) {
       const { rows } = await pool.query(
         'SELECT 1 FROM tendering.rfp_recipient WHERE rfp_id = $1 AND org_id = $2',
@@ -242,7 +233,7 @@ export function createTenderingStore(pool) {
         `SELECT rec.id, rec.rfp_id, rec.org_id, rec.email, rec.status,
                 rec.expires_at, rec.revoked_at,
                 r.title, r.scope_text, r.specialties, r.submission_deadline,
-                r.purpose, r.mode,
+                r.questions_deadline, r.purpose, r.mode,
                 r.status AS rfp_status, r.project_id, r.package_version,
                 pr.name AS project_name,
                 -- The site's name is a public-safe locality; the full address
@@ -550,6 +541,8 @@ export function createTenderingStore(pool) {
                 coalesce((SELECT jsonb_object_agg(s.status, s.n)
                             FROM (SELECT p.status, count(*)::int AS n FROM tendering.proposal p
                                    WHERE p.rfp_id = r.id GROUP BY p.status) s), '{}'::jsonb) AS lane_counts,
+                (SELECT count(*)::int FROM tendering.clarification c
+                  WHERE c.rfp_id = r.id AND c.status = 'open') AS open_question_count,
                 ap.bidder_org_id AS awarded_org_id,
                 coalesce(o.legal_name, rec.email) AS awarded_name
            FROM tendering.rfp r
@@ -1055,58 +1048,6 @@ export function createTenderingStore(pool) {
           data: { rfp_id: rfpId, package_version: packageVersion, summary },
         });
         return loadRfp(client, rfpId);
-      });
-    },
-
-    async askClarification({ id, rfpId, projectId, askedByOrgId, question, actor }) {
-      return tx(async (client) => {
-        const { rows } = await client.query(
-          `INSERT INTO tendering.clarification (id, rfp_id, asked_by_org_id, question)
-           VALUES ($1,$2,$3,$4) RETURNING *`,
-          [id, rfpId, askedByOrgId, question],
-        );
-        await appendAuditEvent(client, {
-          projectId, actor,
-          category: 'tendering',
-          type: 'tendering.clarification.asked',
-          // rfp_private: the ASKER must stay invisible to other bidders (V8);
-          // the ledger keeps who asked, the wire never shows it.
-          scope: { type: 'rfp_private', id: rfpId },
-          object: { type: 'clarification', id },
-          payload: { rfp_id: rfpId, question },
-          channel: actor.channel,
-        });
-        return rows[0];
-      });
-    },
-
-    async answerClarification({ clarificationId, rfpId, projectId, answer, actor }) {
-      return tx(async (client) => {
-        const { rows } = await client.query(
-          `UPDATE tendering.clarification
-              SET answer = $2, answered_at = now(), status = 'answered'
-            WHERE id = $1 AND status = 'open' RETURNING *`,
-          [clarificationId, answer],
-        );
-        if (!rows.length) return null;
-        await appendAuditEvent(client, {
-          projectId, actor,
-          category: 'tendering',
-          type: 'tendering.clarification.answered',
-          scope: { type: 'project', id: projectId },
-          object: { type: 'clarification', id: clarificationId },
-          payload: { rfp_id: rfpId, answer },
-          channel: actor.channel,
-        });
-        await publishEvent(client, {
-          event_id: randomUUID(),
-          type: 'tendering.clarification.answered',
-          project_id: projectId,
-          actor: { person_id: actor.personId, org_id: actor.orgId },
-          scope: { type: 'project', id: projectId },
-          data: { rfp_id: rfpId, clarification_id: clarificationId },
-        });
-        return rows[0];
       });
     },
 

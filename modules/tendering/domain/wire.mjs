@@ -106,7 +106,10 @@ export function recipientBody(row, { token } = {}) {
  * other recipients, or any other lane (V8). `closed` is true when the RFP is no
  * longer receiving proposals, so the form can say so without a second call.
  */
-export function rfpLinkView(rfp, { pkg, project, recipientEmail, proposal, models = [], seesMoney = true }) {
+export function rfpLinkView(rfp, {
+  pkg, project, recipientEmail, proposal, models = [], seesMoney = true,
+  questionsOpen = false, clarifications = [],
+}) {
   return {
     project: {
       name: project.name,
@@ -122,23 +125,34 @@ export function rfpLinkView(rfp, { pkg, project, recipientEmail, proposal, model
       purpose: rfp.purpose,
       mode: rfp.mode,
       submission_deadline: iso(rfp.submission_deadline),
+      questions_deadline: iso(rfp.questions_deadline),
       package: packageBody(pkg.rows, pkg.items, models),
     },
     recipient_email: recipientEmail,
     closed: rfp.status !== 'published',
+    // PRD-08 H-6..H-9: whether this recipient may still ask, and the questions
+    // it may read — every answered one (public to all bidders) plus its own.
+    // Already wire-shaped (clarificationBody); the asker is never on it.
+    questions_open: Boolean(questionsOpen),
+    clarifications,
     // The bidder always sees the money on their OWN proposal (it is theirs).
     proposal: proposal ? proposalBody(proposal.row, { ...proposal.doc, seesMoney }) : null,
   };
 }
 
-/** #/components/schemas/Clarification — the asker is NEVER on the wire. */
-export function clarificationBody(row) {
+/**
+ * #/components/schemas/Clarification — the asker is NEVER on the wire. `mine`
+ * is the one viewer-relative fact (the asker reading its own question).
+ */
+export function clarificationBody(row, { mine = false } = {}) {
   return {
     id: row.id,
     question: row.question,
     answer: row.answer ?? undefined,
     status: row.status,
     answered_at: iso(row.answered_at),
+    asked_at: iso(row.asked_at),
+    mine: Boolean(mine),
   };
 }
 

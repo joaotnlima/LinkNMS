@@ -1,7 +1,7 @@
 // Tendering module use cases (phase 6) — one function per operationId:
 //   createRfp, getRfp, updateRfp, addRecipients, previewInviteEmail, listRecipients, publishRfp,
 //   addAddendum, closeRfp, cancelRfp, browseOpenRfps, applyToOpenRfp, listMyRfps,
-//   askClarification, answerClarification, listProposalLanes, getProposal,
+//   askClarification(+ByToken), answerClarification, listProposalLanes, getProposal,
 //   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
 //   getComparison, shortlistProposal, awardRfp.
 //
@@ -34,6 +34,7 @@ import {
 } from '../domain/wire.mjs';
 import { comparisonMatrix, missingLineCount } from '../domain/comparison.mjs';
 import { exclusionError, prunePackage } from '../domain/package-scope.mjs';
+import { questionsOpen, visibleClarifications } from '../domain/clarifications.mjs';
 import { renderInviteEmail, PREVIEW_LINK_PLACEHOLDER_TOKEN } from '../domain/invite-email.mjs';
 import {
   validateAttachmentFile, attachmentStorageKey, uploadTicketBody, attachmentBody,
@@ -148,13 +149,18 @@ export async function getRfp({ viewer, store, documentsStore, rfpId }) {
   const pkg = await store.packageOf(rfpId, rfp.package_version);
   // The asker is anonymised for everyone (V8); bidders additionally only see
   // what was PUBLISHED to all of them — answered questions and their own.
-  const clarifications = (await store.clarificationsOf(rfpId))
-    .filter((c) => isIssuer || c.status === 'answered' || c.asked_by_org_id === viewer.orgId)
-    .map(clarificationBody);
+  const clarifications = visibleClarifications(await store.clarificationsOf(rfpId), {
+    isIssuer, asker: { orgId: viewer.orgId },
+  }).map(({ row, mine }) => clarificationBody(row, { mine }));
   const models = await loadRfpModels(documentsStore, rfpId);
   return {
     status: 200,
-    body: { ...rfpBody(rfp), package: packageBody(pkg.rows, pkg.items, models), clarifications },
+    body: {
+      ...rfpBody(rfp),
+      package: packageBody(pkg.rows, pkg.items, models),
+      clarifications,
+      questions_open: questionsOpen(rfp),
+    },
   };
 }
 
@@ -183,15 +189,23 @@ export async function getRfpByToken({ store, documentsStore, token }) {
   const pkg = await store.packageOf(rec.rfp_id, rec.package_version);
   const proposal = await loadOwnProposalEcho(store, rec.proposal_id);
   const models = await loadRfpModels(documentsStore, rec.rfp_id);
+  const rfp = {
+    title: rec.title, scope_text: rec.scope_text, specialties: rec.specialties,
+    purpose: rec.purpose, mode: rec.mode, questions_deadline: rec.questions_deadline,
+    submission_deadline: rec.submission_deadline, status: rec.rfp_status,
+  };
+  // PRD-08 H-6..H-8: answered questions (public to every bidder) + this
+  // recipient's own, asker never named; and whether it may still ask.
+  const clarifications = visibleClarifications(await store.clarificationsOf(rec.rfp_id), {
+    asker: { orgId: rec.org_id ?? null, recipientId: rec.id },
+  }).map(({ row, mine }) => clarificationBody(row, { mine }));
   return {
     status: 200,
-    body: rfpLinkView(
-      { title: rec.title, scope_text: rec.scope_text, specialties: rec.specialties,
-        purpose: rec.purpose, mode: rec.mode,
-        submission_deadline: rec.submission_deadline, status: rec.rfp_status },
-      { pkg, project: { name: rec.project_name, location: rec.project_location },
-        recipientEmail: rec.email, proposal, models },
-    ),
+    body: rfpLinkView(rfp, {
+      pkg, project: { name: rec.project_name, location: rec.project_location },
+      recipientEmail: rec.email, proposal, models,
+      questionsOpen: questionsOpen(rfp), clarifications,
+    }),
   };
 }
 
@@ -957,71 +971,10 @@ export async function listMyRfps({ viewer, store, query }) {
 }
 
 // ── clarifications ─────────────────────────────────────────────────────────
-
-/** operationId: askClarification — recipient only; question stays open. */
-export async function askClarification({ viewer, store, rfpId, body }) {
-  requireActiveOrg(viewer);
-  if (!viewer.has('org:tendering:bid')) throw new ProblemError('forbidden', null, { reason: 'role' });
-  const rfp = await store.getRfp(rfpId);
-  if (!rfp) throw new ProblemError('not_found');
-  if (!(await store.isRecipient(rfpId, viewer.orgId))) throw new ProblemError('not_found');
-  if (rfp.status !== 'published') {
-    throw new ProblemError('invalid_transition', 'questions are asked while the RFP is published');
-  }
-  if (rfp.questions_deadline && new Date(rfp.questions_deadline) < new Date()) {
-    throw new ProblemError('invalid_transition', 'the questions deadline has passed');
-  }
-  const errors = {};
-  if (!UUID.test(body?.id ?? '')) errors.id = 'client-generated UUIDv7 required';
-  if (typeof body?.question !== 'string' || !body.question.trim()) errors.question = 'required';
-  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
-
-  const existing = await store.getClarification(body.id);
-  if (existing) {
-    if (existing.rfp_id === rfpId && existing.asked_by_org_id === viewer.orgId) {
-      return { status: 201, body: clarificationBody(existing) };
-    }
-    throw new ProblemError('idempotency_mismatch', 'this id was already used by a different request');
-  }
-
-  const actor = await requireActor(store, viewer);
-  const created = await store.askClarification({
-    id: body.id,
-    rfpId,
-    projectId: rfp.project_id,
-    askedByOrgId: viewer.orgId,
-    question: body.question.trim(),
-    actor: actorOf(actor, viewer),
-  });
-  return { status: 201, body: clarificationBody(created) };
-}
-
-/** operationId: answerClarification — published to all bidders, asker anonymised. */
-export async function answerClarification({ viewer, store, clarificationId, body }) {
-  requireActiveOrg(viewer);
-  if (!viewer.has('org:tendering:issue')) throw new ProblemError('forbidden', null, { reason: 'role' });
-  const clarification = await store.getClarification(clarificationId);
-  if (!clarification) throw new ProblemError('not_found');
-  const rfp = await store.getRfp(clarification.rfp_id);
-  if (rfp.issuer_org_id !== viewer.orgId) throw new ProblemError('not_found');
-  await requireStaffing({ viewer, store, projectId: rfp.project_id });
-  if (clarification.status !== 'open') {
-    throw new ProblemError('invalid_transition', 'this question was already answered');
-  }
-  const answer = (body?.answer ?? '').trim();
-  if (!answer) throw new ProblemError('validation_failed', null, { errors: { answer: 'required' } });
-
-  const actor = await requireActor(store, viewer);
-  const updated = await store.answerClarification({
-    clarificationId,
-    rfpId: rfp.id,
-    projectId: rfp.project_id,
-    answer,
-    actor: actorOf(actor, viewer),
-  });
-  if (!updated) throw new ProblemError('invalid_transition', 'this question was already answered');
-  return { status: 200, body: clarificationBody(updated) };
-}
+// askClarification, askClarificationByToken, answerClarification live in
+// ./clarifications.mjs (PRD-08); re-exported here so the operation list above
+// stays the module's one index.
+export { askClarification, askClarificationByToken, answerClarification } from './clarifications.mjs';
 
 // ── proposals / lanes ──────────────────────────────────────────────────────
 
@@ -1607,8 +1560,8 @@ export async function requireParticipant({ viewer, store, projectId }) {
   return { project };
 }
 
-/** Staffing only (the relationship was already proven another way). */
-async function requireStaffing({ viewer, store, projectId }) {
+/** Staffing only (the relationship was already proven another way). Exported for sibling use cases. */
+export async function requireStaffing({ viewer, store, projectId }) {
   if (seesWholeOrg(viewer)) return;
   const actor = await requireActor(store, viewer);
   if (!(await store.isStaffed(projectId, viewer.orgId, actor.id))) {
