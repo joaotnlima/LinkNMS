@@ -12,6 +12,9 @@ import { randomUUID } from 'node:crypto';
 
 import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { publishEvent } from '../../../platform/outbox.mjs';
+import { fileNameOf } from '../domain/model.mjs';
+import { fileTypeOf, initialPreviewStatus } from '../domain/files.mjs';
+import { linkQueries, insertLinksOn } from './pg-links.mjs';
 
 export function createDocumentsStore(pool) {
   async function tx(fn) {
@@ -30,6 +33,9 @@ export function createDocumentsStore(pool) {
   }
 
   return {
+    // Task links + the project/task file reads (PRD-05) — infra/pg-links.mjs.
+    ...linkQueries(pool, tx),
+
     // ── identity / project guards (same ports as the sibling modules) ─────
     async getPersonByClerkId(clerkUserId) {
       const { rows } = await pool.query('SELECT * FROM identity.person WHERE clerk_user_id = $1', [clerkUserId]);
@@ -294,26 +300,35 @@ export function createDocumentsStore(pool) {
       return rows[0] ?? null;
     },
 
-    /** Reserve document + version 1. No ledger yet — nothing proven uploaded. */
-    async createDocument({ id, projectId, scopeType, scopeId, kind, title, shareWithAncestors, file, storageKey, actor, privateToOrgId = null }) {
+    /**
+     * Reserve document + version 1. No ledger yet for the bytes — nothing
+     * proven uploaded. Task links asked for in the same create (PRD-05 F-6)
+     * are written here, ledgered as documents.link.added (audit only); the
+     * document stays invisible on every read until its v1 is proven.
+     */
+    async createDocument({ id, projectId, scopeType, scopeId, kind, title, shareWithAncestors, file, storageKey, actor,
+      privateToOrgId = null, note = null, previewStatus = 'ready', links = [] }) {
       return tx(async (client) => {
         await client.query(
-          `INSERT INTO documents.document (id, project_id, scope_type, scope_id, kind, title, share_with_ancestors, private_to_org_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [id, projectId, scopeType, scopeId, kind, title, shareWithAncestors, privateToOrgId],
+          `INSERT INTO documents.document (id, project_id, scope_type, scope_id, kind, title, share_with_ancestors, private_to_org_id, preview_status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [id, projectId, scopeType, scopeId, kind, title, shareWithAncestors, privateToOrgId, previewStatus],
         );
         const { rows } = await client.query(
           `INSERT INTO documents.document_version
-             (document_id, version_no, storage_key, mime, size_bytes, sha256, uploaded_by_person_id, uploaded_by_org_id)
-           VALUES ($1, 1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-          [id, storageKey, file.mime, file.size_bytes, file.sha256.toLowerCase(), actor.personId, actor.orgId],
+             (document_id, version_no, storage_key, mime, size_bytes, sha256, uploaded_by_person_id, uploaded_by_org_id, note)
+           VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+          [id, storageKey, file.mime, file.size_bytes, file.sha256.toLowerCase(), actor.personId, actor.orgId, note],
         );
+        if (links.length && projectId) {
+          await insertLinksOn(client, { documentId: id, projectId, links, actor });
+        }
         return rows[0];
       });
     },
 
     /** Reserve the next version of an existing document. */
-    async addVersion({ documentId, file, storageKeyOf, actor }) {
+    async addVersion({ documentId, file, storageKeyOf, actor, meta = {} }) {
       return tx(async (client) => {
         // Lock the parent so two concurrent uploads get distinct numbers.
         await client.query('SELECT 1 FROM documents.document WHERE id = $1 FOR UPDATE', [documentId]);
@@ -323,9 +338,11 @@ export function createDocumentsStore(pool) {
         );
         const { rows } = await client.query(
           `INSERT INTO documents.document_version
-             (document_id, version_no, storage_key, mime, size_bytes, sha256, uploaded_by_person_id, uploaded_by_org_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-          [documentId, next, storageKeyOf(next), file.mime, file.size_bytes, file.sha256.toLowerCase(), actor.personId, actor.orgId],
+             (document_id, version_no, storage_key, mime, size_bytes, sha256, uploaded_by_person_id, uploaded_by_org_id,
+              note, base_version_no, change_kind)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+          [documentId, next, storageKeyOf(next), file.mime, file.size_bytes, file.sha256.toLowerCase(), actor.personId, actor.orgId,
+            meta.note ?? null, meta.baseVersionNo ?? null, meta.changeKind ?? 'upload'],
         );
         return rows[0];
       });
@@ -352,9 +369,15 @@ export function createDocumentsStore(pool) {
         );
         if (!version) return null;
 
+        // The document's preview follows its newest proven version (F-7): a
+        // DWG waits for the PRD-06 conversion, everything else is ready.
+        const previewStatus = initialPreviewStatus(fileTypeOf(fileNameOf(version.storage_key), version.mime));
         const { rows: [updated] } = await client.query(
-          'UPDATE documents.document SET current_version = $2 WHERE id = $1 RETURNING *',
-          [documentId, versionNo],
+          'UPDATE documents.document SET current_version = $2, preview_status = $3 WHERE id = $1 RETURNING *',
+          [documentId, versionNo, previewStatus],
+        );
+        const { rows: linked } = await client.query(
+          'SELECT task_id FROM documents.document_link WHERE document_id = $1 ORDER BY task_id', [documentId],
         );
         // Profile documents anchor to no project: nothing to prove in a build
         // record, so no ledger entry and no feed event (doc 08 scopes the
@@ -396,6 +419,10 @@ export function createDocumentsStore(pool) {
               kind: doc.kind,
               title: doc.title,
               sha256: version.sha256,
+              mime: version.mime,
+              note: version.note ?? null,
+              // F-11: the tasks using the file — their owners hear of the new version.
+              linked_task_ids: linked.map((l) => l.task_id),
             },
           });
         }

@@ -22,11 +22,17 @@ import {
   SCOPE_TYPES, KINDS, validateFile, storageKey, versionRef,
   parseVersionRef, documentBody,
 } from '../domain/model.mjs';
+import { LINK_ROLES, fileTypeOf, initialPreviewStatus, linkRows, validateVersionMeta } from '../domain/files.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** operationId: createDocument — reserve v1 + answer an upload ticket. */
-export async function createDocument({ viewer, store, storage, body }) {
+/**
+ * operationId: createDocument — reserve v1 + answer an upload ticket.
+ * PRD-05 F-6: `link` links the new project document to a task in the same
+ * transaction (one file in the project, linked — never copied); `planning`
+ * is the planning task port (descendantIds) for "also on sub-tasks".
+ */
+export async function createDocument({ viewer, store, storage, body, planning = null }) {
   requireActiveOrg(viewer);
   const errors = {};
   if (!UUID.test(body?.id ?? '')) errors.id = 'client-generated UUIDv7 required';
@@ -35,6 +41,14 @@ export async function createDocument({ viewer, store, storage, body }) {
   if (!KINDS.includes(body?.kind)) errors.kind = `one of ${KINDS.join(', ')}`;
   if (typeof body?.title !== 'string' || !body.title.trim()) errors.title = 'required';
   Object.assign(errors, validateFile(body?.file));
+  const { errors: metaErrors, meta } = validateVersionMeta({ note: body?.note });
+  Object.assign(errors, metaErrors);
+  const link = body?.link ?? null;
+  if (link !== null) {
+    if (typeof link !== 'object' || !UUID.test(link.task_id ?? '')) errors['link.task_id'] = 'the task id';
+    if (link?.role !== undefined && !LINK_ROLES.includes(link.role)) errors['link.role'] = `one of ${LINK_ROLES.join(', ')}`;
+    if (body?.scope_type !== 'project') errors['link.task_id'] = 'only a project document is linked to tasks';
+  }
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const scope = await store.resolveScope(body.scope_type, body.scope_id);
@@ -46,6 +60,7 @@ export async function createDocument({ viewer, store, storage, body }) {
     }
     throw new ProblemError('not_found');
   }
+  const links = link ? await linksFor({ viewer, store, planning, link, projectId: scope.projectId }) : [];
   const actor = await requireActor(store, viewer);
 
   // Client id = idempotency key: replaying the same create re-issues a ticket
@@ -69,10 +84,28 @@ export async function createDocument({ viewer, store, storage, body }) {
     title: body.title.trim(),
     shareWithAncestors: body.share_with_ancestors === true,
     file: body.file,
+    note: meta.note,
+    previewStatus: initialPreviewStatus(fileTypeOf(body.file.name, body.file.mime)),
+    links,
     storageKey: storageKey({ documentId: body.id, versionNo: 1, fileName: body.file.name, random: randomUUID() }),
     actor: actorOf(actor, viewer),
   });
   return uploadTicket({ storage, version });
+}
+
+/** The link rows of a create-with-link, after the task edit-scope check. */
+async function linksFor({ viewer, store, planning, link, projectId }) {
+  const task = await store.resolveScope('task', link.task_id);
+  if (!task || task.projectId !== projectId) {
+    throw new ProblemError('validation_failed', null, { errors: { 'link.task_id': 'a task of the document\'s project' } });
+  }
+  if (!(await store.canEditScope({ scopeType: 'task', scopeId: link.task_id, orgId: viewer.orgId }))) {
+    throw new ProblemError('forbidden', 'linking files to this task needs its edit scope', { reason: 'relationship' });
+  }
+  const descendants = link.include_subtasks === true && planning ? await planning.descendantIds(link.task_id) : [];
+  return linkRows({
+    taskId: link.task_id, role: link.role ?? 'reference', includeSubtasks: link.include_subtasks === true, descendantIds: descendants,
+  });
 }
 
 /** operationId: createDocumentVersion — next version of an existing document. */
@@ -80,7 +113,12 @@ export async function createDocumentVersion({ viewer, store, storage, documentId
   requireActiveOrg(viewer);
   const doc = await requireReadableDocument({ viewer, store, documentId });
   const errors = validateFile(body?.file);
-  // The contract reuses DocumentCreate here; the scope of an existing document
+  const { errors: metaErrors, meta } = validateVersionMeta(body);
+  Object.assign(errors, metaErrors);
+  if (meta.baseVersionNo !== null && meta.baseVersionNo > doc.current_version) {
+    errors.base_version_no = `a proven version (1–${doc.current_version})`;
+  }
+  // DocumentVersionCreate (formerly DocumentCreate): the scope of an existing document
   // is immutable, so scope fields (when sent) must agree with the row.
   if (body?.scope_type !== undefined && body.scope_type !== doc.scope_type) errors.scope_type = 'a document never changes scope';
   if (body?.scope_id !== undefined && body.scope_id !== doc.scope_id) errors.scope_id = 'a document never changes scope';
@@ -93,6 +131,7 @@ export async function createDocumentVersion({ viewer, store, storage, documentId
   const version = await store.addVersion({
     documentId,
     file: body.file,
+    meta,
     storageKeyOf: (versionNo) => storageKey({ documentId, versionNo, fileName: body.file.name, random: randomUUID() }),
     actor: actorOf(actor, viewer),
   });
@@ -220,17 +259,17 @@ async function requireReadableDocument({ viewer, store, documentId }) {
   return doc;
 }
 
-function requireActiveOrg(viewer) {
+export function requireActiveOrg(viewer) {
   if (!viewer.orgId) throw new ProblemError('forbidden', 'pick an active organisation first', { reason: 'no_active_org' });
 }
 
-async function requireActor(store, viewer) {
+export async function requireActor(store, viewer) {
   const person = await store.getPersonByClerkId(viewer.clerkUserId);
   if (!person) throw new ProblemError('version_conflict', 'your identity mirror has not caught up yet — retry');
   return person;
 }
 
-function actorOf(person, viewer) {
+export function actorOf(person, viewer) {
   return { personId: person.id, orgId: viewer.orgId, orgRole: viewer.orgRole, channel: viewer.channel };
 }
 
@@ -239,7 +278,7 @@ function extensionOf(key) {
   return m ? m[1] : '';
 }
 
-function clampLimit(raw) {
+export function clampLimit(raw) {
   const n = Number(raw ?? 50);
   if (!Number.isInteger(n) || n < 1) return 50;
   return Math.min(n, 200);

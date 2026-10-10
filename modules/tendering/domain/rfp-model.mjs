@@ -13,10 +13,15 @@
 // extension, not the mime (the sha256 pinned into the presigned PUT makes the
 // declared bytes unforgeable regardless).
 
+import { MAX_UPLOAD_BYTES } from '../../../platform/uploads.mjs';
+
 const SHA256 = /^[0-9a-f]{64}$/i;
 
-/** 100 MB — doc 24 decision 6. The viewer shows a "large model" notice >50 MB. */
-export const MAX_MODEL_BYTES = 100 * 1024 * 1024;
+/**
+ * 100 MB — doc 24 decision 6, unified with every other document upload (D-49,
+ * PRD-05 F-6): one platform cap. The viewer shows a "large model" notice >50 MB.
+ */
+export const MAX_MODEL_BYTES = MAX_UPLOAD_BYTES;
 
 /** Advisory client-side threshold; not enforced server-side. */
 export const LARGE_MODEL_BYTES = 50 * 1024 * 1024;
