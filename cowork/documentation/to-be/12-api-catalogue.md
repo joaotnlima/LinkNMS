@@ -51,7 +51,11 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Cost lines on a row (qty, unit, unit price, material spec) | contract party / row editor | `POST /tasks/{id}/cost-lines` · `PATCH /cost-lines/{id}` · `DELETE /cost-lines/{id}` |
 | Record the actual date of an external row (licence issued) | edit scope contains the row | `POST /tasks/{id}:record-actual {finish}` |
 | Task detail (fields, history of every delta, variations, progress, questions, documents) | participant | `GET /tasks/{id}` |
-| Report progress (with photos) | edit scope contains the row (attributed) | `POST /tasks/{id}/progress` |
+| Report progress (with photos) — `done` refused while a required deliverable is unapproved (D-48) | edit scope contains the row (attributed) | `POST /tasks/{id}/progress` |
+| Deliverables of a task: state, x of n approved, done gate, what the viewer may do (PRD-05) | participant | `GET /tasks/{id}/deliverables` · `GET /projects/{id}/deliverables` |
+| Add / edit / remove a required deliverable | client side of the task (edit scope ∋ row, not the assignee) | `POST /tasks/{id}/deliverables` · `PATCH /deliverables/{id}` · `DELETE /deliverables/{id}` |
+| Submit a file version against a deliverable (with a note) | the task's assignee org | `POST /deliverables/{id}:submit {document_id, version_no?, note?}` |
+| Approve / request changes (approval records person, org, time, version sha256) | client side of the task, never the submitter | `POST /deliverables/{id}:approve` · `:request-changes {comment}` |
 | Change view: variations vs baseline (time / cost / material / scope), net and history | participant (cost per V2/V5) | `GET /projects/{id}/variations?kind=&since=&status=` · `GET /variations/{id}` |
 | Acknowledge a variation | owner, contract client | `POST /variations/{id}:acknowledge` |
 | Acknowledge several variations at once ("Acknowledge all in view", PRD-13 S-15) | owner, contract client | `POST /projects/{id}/variations:acknowledge {variation_ids[]}` |
@@ -125,6 +129,9 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 |---|---|---|
 | Upload (new doc or new version) | per scope | `POST /documents` · `POST /documents/{id}/versions` · `POST /document-versions/{id}:complete` |
 | List documents of an object | readers of scope | `GET /documents?scope_type=&scope_id=` |
+| Files of a task (linked project files + task attachments, role, inherited, also used on) | participant | `GET /tasks/{id}/documents` |
+| Link project files to a task (never a copy; optionally on every sub-task) / remove a link | edit scope contains the task | `POST /tasks/{id}/document-links` · `DELETE /tasks/{id}/document-links/{documentId}` |
+| Project files (search, filter by type, tasks using each file) | participant | `GET /projects/{id}/documents?q=&type=` |
 | Download | readers of scope | `GET /document-versions/{id}:download` |
 
 ## Collaboration

@@ -29,9 +29,10 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 | `planning.link.added`, `.changed`, `.removed` | Planning | SSE | ● |
 | `planning.progress.reported` | Planning | Quality (on done), Feed, SSE | ● |
 | `planning.baseline.taken` | Planning | Feed | ● |
+| `planning.deliverable.submitted`, `.approved`, `.changes_requested` | Planning | Notifications (submitted → client side of the task; decided → submitter + assignee org) | ● (sha256) |
 | `quality.verification.accepted`, `.rejected` | Quality | Planning, Contracting (measurable qty), Reputation | ● |
 | `quality.nonconformity.*` | Quality | Contracting (reception guard), Notifications | ● |
-| `documents.version.uploaded` | Documents | Feed | ● (sha256) |
+| `documents.version.uploaded` | Documents | Feed, Planning (re-submits a deliverable the document was submitted for, PRD-05 F-15), Notifications (owners of the tasks linking the file, F-11) | ● (sha256) |
 | `collaboration.question.opened`, `.answered`, `.resolved` | Collaboration | Notifications, Reputation (answer time) | ● |
 | `collaboration.minute.acknowledged` | Collaboration | Feed | ● |
 | `reputation.review.published` | Reputation | Directory | — |
@@ -52,6 +53,20 @@ links are stored hashed, so no link can be put in the mail). `tendering.clarific
 the winning proposal's start (`summary_start`) and duration (`summary_duration_wd`), `null` when the bid carries none. Planning
 takes the awarded branch's baseline v1 (reason `award`) from these facts alone; it never reads `tendering.*`.
 `planning.baseline.taken` data carries `reason`.
+Since PRD-05 the award also carries `purpose` (`design` | `execution`) and `deliverables[]` — for a design RFP, the list items
+(`- `, `* `, `• `, `1.` / `1)`) of the RFP's "Brief & deliverables" text (`scope_text`), at most 50, each ≤ 300 characters; `[]`
+otherwise. Planning seeds them as **required deliverables** of the first tendered row (`source_rfp_id` = the RFP; idempotent on
+task + RFP + title), D-39/D-48.
+
+**`documents.version.uploaded` data (PRD-05):** `document_id, version_no, scope_type, scope_id, kind, title, sha256, mime, note,
+linked_task_ids[]` (the tasks linking the document at that moment). `documents.link.added` / `.removed` are ledger-only (scope
+`project`), no outbox event.
+
+**`planning.deliverable.*` data (PRD-05 F-13..F-15):** `deliverable_id, task_id, title, submission_id, document_id, version_no,
+sha256, submitted_by_org_id`; `.approved` / `.changes_requested` add `decided_by_org_id, decided_by_person_id, comment?`. Scope
+`project`. `.submitted` is also published when a new version of a submitted document re-opens the review (actor = the uploader).
+Creating, editing, removing and seeding deliverables is ledger-only (`planning.deliverable.created` / `.updated` / `.removed` /
+`.seeded`).
 
 Ledgered events store their `data` as the ledger payload with the event's `scope`; the ledger is
 written by the producing module inside its transaction, the outbox row in the same transaction.
@@ -74,6 +89,9 @@ injected at the composition root (`app/src/server/v2/dispatcher.ts`):
 | `planning.variation.recorded`, `.updated` | `variations` (15-min digest) | owner + client of the row's contract, narrowed by `collaboration.variation_subscription` | planning `variationAudience` | `/projects/{p}/plan` |
 | `project.invitation.accepted` | `invitations` | inviter org | — (on the event) | `/projects/{p}` |
 | `collaboration.question.*`, `quality.nonconformity.raised` | `questions`, `quality` | addressee / asker / assigned org | — (on the event) | `/projects/{p}` |
+| `planning.deliverable.submitted` | `files` | the client side of the task: orgs whose edit scope contains the row (owner, clients up the branch chain), minus the assignee and the submitter | planning `deliverableAudience` | `/projects/{p}/plan?task={t}&tab=files` |
+| `planning.deliverable.approved`, `.changes_requested` | `files` | the submitter org and the task's assignee org (never the decider) | planning `deliverableAudience` | `/projects/{p}/plan?task={t}&tab=files` |
+| `documents.version.uploaded` (with `linked_task_ids`) | `files` | the owner of every linking task — its effective assignee org, else the project owner — minus the uploader | planning `taskOwners` | `/projects/{p}/plan?task={t}&tab=files` |
 
 People inside a recipient org come from the identity port `projectAudience(projectId, orgId)` (staffed on the
 project, or admin/manager — the same rule as reading the project) or `orgAudience(orgId, permission)` for bidders,

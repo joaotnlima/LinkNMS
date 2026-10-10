@@ -271,6 +271,16 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 
 `task.status` = status of the latest row (derived, never a column).
 
+**deliverable** (0017, PRD-05, D-48) — what a task must hand over. Owned by Planning because it is the task's acceptance
+artefact and the `done` gate is a planning invariant; the file itself stays a `documents.document` (referenced by id, no FK).
+`project_id, task_id → task, title (1–300), required bool (default true), due date?, source_rfp_id? (seeded from a design award;
+UNIQUE(task_id, source_rfp_id, title) where set), position, created_by_org_id, created_by_person_id, created_at, deleted_at`.
+**deliverable_submission** (0017) — append-only, the decision written once (trigger): `deliverable_id → deliverable, seq
+(UNIQUE per deliverable), document_id, version_no, sha256 (64), file_title, mime, note?, submitted_by_person_id,
+submitted_by_org_id, submitted_at, status (submitted/approved/changes_requested/superseded), decided_by_person_id,
+decided_by_org_id (CHECK ≠ submitted_by_org_id), decided_at, decision_comment` — CHECK decided ⇔ status approved/changes_requested.
+A deliverable's state is its latest submission's (`not_yet` when none).
+
 **project_setting** (0014): `project_id PK, mobilisation_lead_wd smallint (0–60, default 5), updated_at, updated_by_person_id` — absent row ⇒ defaults. The award-by date of a tender = the covered rows' planned start − `mobilisation_lead_wd` on the project calendar (PRD-02 §5, `getTenderWindow`).
 
 **plan_template** (D-30): `scope (personal/org/public/library), owner_person_id?, owner_org_id?, name, description, construction_type (detached_house/terraced/renovation/allotment/…), phase_tags text[], created_from_task_id?, uses_count`.
@@ -284,7 +294,9 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 
 ### `documents`
 **document**: `scope_type, scope_id, kind (drawing/bim/photo/spec/contract_doc/invoice/other), title, share_with_ancestors bool, current_version int`.
-**document_version** — append-only, `UNIQUE(document_id, version_no)`: `storage_key, mime, size_bytes, sha256, uploaded_by_person_id, uploaded_by_org_id`.
+**document_version** — append-only, `UNIQUE(document_id, version_no)`: `storage_key, mime, size_bytes, sha256, uploaded_by_person_id, uploaded_by_org_id`, and since 0016 `note text?` (≤ 2000), `base_version_no int?`, `change_kind (upload/markup_only/edit, default upload)` for PRD-06/07.
+`document.preview_status` (0016): `ready/pending/unavailable`, default `ready`; `pending` for a DWG (server-side conversion, D-49, PRD-06). Size cap 100 MB for every kind (D-49, in code).
+**document_link** (0016, PRD-05) — `PK(document_id, task_id)`: `project_id, role (reference/deliverable), inherited bool, inherited_from_task_id? (CHECK inherited ⇔ set), linked_by_person_id, linked_by_org_id, linked_at`. One project file linked to many tasks — never a copy. `share_with_ancestors` was evaluated for "also on sub-tasks" and does not fit: it widens a *contract* document to the client chain (V3), not a file to sub-tasks.
 
 ### `collaboration`
 **thread** — `UNIQUE(object_type, object_id)`: `project_id?`.

@@ -2416,6 +2416,11 @@ paths:
         **Relationship (LinkNMS):** edit scope ∋ row
 
 
+        **D-48 gate:** `done` is refused with 409 `invalid_transition` (`reason: deliverables_pending`,
+        `pending_deliverable_ids[]`) while a required deliverable of the task is not approved (see
+        `listTaskDeliverables`).
+
+
         **MCP tool:** `report_progress`'
       x-clerk-permission: org:progress:report
       x-relationship: edit scope ∋ row
@@ -2484,6 +2489,354 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /tasks/{taskId}/deliverables:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Planning
+      operationId: listTaskDeliverables
+      summary: What the task must hand over, each with its review state, and the done gate (PRD-05 F-2, F-16, D-48)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        The Deliverables section of the task''s Files tab. `approved_count` of `required_count`, `done_blocked`
+        (true while a required deliverable is not approved — `reportProgress` refuses `done`, D-48) and, for the
+        viewer, what it may do: `can_edit` (client side — edit scope ∋ row, not the assignee), `can_submit` (the
+        assignee org) and `to_review_count` (submitted versions waiting on the viewer''s org).'
+      x-relationship: project.participant
+      x-mcp-tool: list_task_deliverables
+      x-mcp-mode: read
+      parameters:
+      - $ref: '#/components/parameters/taskId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskDeliverables'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - Planning
+      operationId: createDeliverable
+      summary: Add a required deliverable to a task (client side, PRD-05 F-12)
+      description: '**Clerk permission:** `org:plan:edit`
+
+
+        **Relationship (LinkNMS):** client side of the task — edit scope ∋ row (D-33) and not the task''s assignee org
+
+
+        Idempotent on the client `id` (same id + same body → 200 with the existing deliverable; a different body → 409).
+        Ledgered `planning.deliverable.created` (audit only).'
+      x-clerk-permission: org:plan:edit
+      x-relationship: client side of the task
+      x-mcp-tool: add_task_deliverable
+      x-mcp-mode: write-confirm
+      parameters:
+      - $ref: '#/components/parameters/taskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliverableCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deliverable'
+        '200':
+          description: Idempotent replay
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deliverable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/deliverables:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Planning
+      operationId: listProjectDeliverables
+      summary: Every deliverable of the project with its state — the deliverable column of the project files page (PRD-05 F-19)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        Bounded (one row per deliverable of the build); `next_cursor` is always null.'
+      x-relationship: project.participant
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Deliverable'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /deliverables/{deliverableId}:
+    parameters:
+    - name: deliverableId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    patch:
+      tags:
+      - Planning
+      operationId: updateDeliverable
+      summary: Rename, re-date or (un)require a deliverable (client side, PRD-05 F-12)
+      description: '**Clerk permission:** `org:plan:edit`
+
+
+        **Relationship (LinkNMS):** client side of the task
+
+
+        Submissions and approvals already on the record are untouched. Ledgered `planning.deliverable.updated`.'
+      x-clerk-permission: org:plan:edit
+      x-relationship: client side of the task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliverablePatch'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deliverable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags:
+      - Planning
+      operationId: deleteDeliverable
+      summary: Remove a deliverable from the task (client side; soft — its submissions stay on the record)
+      description: '**Clerk permission:** `org:plan:edit`
+
+
+        **Relationship (LinkNMS):** client side of the task
+
+
+        Ledgered `planning.deliverable.removed`.'
+      x-clerk-permission: org:plan:edit
+      x-relationship: client side of the task
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /deliverables/{deliverableId}:submit:
+    parameters:
+    - name: deliverableId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Planning
+      operationId: submitDeliverable
+      summary: Submit a file version against a deliverable, with a note (PRD-05 F-13)
+      description: '**Clerk permission:** `org:progress:report`
+
+
+        **Relationship (LinkNMS):** the task''s assignee org (edit scope ∋ row when the task has no assignee)
+
+
+        The version must be a proven (completed) version of a project, location or task file of the same build that the
+        viewer can read; `version_no` defaults to the document''s current version. The submission snapshots the
+        version''s `sha256`, title and mime, so the approval is bound to those bytes. A pending earlier submission is
+        `superseded`. Publishes `planning.deliverable.submitted` (ledgered). A NEW VERSION of a submitted document
+        (`documents.version.uploaded`) re-submits automatically — after approval the deliverable goes back to review
+        (F-15).'
+      x-clerk-permission: org:progress:report
+      x-relationship: assignee of the task
+      x-mcp-tool: submit_deliverable
+      x-mcp-mode: write-confirm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliverableSubmit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deliverable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /deliverables/{deliverableId}:approve:
+    parameters:
+    - name: deliverableId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Planning
+      operationId: approveDeliverable
+      summary: Approve the submitted version — person, org, time and the version sha256 go on the record (PRD-05 F-14)
+      description: '**Clerk permission:** `org:quality:verify`
+
+
+        **Relationship (LinkNMS):** client side of the task — an org whose edit scope contains the row (the owner, or a
+        client up the branch''s contract chain: the GC may approve its sub''s deliverables on the owner''s behalf), never
+        the task''s assignee org and never the org that submitted the version (two-sided, as verification)
+
+
+        Only the latest submission, while `submitted`, can be decided (409 `invalid_transition` otherwise; 403
+        `two_sided_rule` for the submitting org). Publishes `planning.deliverable.approved` (ledgered, payload carries
+        the sha256).'
+      x-clerk-permission: org:quality:verify
+      x-relationship: client side of the task ∧ ≠ submitter
+      x-mcp-tool: approve_deliverable
+      x-mcp-mode: write-confirm
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliverableDecision'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deliverable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /deliverables/{deliverableId}:request-changes:
+    parameters:
+    - name: deliverableId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Planning
+      operationId: requestDeliverableChanges
+      summary: Send the submitted version back with a comment (PRD-05 F-14)
+      description: '**Clerk permission:** `org:quality:verify`
+
+
+        **Relationship (LinkNMS):** client side of the task ∧ ≠ submitter (as `approveDeliverable`)
+
+
+        `comment` is required. Publishes `planning.deliverable.changes_requested` (ledgered).'
+      x-clerk-permission: org:quality:verify
+      x-relationship: client side of the task ∧ ≠ submitter
+      x-mcp-tool: request_deliverable_changes
+      x-mcp-mode: write-confirm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliverableDecision'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deliverable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/variations:
     parameters:
     - name: projectId
@@ -7053,7 +7406,12 @@ paths:
       description: '**Clerk permission:** none beyond an authenticated session
 
 
-        **Relationship (LinkNMS):** edit scope of the target object'
+        **Relationship (LinkNMS):** edit scope of the target object (and of `link.task_id` when given)
+
+
+        Every kind is capped at 100 MB (D-49, 422 on `file.size_bytes`). A project file can be linked to a task in the
+        same call (`link`, PRD-05 F-6): one document in the project, linked — never copied — to the task. A DWG starts
+        with `preview_status: pending` (PRD-06 conversion), everything else `ready`.'
       x-relationship: edit scope of the target object
       requestBody:
         required: true
@@ -7150,7 +7508,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DocumentCreate'
+              $ref: '#/components/schemas/DocumentVersionCreate'
       responses:
         '201':
           description: Created
@@ -7237,6 +7595,213 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /tasks/{taskId}/documents:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Documents
+      operationId: listTaskDocuments
+      summary: The files of a task — every project file linked to it, plus files attached to the task itself (PRD-05 F-1, F-3)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant (V1/V6 — task and project files are readable by every participant)
+
+
+        One read for the task panel''s Files tab. Each item is the document (newest version last) plus how it hangs on
+        this task: `role` (`reference` | `deliverable`), `inherited` (linked on an ancestor with "also on sub-tasks",
+        removable here), `attached` (scoped to the task itself — legacy uploads and files attached in the
+        conversation, always `reference`) and `used_on[]` — every task of the project that links the same file, so
+        the panel can say "also on 2.5.1" without another read. Bounded (≤ 500 files per task), `next_cursor` is
+        always null.'
+      x-relationship: project.participant
+      parameters:
+      - $ref: '#/components/parameters/taskId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/TaskDocument'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tasks/{taskId}/document-links:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Documents
+      operationId: linkTaskDocuments
+      summary: Link project files to a task — never a copy (PRD-05 F-9, F-10, F-17)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** edit scope ∋ task (D-33) ∧ reader of every linked document
+
+
+        Links are rows of `documents.document_link (document_id, task_id)`: the file lives once in the project and
+        every task that uses it sees its newest version. `include_subtasks` also links every current sub-task
+        (`inherited: true`, removable per sub-task with `unlinkTaskDocument`). Only project, location and task files of
+        the same project can be linked (contract, RFP and proposal files keep their narrower audiences). Idempotent:
+        re-linking an already-linked file answers it unchanged (its role is not rewritten). Ledgered as
+        `documents.link.added` (audit only, no outbox event).'
+      x-relationship: edit scope ∋ task
+      parameters:
+      - $ref: '#/components/parameters/taskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentLinkCreate'
+      responses:
+        '200':
+          description: The links now on the task (and its sub-tasks when asked), as task documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaskDocument'
+                required:
+                - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /tasks/{taskId}/document-links/{documentId}:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    delete:
+      tags:
+      - Documents
+      operationId: unlinkTaskDocument
+      summary: Remove a file from a task (the file stays in the project)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** edit scope ∋ task (D-33)
+
+
+        Removes this task''s link only — an inherited link goes from this sub-task alone; the document, its versions and
+        every other task''s link are untouched. A file attached to the task itself (`attached: true`) has no link to
+        remove (404). Ledgered as `documents.link.removed` (audit only).'
+      x-relationship: edit scope ∋ task
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{projectId}/documents:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Documents
+      operationId: listProjectDocuments
+      summary: Every file of the project the viewer can read, with the tasks that use it (PRD-05 F-9, F-19)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant (V1/V6)
+
+
+        Project, location and task files of the build — never contract, RFP or proposal files (V2/V8 keep those to their
+        parties), never another org''s private document. `q` searches the title (sheet number or name), `type`
+        filters by file type. Each item carries `used_on[]` (the tasks linking it, with role). Newest first; keyset
+        pagination.'
+      x-relationship: project.participant
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 200
+      - name: type
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/FileType'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ProjectDocument'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /threads/{objectType}/{objectId}/comments:
     parameters:
     - name: objectType
@@ -10095,6 +10660,148 @@ components:
       description: '''verified'' is written by Quality, never reported. `done` on a leaf with no actual finish
         records one in the same commit (`actual_finish`, today by default) — so a late close stays on the
         plan as closed_late (PRD-13 S-3, S-12).'
+    DeliverableStatus:
+      type: string
+      description: '`not_yet` — nothing submitted; `submitted` — the latest version waits for review; `changes_requested`;
+        `approved` (the latest submission was approved).'
+      enum:
+      - not_yet
+      - submitted
+      - changes_requested
+      - approved
+    DeliverableSubmission:
+      type: object
+      description: One file version submitted against a deliverable — append-only; the decision is written once.
+      properties:
+        id: *id001
+        seq:
+          type: integer
+        document_id: *id001
+        version_no:
+          type: integer
+        sha256:
+          type: string
+        file_title:
+          type: string
+        mime:
+          type: string
+        note:
+          type: string
+        submitted_by:
+          $ref: '#/components/schemas/Actor'
+        submitted_at: *id004
+        status:
+          type: string
+          enum:
+          - submitted
+          - approved
+          - changes_requested
+          - superseded
+        decision:
+          type: object
+          description: Present once decided — who (person + org), when, with what comment. The sha256 above is what was approved.
+          properties:
+            by:
+              $ref: '#/components/schemas/Actor'
+            at: *id004
+            comment:
+              type: string
+    Deliverable:
+      type: object
+      description: What a task must hand over (PRD-05 F-2, D-48). Owned by Planning; the file itself is a Documents document.
+      properties:
+        id: *id001
+        project_id: *id001
+        task_id: *id001
+        title:
+          type: string
+        required:
+          type: boolean
+        due: *id003
+        source_rfp_id: *id001
+        status:
+          $ref: '#/components/schemas/DeliverableStatus'
+        current:
+          $ref: '#/components/schemas/DeliverableSubmission'
+        history:
+          type: array
+          description: Every submission, newest first (the current one included).
+          items:
+            $ref: '#/components/schemas/DeliverableSubmission'
+        created_at: *id004
+    TaskDeliverables:
+      type: object
+      properties:
+        task_id: *id001
+        required_count:
+          type: integer
+        approved_count:
+          type: integer
+          description: Required deliverables whose latest submission is approved.
+        done_blocked:
+          type: boolean
+          description: D-48 — true while a required deliverable is not approved; `reportProgress` refuses `done`.
+        to_review_count:
+          type: integer
+          description: Submitted versions the viewer's org may decide.
+        can_edit:
+          type: boolean
+        can_submit:
+          type: boolean
+        can_review:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deliverable'
+    DeliverableCreate:
+      type: object
+      properties:
+        id: *id001
+        title:
+          type: string
+          minLength: 1
+          maxLength: 300
+        required:
+          type: boolean
+          default: true
+        due: *id003
+      required:
+      - id
+      - title
+    DeliverablePatch:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 300
+        required:
+          type: boolean
+        due:
+          type:
+          - string
+          - 'null'
+          format: date
+    DeliverableSubmit:
+      type: object
+      properties:
+        document_id: *id001
+        version_no:
+          type: integer
+          minimum: 1
+        note:
+          type: string
+          maxLength: 2000
+      required:
+      - document_id
+    DeliverableDecision:
+      type: object
+      properties:
+        comment:
+          type: string
+          maxLength: 2000
+          description: Required on request-changes.
     Variation:
       type: object
       properties:
@@ -11645,16 +12352,13 @@ components:
           type: string
         share_with_ancestors: *id002
         file:
-          type: object
-          properties:
-            name:
-              type: string
-            mime:
-              type: string
-            size_bytes:
-              type: integer
-            sha256:
-              type: string
+          $ref: '#/components/schemas/FileDeclaration'
+        note:
+          type: string
+          maxLength: 2000
+          description: Change note of version 1 (PRD-05 F-13 — e.g. what a submitted deliverable contains).
+        link:
+          $ref: '#/components/schemas/DocumentLinkSpec'
       required:
       - id
       - scope_type
@@ -11666,6 +12370,7 @@ components:
       type: object
       properties:
         id: *id001
+        project_id: *id001
         scope_type:
           type: string
         scope_id: *id001
@@ -11673,6 +12378,11 @@ components:
           type: string
         title:
           type: string
+        file_type:
+          $ref: '#/components/schemas/FileType'
+        preview_status:
+          $ref: '#/components/schemas/PreviewStatus'
+        share_with_ancestors: *id002
         current_version:
           type: integer
         versions:
@@ -11691,6 +12401,12 @@ components:
               uploaded_by:
                 $ref: '#/components/schemas/Actor'
               uploaded_at: *id004
+              note:
+                type: string
+              base_version_no:
+                type: integer
+              change_kind:
+                $ref: '#/components/schemas/VersionChangeKind'
     UploadTicket:
       type: object
       properties:
@@ -11700,6 +12416,144 @@ components:
           type: string
           format: uri
         expires_at: *id004
+    DocumentVersionCreate:
+      type: object
+      description: 'A new version of an existing document (PRD-05 F-8, F-11). The scope of a document never changes, so
+        scope fields (if sent) must agree with it. `note` is the change note shown in the history and carried on
+        `documents.version.uploaded`; `base_version_no` / `change_kind` are for PRD-06/07 (a markup-only or edited copy of
+        a version).'
+      properties:
+        file:
+          $ref: '#/components/schemas/FileDeclaration'
+        note:
+          type: string
+          maxLength: 2000
+        base_version_no:
+          type: integer
+          minimum: 1
+        change_kind:
+          $ref: '#/components/schemas/VersionChangeKind'
+      required:
+      - file
+    FileDeclaration:
+      type: object
+      description: 'What the browser declares before the presigned PUT; the sha256 is pinned into the signature. At most
+        104857600 bytes (100 MB, D-49) for every document kind.'
+      properties:
+        name:
+          type: string
+        mime:
+          type: string
+        size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 104857600
+        sha256:
+          type: string
+          pattern: ^[0-9a-fA-F]{64}$
+      required:
+      - name
+      - mime
+      - size_bytes
+      - sha256
+    FileType:
+      type: string
+      description: 'Derived from the file name (and mime): what the Files tab tags a row with and filters on.'
+      enum:
+      - pdf
+      - dwg
+      - dxf
+      - ifc
+      - image
+      - other
+    PreviewStatus:
+      type: string
+      description: 'Document-level preview state (PRD-05 F-7, wired for PRD-06): `ready` (viewable / no preview needed),
+        `pending` (a DWG waits for its server-side conversion, D-49), `unavailable` (no preview — download only).
+        `pending` is set for DWG uploads; every other type is `ready`.'
+      enum:
+      - ready
+      - pending
+      - unavailable
+    VersionChangeKind:
+      type: string
+      enum:
+      - upload
+      - markup_only
+      - edit
+    DocumentLinkRole:
+      type: string
+      description: '`reference` — what the work is built from; `deliverable` — a file handed over by the task (its review
+        state lives on the task''s deliverables, Planning).'
+      enum:
+      - reference
+      - deliverable
+    DocumentLinkSpec:
+      type: object
+      description: 'Link the new document to a task in the same create (PRD-05 F-6 acceptance 1: one project document
+        linked to the task). Only with `scope_type: project`; needs edit scope of the task.'
+      properties:
+        task_id: *id001
+        role:
+          $ref: '#/components/schemas/DocumentLinkRole'
+        include_subtasks:
+          type: boolean
+          default: false
+      required:
+      - task_id
+    DocumentLinkCreate:
+      type: object
+      properties:
+        document_ids:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: *id001
+        role:
+          $ref: '#/components/schemas/DocumentLinkRole'
+        include_subtasks:
+          type: boolean
+          default: false
+          description: Also link every current sub-task (inherited, removable per sub-task) — PRD-05 F-10.
+      required:
+      - document_ids
+    DocumentUse:
+      type: object
+      description: One task that links the document.
+      properties:
+        task_id: *id001
+        role:
+          $ref: '#/components/schemas/DocumentLinkRole'
+        inherited:
+          type: boolean
+    TaskDocument:
+      description: A document as it hangs on one task (PRD-05 F-3).
+      allOf:
+      - $ref: '#/components/schemas/Document'
+      - type: object
+        properties:
+          role:
+            $ref: '#/components/schemas/DocumentLinkRole'
+          inherited:
+            type: boolean
+          inherited_from_task_id: *id001
+          attached:
+            type: boolean
+            description: Scoped to the task itself (no link row) — always a reference.
+          used_on:
+            type: array
+            items:
+              $ref: '#/components/schemas/DocumentUse'
+    ProjectDocument:
+      description: A project file with the tasks that use it (PRD-05 F-9, F-19).
+      allOf:
+      - $ref: '#/components/schemas/Document'
+      - type: object
+        properties:
+          used_on:
+            type: array
+            items:
+              $ref: '#/components/schemas/DocumentUse'
     CommentCreate:
       type: object
       properties:
@@ -11803,7 +12657,9 @@ components:
       description: 'What a notification is about — the unit of preferences (PRD-12 N-2). `bids` proposals
         received (issuer); `tendering` clarifications answered, tender awarded / not selected / cancelled
         (bidders); `variations` the 15-minute change digest (owner and client of the row); `invitations`
-        project invitations accepted (inviter); `questions`, `quality` collaboration and quality items.'
+        project invitations accepted (inviter); `questions`, `quality` collaboration and quality items; `files`
+        deliverables submitted (client side of the task) / approved / sent back (assignee), and a new version of a
+        file linked to a task (the task owners, PRD-05 F-11).'
       enum:
       - bids
       - tendering
@@ -11811,6 +12667,7 @@ components:
       - invitations
       - questions
       - quality
+      - files
     Notification:
       type: object
       properties:

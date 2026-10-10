@@ -2,6 +2,28 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-10 — Task files, project files and deliverables (PRD-05 F-1..F-19; additive)
+
+- **New (Documents):** `listTaskDocuments` — `GET /tasks/{taskId}/documents` (`TaskDocument` = `Document` + `role`,
+  `inherited`, `inherited_from_task_id`, `attached`, `used_on[]`); `linkTaskDocuments` — `POST /tasks/{taskId}/document-links`
+  `{document_ids[], role, include_subtasks}`; `unlinkTaskDocument` — `DELETE /tasks/{taskId}/document-links/{documentId}`;
+  `listProjectDocuments` — `GET /projects/{projectId}/documents?q=&type=` (`ProjectDocument` = `Document` + `used_on[]`).
+- `DocumentCreate` gains `note` and `link {task_id, role, include_subtasks}` (one project document linked to the task in the
+  same call); `file` is now the shared `FileDeclaration` (cap 104857600 bytes = 100 MB for every kind, D-49).
+  `createDocumentVersion` takes `DocumentVersionCreate {file, note, base_version_no, change_kind}` (scope fields still accepted
+  and must agree). `Document` gains `project_id`, `file_type` (`FileType`), `preview_status` (`PreviewStatus`),
+  `share_with_ancestors`; each version gains `note`, `base_version_no`, `change_kind`.
+- **New (Planning):** `listTaskDeliverables`, `createDeliverable` (`GET/POST /tasks/{taskId}/deliverables`),
+  `listProjectDeliverables` (`GET /projects/{projectId}/deliverables`), `updateDeliverable` / `deleteDeliverable`
+  (`PATCH/DELETE /deliverables/{id}`), `submitDeliverable` (`:submit`), `approveDeliverable` (`:approve`),
+  `requestDeliverableChanges` (`:request-changes`).
+- `reportProgress`: `done` answers 409 `invalid_transition` (`reason: deliverables_pending`, `pending_deliverable_ids`) while a
+  required deliverable is unapproved (D-48).
+- `NotificationCategory` gains `files`.
+- Events: `planning.deliverable.submitted` / `.approved` / `.changes_requested`; `documents.version.uploaded` data gains `mime`,
+  `note`, `linked_task_ids`; `tendering.rfp.awarded` data gains `purpose`, `deliverables[]` (doc 10).
+- Migrations `db/v2/0016_documents_task_files.sql`, `db/v2/0017_planning_deliverables.sql`.
+
 ## 2026-10-10 — Notification centre and settings (PRD-12 N-1, N-2, N-8..N-10; additive + two body fixes)
 
 - **New (Collaboration):** `getNotificationPreferences` — `GET /me/notification-preferences`: the effective

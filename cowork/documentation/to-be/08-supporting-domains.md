@@ -23,6 +23,13 @@ documents, optionally linked to tasks; may spawn non-conformities.
 - Bytes in object storage (R2), downloads via short-lived signed URLs after a visibility check (V6).
 - The `sha256` of each version goes into the ledger payload: the file itself can be proven unchanged.
 - BIM: upload + preview where the format allows (IFC viewer), as evidence only (product boundary kept).
+- **Task files (PRD-05).** A file lives once in the project (`scope_type = project`) and is *linked* to the tasks that use
+  it (`document_link`, role `reference` | `deliverable`, optionally inherited by sub-tasks); a new version shows on every
+  linking task and notifies their owners. Every kind is capped at 100 MB (D-49); `preview_status` tracks the DWG conversion
+  of PRD-06. **Deliverables** — what a task must hand over and their review — belong to Planning (the task's acceptance
+  and the D-48 `done` gate); Documents only holds the bytes. Reviewers are the *client side* of the task: an organisation
+  whose edit scope contains the row (owner, or a client up the branch's contract chain — so the GC may approve its sub's
+  deliverables on the owner's behalf), never the task's assignee and never the organisation that submitted the version.
 
 ## Collaboration
 
