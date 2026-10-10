@@ -5,6 +5,10 @@
 //        through), current_version advances, the save is ledgered;
 //   V-8  close / re-open / link are record-side and ledgered;
 //        a stale base answers version_conflict.
+//   AC4  a DWG that cannot be converted shows "unavailable" + reason in the
+//        Files list and the viewer and is still downloadable; V-11 a converted
+//        DWG answers its layouts with inline URLs; a markups-only version
+//        shares the preview of its bytes; replays convert nothing twice.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -18,6 +22,11 @@ import { createDocument, createDocumentVersion, completeUpload } from '../applic
 import {
   listDocumentMarkups, saveDocumentMarkups, closeMarkup, reopenMarkup, linkMarkup,
 } from '../application/markups.mjs';
+import { listProjectDocuments } from '../application/task-files.mjs';
+import { getDocumentPreview, getDocumentViewUrl } from '../application/viewing.mjs';
+import { downloadDocument } from '../application/use-cases.mjs';
+import { documentsConsumers } from '../application/consumers.mjs';
+import { createNoopDwgConverter } from './dwg-converters.mjs';
 
 const url = process.env.DATABASE_URL;
 const skip = url ? false : 'set DATABASE_URL to run the documents Postgres suite';
@@ -173,5 +182,88 @@ describe('the markup layer over Postgres (PRD-06)', { skip }, () => {
        VALUES ($1, 99, 'k', 'application/pdf', 1, $2, $3, $4, 'markup_only')`,
       [docId, 'e'.repeat(64), PERSON, GC_ORG],
     ), /document_version_markup_only_base/);
+  });
+
+  async function uploadDwg(name, sha) {
+    const body = {
+      id: randomUUID(), scope_type: 'project', scope_id: PROJECT, kind: 'drawing', title: name,
+      file: { name, mime: 'application/octet-stream', size_bytes: 1024, sha256: sha },
+    };
+    const done = await uploadFile({ store, storage, orgId: GC_ORG, body });
+    assert.equal(done.body.preview_status, 'pending', 'Making preview… until the job ran');
+    const { rows: [evt] } = await pool.query(
+      "SELECT * FROM platform.outbox WHERE type = 'documents.version.uploaded' AND data->>'document_id' = $1", [body.id],
+    );
+    return { id: body.id, evt };
+  }
+
+  test('AC4: no converter → unavailable with its reason, in the list and the viewer; still downloadable', async () => {
+    const { id, evt } = await uploadDwg('gutter-detail.dwg', '1'.repeat(64));
+    const consumers = documentsConsumers(store, { storage, converter: createNoopDwgConverter() });
+    await consumers['documents.version.uploaded'](evt);
+
+    const list = await listProjectDocuments({ viewer: viewer(OWNER_ORG), store, projectId: PROJECT, query: { type: 'dwg' } });
+    const row = list.body.items.find((d) => d.id === id);
+    assert.deepEqual([row.preview_status, row.preview_reason], ['unavailable', 'converter_not_configured']);
+    const preview = await getDocumentPreview({ viewer: viewer(OWNER_ORG), store, storage, versionId: `${id}.1` });
+    assert.deepEqual([preview.body.status, preview.body.reason], ['unavailable', 'converter_not_configured']);
+    const dl = await downloadDocument({ viewer: viewer(OWNER_ORG), store, storage, versionId: `${id}.1` });
+    assert.equal(dl.status, 302);
+  });
+
+  test('V-11: a converted DWG answers its layouts (own storage keys) and layers; replays and markups-only versions reuse it', async () => {
+    const { id, evt } = await uploadDwg('roof-details.dwg', '2'.repeat(64));
+    let calls = 0;
+    const converter = {
+      name: 'fake',
+      async convert({ bytes, fileType }) {
+        calls += 1;
+        assert.equal(fileType, 'dwg');
+        assert.ok(Buffer.isBuffer(bytes));
+        return {
+          ok: true,
+          layouts: [{ name: 'Model', svg: '<svg viewBox="0 0 800 520"><path id="dwg-object-1" data-layer="A-ROOF" d="M 0,0 L 9,9"/></svg>' }],
+          layers: [{ name: 'A-ROOF', on: true, count: 1 }],
+          warnings: [{ code: 'fonts_substituted', detail: 'romans.shx' }],
+        };
+      },
+    };
+    const consumers = documentsConsumers(store, { storage, converter });
+    await consumers['documents.version.uploaded'](evt);
+    await consumers['documents.version.uploaded'](evt); // at-least-once delivery
+    assert.equal(calls, 1, 'converted once');
+    assert.equal((await store.getDocument(id)).preview_status, 'ready');
+
+    const preview = await getDocumentPreview({ viewer: viewer(OWNER_ORG), store, storage, versionId: `${id}.1` });
+    assert.equal(preview.body.status, 'ready');
+    assert.deepEqual(preview.body.layouts.map((l) => [l.index, l.name, l.width, l.height]), [[0, 'Model', 800, 520]]);
+    assert.match(preview.body.layouts[0].view_url, /previews\/2{64}\/0\.svg/);
+    assert.deepEqual(preview.body.warnings, [{ code: 'fonts_substituted', detail: 'romans.shx' }]);
+    const { rows: [layout] } = await pool.query('SELECT storage_key FROM documents.preview_layout WHERE document_id = $1', [id]);
+    assert.ok(storage._objects.has(layout.storage_key), 'the SVG is a derived object with its own key');
+
+    // V-16: markup on the DWG preview → v2 markups-only, which shows the same preview.
+    await saveDocumentMarkups({
+      viewer: viewer(GC_ORG), store, documentId: id,
+      body: { base_version_no: 1, markups: [{ id: randomUUID(), page_or_layout: 'Model', kind: 'measure', geometry: { points: [[90, 420], [550, 420]] } }] },
+    });
+    const onV2 = await getDocumentPreview({ viewer: viewer(OWNER_ORG), store, storage, versionId: `${id}.2` });
+    assert.equal(onV2.body.status, 'ready');
+    assert.equal(onV2.body.layouts.length, 1);
+    assert.equal((await store.getDocument(id)).preview_status, 'ready');
+  });
+
+  test('V-4: the PDF renderer gets an inline URL for readers only', async () => {
+    const res = await getDocumentViewUrl({ viewer: viewer(OWNER_ORG), store, storage, versionId: `${docId}.1` });
+    assert.equal(res.status, 200);
+    assert.ok(res.body.url && res.body.expires_at);
+    await assert.rejects(
+      getDocumentViewUrl({ viewer: viewer(STRANGER_ORG), store, storage, versionId: `${docId}.1` }),
+      (e) => e.problem?.code === 'not_found',
+    );
+    await assert.rejects(
+      getDocumentViewUrl({ viewer: viewer(OWNER_ORG), store, storage, versionId: `${docId}.99` }),
+      (e) => e.problem?.code === 'not_found',
+    );
   });
 });

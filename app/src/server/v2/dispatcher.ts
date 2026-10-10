@@ -22,6 +22,10 @@ import { createContractingStore } from '@modules/contracting/infra/pg-store.mjs'
 import { createPlanningStore } from '@modules/planning/infra/pg-store.mjs';
 import { createQualityStore } from '@modules/quality/infra/pg-store.mjs';
 import { createCollaborationStore } from '@modules/collaboration/infra/pg-store.mjs';
+import { documentsConsumers } from '@modules/documents/application/consumers.mjs';
+import { createDocumentsStore } from '@modules/documents/infra/pg-store.mjs';
+import { createR2ObjectStorage } from '@modules/documents/infra/storage.mjs';
+import { selectDwgConverter } from '@modules/documents/infra/dwg-converters.mjs';
 // Published notification audience ports (PRD-12 N-1, doc 10 §Notification
 // centre): collaboration names recipients through these, never other tables.
 import { createIdentityAudience } from '@modules/identity/application/audience.mjs';
@@ -44,6 +48,14 @@ function getHandlers(): Handlers {
       contractingConsumers(createContractingStore(pool)),
       planningConsumers(createPlanningStore(pool)),
       qualityConsumers(createQualityStore(pool)),
+      // PRD-06: DWG/DXF previews. The converter is a port chosen by
+      // DWG_CONVERTER (default `none` → download only, reason
+      // converter_not_configured); LibreDWG (GPL) is never bundled — D-49 legal
+      // check pending, see to-be/08 §Documents.
+      documentsConsumers(createDocumentsStore(pool), {
+        storage: createR2ObjectStorage(),
+        converter: selectDwgConverter(process.env),
+      }),
       collaborationConsumers(createCollaborationStore(pool), {
         identity: createIdentityAudience(createIdentityStore(pool)),
         tendering: createTenderingAudience(createTenderingStore(pool)),

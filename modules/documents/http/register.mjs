@@ -13,6 +13,7 @@ import {
 import {
   listDocumentMarkups, saveDocumentMarkups, closeMarkup, reopenMarkup, linkMarkup,
 } from '../application/markups.mjs';
+import { getDocumentViewUrl, getDocumentPreview } from '../application/viewing.mjs';
 
 /**
  * @param {{ store: object, storage: object, planning?: { descendantIds: Function },
@@ -21,7 +22,7 @@ import {
  *   `questions` / `nonconformities` — the Collaboration and Quality ports a
  *   markup link is checked through (PRD-06 V-8).
  */
-export function registerDocuments(router, { store, storage, planning, questions = null, nonconformities = null }) {
+export function registerDocuments(router, { store, storage, planning, questions, nonconformities }) {
   router.register('POST', '/documents', 'createDocument', ({ viewer, body }) =>
     createDocument({ viewer, store, storage, body, planning }));
 
@@ -65,4 +66,11 @@ export function registerDocuments(router, { store, storage, planning, questions 
 
   router.register('POST', '/markups/{markupId}:link', 'linkMarkup', ({ viewer, params, body }) =>
     linkMarkup({ viewer, store, questions, nonconformities, markupId: params.markupId, body }));
+
+  // ── PRD-06: viewing a version in the browser (PDF bytes, DWG/DXF preview) ─
+  router.register('GET', '/document-versions/{versionId}:view-url', 'getDocumentViewUrl', ({ viewer, params }) =>
+    getDocumentViewUrl({ viewer, store, storage, versionId: params.versionId }));
+
+  router.register('GET', '/document-versions/{versionId}/preview', 'getDocumentPreview', ({ viewer, params }) =>
+    getDocumentPreview({ viewer, store, storage, versionId: params.versionId }));
 }

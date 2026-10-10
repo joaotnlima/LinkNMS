@@ -16,6 +16,7 @@ import { fileNameOf } from '../domain/model.mjs';
 import { fileTypeOf, initialPreviewStatus } from '../domain/files.mjs';
 import { linkQueries, insertLinksOn } from './pg-links.mjs';
 import { markupQueries } from './pg-markups.mjs';
+import { previewQueries } from './pg-previews.mjs';
 
 export function createDocumentsStore(pool) {
   async function tx(fn) {
@@ -38,6 +39,8 @@ export function createDocumentsStore(pool) {
     ...linkQueries(pool, tx),
     // The markup layer of drawings (PRD-06) — infra/pg-markups.mjs.
     ...markupQueries(pool, tx),
+    // DWG / DXF previews keyed by the bytes (PRD-06) — infra/pg-previews.mjs.
+    ...previewQueries(pool, tx),
 
     // ── identity / project guards (same ports as the sibling modules) ─────
     async getPersonByClerkId(clerkUserId) {

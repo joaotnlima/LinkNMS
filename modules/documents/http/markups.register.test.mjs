@@ -33,6 +33,9 @@ function fakeStore() {
     async listMarkups() { return { items: [markup], nextCursor: null }; },
     async getMarkup(id) { return id === M1 ? markup : null; },
     async getMarkupsByIds() { return []; },
+    async getVersion(id, no) { return id === DOC && no <= 2 ? { document_id: DOC, version_no: no, storage_key: 'k/roof.dwg', mime: 'application/octet-stream', sha256: 'f'.repeat(64) } : null; },
+    async getPreview() { return { status: 'unavailable', reason: 'converter_not_configured', warnings: [] }; },
+    async listPreviewLayouts() { return []; },
     async saveMarkups(cmd) { this.saved.push(cmd); return { conflict: 3 }; },
     async setMarkupState({ to }) { return { ...markup, state: to, closed_at: '2026-10-11T00:00:00Z' }; },
     async linkMarkup({ link }) { return { ...markup, question_id: link.questionId }; },
@@ -85,5 +88,16 @@ describe('PRD-06 markups over the /api/v2 router', () => {
     assert.equal(linked.status, 200);
     assert.equal(linked.body.question_id, Q);
     assert.equal((await dispatch('POST', `/markups/${M1}:link`, viewer(GC_ORG), {})).status, 422);
+  });
+
+  test('viewing routes: :view-url answers an inline URL, /preview the DWG state; unproven versions 404', async () => {
+    const url = await dispatch('GET', `/document-versions/${DOC}.2:view-url`, viewer(GC_ORG));
+    assert.equal(url.status, 200);
+    assert.match(url.body.url, /^memory:\/\/download\//);
+    const preview = await dispatch('GET', `/document-versions/${DOC}.2/preview`, viewer(GC_ORG));
+    assert.equal(preview.status, 200);
+    assert.deepEqual([preview.body.file_type, preview.body.status, preview.body.reason], ['dwg', 'unavailable', 'converter_not_configured']);
+    assert.equal((await dispatch('GET', `/document-versions/${DOC}.3/preview`, viewer(GC_ORG))).status, 404);
+    assert.equal((await dispatch('GET', `/document-versions/${DOC}.2:view-url`, viewer(STRANGER_ORG))).status, 404);
   });
 });

@@ -7,6 +7,8 @@
 //   signUpload({ key, mime, sha256Hex })  → { url, expiresAt }
 //   signDownload({ key, fileName })       → { url, expiresAt }
 //   head({ key })                         → { sizeBytes } | null
+//   get({ key })                          → Buffer (server-side read: the DWG/DXF
+//                                           conversion job of PRD-06 reads the bytes)
 //
 // The declared sha256 is pinned into the presigned PUT as the
 // `x-amz-checksum-sha256` signed header, so the storage itself refuses bytes
@@ -110,6 +112,14 @@ export function createR2ObjectStorage({
       }
     },
 
+    /** Server-side read of one object's bytes (the PRD-06 conversion job). */
+    async get({ key }) {
+      assertConfigured();
+      const { client, s3 } = await sdk();
+      const res = await client.send(new s3.GetObjectCommand({ Bucket: bucket, Key: key }));
+      return Buffer.from(await res.Body.transformToByteArray());
+    },
+
     /**
      * Server-side upload — for artefacts the SERVER generates (a record export),
      * not a client PUT to a presigned ticket. The declared sha256 is pinned as
@@ -154,6 +164,11 @@ export function createInMemoryObjectStorage() {
       const sizeBytes = Buffer.byteLength(body);
       objects.set(key, { sizeBytes, body });
       return { sizeBytes };
+    },
+    async get({ key }) {
+      const obj = objects.get(key);
+      if (!obj) throw Object.assign(new Error(`no object ${key}`), { name: 'NoSuchKey' });
+      return Buffer.isBuffer(obj.body) ? obj.body : Buffer.from(obj.body ?? '');
     },
   };
 }
