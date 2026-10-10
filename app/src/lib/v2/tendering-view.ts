@@ -81,7 +81,7 @@ export interface V2PackageRow {
   position: number;
 }
 
-/** An attached BIM model (packageBody.models, LINA-409 / doc 24 §RfpModel). */
+/** The build's model as this RFP shows it (packageBody.models, LINA-409 / doc 24, PRD-07 §5). */
 export interface V2Model {
   documentId: string;
   version: number;
@@ -89,6 +89,10 @@ export interface V2Model {
   mime: string;
   sizeBytes: number;
   sha256?: string | null;
+  /** PRD-07: true when the RFP is pinned to `version`; false when it follows the build model's current version. */
+  pinned?: boolean;
+  /** PRD-07: the build model's current version. */
+  currentVersion?: number;
 }
 
 export interface V2Package {

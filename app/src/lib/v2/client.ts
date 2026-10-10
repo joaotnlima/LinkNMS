@@ -44,6 +44,8 @@ export class V2Error extends Error {
     public detail: string | null = null,
     /** Field errors for `validation_failed`; keyed by field name. */
     public errors: Record<string, string> | null = null,
+    /** The whole problem body — extension members such as `conflicts` / `refused` (PRD-07). */
+    public problem: Record<string, unknown> | null = null,
   ) {
     super(message);
     this.name = 'V2Error';
@@ -107,7 +109,7 @@ function raise(status: number, body: unknown): never {
   const code = p.code ?? 'internal';
   const message = p.detail || p.title || `request failed (${status})`;
   if (status === 401 || code === 'unauthenticated') throw new V2Unauthenticated(p.detail ?? null);
-  throw new V2Error(status, code, message, p.detail ?? null, p.errors ?? null);
+  throw new V2Error(status, code, message, p.detail ?? null, p.errors ?? null, (body ?? null) as Record<string, unknown> | null);
 }
 
 function queryString(query?: V2Request['query']): string {

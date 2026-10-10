@@ -11,6 +11,7 @@ import {
   filterCounts, referenceFiles, type FileView, type ReferenceFilter,
 } from '@/lib/v2/task-files-view';
 import { ReferenceRow } from './FileBits';
+import { TaskModelCard } from '@/components/model/TaskModelCard';
 
 const FILTERS: Array<{ key: ReferenceFilter; label: string }> = [
   { key: 'all', label: 'All' }, { key: 'pdf', label: 'PDF' }, { key: 'dwg', label: 'DWG' },
@@ -18,8 +19,9 @@ const FILTERS: Array<{ key: ReferenceFilter; label: string }> = [
 ];
 
 export function ReferenceSection({
-  taskId, files, canEdit, taskName, orgName, onAdd, onChanged, onOpen,
+  projectId, taskId, files, canEdit, taskName, orgName, onAdd, onChanged, onOpen,
 }: {
+  projectId: string;
   taskId: string;
   files: FileView[];
   canEdit: boolean;
@@ -49,10 +51,8 @@ export function ReferenceSection({
         {canEdit ? <button type="button" className="btn sm" onClick={onAdd}>＋ Add</button> : null}
       </div>
 
-      {/* F-4: the shared project model card lands with PRD-07 (IFC model page). */}
-      <div className="tfl-slot" data-slot="project-model">
-        Project model — the shared IFC model and the elements linked to this task appear here once the build has one.
-      </div>
+      {/* F-4: the shared project model card (PRD-07). */}
+      <TaskModelCard projectId={projectId} taskId={taskId} />
 
       {counts.all > 0 ? (
         <div className="tfl-tools" role="group" aria-label="Filter by type">

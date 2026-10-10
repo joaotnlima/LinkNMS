@@ -36,7 +36,7 @@ export type BuildRef = { id: string; name: string; href?: string };
 
 // The build-scoped nav sections, in rail order. `section` selects which is
 // highlighted in BUILD mode; PORTFOLIO mode passes none.
-export type BuildSection = 'overview' | 'plan' | 'schedule' | 'money' | 'history' | 'documents';
+export type BuildSection = 'overview' | 'plan' | 'schedule' | 'money' | 'history' | 'documents' | 'model';
 
 // Section → the route it opens, relative to the build. `documents` has no
 // surface yet (kept dimmed, never a link — a tab that 404s is worse than one
@@ -58,6 +58,9 @@ function sectionHref(buildId: string, s: BuildSection): string | null {
     case 'documents':
       // PRD-05 F-19: the project files page.
       return `/projects/${buildId}/documents`;
+    case 'model':
+      // PRD-07 M-1: the build's shared IFC model.
+      return `/projects/${buildId}/model`;
   }
 }
 
@@ -68,6 +71,7 @@ const SECTION_LABEL: Record<BuildSection, string> = {
   money: 'Money',
   history: 'History',
   documents: 'Documents',
+  model: 'Model',
 };
 
 export function PortalShell({
@@ -329,6 +333,7 @@ function BuildNav({ buildId, section }: { buildId: string; section?: BuildSectio
       {item('overview', <HouseIcon />)}
       {item('plan', <CalendarIcon />)}
       {item('documents', <FolderIcon />)}
+      {item('model', <CubeIcon />)}
     </>
   );
 }
@@ -387,6 +392,15 @@ function FolderIcon() {
   return (
     <svg viewBox="0 0 24 24" role="presentation">
       <path d="M3.5 6.5a1 1 0 0 1 1-1h4l2 2.5h8a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1z" />
+    </svg>
+  );
+}
+
+function CubeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" role="presentation">
+      <path d="M12 3.5 20 8v8l-8 4.5L4 16V8z" />
+      <path d="M4 8l8 4.5L20 8M12 12.5V20.5" />
     </svg>
   );
 }

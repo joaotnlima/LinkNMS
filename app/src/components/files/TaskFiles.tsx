@@ -93,7 +93,7 @@ export function TaskFiles({
         <>
           <DeliverablesSection taskId={taskId} view={d} orgName={orgNameOf} onChanged={reload}
             onSubmitFile={(deliverable) => setDialog({ deliverable })} />
-          <ReferenceSection taskId={taskId} files={current.files} canEdit={canEditTask}
+          <ReferenceSection projectId={projectId} taskId={taskId} files={current.files} canEdit={canEditTask}
             taskName={taskNameOf} orgName={orgNameOf} onAdd={() => setDialog({ deliverable: null })} onChanged={reload}
             onOpen={(f) => setViewing(f.id)} />
           <p className="tfl-note">Deliverables are what you approve. Reference files are what the work is built from.</p>

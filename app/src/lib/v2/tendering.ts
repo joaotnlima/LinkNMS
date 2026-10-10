@@ -29,7 +29,7 @@ import type { ProcurementRfp } from '../plan-gantt';
 import { v2, V2Error } from './client';
 import type { V2Me } from './profile-view';
 import type {
-  V2Rfp, V2Recipient, V2ProposalLane, V2Comparison, RfpDraftInput, RfpVisibility,
+  V2Model, V2Rfp, V2Recipient, V2ProposalLane, V2Comparison, RfpDraftInput, RfpVisibility,
   V2Money, V2ProposalDetail, V2ProposalDocument,
 } from './tendering-view';
 import type { V2UploadTicket } from './task-workspace-view';
@@ -527,7 +527,19 @@ export async function completeRfpModel(rfpId: string, documentId: string): Promi
   });
 }
 
-/** Remove the attached model (soft delete; the byte ledger is never touched). */
+/**
+ * PRD-07: attach the BUILD's model to the RFP — following its current version
+ * (`versionNo` null) or pinned to one. Issuer, draft only (server-enforced).
+ */
+export async function attachRfpModel(rfpId: string, documentId: string, versionNo: number | null): Promise<V2Model> {
+  return v2<V2Model>({
+    method: 'PUT',
+    path: rfpModelBase(rfpId),
+    body: { document_id: documentId, version_no: versionNo },
+  });
+}
+
+/** Detach the model from the RFP (PRD-07: the build keeps its model). */
 export async function removeRfpModel(rfpId: string, documentId: string): Promise<void> {
   await v2<unknown>({
     method: 'DELETE',

@@ -105,3 +105,16 @@
 .tfl-linkbtn { background: none; border: 0; padding: 0; font: inherit; color: var(--owner-fg); cursor: pointer; text-align: left; }
 .tfl-linkbtn:disabled { color: inherit; cursor: default; }
 .tfl-linkbtn.frow-name { font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+
+/* F-4: the shared project model card (PRD-07, board F1 TaskModel). */
+.tfl-model {
+  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--outline);
+  border-radius: 8px; color: var(--ink); text-decoration: none; background: var(--paper);
+}
+.tfl-model:hover { border-color: var(--owner); }
+.tfl-model-ic {
+  flex: none; font-size: 10px; font-weight: 700; padding: 3px 5px; border-radius: 4px;
+  background: var(--owner-muted); color: var(--owner-fg);
+}
+.tfl-model-txt { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.tfl-badge { font-size: 11px; font-weight: 600; color: var(--owner-fg); }

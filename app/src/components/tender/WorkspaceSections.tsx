@@ -35,7 +35,7 @@ export function FilesSection({ rfp, lanes }: { rfp: V2Rfp; lanes: V2ProposalLane
       <section className="tnd" style={{ gap: 8 }} aria-label="The package">
         <b className="tnd-h">The package</b>
         {rfp.status === 'draft' ? (
-          <RfpModelComposer rfpId={rfp.id} model={model} />
+          <RfpModelComposer rfpId={rfp.id} projectId={rfp.project_id} model={model} />
         ) : model ? (
           <OwnerModelViewer rfpId={rfp.id} documentId={model.documentId} fileName={model.fileName} sizeBytes={model.sizeBytes} />
         ) : (

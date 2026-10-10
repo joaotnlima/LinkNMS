@@ -23,11 +23,12 @@ import {
   createRfp, updateRfp, addRecipients, publishRfp, closeRfp, cancelRfp,
   shortlistProposal, awardRfp, recordOfflineProposal,
   reserveProposalDocument, completeProposalDocument,
-  reserveRfpModel, completeRfpModel, removeRfpModel, rfpModelViewUrl,
+  reserveRfpModel, completeRfpModel, removeRfpModel, rfpModelViewUrl, attachRfpModel,
   type Inbox, type CompareEntry, type RfpPatch, type OfflineProposalInput, type ProposalUploadTicket,
   type ModelUploadTicket,
 } from '@/lib/v2/tendering';
-import type { V2Rfp, V2Recipient, RfpDraftInput } from '@/lib/v2/tendering-view';
+import type { V2Rfp, V2Recipient, RfpDraftInput, V2Model } from '@/lib/v2/tendering-view';
+import { fetchProjectModel } from '@/lib/v2/model';
 import {
   getTenderWindow, getTenderFollow, removeRecipient, reissueRecipientLink, type TenderFollow,
 } from '@/lib/v2/tender-flow';
@@ -181,6 +182,25 @@ export async function removeRfpModelAction(rfpId: string, documentId: string): P
   return guard('Could not remove that model. Try again.', async () => {
     await removeRfpModel(rfpId, documentId);
     return null;
+  });
+}
+
+/**
+ * PRD-07: attach the build's model to this RFP — the build's current model when
+ * `documentId` is null (looked up through the Documents read), following the
+ * current version or pinned to `versionNo`.
+ */
+export async function attachRfpModelAction(
+  rfpId: string, projectId: string, documentId: string | null, versionNo: number | null,
+): Promise<Result<V2Model | null>> {
+  return guard('Could not attach the model. Try again.', async () => {
+    let id = documentId;
+    if (!id) {
+      const model = await fetchProjectModel(projectId, null).catch(() => null);
+      if (!model?.document) return null;
+      id = model.document.id;
+    }
+    return attachRfpModel(rfpId, id, versionNo);
   });
 }
 
