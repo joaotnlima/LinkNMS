@@ -301,7 +301,7 @@ describe('collaboration over the /api/v2 router', () => {
     test('getNotificationPreferences answers every category × channel, defaults on', async () => {
       const res = await dispatch('GET', '/me/notification-preferences', viewer(GC_ORG));
       assert.equal(res.status, 200);
-      assert.equal(res.body.items.length, 12);
+      assert.equal(res.body.items.length, 14);
       assert.ok(res.body.items.every((p) => typeof p.enabled === 'boolean'));
     });
 

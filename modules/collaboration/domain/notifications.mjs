@@ -5,7 +5,7 @@
 
 /** Catalogue order = settings order (contract schema NotificationCategory). */
 export const NOTIFICATION_CATEGORIES = Object.freeze([
-  'bids', 'tendering', 'variations', 'invitations', 'questions', 'quality',
+  'bids', 'tendering', 'variations', 'invitations', 'questions', 'quality', 'files',
 ]);
 export const NOTIFICATION_CHANNELS = Object.freeze(['in_app', 'email']);
 
@@ -166,6 +166,75 @@ export function variationDigestOrgs(audience, subscriptions = []) {
 /** The digest row's link: the plan, where the changes are drawn (PRD-13). */
 export function variationDigestRef(projectId) {
   return { type: 'project', id: projectId, project_id: projectId, url: `${projectUrl(projectId)}/plan` };
+}
+
+// ── task files and deliverables (PRD-05 F-11, F-13..F-15) ───────────────────
+
+const filesRef = (projectId, taskId, type, id) => ({
+  type, id, project_id: projectId, url: planTaskUrl(projectId, taskId, 'files'),
+});
+
+/**
+ * planning.deliverable.submitted → the client side of the task (the planning
+ * port's reviewers: owner / clients up the branch chain, minus the assignee
+ * and the submitter).
+ */
+export function deliverableSubmittedTargets(evt, audience) {
+  if (!audience) return [];
+  const projectId = audience.project_id ?? evt.project_id;
+  return [...new Set(audience.reviewer_org_ids ?? [])].map((orgId) => ({
+    orgId,
+    audience: 'project',
+    category: 'files',
+    title: `${quoted(audience.title)} was submitted for your review`,
+    objectRef: filesRef(projectId, audience.task_id, 'deliverable', audience.deliverable_id),
+  }));
+}
+
+/**
+ * planning.deliverable.approved / .changes_requested → the submitting org and
+ * the task's assignee org, never the deciding org.
+ */
+export function deliverableDecidedTargets(evt, audience) {
+  if (!audience) return [];
+  const projectId = audience.project_id ?? evt.project_id;
+  const decider = evt.data?.decided_by_org_id ?? evt.actor?.org_id ?? null;
+  const approved = evt.type === 'planning.deliverable.approved';
+  const orgs = new Set([evt.data?.submitted_by_org_id, audience.assignee_org_id].filter(Boolean));
+  orgs.delete(decider);
+  return [...orgs].map((orgId) => ({
+    orgId,
+    audience: 'project',
+    category: 'files',
+    title: approved
+      ? `${quoted(audience.title)} was approved`
+      : `Changes were requested on ${quoted(audience.title)}`,
+    objectRef: filesRef(projectId, audience.task_id, 'deliverable', audience.deliverable_id),
+  }));
+}
+
+/**
+ * documents.version.uploaded with linked tasks → the owner of every task that
+ * uses the file (planning `taskOwners`), minus the uploader's org. One target
+ * per org, linked to the first of its tasks.
+ */
+export function newVersionTargets(evt, owners = []) {
+  const uploader = evt.actor?.org_id ?? null;
+  const seen = new Set();
+  const out = [];
+  for (const o of owners) {
+    if (!o.org_id || o.org_id === uploader || seen.has(o.org_id)) continue;
+    seen.add(o.org_id);
+    const projectId = o.project_id ?? evt.project_id;
+    out.push({
+      orgId: o.org_id,
+      audience: 'project',
+      category: 'files',
+      title: `A new version of ${quoted(evt.data?.title)} (v${evt.data?.version_no ?? '?'}) is on a task you own`,
+      objectRef: filesRef(projectId, o.task_id, 'document', evt.data?.document_id),
+    });
+  }
+  return out;
 }
 
 /** Plain-text + HTML e-mail for one notification; the link is not a secret. */

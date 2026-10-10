@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   NOTIFICATION_CATEGORIES, effectivePreferences, planTaskUrl, rfpUrl,
+  deliverableSubmittedTargets, deliverableDecidedTargets, newVersionTargets,
   bidSubmittedTargets, clarificationAnsweredTargets, awardedTargets, cancelledTargets,
   invitationAcceptedTargets, variationDigestOrgs, notificationEmail,
 } from './notifications.mjs';
@@ -84,5 +85,37 @@ describe('preferences and e-mail', () => {
     assert.equal(m.subject, 'A <b>bid</b>');
     assert.match(m.text, /https:\/\/x\.pt\/projects\/p1/);
     assert.match(m.html, /A &lt;b&gt;bid&lt;\/b&gt;/);
+  });
+});
+
+describe('files targets (PRD-05)', () => {
+  const audience = {
+    deliverable_id: 'd', project_id: 'p', task_id: 't', title: 'S-110',
+    reviewer_org_ids: ['owner', 'gc', 'gc'], assignee_org_id: 'sub',
+  };
+
+  test('submitted → each reviewer org once, on the task Files tab', () => {
+    const targets = deliverableSubmittedTargets({ project_id: 'p' }, audience);
+    assert.deepEqual(targets.map((t) => t.orgId), ['owner', 'gc']);
+    assert.equal(targets[0].category, 'files');
+    assert.equal(targets[0].objectRef.url, '/projects/p/plan?task=t&tab=files');
+  });
+
+  test('decided → submitter + assignee, never the decider', () => {
+    const evt = { type: 'planning.deliverable.changes_requested', data: { submitted_by_org_id: 'sub', decided_by_org_id: 'gc' } };
+    const targets = deliverableDecidedTargets(evt, audience);
+    assert.deepEqual(targets.map((t) => t.orgId), ['sub']);
+    assert.match(targets[0].title, /Changes were requested/);
+    assert.deepEqual(deliverableDecidedTargets(evt, null), []);
+  });
+
+  test('new version → task owners once per org, minus the uploader', () => {
+    const evt = { project_id: 'p', actor: { org_id: 'gc' }, data: { document_id: 'doc', title: 'A-301', version_no: 3 } };
+    const targets = newVersionTargets(evt, [
+      { task_id: 't1', project_id: 'p', org_id: 'sub' }, { task_id: 't2', project_id: 'p', org_id: 'sub' },
+      { task_id: 't3', project_id: 'p', org_id: 'gc' },
+    ]);
+    assert.deepEqual(targets.map((t) => [t.orgId, t.objectRef.url]), [['sub', '/projects/p/plan?task=t1&tab=files']]);
+    assert.match(targets[0].title, /\(v3\)/);
   });
 });

@@ -266,7 +266,7 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
       body: { items: [{ category: 'variations', channel: 'in_app', enabled: false }] },
     });
     assert.equal(saved.status, 200);
-    assert.equal(saved.body.items.length, 12, 'the full effective set answers');
+    assert.equal(saved.body.items.length, 14, 'the full effective set answers');
     assert.equal(saved.body.items.find((p) => p.category === 'variations' && p.channel === 'in_app').enabled, false);
     await assert.rejects(putNotificationPreferences({
       viewer: gc(), store, body: { items: [{ category: 'gossip', channel: 'email', enabled: true }] },
@@ -463,7 +463,7 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
       assert.ok(gcInbox.body.items.some((n) => /cancelled/.test(n.title)));
       assert.equal(mail.sent.length, before, 'no mail after opting out');
       const prefs = await getNotificationPreferences({ viewer: gc(), store });
-      assert.equal(prefs.body.items.length, 12);
+      assert.equal(prefs.body.items.length, 14);
       assert.equal(prefs.body.items.find((p) => p.category === 'tendering' && p.channel === 'email').enabled, false);
       assert.equal(prefs.body.items.find((p) => p.category === 'bids' && p.channel === 'email').enabled, true);
     });
@@ -483,6 +483,58 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
       await assert.rejects(
         listNotifications({ viewer: owner(), store, query: { category: 'gossip' } }),
         (e) => e.problem?.code === 'validation_failed' && Boolean(e.problem.errors?.category));
+    });
+  });
+
+  describe('files: deliverables and new versions (PRD-05 F-11, F-13..F-15)', () => {
+    const DELIVERABLE = randomUUID();
+    const DOC = randomUUID();
+    const evt = (type, data, orgId) => ({
+      event_id: randomUUID(), type, project_id: PROJECT,
+      actor: { person_id: null, org_id: orgId }, scope: { type: 'project', id: PROJECT }, data,
+    });
+
+    before(async () => {
+      await pool.query(`UPDATE platform.outbox SET dispatched_at = now() WHERE dispatched_at IS NULL`);
+      await pool.query(
+        `INSERT INTO planning.deliverable (id, project_id, task_id, title) VALUES ($1, $2, $3, 'As-built gutter layout')`,
+        [DELIVERABLE, PROJECT, TASK],
+      );
+    });
+
+    test('submitted → the client side (owner), never the submitting GC; decided → the submitter', async () => {
+      const data = { deliverable_id: DELIVERABLE, task_id: TASK, submitted_by_org_id: GC_ORG, document_id: DOC, version_no: 1 };
+      await publishEvent(pool, evt('planning.deliverable.submitted', data, GC_ORG));
+      await dispatchPending(pool, consumers);
+      const ownerInbox = await listNotifications({ viewer: owner(), store, query: { category: 'files' } });
+      assert.equal(ownerInbox.body.items.length, 1);
+      assert.match(ownerInbox.body.items[0].title, /submitted for your review/);
+      assert.equal(ownerInbox.body.items[0].object_ref.url, `/projects/${PROJECT}/plan?task=${TASK}&tab=files`);
+      const gcInbox = await listNotifications({ viewer: gc(), store, query: { category: 'files' } });
+      assert.equal(gcInbox.body.items.length, 0);
+
+      await publishEvent(pool, evt('planning.deliverable.approved', { ...data, decided_by_org_id: OWNER_ORG }, OWNER_ORG));
+      await dispatchPending(pool, consumers);
+      const gcAfter = await listNotifications({ viewer: gc(), store, query: { category: 'files' } });
+      assert.deepEqual(gcAfter.body.items.map((n) => n.title), ['“As-built gutter layout” was approved']);
+      const ownerAfter = await listNotifications({ viewer: owner(), store, query: { category: 'files' } });
+      assert.equal(ownerAfter.body.items.length, 1, 'the decider is not told about its own decision');
+    });
+
+    test('a new version of a linked file → the owners of the linking tasks, minus the uploader', async () => {
+      await publishEvent(pool, evt('documents.version.uploaded', {
+        document_id: DOC, version_no: 2, title: 'A-301 Roof plan', linked_task_ids: [TASK],
+      }, GC_ORG));
+      await publishEvent(pool, evt('documents.version.uploaded', {
+        document_id: DOC, version_no: 1, title: 'A-301 Roof plan', linked_task_ids: [TASK],
+      }, GC_ORG));
+      await dispatchPending(pool, consumers);
+      const ownerInbox = await listNotifications({ viewer: owner(), store, query: { category: 'files' } });
+      const versions = ownerInbox.body.items.filter((n) => /new version/.test(n.title));
+      assert.equal(versions.length, 1, 'v1 is an upload, not a new version');
+      assert.match(versions[0].title, /\(v2\)/);
+      const gcInbox = await listNotifications({ viewer: gc(), store, query: { category: 'files' } });
+      assert.equal(gcInbox.body.items.some((n) => /new version/.test(n.title)), false);
     });
   });
 });

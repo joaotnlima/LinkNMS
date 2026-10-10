@@ -14,6 +14,11 @@
 //   project.invitation.accepted      → the inviter org
 //   collaboration.question.*         → addressee / asker org
 //   quality.nonconformity.raised     → the assigned org
+//   planning.deliverable.submitted   → client side of the task (planning port)
+//   planning.deliverable.approved / .changes_requested
+//                                    → the submitter org + the task's assignee
+//   documents.version.uploaded       → owners of the tasks linking the file
+//                                      (planning taskOwners; PRD-05 F-11)
 //
 // People inside an org: identity.projectAudience (they work the project) or
 // identity.orgAudience (role holds a permission — bidders are not staffed).
@@ -23,6 +28,7 @@
 import {
   bidSubmittedTargets, clarificationAnsweredTargets, awardedTargets, cancelledTargets,
   invitationAcceptedTargets, variationDigestOrgs, variationDigestRef, projectUrl, notificationEmail,
+  deliverableSubmittedTargets, deliverableDecidedTargets, newVersionTargets,
 } from '../domain/notifications.mjs';
 
 const NO_PEOPLE = Object.freeze({ projectAudience: async () => [], orgAudience: async () => [] });
@@ -32,7 +38,7 @@ const NO_PEOPLE = Object.freeze({ projectAudience: async () => [], orgAudience: 
  * @param {{
  *   identity?: { projectAudience: Function, orgAudience: Function },
  *   tendering?: { rfpAudience: Function },
- *   planning?: { variationAudience: Function },
+ *   planning?: { variationAudience: Function, deliverableAudience?: Function, taskOwners?: Function },
  *   mail?: { sender: { send: Function }, baseUrl?: string|(() => string) },
  *   logger?: { error: Function },
  * }} [ports]
@@ -117,6 +123,20 @@ export function collaborationConsumers(store, ports = {}) {
     await mailNew(inserted, people, { category: 'variations', title: 'A variation was recorded on this build', url: ref.url });
   }
 
+  const deliverableEvent = (decide) => async (evt) => {
+    if (!ports.planning?.deliverableAudience || !evt.data?.deliverable_id) return;
+    const audience = await ports.planning.deliverableAudience(evt.data.deliverable_id, {
+      submitterOrgId: evt.data.submitted_by_org_id ?? null,
+    });
+    await deliver(evt, decide(evt, audience));
+  };
+
+  async function newVersion(evt) {
+    const taskIds = evt.data?.linked_task_ids ?? [];
+    if (!ports.planning?.taskOwners || !evt.project_id || !taskIds.length || (evt.data?.version_no ?? 1) < 2) return;
+    await deliver(evt, newVersionTargets(evt, await ports.planning.taskOwners(taskIds)));
+  }
+
   return {
     'tendering.proposal.submitted': rfpEvent(bidSubmittedTargets),
     'tendering.clarification.answered': rfpEvent(clarificationAnsweredTargets),
@@ -145,5 +165,10 @@ export function collaborationConsumers(store, ports = {}) {
 
     'planning.variation.recorded': digest,
     'planning.variation.updated': digest,
+
+    'planning.deliverable.submitted': deliverableEvent(deliverableSubmittedTargets),
+    'planning.deliverable.approved': deliverableEvent(deliverableDecidedTargets),
+    'planning.deliverable.changes_requested': deliverableEvent(deliverableDecidedTargets),
+    'documents.version.uploaded': newVersion,
   };
 }
