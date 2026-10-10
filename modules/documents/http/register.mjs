@@ -10,12 +10,18 @@ import {
 import {
   listTaskDocuments, linkTaskDocuments, unlinkTaskDocument, listProjectDocuments,
 } from '../application/task-files.mjs';
+import {
+  listDocumentMarkups, saveDocumentMarkups, closeMarkup, reopenMarkup, linkMarkup,
+} from '../application/markups.mjs';
 
 /**
- * @param {{ store: object, storage: object, planning?: { descendantIds: Function } }} deps
- *   `planning` — the planning task port, for "also on sub-tasks" (PRD-05 F-10).
+ * @param {{ store: object, storage: object, planning?: { descendantIds: Function },
+ *   questions?: { questionFacts: Function }, nonconformities?: { nonconformityFacts: Function } }} deps
+ *   `planning` — the planning task port, for "also on sub-tasks" (PRD-05 F-10);
+ *   `questions` / `nonconformities` — the Collaboration and Quality ports a
+ *   markup link is checked through (PRD-06 V-8).
  */
-export function registerDocuments(router, { store, storage, planning }) {
+export function registerDocuments(router, { store, storage, planning, questions = null, nonconformities = null }) {
   router.register('POST', '/documents', 'createDocument', ({ viewer, body }) =>
     createDocument({ viewer, store, storage, body, planning }));
 
@@ -43,4 +49,20 @@ export function registerDocuments(router, { store, storage, planning }) {
 
   router.register('GET', '/projects/{projectId}/documents', 'listProjectDocuments', ({ viewer, params, query }) =>
     listProjectDocuments({ viewer, store, projectId: params.projectId, query }));
+
+  // ── PRD-06: the markup layer of drawings ─────────────────────────────────
+  router.register('GET', '/documents/{documentId}/markups', 'listDocumentMarkups', ({ viewer, params, query }) =>
+    listDocumentMarkups({ viewer, store, documentId: params.documentId, query }));
+
+  router.register('POST', '/documents/{documentId}/markups:save', 'saveDocumentMarkups', ({ viewer, params, body }) =>
+    saveDocumentMarkups({ viewer, store, documentId: params.documentId, body }));
+
+  router.register('POST', '/markups/{markupId}:close', 'closeMarkup', ({ viewer, params }) =>
+    closeMarkup({ viewer, store, markupId: params.markupId }));
+
+  router.register('POST', '/markups/{markupId}:reopen', 'reopenMarkup', ({ viewer, params }) =>
+    reopenMarkup({ viewer, store, markupId: params.markupId }));
+
+  router.register('POST', '/markups/{markupId}:link', 'linkMarkup', ({ viewer, params, body }) =>
+    linkMarkup({ viewer, store, questions, nonconformities, markupId: params.markupId, body }));
 }

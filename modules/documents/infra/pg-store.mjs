@@ -15,6 +15,7 @@ import { publishEvent } from '../../../platform/outbox.mjs';
 import { fileNameOf } from '../domain/model.mjs';
 import { fileTypeOf, initialPreviewStatus } from '../domain/files.mjs';
 import { linkQueries, insertLinksOn } from './pg-links.mjs';
+import { markupQueries } from './pg-markups.mjs';
 
 export function createDocumentsStore(pool) {
   async function tx(fn) {
@@ -35,6 +36,8 @@ export function createDocumentsStore(pool) {
   return {
     // Task links + the project/task file reads (PRD-05) — infra/pg-links.mjs.
     ...linkQueries(pool, tx),
+    // The markup layer of drawings (PRD-06) — infra/pg-markups.mjs.
+    ...markupQueries(pool, tx),
 
     // ── identity / project guards (same ports as the sibling modules) ─────
     async getPersonByClerkId(clerkUserId) {
@@ -370,10 +373,10 @@ export function createDocumentsStore(pool) {
         if (!version) return null;
 
         // The document's preview follows its newest proven version (F-7): a
-        // DWG waits for the PRD-06 conversion, everything else is ready.
+        // DWG / DXF waits for the PRD-06 conversion, everything else is ready.
         const previewStatus = initialPreviewStatus(fileTypeOf(fileNameOf(version.storage_key), version.mime));
         const { rows: [updated] } = await client.query(
-          'UPDATE documents.document SET current_version = $2, preview_status = $3 WHERE id = $1 RETURNING *',
+          'UPDATE documents.document SET current_version = $2, preview_status = $3, preview_reason = NULL WHERE id = $1 RETURNING *',
           [documentId, versionNo, previewStatus],
         );
         const { rows: linked } = await client.query(

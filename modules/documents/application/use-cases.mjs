@@ -240,7 +240,7 @@ function uploadTicket({ storage, version }) {
 }
 
 /** Load a document with existence hiding: non-readers get 404. */
-async function requireReadableDocument({ viewer, store, documentId }) {
+export async function requireReadableDocument({ viewer, store, documentId }) {
   const doc = await store.getDocument(documentId);
   if (!doc) throw new ProblemError('not_found');
   const readable = await store.canReadScope({

@@ -17,6 +17,7 @@ import { createPlanningStore } from '@modules/planning/infra/pg-store.mjs';
 import { createPlanningTaskPort } from '@modules/planning/application/task-port.mjs';
 import { registerQuality } from '@modules/quality/http/register.mjs';
 import { createQualityStore } from '@modules/quality/infra/pg-store.mjs';
+import { createNonConformityPort } from '@modules/quality/application/nonconformity-port.mjs';
 import { registerTendering } from '@modules/tendering/http/register.mjs';
 import { createTenderingStore } from '@modules/tendering/infra/pg-store.mjs';
 import { createMailSender } from '@modules/tendering/infra/mail-sender.mjs';
@@ -27,6 +28,7 @@ import { createDocumentsPort } from '@modules/documents/application/port.mjs';
 import { createR2ObjectStorage } from '@modules/documents/infra/storage.mjs';
 import { registerCollaboration } from '@modules/collaboration/http/register.mjs';
 import { createCollaborationStore } from '@modules/collaboration/infra/pg-store.mjs';
+import { createQuestionPort } from '@modules/collaboration/application/question-port.mjs';
 import { registerBilling } from '@modules/billing/http/register.mjs';
 import { createBillingStore } from '@modules/billing/infra/pg-store.mjs';
 import { createEntitlements } from '@modules/billing/application/entitled.mjs';
@@ -173,10 +175,14 @@ export function getRouter() {
   // The store is created above (shared into Tendering and Record).
   // PRD-05: task links + task/project file reads; "also on sub-tasks" asks
   // the planning task port for a row's descendants.
+  // PRD-06: a drawing markup that became a question or an issue is checked
+  // through the Collaboration and Quality query ports (never their tables).
   registerDocuments(router, {
     store: documentsStore,
     storage: objectStorage,
     planning: createPlanningTaskPort(planningStore),
+    questions: createQuestionPort(createCollaborationStore(getPool())),
+    nonconformities: createNonConformityPort(createQualityStore(getPool())),
   });
 
   // Phase 7 — Collaboration (threads with addressed questions, meeting

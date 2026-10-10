@@ -28,7 +28,8 @@ describe('file type (PRD-05 F-3 tags)', () => {
 describe('preview state (F-7) and kind', () => {
   test('a DWG waits for its conversion; everything else is ready', () => {
     assert.equal(initialPreviewStatus('dwg'), 'pending');
-    for (const t of ['pdf', 'dxf', 'ifc', 'image', 'other']) assert.equal(initialPreviewStatus(t), 'ready');
+    assert.equal(initialPreviewStatus('dxf'), 'pending', 'PRD-06 V-17: DXF takes the DWG pipeline');
+    for (const t of ['pdf', 'ifc', 'image', 'other']) assert.equal(initialPreviewStatus(t), 'ready');
   });
 
   test('drawings keep kind drawing and rely on mime (PRD-05 §5)', () => {
@@ -54,8 +55,10 @@ describe('version metadata', () => {
   });
 
   test('carries note, base and kind; names bad fields', () => {
-    const ok = validateVersionMeta({ note: ' spacing 600 ', base_version_no: 2, change_kind: 'markup_only' });
-    assert.deepEqual(ok.meta, { note: 'spacing 600', baseVersionNo: 2, changeKind: 'markup_only' });
+    const ok = validateVersionMeta({ note: ' spacing 600 ', base_version_no: 2, change_kind: 'edit' });
+    assert.deepEqual(ok.meta, { note: 'spacing 600', baseVersionNo: 2, changeKind: 'edit' });
+    // PRD-06: new bytes are never "markups only" — saveDocumentMarkups appends that version.
+    assert.ok(validateVersionMeta({ change_kind: 'markup_only' }).errors.change_kind);
     const bad = validateVersionMeta({ note: 'x'.repeat(2001), base_version_no: 0, change_kind: 'rewrite' });
     assert.deepEqual(Object.keys(bad.errors).sort(), ['base_version_no', 'change_kind', 'note']);
   });

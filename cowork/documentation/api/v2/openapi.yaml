@@ -12746,8 +12746,9 @@ components:
       type: object
       description: 'A new version of an existing document (PRD-05 F-8, F-11). The scope of a document never changes, so
         scope fields (if sent) must agree with it. `note` is the change note shown in the history and carried on
-        `documents.version.uploaded`; `base_version_no` / `change_kind` are for PRD-06/07 (a markup-only or edited copy of
-        a version).'
+        `documents.version.uploaded`; `base_version_no` / `change_kind` are for PRD-06/07 (an edited copy of a version).
+        `change_kind: markup_only` is refused here (422): new bytes are never "markups only" — that version is appended by
+        `saveDocumentMarkups` (PRD-06).'
       properties:
         file:
           $ref: '#/components/schemas/FileDeclaration'

@@ -41,13 +41,16 @@ export function fileTypeOf(name, mime = '') {
   return 'other';
 }
 
+/** File types converted server-side into a preview (PRD-06 V-11, V-17 — DXF takes the same pipeline). */
+export const CONVERTED_TYPES = Object.freeze(['dwg', 'dxf']);
+
 /**
  * The preview state a freshly proven version puts its document in (F-7):
- * a DWG waits for the server-side conversion of PRD-06 (D-49); every other
- * type is viewable as-is or simply downloaded.
+ * a DWG or DXF waits for the server-side conversion of PRD-06 (D-49); every
+ * other type is viewable as-is or simply downloaded.
  */
 export function initialPreviewStatus(fileType) {
-  return fileType === 'dwg' ? 'pending' : 'ready';
+  return CONVERTED_TYPES.includes(fileType) ? 'pending' : 'ready';
 }
 
 /** The kind a task-file upload gets when the client does not say (PRD-05 §5: mime + `drawing`). */
@@ -75,6 +78,9 @@ export function validateVersionMeta(body) {
   }
   if (body?.change_kind !== undefined && body.change_kind !== null) {
     if (!CHANGE_KINDS.includes(body.change_kind)) errors.change_kind = `one of ${CHANGE_KINDS.join(', ')}`;
+    // New bytes are never "markups only": that version is appended by
+    // saveDocumentMarkups, re-pointing the base version's bytes (PRD-06 §5).
+    else if (body.change_kind === 'markup_only') errors.change_kind = 'a markups-only version is made by saving markups, not by an upload';
     else meta.changeKind = body.change_kind;
   }
   return { errors, meta };

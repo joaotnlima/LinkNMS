@@ -76,6 +76,7 @@ export function documentBody(doc, versions = []) {
     title: doc.title,
     file_type: latest ? fileTypeOf(fileNameOf(latest.storage_key), latest.mime) : fileTypeOf(doc.title),
     preview_status: doc.preview_status ?? 'ready',
+    ...(doc.preview_reason ? { preview_reason: doc.preview_reason } : {}),
     share_with_ancestors: doc.share_with_ancestors,
     current_version: doc.current_version,
     versions: versions.map((v) => ({
