@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   NOTIFICATION_CATEGORIES, effectivePreferences, planTaskUrl, rfpUrl,
-  deliverableSubmittedTargets, deliverableDecidedTargets, newVersionTargets,
+  deliverableSubmittedTargets, deliverableDecidedTargets, newVersionTargets, modelEditedTargets, modelUrl,
   bidSubmittedTargets, clarificationAnsweredTargets, awardedTargets, cancelledTargets,
   invitationAcceptedTargets, variationDigestOrgs, notificationEmail,
 } from './notifications.mjs';
@@ -107,6 +107,21 @@ describe('files targets (PRD-05)', () => {
     assert.deepEqual(targets.map((t) => t.orgId), ['sub']);
     assert.match(targets[0].title, /Changes were requested/);
     assert.deepEqual(deliverableDecidedTargets(evt, null), []);
+  });
+
+  test('model edited (PRD-07 M-12) → the author, then the owners of changed tasks; never the editor', () => {
+    const e = { project_id: 'p', actor: { org_id: 'owner' }, data: { document_id: 'd', version_no: 4, author_org_id: 'arch', change_kind: 'edit' } };
+    const targets = modelEditedTargets(e, [
+      { task_id: 't1', org_id: 'roof' }, { task_id: 't2', org_id: 'roof' }, { task_id: 't3', org_id: 'owner' },
+    ]);
+    assert.deepEqual(targets.map((t) => t.orgId), ['arch', 'roof']);
+    assert.match(targets[0].title, /edited \(v4\)/);
+    assert.equal(targets[0].objectRef.url, modelUrl('p', 4));
+    assert.equal(modelUrl('p'), '/projects/p/model');
+    const byAuthor = modelEditedTargets({ ...e, actor: { org_id: 'arch' } }, []);
+    assert.deepEqual(byAuthor, [], 'the author editing its own model notifies nobody else here');
+    const restored = modelEditedTargets({ ...e, data: { ...e.data, change_kind: 'restore', base_version_no: 2 } }, []);
+    assert.match(restored[0].title, /restored to v2 as v4/);
   });
 
   test('new version → task owners once per org, minus the uploader', () => {

@@ -237,6 +237,48 @@ export function newVersionTargets(evt, owners = []) {
   return out;
 }
 
+// ── the shared project model (PRD-07 M-12) ─────────────────────────────────
+
+/** The model page at a version, opened on the version's history. */
+export function modelUrl(projectId, versionNo = null) {
+  return `${projectUrl(projectId)}/model${versionNo ? `?version=${versionNo}` : ''}`;
+}
+
+/**
+ * documents.model.edited → the model's AUTHOR when someone else saved a
+ * record-side version ("edited by …", review it), and the owner of every task
+ * whose elements changed (planning `taskOwners`) — never the editing org, one
+ * row per org.
+ */
+export function modelEditedTargets(evt, owners = []) {
+  const editor = evt.actor?.org_id ?? null;
+  const projectId = evt.project_id;
+  const v = evt.data?.version_no ?? null;
+  const restore = evt.data?.change_kind === 'restore';
+  const ref = { type: 'document', id: evt.data?.document_id, project_id: projectId, url: modelUrl(projectId, v) };
+  const out = [];
+  const seen = new Set([editor]);
+  const author = evt.data?.author_org_id ?? null;
+  if (author && !seen.has(author)) {
+    seen.add(author);
+    out.push({
+      orgId: author, audience: 'project', category: 'files', objectRef: ref,
+      title: restore
+        ? `Your model was restored to v${evt.data?.base_version_no ?? '?'} as v${v ?? '?'}`
+        : `Your model was edited (v${v ?? '?'}) — review the record changes`,
+    });
+  }
+  for (const o of owners) {
+    if (!o.org_id || seen.has(o.org_id)) continue;
+    seen.add(o.org_id);
+    out.push({
+      orgId: o.org_id, audience: 'project', category: 'files', objectRef: ref,
+      title: `Model elements on a task you own changed (v${v ?? '?'})`,
+    });
+  }
+  return out;
+}
+
 /** Plain-text + HTML e-mail for one notification; the link is not a secret. */
 export function notificationEmail({ title, url }, { baseUrl = '' } = {}) {
   const href = `${String(baseUrl).replace(/\/$/, '')}${url ?? ''}`;

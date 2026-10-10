@@ -19,6 +19,9 @@
 //                                    → the submitter org + the task's assignee
 //   documents.version.uploaded       → owners of the tasks linking the file
 //                                      (planning taskOwners; PRD-05 F-11)
+//   documents.model.edited           → the model's author (not the editor) +
+//                                      owners of the tasks whose elements
+//                                      changed (PRD-07 M-12)
 //
 // People inside an org: identity.projectAudience (they work the project) or
 // identity.orgAudience (role holds a permission — bidders are not staffed).
@@ -28,7 +31,7 @@
 import {
   bidSubmittedTargets, clarificationAnsweredTargets, awardedTargets, cancelledTargets,
   invitationAcceptedTargets, variationDigestOrgs, variationDigestRef, projectUrl, notificationEmail,
-  deliverableSubmittedTargets, deliverableDecidedTargets, newVersionTargets,
+  deliverableSubmittedTargets, deliverableDecidedTargets, newVersionTargets, modelEditedTargets,
 } from '../domain/notifications.mjs';
 
 const NO_PEOPLE = Object.freeze({ projectAudience: async () => [], orgAudience: async () => [] });
@@ -137,6 +140,13 @@ export function collaborationConsumers(store, ports = {}) {
     await deliver(evt, newVersionTargets(evt, await ports.planning.taskOwners(taskIds)));
   }
 
+  async function modelEdited(evt) {
+    if (!evt.project_id) return;
+    const taskIds = evt.data?.task_ids ?? [];
+    const owners = taskIds.length && ports.planning?.taskOwners ? await ports.planning.taskOwners(taskIds) : [];
+    await deliver(evt, modelEditedTargets(evt, owners));
+  }
+
   return {
     'tendering.proposal.submitted': rfpEvent(bidSubmittedTargets),
     'tendering.clarification.answered': rfpEvent(clarificationAnsweredTargets),
@@ -170,5 +180,6 @@ export function collaborationConsumers(store, ports = {}) {
     'planning.deliverable.approved': deliverableEvent(deliverableDecidedTargets),
     'planning.deliverable.changes_requested': deliverableEvent(deliverableDecidedTargets),
     'documents.version.uploaded': newVersion,
+    'documents.model.edited': modelEdited,
   };
 }
