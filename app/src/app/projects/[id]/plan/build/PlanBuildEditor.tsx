@@ -70,6 +70,8 @@ import { rekeyDraft, rekeyWire, draftKeys } from '@/lib/v2/plan-rekey';
 import { procurementChip, procurementTabLabel, type ProcurementRfp } from '@/lib/plan-gantt';
 import { partyIndex, type PartyRef } from '@/lib/party-display';
 import { TaskWorkspace } from '@/components/TaskWorkspace';
+import { TaskFiles, type TaskFilesSummary } from '@/components/files/TaskFiles';
+import { filesTabLabel } from '@/lib/v2/task-files-view';
 import { taskHref, planHref } from '@/lib/task-workspace';
 import { PlanGrid } from './PlanGrid';
 import {
@@ -546,10 +548,14 @@ export function PlanBuildEditor({
   // A permalink's `&tab=` seeds it, so the first open lands on that tab (PRD-12 N-1).
   const pendingTabRef = useRef<'tender' | 'conversation' | 'files' | null>(openStageKey ? openStageTab : null);
   useEffect(() => { setDrawerTab(pendingTabRef.current ?? 'plan'); pendingTabRef.current = null; }, [activeKey]);
-  // The open task's file count, reported by the workspace once it loads — the
-  // Files tab label carries it (P-2). Reset when the row changes.
-  const [fileCount, setFileCount] = useState<number | null>(null);
-  useEffect(() => { setFileCount(null); }, [activeKey]);
+  // The open task's Files summary (PRD-05 F-1, F-16), reported by <TaskFiles>
+  // once it loads: the tab label carries "n to review" or the file count, and the
+  // status picker says done is blocked while a required deliverable is
+  // unapproved (D-48 — the server refuses it regardless). Reset per row.
+  const [filesSummary, setFilesSummary] = useState<TaskFilesSummary | null>(null);
+  useEffect(() => { setFilesSummary(null); }, [activeKey]);
+  const fileTabLabel = filesTabLabel(filesSummary?.fileCount ?? null, filesSummary?.toReview ?? 0);
+  const taskNames = useMemo(() => new Map(tenderTasks.map((t) => [t.id, t.name])), [tenderTasks]);
 
   // Tender writes made in the panel (PRD-02) update the plan in place — the
   // RFP list and the per-task chip/band — without a navigation (which would
@@ -1393,7 +1399,9 @@ export function PlanBuildEditor({
                   onClick={() => setDrawerTab('files')}
                 >
                   Files
-                  {fileCount != null ? <span className="pbx-drawer-tabcount">{fileCount}</span> : null}
+                  {fileTabLabel != null ? (
+                    <span className={`pbx-drawer-tabcount${filesSummary?.toReview ? ' is-bids-in' : ''}`}>{fileTabLabel}</span>
+                  ) : null}
                 </button>
               ) : null}
             </div>
@@ -1436,8 +1444,14 @@ export function PlanBuildEditor({
                         over={false}
                         what={isSubRow ? 'Sub-task' : 'Task'}
                         onSet={setStatus}
+                        blockDone={filesSummary?.doneBlocked
+                          ? 'Every required deliverable must be approved before this task is done — see Files.' : null}
                       />
-                      <span className="pbx-status-hint">Records one attributed progress report on the shared record.</span>
+                      <span className="pbx-status-hint">
+                        {filesSummary?.doneBlocked
+                          ? 'Done unlocks once every required deliverable is approved (Files tab).'
+                          : 'Records one attributed progress report on the shared record.'}
+                      </span>
                     </>
                   ) : (
                     <>
@@ -1624,8 +1638,22 @@ export function PlanBuildEditor({
               <TaskWorkspace
                 taskId={workspaceTaskId}
                 parties={parties}
-                section={drawerTab === 'conversation' ? 'conversation' : drawerTab === 'files' ? 'files' : 'none'}
-                onFileCount={setFileCount}
+                section={drawerTab === 'conversation' ? 'conversation' : 'none'}
+              />
+            ) : null}
+            {/* Files (PRD-05): Deliverables + Reference, separate from the
+                conversation (F-5). Mounted for any open task so the tab label and
+                the done gate know the state before the tab is opened. */}
+            {isTaskRow ? (
+              <TaskFiles
+                projectId={projectId}
+                taskId={workspaceTaskId}
+                taskName={(active?.name ?? '').trim() || 'this task'}
+                hasSubtasks={(active?.children ?? []).length > 0}
+                visible={drawerTab === 'files'}
+                taskNameOf={(id) => taskNames.get(id) ?? null}
+                orgNameOf={(id) => (id ? dir.get(id)?.name ?? null : null)}
+                onSummary={setFilesSummary}
               />
             ) : null}
 

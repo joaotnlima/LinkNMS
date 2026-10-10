@@ -244,13 +244,15 @@ export function FieldMenu({
 // source of truth between renders; the parent keys it on the server value, so a
 // reload still re-seats it on the record.
 export function StatusPicker({
-  nodeKey, value, over, what, onSet,
+  nodeKey, value, over, what, onSet, blockDone = null,
 }: {
   nodeKey: string;
   value: StageStatus;
   over: boolean;
   what: string;
   onSet: (nodeKey: string, status: StageStatus) => Promise<void> | void;
+  /** Why `done` is not available yet (PRD-05 F-16, D-48) — the server refuses it too. */
+  blockDone?: string | null;
 }) {
   const [val, setVal] = useState<StageStatus>(value);
   const [busy, setBusy] = useState(false);
@@ -260,6 +262,7 @@ export function StatusPicker({
 
   const choose = useCallback(async (next: StageStatus) => {
     if (next === val) return;
+    if (next === 'done' && blockDone) { setErr(blockDone); return; }
     const prev = val;
     setVal(next);
     setBusy(true);
@@ -274,7 +277,7 @@ export function StatusPicker({
     } finally {
       setBusy(false);
     }
-  }, [val, onSet, nodeKey]);
+  }, [val, onSet, nodeKey, blockDone]);
 
   return (
     <span className={`pgd-statusedit${over ? ' is-overdue' : ''}`}>
@@ -287,7 +290,9 @@ export function StatusPicker({
         value={val}
         trigger={<span className="fm-status-word">{word}</span>}
         options={STATUS_ORDER.map((s) => ({
-          value: s, label: STATUS_META[s].label, swatchClass: STATUS_META[s].cls,
+          value: s,
+          label: s === 'done' && blockDone ? `${STATUS_META[s].label} — deliverables pending` : STATUS_META[s].label,
+          swatchClass: STATUS_META[s].cls,
         }))}
         onSelect={(v) => { void choose(v as StageStatus); }}
       />

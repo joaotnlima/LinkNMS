@@ -56,7 +56,8 @@ function sectionHref(buildId: string, s: BuildSection): string | null {
     case 'history':
       return `/projects/${buildId}/audit`;
     case 'documents':
-      return null;
+      // PRD-05 F-19: the project files page.
+      return `/projects/${buildId}/documents`;
   }
 }
 
@@ -307,22 +308,14 @@ function BuildSwitcher({ active, builds }: { active: BuildRef; builds: BuildRef[
 /* The live "THIS BUILD" nav (BUILD mode). Overview + Plan + Documents. The
    Schedule / Money / History sub-items were pulled from the rail (LINA-306) —
    their pages still exist and their breadcrumbs still work, they are just no
-   longer linked here. `section` highlights the current one; Documents stays
-   dimmed until a documents surface exists. */
+   longer linked here. `section` highlights the current one. Documents links
+   the project files page since PRD-05 (F-19). */
 function BuildNav({ buildId, section }: { buildId: string; section?: BuildSection }) {
   const item = (s: BuildSection, icon: React.ReactNode) => {
     const href = sectionHref(buildId, s);
     const active = section === s;
     const cls = `psh-nav-item${active ? ' is-active' : ''}`;
-    if (href == null) {
-      // Documents — no surface yet.
-      return (
-        <span className={`${cls} is-dim`} title="No documents surface yet">
-          {icon}
-          {SECTION_LABEL[s]}
-        </span>
-      );
-    }
+    if (href == null) return null;
     return (
       <Link className={cls} href={href} aria-current={active ? 'page' : undefined}>
         {icon}
