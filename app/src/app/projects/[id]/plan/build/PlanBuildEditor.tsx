@@ -50,7 +50,7 @@ import Link from 'next/link';
 
 import {
   DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
-  addPhase, addSubtask, addTask, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, enforceLink, enforceParentRollup, nodeIndex,
+  addPhase, addSubtask, addTask, criticalPathKeys, demoteNode, dependencyChoices, dependsOnOf, detectCycle, enforceDependencies, enforceLink, enforceParentRollup, nodeIndex,
   nodeStatus,
   promoteNode,
   removePhase, removeSubtask, removeTask, renamePhase, renameSubtask, renameTask,
@@ -71,7 +71,8 @@ import {
   StatusPicker, OwnerField, SpecialtyField, useSpecialtyCatalog,
 } from './plan-fields';
 import { ProcurementSection, type TaskOption } from '@/components/ProcurementSection';
-import type { V2Rfp } from '@/lib/v2/tendering-view';
+import { TenderDrawerTab } from '@/components/TenderDrawerTab';
+import { rfpStatusBadge, type V2Rfp } from '@/lib/v2/tendering-view';
 import '@/components/plan-build.css';
 
 // ── "Scheduling links" (LINA-233; typed by ADR-0020 / LINA-253) ─────────────
@@ -534,6 +535,31 @@ export function PlanBuildEditor({
   // (kept in stageIdByKey). Null until the plan holds this row.
   const workspaceTaskId = workspaceKey ? (stageIdByKey.get(workspaceKey) ?? workspaceKey) : null;
   const [copied, setCopied] = useState(false);
+
+  // The drawer is tabbed (LINA-420): Plan (the planning content — status, owner,
+  // dates, links, description), Tender (the per-task tender summary), and
+  // Conversation (the task's thread + files). It opens on Plan and resets there
+  // whenever a different row opens, so a tender tab left open on one task does
+  // not bleed onto the next.
+  const [drawerTab, setDrawerTab] = useState<'plan' | 'tender' | 'conversation'>('plan');
+  useEffect(() => { setDrawerTab('plan'); }, [activeKey]);
+
+  // The live tender rooted on the open task, if any (same resolution the in-place
+  // modal uses). A phase never tenders — only a task/sub-task row carries one.
+  const activeRfp = useMemo(
+    () => (activeKey && openRow?.ti != null
+      ? tenderInitialRfps.find((r) => r.root_task_ids.includes(activeKey)) ?? null
+      : null),
+    [activeKey, openRow?.ti, tenderInitialRfps],
+  );
+
+  // Which rows drive the build's finish (CPM) — read off the SAME draft the grid
+  // overlays, so the drawer's critical-path warning agrees with the grid toggle.
+  const criticalKeys = useMemo(() => criticalPathKeys(phases), [phases]);
+
+  // The Tender tab shows for a task/sub-task row the viewer may tender, or any
+  // row that already has a tender to read. Phases never tender.
+  const showTenderTab = openRow?.ti != null && (canStartTender || !!activeRfp);
 
   // The in-place tendering modal (LINA-420). Holds the task id the overlay is
   // tendering over, or null when closed. "Start tendering" sets it instead of
@@ -1170,6 +1196,12 @@ export function PlanBuildEditor({
                     Under {activeTask.name.trim() || 'an untitled task'}
                   </p>
                 ) : null}
+                {/* The tender's lifecycle, said once at the top (LINA-420) — the
+                    design's "Out for bids" pill beside the title. */}
+                {activeRfp ? (() => {
+                  const b = rfpStatusBadge(activeRfp.status);
+                  return <span className={`pbx-drawer-statuspill ${b.tone}`}>{b.label}</span>;
+                })() : null}
               </div>
               <div className="pbx-drawer-hdtools">
                 {/* Shown only for a SAVED task: a link to a row that exists
@@ -1185,20 +1217,9 @@ export function PlanBuildEditor({
                     {copied ? 'Copied' : 'Copy link'}
                   </button>
                 ) : null}
-                {/* Quick-start a tender for this task straight from the drawer
-                    header (LINA-420). Opens the in-place tendering modal over the
-                    plan (not a navigation) — same as the first-class Actions block
-                    below; saved rows only. */}
-                {canStartTender && workspaceKey ? (
-                  <button
-                    type="button"
-                    className="pbx-icon"
-                    style={{ width: 'auto', padding: '0 10px' }}
-                    title="Start a tender for this task"
-                    aria-label="Start a tender for this task"
-                    onClick={() => openTender(workspaceKey)}
-                  >Start tendering</button>
-                ) : null}
+                {/* Tendering is no longer a header icon — it is the drawer's
+                    "Tender" tab now (LINA-420), so the header carries only the
+                    link and close. */}
                 <button
                   type="button"
                   className="pbx-icon"
@@ -1209,6 +1230,41 @@ export function PlanBuildEditor({
               </div>
             </header>
 
+            {/* The drawer's tabs (LINA-420): Plan is the planning content; Tender
+                the per-task tender summary (only for a task row that has or may
+                have a tender); Conversation the task thread + files. */}
+            <div className="pbx-drawer-tabs" role="tablist" aria-label="Task detail sections">
+              <button
+                type="button" role="tab" id="pbx-tab-plan"
+                className={`pbx-drawer-tab${drawerTab === 'plan' ? ' is-active' : ''}`}
+                aria-selected={drawerTab === 'plan'}
+                onClick={() => setDrawerTab('plan')}
+              >Plan</button>
+              {showTenderTab ? (
+                <button
+                  type="button" role="tab" id="pbx-tab-tender"
+                  className={`pbx-drawer-tab${drawerTab === 'tender' ? ' is-active' : ''}`}
+                  aria-selected={drawerTab === 'tender'}
+                  onClick={() => setDrawerTab('tender')}
+                >
+                  Tender
+                  {activeRfp && (activeRfp.status === 'published' || activeRfp.status === 'closed')
+                    ? <span className="pbx-drawer-tabcount">{procurement[activeKey ?? '']?.submittedCount ?? 0}</span>
+                    : null}
+                </button>
+              ) : null}
+              {openRow.ti != null ? (
+                <button
+                  type="button" role="tab" id="pbx-tab-conversation"
+                  className={`pbx-drawer-tab${drawerTab === 'conversation' ? ' is-active' : ''}`}
+                  aria-selected={drawerTab === 'conversation'}
+                  onClick={() => setDrawerTab('conversation')}
+                >Conversation</button>
+              ) : null}
+            </div>
+
+            {drawerTab === 'plan' ? (
+            <>
             {/* Status is an append-only, attributed progress report (LINA-307,
                 LINA-404 FIX 1). A LEAF gets a live picker; a PARENT/PHASE gets the
                 "mark everything below done" cascade (a confirm modal fans it out to
@@ -1259,55 +1315,6 @@ export function PlanBuildEditor({
                 </div>
               );
             })()}
-
-            {/* ACTIONS — the prominent task-level tendering entry (LINA-420, the
-                "both" entry: this drawer + the grid-row ⤴ + the full composer).
-                The approved design (ticket mockup) makes "Start tendering" a first
-                -class action on the task, not a hidden icon. Shown only to a viewer
-                who may issue tenders (`org:tendering:issue`). A row the plan does
-                not yet hold has no real task id to package, so the action waits for
-                the next autosave and says so rather than opening the composer on a
-                phantom id. */}
-            {canStartTender ? (
-              <div className="pbx-drawer-actions-block" aria-label="Actions">
-                <p className="pbx-drawer-sectlabel">Actions</p>
-                {workspaceKey ? (() => {
-                  // Does this task already have a tender? If so the action opens the
-                  // existing one (its responses + Compare, and the owner can edit /
-                  // add documents) instead of offering to raise a second — the
-                  // LINA-420 ask: "warn me a tender already exists, let me edit it".
-                  const existing = tenderInitialRfps.find((r) => r.root_task_ids.includes(workspaceKey));
-                  return (
-                    <button
-                      type="button"
-                      className="pbx-tender-cta"
-                      onClick={() => openTender(workspaceKey)}
-                    >
-                      <span className="pbx-tender-cta-icon" aria-hidden="true">⤴</span>
-                      <span className="pbx-tender-cta-text">
-                        <span className="pbx-tender-cta-title">
-                          {existing ? 'View tender' : 'Start tendering'}
-                        </span>
-                        <span className="pbx-tender-cta-sub">
-                          {existing
-                            ? 'This task already has a tender — see the responses, compare bids, or edit it.'
-                            : 'Request proposals from external companies — opens right here, over the plan.'}
-                        </span>
-                      </span>
-                      <span className="pbx-tender-cta-go" aria-hidden="true">›</span>
-                    </button>
-                  );
-                })() : (
-                  <p className="pbx-tender-cta is-waiting">
-                    <span className="pbx-tender-cta-icon" aria-hidden="true">⤴</span>
-                    <span className="pbx-tender-cta-text">
-                      <span className="pbx-tender-cta-title">Start tendering</span>
-                      <span className="pbx-tender-cta-sub">Save the plan first — this task needs an id before it can go out to tender.</span>
-                    </span>
-                  </p>
-                )}
-              </div>
-            ) : null}
 
             <div className="pbx-drawer-meta">
               {/* Owner / Specialty now reuse the SAME Jira-style dropdown the grid
@@ -1396,12 +1403,36 @@ export function PlanBuildEditor({
                 A phase’s dates are read off its tasks — schedule those and the phase bar follows.
               </p>
             )}
+            </>
+            ) : null}
 
-            {/* The task workspace (LINA-250): the conversation and the files on
-                this task. `workspaceKey` is null until the plan holds this row —
-                the section then says so rather than collecting comments locally
-                that no reload would bring back. */}
-            <TaskWorkspace taskId={workspaceTaskId} parties={parties} />
+            {/* The Tender tab (LINA-420): the per-task tender summary — lifecycle
+                wizard, key dates, critical-path warning, bidders and proposals.
+                Deep actions (invite / compare / award) open the in-place modal,
+                which owns those writes; this tab never forks that logic. */}
+            {drawerTab === 'tender' && showTenderTab && activeKey ? (
+              <TenderDrawerTab
+                taskName={(active?.name ?? activePhase.name).trim() || 'this task'}
+                taskStart={openRow.ti != null ? active?.start : undefined}
+                taskEnd={openRow.ti != null ? active?.end : undefined}
+                rfp={activeRfp}
+                proc={procurement[activeKey]}
+                onCriticalPath={criticalKeys.has(activeKey)}
+                canStartTender={canStartTender}
+                saved={!!workspaceKey}
+                onStart={() => { if (workspaceKey) openTender(workspaceKey); }}
+                onOpenFull={() => { if (workspaceKey) openTender(workspaceKey); }}
+                todayIso={todayIso}
+              />
+            ) : null}
+
+            {/* The Conversation tab (LINA-250): the thread and files on this task.
+                `workspaceKey` is null until the plan holds this row — the section
+                then says so rather than collecting comments locally that no reload
+                would bring back. */}
+            {drawerTab === 'conversation' && openRow.ti != null ? (
+              <TaskWorkspace taskId={workspaceTaskId} parties={parties} />
+            ) : null}
 
             <div className="pbx-drawer-actions">
               <button type="button" className="btn primary"
