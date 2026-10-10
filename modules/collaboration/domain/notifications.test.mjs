@@ -6,6 +6,7 @@ import {
   deliverableSubmittedTargets, deliverableDecidedTargets, newVersionTargets, modelEditedTargets, modelUrl,
   bidSubmittedTargets, clarificationAnsweredTargets, awardedTargets, cancelledTargets,
   invitationAcceptedTargets, variationDigestOrgs, notificationEmail,
+  bidRequestedTargets, bidRequestDecidedTargets, companyRequestUrl,
 } from './notifications.mjs';
 
 const RFP = {
@@ -132,5 +133,33 @@ describe('files targets (PRD-05)', () => {
     ]);
     assert.deepEqual(targets.map((t) => [t.orgId, t.objectRef.url]), [['sub', '/projects/p/plan?task=t1&tab=files']]);
     assert.match(targets[0].title, /\(v3\)/);
+  });
+});
+
+describe('requests to bid (PRD-04 X-5, X-13; D-47)', () => {
+  test('requested → the issuer, on the first root task\'s Tender tab', () => {
+    const [t] = bidRequestedTargets(evt({ rfp_id: 'r1', org_id: 'asker' }), RFP);
+    assert.equal(t.orgId, 'issuer');
+    assert.equal(t.audience, 'project');
+    assert.equal(t.category, 'bids');
+    assert.equal(t.objectRef.url, '/projects/p1/plan?task=t1&tab=tender');
+  });
+
+  test('approved → only the asking company, by role, to its request in the inbox', () => {
+    const targets = bidRequestDecidedTargets({ ...evt({ rfp_id: 'r1', org_id: 'asker' }), type: 'tendering.bid_request.approved' }, RFP);
+    assert.equal(targets.length, 1);
+    assert.equal(targets[0].orgId, 'asker');
+    assert.equal(targets[0].audience, 'org');
+    assert.equal(targets[0].permission, 'org:tendering:bid');
+    assert.equal(targets[0].objectRef.url, '/requests/r1');
+    assert.match(targets[0].title, /You can now bid/);
+  });
+
+  test('declined → the asking company is told; never the issuer', () => {
+    const [t] = bidRequestDecidedTargets({ ...evt({ rfp_id: 'r1', org_id: 'asker' }), type: 'tendering.bid_request.declined' }, RFP);
+    assert.match(t.title, /declined/);
+    assert.equal(t.objectRef.url, companyRequestUrl());
+    assert.deepEqual(bidRequestDecidedTargets({ ...evt({ org_id: 'issuer' }), type: 'tendering.bid_request.declined' }, RFP), []);
+    assert.deepEqual(bidRequestDecidedTargets({ ...evt({}), type: 'tendering.bid_request.declined' }, RFP), []);
   });
 });

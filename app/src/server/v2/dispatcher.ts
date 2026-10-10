@@ -36,6 +36,8 @@ import { createPlanningAudience } from '@modules/planning/application/audience.m
 import { createMailSender } from '@modules/tendering/infra/mail-sender.mjs';
 import { directoryConsumers } from '@modules/directory/application/consumers.mjs';
 import { createDirectoryStore } from '@modules/directory/infra/pg-store.mjs';
+import { tenderingConsumers } from '@modules/tendering/application/consumers.mjs';
+import { createInviteePort } from '@modules/tendering/application/invitee-port.mjs';
 
 import { getPool } from './registry';
 
@@ -52,7 +54,12 @@ function getHandlers(): Handlers {
       qualityConsumers(createQualityStore(pool)),
       // PRD-03 R-11: the directory's "On the record" read model (contract,
       // change-order, done-task and proposal facts — never amounts, D-46).
-      directoryConsumers(createDirectoryStore(pool)),
+      // PRD-04 X-2: unclaimed profiles for the e-mail invitees of a sent RFP,
+      // named through tendering's published invitee port.
+      directoryConsumers(createDirectoryStore(pool), { invitees: createInviteePort(createTenderingStore(pool)) }),
+      // PRD-04 §6.3: a claimed profile back-fills its organisation on every
+      // past invite to that address (directory.profile.claimed).
+      tenderingConsumers(createTenderingStore(pool)),
       // PRD-06: DWG/DXF previews. The converter is a port chosen by
       // DWG_CONVERTER (default `none` → download only, reason
       // converter_not_configured); LibreDWG (GPL) is never bundled — D-49 legal

@@ -36,6 +36,7 @@ import { registerRecord } from '@modules/record/http/register.mjs';
 import { registerDirectory } from '@modules/directory/http/register.mjs';
 import { createDirectoryStore } from '@modules/directory/infra/pg-store.mjs';
 import { createSpecialtyPort } from '@modules/directory/application/specialty-port.mjs';
+import { createCompanyPort } from '@modules/directory/application/company-port.mjs';
 import { createBuildPort } from '@modules/project/application/build-port.mjs';
 import { createRecordStore } from '@modules/record/infra/pg-store.mjs';
 
@@ -180,6 +181,12 @@ export function getRouter() {
     linkBaseUrl: () =>
       process.env.NEXT_PUBLIC_APP_URL
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://portal.linknms.com'),
+    // PRD-04: the directory's company port (a profile's contact for an invite,
+    // proof lines, a company's bidding profile) and the project's build port
+    // (build name, municipality and point for the company inbox) — tendering
+    // reads neither module's tables.
+    directory: createCompanyPort(directoryStore),
+    builds: createBuildPort(projectStore),
   });
 
   // Phase 7 — Documents (versioned files on R2 behind presigned tickets,

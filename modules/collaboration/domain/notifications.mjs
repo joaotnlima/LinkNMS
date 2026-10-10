@@ -130,6 +130,59 @@ export function cancelledTargets(evt, rfp) {
   }));
 }
 
+// ── requests to bid on a listed RFP (PRD-04 X-5, X-13; D-47) ────────────────
+
+/** The company inbox (PRD-04 X-9/X-10), at the RFP's request when it has one. */
+export function companyRequestUrl(rfpId = null) {
+  return rfpId ? `/requests/${enc(rfpId)}` : '/requests?tab=near';
+}
+
+/** tendering.bid_request.requested → the issuer ("asking to bid"), on the task's Tender tab. */
+export function bidRequestedTargets(evt, rfp) {
+  if (!rfp) return [];
+  const projectId = rfp.project_id ?? evt.project_id;
+  return [{
+    orgId: rfp.issuer_org_id,
+    audience: 'project',
+    category: 'bids',
+    title: `A company asks to bid on ${quoted(rfp.title)}`,
+    objectRef: {
+      type: 'rfp',
+      id: rfp.rfp_id,
+      project_id: projectId,
+      url: rfp.root_task_ids?.length
+        ? planTaskUrl(projectId, rfp.root_task_ids[0], 'tender')
+        : rfpUrl(projectId, rfp.rfp_id),
+    },
+  }];
+}
+
+/**
+ * tendering.bid_request.approved / .declined → the asking company (`data.org_id`,
+ * people whose role may bid — it is not a participant of the build). Never
+ * anyone else: who asked is the issuer's and the company's business (V8).
+ */
+export function bidRequestDecidedTargets(evt, rfp) {
+  const orgId = evt.data?.org_id;
+  if (!rfp || !orgId || orgId === rfp.issuer_org_id) return [];
+  const approved = evt.type === 'tendering.bid_request.approved';
+  return [{
+    orgId,
+    audience: 'org',
+    permission: 'org:tendering:bid',
+    category: 'tendering',
+    title: approved
+      ? `You can now bid on ${quoted(rfp.title)} — your link is on its way`
+      : `Your request to bid on ${quoted(rfp.title)} was declined`,
+    objectRef: {
+      type: 'rfp',
+      id: rfp.rfp_id,
+      project_id: rfp.project_id ?? evt.project_id,
+      url: approved ? companyRequestUrl(rfp.rfp_id) : companyRequestUrl(),
+    },
+  }];
+}
+
 /** project.invitation.accepted → the inviter org. */
 export function invitationAcceptedTargets(evt) {
   const orgId = evt.data?.invited_by_org_id;

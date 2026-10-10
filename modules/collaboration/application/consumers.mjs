@@ -8,6 +8,9 @@
 //   tendering.clarification.answered → bidder orgs still in the tender
 //   tendering.rfp.awarded            → winner + every other bidder
 //   tendering.rfp.cancelled          → bidder orgs still in the tender
+//   tendering.bid_request.requested  → issuer org ("asking to bid", PRD-04)
+//   tendering.bid_request.approved / .declined
+//                                    → the asking company (D-47)
 //   planning.variation.recorded/.updated
 //     → 15-MINUTE DIGEST to owner + client of the row (planning port),
 //       narrowed/extended by collaboration.variation_subscription
@@ -32,6 +35,7 @@ import {
   bidSubmittedTargets, clarificationAnsweredTargets, awardedTargets, cancelledTargets,
   invitationAcceptedTargets, variationDigestOrgs, variationDigestRef, projectUrl, notificationEmail,
   deliverableSubmittedTargets, deliverableDecidedTargets, newVersionTargets, modelEditedTargets,
+  bidRequestedTargets, bidRequestDecidedTargets,
 } from '../domain/notifications.mjs';
 
 const NO_PEOPLE = Object.freeze({ projectAudience: async () => [], orgAudience: async () => [] });
@@ -152,6 +156,9 @@ export function collaborationConsumers(store, ports = {}) {
     'tendering.clarification.answered': rfpEvent(clarificationAnsweredTargets),
     'tendering.rfp.awarded': rfpEvent(awardedTargets),
     'tendering.rfp.cancelled': rfpEvent(cancelledTargets),
+    'tendering.bid_request.requested': rfpEvent(bidRequestedTargets),
+    'tendering.bid_request.approved': rfpEvent(bidRequestDecidedTargets),
+    'tendering.bid_request.declined': rfpEvent(bidRequestDecidedTargets),
 
     'project.invitation.accepted': (evt) => deliver(evt, invitationAcceptedTargets(evt)),
 
