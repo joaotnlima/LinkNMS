@@ -53,6 +53,7 @@
 // /plan, which shows the "draft saved" stamp once and links to the audit trail.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 import {
   DEP_HINTS, DEP_LABELS, DEP_TYPES, PlanAuthorError,
@@ -77,6 +78,10 @@ import {
 import { ProcurementSection, type TaskOption } from '@/components/ProcurementSection';
 import { TenderDrawerTab } from '@/components/TenderDrawerTab';
 import type { V2Rfp } from '@/lib/v2/tendering-view';
+import type { PlanSlipView } from '@/lib/v2/slip-view';
+import { SlipHeader } from '@/components/SlipHeader';
+import { ChangesPanel } from '@/components/ChangesPanel';
+import { TaskSlipSection, type PendingMove } from '@/components/TaskSlipSection';
 import '@/components/plan-build.css';
 
 // ── "Scheduling links" (LINA-233; typed by ADR-0020 / LINA-253) ─────────────
@@ -310,7 +315,7 @@ export function PlanBuildEditor({
   projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
   importHref = null, procurementHref = null, initialStageIds = {}, saveV2, reportProgressV2,
   canStartTender = false, procurement = {},
-  tenderInitialRfps = [], tenderTasks = [], tenderHasActiveOrg = true,
+  tenderInitialRfps = [], tenderTasks = [], tenderHasActiveOrg = true, slip,
 }: {
   projectId: string;
   /**
@@ -390,6 +395,13 @@ export function PlanBuildEditor({
   tenderInitialRfps?: V2Rfp[];
   tenderTasks?: TaskOption[];
   tenderHasActiveOrg?: boolean;
+  /**
+   * PRD-13: the server's changes against the baseline (segments, deltas, overrun,
+   * handover, change count) from the same schedule read. Drives the clay on the
+   * bars, the "vs baseline" column, the header, the Changes panel and the task
+   * panel's block. Absent → the plan renders exactly as before.
+   */
+  slip?: PlanSlipView;
 }) {
   const resuming = initialPhases != null && initialPhases.length > 0;
   // v2 mode (LINA-369): the save writes the build's live plan on the v2 record —
@@ -958,16 +970,51 @@ export function PlanBuildEditor({
     apply(renameAt(phases, path, value));
   }, [apply, phases]);
 
+  // PRD-13 S-10: a date change on a BASELINED row is not autosaved — it opens the
+  // task panel on a "Before you save" note (the server's :preview-move: what it
+  // pushes, the new handover, who is told) and lands only on "Save new finish",
+  // as one D-26 delta with the optional why (S-11). Other rows edit as before.
+  const [pendingMove, setPendingMove] = useState<({ key: string } & PendingMove) | null>(null);
+  const interceptBaselined = useCallback((path: NodePath, start: string, end: string): boolean => {
+    const node = nodeAtPath(phasesRef.current, path);
+    if (!node || !slip?.byTask[node.key]?.baseline || !start || !end) return false;
+    setPendingMove({ key: node.key, start, end });
+    setOpenKey(node.key);
+    setDrawerTab('plan');
+    return true;
+  }, [slip]);
+
   const setDate = useCallback((field: 'start' | 'end', value: string, path: NodePath) => {
+    const node = nodeAtPath(phasesRef.current, path);
+    if (node && 'start' in node) {
+      const start = field === 'start' ? value : node.start;
+      const end = field === 'end' ? value : node.end;
+      if (interceptBaselined(path, start, end)) return;
+    }
     applyDeps(setDateAt(phases, path, field, value));
-  }, [applyDeps, phases]);
+  }, [applyDeps, phases, interceptBaselined]);
 
   // A Gantt drag or an empty-track click lands here: write the row's start and
   // finish in one op. Same draft, same tested vocabulary the panel's date
   // inputs use — the timeline just computes the dates from a pointer.
   const setDates = useCallback((path: NodePath, start: string, end: string) => {
+    if (interceptBaselined(path, start, end)) return;
     applyDeps(setDatesAt(phases, path, start, end));
-  }, [applyDeps, phases]);
+  }, [applyDeps, phases, interceptBaselined]);
+
+  // PRD-13 S-15: the "Changes since baseline" panel shares the docked slot with
+  // the task panel — opening one closes the other.
+  const router = useRouter();
+  const [changesOpen, setChangesOpen] = useState(false);
+  const outlineOf = useCallback((id: string) => index.get(id)?.outline ?? null, [index]);
+  const openChanges = useCallback(() => { setOpenKey(null); setChangesOpen(true); }, []);
+  const refreshSlip = useCallback(() => { router.refresh(); }, [router]);
+  // A server write that moved dates (a new finish, a close): flush any pending
+  // autosave first, then reload so the draft and the bars read the stored plan.
+  const reloadAfterServerWrite = useCallback(() => {
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; void flushRef.current(); }
+    setTimeout(() => { window.location.reload(); }, 400);
+  }, []);
 
   // Add a child under any row (a task under a phase, a sub-task under a task, to
   // MAX_DEPTH) and hand back its key so the grid opens rename on it.
@@ -1022,7 +1069,7 @@ export function PlanBuildEditor({
   const panelWide = drawerTab === 'tender' && (activeChip?.state === 'bids_in' || activeChip?.state === 'awarded');
 
   return (
-    <main className={`pbx pbx--grid${panelOpen ? (panelWide ? ' has-panel is-wide' : ' has-panel') : ''}`}>
+    <main className={`pbx pbx--grid${panelOpen ? (panelWide ? ' has-panel is-wide' : ' has-panel') : changesOpen ? ' has-panel' : ''}`}>
       <header className="pbx-head">
         <div>
           <p className="pbx-eyebrow">{resuming ? 'Your draft' : 'New plan'}</p>
@@ -1093,13 +1140,17 @@ export function PlanBuildEditor({
       {/* The add callbacks return the FRESH node's key (add ops append, so it
           is always the last one) — the grid opens rename on it focused
           (founder follow-up, 2026-09-11). */}
+      {/* PRD-13 S-6: the handover and the door to "Changes since baseline". */}
+      <SlipHeader slip={slip} onOpenChanges={openChanges} />
+
       <PlanGrid
         phases={phases}
         parties={parties}
         litRows={litRows}
         disabled={false}
         todayIso={todayIso}
-        onOpenRow={(path) => setOpenRow([...path])}
+        slip={slip}
+        onOpenRow={(path) => { setChangesOpen(false); setOpenRow([...path]); }}
         activeKey={activeKey ?? null}
         onRename={rename}
         onSetDate={setDate}
@@ -1175,6 +1226,17 @@ export function PlanBuildEditor({
           plan page.
         </p>
       )}
+
+      {changesOpen && !panelOpen && slip ? (
+        <ChangesPanel
+          projectId={projectId}
+          slip={slip}
+          outlineOf={outlineOf}
+          onClose={() => setChangesOpen(false)}
+          onOpenTask={(taskId) => { setChangesOpen(false); setOpenKey(taskId); setDrawerTab('plan'); }}
+          onChanged={refreshSlip}
+        />
+      ) : null}
 
       {panelOpen && openRow && activePhase ? (
         // The DOCKED task panel (PRD-01 P-1): no scrim, no dimming — the grid
@@ -1407,6 +1469,24 @@ export function PlanBuildEditor({
                 />
               ) : null}
             </div>
+
+            {/* PRD-13: Baseline vs Now, the overdue prompt, a new finish with its
+                impact note before saving, and the changes on this task. */}
+            {isTaskRow && active && activeKey && slip?.byTask[activeKey]
+              && (slip.byTask[activeKey].baseline || slip.byTask[activeKey].overrunWd || slip.byTask[activeKey].projected
+                || pendingMove?.key === activeKey) ? (
+              <TaskSlipSection
+                key={activeKey}
+                projectId={projectId}
+                slip={slip.byTask[activeKey]}
+                outlineOf={outlineOf}
+                isLeaf={(active.children ?? []).length === 0}
+                pending={pendingMove?.key === activeKey ? { start: pendingMove.start, end: pendingMove.end } : null}
+                onClearPending={() => setPendingMove(null)}
+                onCommitted={reloadAfterServerWrite}
+                onChanged={refreshSlip}
+              />
+            ) : null}
 
             {isTaskRow && active ? (
               <>

@@ -81,7 +81,7 @@ export interface V2Task {
   duration_wd?: number;
   actual_start?: string | null;
   actual_finish?: string | null;
-  baseline: { start: string | null; finish: string | null; version?: number } | null;
+  baseline: { start: string | null; finish: string | null; version?: number; reason?: string; taken_at?: string } | null;
   schedule_state?: 'planned' | 'on_baseline' | 'extended' | 'sequence_warning';
   status: V2TaskStatus;
   acceptance_criteria?: string;
@@ -90,6 +90,11 @@ export interface V2Task {
   cost?: V2CostRollup;
   open_variations?: number;
   open_questions?: number;
+  // PRD-13 — server-computed slippage (see ./slip-view.ts).
+  segments?: V2Segment[];
+  baseline_delta_wd?: number;
+  overrun_wd?: number;
+  projected?: { start: string; finish: string; cause_task_id?: string };
 }
 
 export type V2LinkAnchor = 'start' | 'end';
@@ -111,6 +116,8 @@ export interface V2ScheduleView {
   links: V2Link[];
   calendar?: unknown;
   health?: unknown;
+  handover?: V2Handover;
+  changes?: { total: number; unseen: number };
 }
 
 // ── The grid's shapes (restated from lib/plan-baseline.ts) ────────────────────
@@ -119,6 +126,8 @@ export interface V2ScheduleView {
 // have one import site for the v2 view.
 import type { StageStatus, StageRow } from '@/lib/plan-baseline';
 export type { StageStatus, StageRow } from '@/lib/plan-baseline';
+import { toPlanSlipView } from './slip-view.ts';
+import type { PlanSlipView, V2Segment, V2Handover } from './slip-view.ts';
 
 /** The dependency triple the grid draws links from (ADR-0020, typed deps). */
 export type GridDependencyType = 'starts_after' | 'starts_with' | 'ends_with';
@@ -136,6 +145,8 @@ export interface PlanGridView {
   isBaselined: boolean;
   /** Typed predecessor links per successor stage id (empty when none). */
   dependenciesBySuccessor: Record<string, Array<{ on: string; type: GridDependencyType }>>;
+  /** PRD-13: the server's slippage per task, the handover and the change count. */
+  slip?: PlanSlipView;
 }
 
 // ── Transforms ────────────────────────────────────────────────────────────────
@@ -245,6 +256,7 @@ export function toPlanGridView(view: V2ScheduleView): PlanGridView {
     rows: toStageRows(view.tasks ?? []),
     isBaselined: isBaselined(view.tasks ?? []),
     dependenciesBySuccessor: toDependencies(view.links ?? []),
+    slip: toPlanSlipView(view),
   };
 }
 

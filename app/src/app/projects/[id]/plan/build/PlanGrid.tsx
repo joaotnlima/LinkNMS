@@ -70,6 +70,9 @@
 // row's move-menu is open) and never leaves the browser.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { isLateOrExtended, type LabelContext, type PlanSlipView } from '@/lib/v2/slip-view';
+import { SlipDeltaCell, SlipLegend, SlipSegments } from './SlipBar';
+
 import {
   addDays, applyDrag, barRect, baseWindow, clickDates, clipBarGeom, connectorMidpoint, connectorPath,
   fillWindow, formatDay, parseDay, procurementChip, procurementGeom, procurementState, scheduleWindow,
@@ -151,6 +154,8 @@ const COL_TEMPLATE: Record<ColKey, string> = {
 /** The Tender column (PRD-01 G-2), fixed after the middle columns. Long chips
  *  ("Awarded · Acme Build") ellipsise; the full state is the hover title. */
 const TENDER_W = 136;
+/** The PRD-13 "vs baseline" column (S-5). */
+const DELTA_W = 84;
 /** Indent per outline level below a task (PRD-01 G-1: five levels stay readable). */
 const INDENT_PX = 14;
 
@@ -225,6 +230,19 @@ const TENDER_FILTERS: Array<[TenderFilter, string]> = [
 
 /** Path → a stable string, so drag state can compare "same parent". */
 const pathKey = (p: NodePath): string => p.join('.');
+
+/** Keys of every row that has children (summaries) — PRD-13 counts leaves only. */
+function parentKeys(phases: PhaseDraft[]): Set<string> {
+  const out = new Set<string>();
+  const walk = (t: TaskDraft) => {
+    if ((t.children ?? []).length > 0) { out.add(t.key); t.children.forEach(walk); }
+  };
+  for (const p of phases) {
+    if (p.tasks.length > 0) out.add(p.key);
+    p.tasks.forEach(walk);
+  }
+  return out;
+}
 
 export interface PlanGridProps {
   phases: PhaseDraft[];
@@ -331,6 +349,13 @@ export interface PlanGridProps {
    * Absent/empty → no row paints a window and nothing is locked.
    */
   procurement?: Record<string, ProcurementRfp>;
+  /**
+   * PRD-13: the server's changes against the baseline, per row (segments, deltas,
+   * overrun, projected push). Present → the bars draw the ghost / clay / overrun
+   * overlays, a "vs baseline" column shows once anything is baselined, the
+   * "Late or extended" filter and the legend appear. Paint only — no maths here.
+   */
+  slip?: PlanSlipView;
 }
 
 /** Module-level so the default never changes identity between renders. */
@@ -478,10 +503,21 @@ export function PlanGrid(props: PlanGridProps) {
   // The Tender filter (PRD-01 G-4) reads a row's EFFECTIVE tender — its own, or
   // the one an ancestor's RFP covers it with — so "none" means truly untendered.
   const [tenderFilter, setTenderFilter] = useState<TenderFilter>('');
-  const filterActive = !!(search.trim() || ownerFilter || statusFilter || overdueOnly || blockedOnly || tenderFilter);
+  // PRD-13 S-7: "Late or extended" — the server's deltas, read off the slip view.
+  const slip = props.slip;
+  const [lateOnly, setLateOnly] = useState(false);
+  const lateCount = useMemo(
+    () => {
+      if (!slip) return 0;
+      const parents = parentKeys(phases);
+      return Object.values(slip.byTask).filter((t) => isLateOrExtended(t) && !parents.has(t.id)).length;
+    },
+    [slip, phases],
+  );
+  const filterActive = !!(search.trim() || ownerFilter || statusFilter || overdueOnly || blockedOnly || tenderFilter || lateOnly);
   const clearFilters = useCallback(() => {
     setSearch(''); setOwnerFilter(''); setStatusFilter(''); setOverdueOnly(false); setBlockedOnly(false);
-    setTenderFilter('');
+    setTenderFilter(''); setLateOnly(false);
   }, []);
 
   // ── Critical-path overlay (LINA-404) ────────────────────────────────────────
@@ -519,12 +555,13 @@ export function PlanGrid(props: PlanGridProps) {
     if (statusFilter && nodeStatus(n) !== statusFilter) return false;
     if (overdueOnly && !isOverdue(n)) return false;
     if (blockedOnly && nodeStatus(n) !== 'blocked') return false;
+    if (lateOnly && !isLateOrExtended(slip?.byTask[n.key])) return false;
     if (tenderFilter) {
       const st = tenderOf(n.key, cover);
       if (tenderFilter === 'none' ? (st !== null && st !== 'cancelled') : st !== tenderFilter) return false;
     }
     return true;
-  }, [search, ownerFilter, statusFilter, overdueOnly, blockedOnly, isOverdue, tenderFilter, tenderOf]);
+  }, [search, ownerFilter, statusFilter, overdueOnly, blockedOnly, isOverdue, tenderFilter, tenderOf, lateOnly, slip]);
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
@@ -564,6 +601,17 @@ export function PlanGrid(props: PlanGridProps) {
     });
     return out;
   }, [phases, collapsed, filterActive, nodePasses, procurement]);
+
+  // PRD-13 S-4 label words: "pushed by 2.3" needs the cause row's outline id,
+  // "moved by TN" the changer's name (from the parties, else the read's owners).
+  const slipLabels = useMemo<LabelContext>(() => {
+    const outline = new Map<string, string>();
+    for (const r of rows) if (r.kind !== 'add') outline.set(r.key, r.id);
+    return {
+      outlineOf: (id) => outline.get(id) ?? slip?.byTask[id]?.name ?? null,
+      orgNameOf: (id) => dir.get(id)?.name ?? slip?.orgNames[id] ?? null,
+    };
+  }, [rows, slip, dir]);
 
   // The ID column grows with the deepest visible outline number (`2.5.2.2.1`
   // must stay readable at level 5) instead of clipping it.
@@ -755,11 +803,13 @@ export function PlanGrid(props: PlanGridProps) {
   // G-2, after Owner) — one CSS var the header and every row read. STATUS sits
   // right after the name, as the pen lays it out. The ID column widens with the
   // deepest visible outline number.
-  const colsTemplate = `20px ${idW}px minmax(120px, var(--pgdw-name, 1fr)) 120px ${colOrder.map((c) => COL_TEMPLATE[c]).join(' ')} ${TENDER_W}px 92px`;
+  // PRD-13 S-5: a fixed "vs baseline" column after Status once anything is baselined.
+  const showDelta = slip?.baselined === true;
+  const colsTemplate = `20px ${idW}px minmax(120px, var(--pgdw-name, 1fr)) 120px ${showDelta ? `${DELTA_W}px ` : ''}${colOrder.map((c) => COL_TEMPLATE[c]).join(' ')} ${TENDER_W}px 92px`;
   // The table's natural minimum (every fixed column + the name floor + gaps +
   // padding). Below it the TABLE pane scrolls sideways with ID/Task pinned
   // (PRD-01 G-6); the timeline pane always scrolls on its own.
-  const tableMinW = 20 + idW + 120 + 120 + (colW.trade ?? 96) + 30 + TENDER_W + 92 + 8 * 8 + 16;
+  const tableMinW = 20 + idW + 120 + 120 + (showDelta ? DELTA_W + 8 : 0) + (colW.trade ?? 96) + 30 + TENDER_W + 92 + 8 * 8 + 16;
 
   // ── The table / Gantt split divider (LINA-259 ask 2): a draggable seam that
   // resizes the two panes, persisted for the session. Seeded from the rendered
@@ -1522,6 +1572,17 @@ export function PlanGrid(props: PlanGridProps) {
           >
             <span className="pgd-ftoggle-dot" aria-hidden />Blocked
           </button>
+          {slip && (slip.baselined || lateCount > 0) ? (
+            <button
+              type="button"
+              className={`pgd-ftoggle is-clay${lateOnly ? ' is-on' : ''}`}
+              aria-pressed={lateOnly}
+              title="Show only tasks past their baseline, running late, or pushed by a late task"
+              onClick={() => setLateOnly((v) => !v)}
+            >
+              <span className="pgd-ftoggle-dot" aria-hidden />Late or extended · {lateCount}
+            </button>
+          ) : null}
           <span className="pgd-fdiv" aria-hidden />
           <button
             type="button"
@@ -1558,6 +1619,7 @@ export function PlanGrid(props: PlanGridProps) {
             <span /><span aria-hidden>ID</span>
             <span className="pgd-hcell"><span aria-hidden>Task</span>{resizer('name', 'task name')}</span>
             <span className="pgd-hcell pgd-hcell-status" aria-hidden>Status</span>
+            {showDelta ? <span className="pgd-hcell" aria-hidden>vs baseline</span> : null}
             {colOrder.map(headerCell)}
             <span className="pgd-hcell" aria-hidden>Tender</span>
             <span />
@@ -1636,6 +1698,7 @@ export function PlanGrid(props: PlanGridProps) {
                     ) : null}
                   </span>
                   <span className="pgd-statuscol">{statusCell(counts, null, `Phase ${r.pi + 1}`)}</span>
+                  {showDelta ? <SlipDeltaCell slip={slip?.byTask[r.key]} /> : null}
                   {colOrder.map(cellFor)}
                   {/* The Tender column (PRD-01 G-2). Raising a tender over this
                       package (LINA-407) is its `＋ Tender`, shown on hover to a
@@ -1736,6 +1799,7 @@ export function PlanGrid(props: PlanGridProps) {
                 {/* A parent task (counts.total > 0) shows its child meter; a leaf
                     shows its own derived status. statusCell picks between them. */}
                 <span className="pgd-statuscol">{statusCell(counts, r.node, `${what[0].toUpperCase()}${what.slice(1)} ${id}`)}</span>
+                {showDelta ? <SlipDeltaCell slip={slip?.byTask[r.key]} /> : null}
                 {colOrder.map(cellFor)}
                 {/* The Tender column (PRD-01 G-2/G-3) — the chip that used to sit
                     inside the name cell (LINA-420) lives here now. Tendering is a
@@ -1851,6 +1915,9 @@ export function PlanGrid(props: PlanGridProps) {
                     {proc?.bidsDueX != null ? (
                       <div className="pgp-bidsdue" style={{ left: proc.bidsDueX }} aria-hidden
                         title="Bids due" />
+                    ) : null}
+                    {slip?.byTask[r.key] ? (
+                      <SlipSegments slip={slip.byTask[r.key]} win={win} col={col} labels={slipLabels} isSummary={isSummary} />
                     ) : null}
                     {bar && box ? (
                       <div
@@ -2068,6 +2135,9 @@ export function PlanGrid(props: PlanGridProps) {
           </div>
         ) : null}
       </div>
+
+      {/* PRD-13 S-8: the legend under the grid, once there is anything to read. */}
+      {slip && (slip.baselined || lateCount > 0) ? <SlipLegend /> : null}
 
       {/* The row move-menu popover (ask 7). Click-away closes; each item is a
           no-op path when the reparent is disallowed, so the guard is visible. */}

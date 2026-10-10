@@ -11,9 +11,10 @@
 // the v1 plan authored through, now autosaving through `/api/v2` via the
 // `savePlanV2` server action (incremental diff → `schedule:apply` + task PATCHes +
 // link create/delete, one `client_change_id` per save). A build with no plan lands
-// straight in the editor scaffold; an existing plan resumes into it; a BASELINED
-// plan stays read-only (a frozen baseline is not free-authoring — that routes
-// through change orders, ADR-0014). Assignment is not authored here (v2 inherits
+// straight in the editor scaffold; an existing plan resumes into it, baselined or
+// not (PRD-13 / D-23: after the baseline a change is shown in clay and recorded as
+// a variation, never gated; a baselined row's date change previews its impact
+// before it is saved). Assignment is not authored here (v2 inherits
 // from the branch, D-33), and status stays the honest all-grey meter until the
 // plan is signed (ADR-0019) — so the editor is mounted with no parties and no live
 // stage ids, both of which arrive with their own v2 slices.
@@ -129,11 +130,12 @@ export default async function PlanPage({
   const taskCount = countPlanTasks(phases);
   const signOffLocked = isPlanLocked(execution);
 
-  // A BASELINED plan is frozen: edits route through change orders (ADR-0014), not
-  // free authoring, so it stays read-only. A plan under or past sign-off is locked
-  // the same way. Everything else — no plan yet, or a plan still being shaped — is
-  // the author's to edit.
-  const authoring = !grid.isBaselined && !signOffLocked;
+  // PRD-13 / D-23 (amending the old "baselined = frozen" rule, ADR-0014): after the
+  // baseline the plan stays editable — a change is SHOWN (clay on the bar, a
+  // variation, a notification), not gated. A baselined row's date change goes
+  // through the task panel's "Before you save" note (S-10). Only a pending or
+  // approved sign-off still locks the grid.
+  const authoring = !signOffLocked;
 
   // Show the sign-off panel only when sign-off is actually part of this build's
   // story: the execution phase is live (active / signed_off / archived) OR it
@@ -215,6 +217,9 @@ export default async function PlanPage({
           tenderInitialRfps={tenderInitialRfps}
           tenderTasks={tenderTasks}
           tenderHasActiveOrg={tenderHasActiveOrg}
+          // PRD-13: segments, deltas, overrun, handover and the change count from
+          // the same schedule read — the server's numbers, drawn as-is.
+          slip={grid.slip}
         />
       ) : (
         <main className="pi">
@@ -225,7 +230,7 @@ export default async function PlanPage({
               Tendering
             </Link>
           </p>
-          <V2PlanGridReadOnly phases={phases} todayIso={todayIso} />
+          <V2PlanGridReadOnly phases={phases} todayIso={todayIso} projectId={id} slip={grid.slip} />
         </main>
       )}
     </PortalShell>
