@@ -19,12 +19,17 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 ## Directory (marketplace)
 | Use case | Actor | Endpoint |
 |---|---|---|
-| Edit my profile, credentials, areas, specialties | org admin | `PUT /organizations/{id}/profile` |
-| See completeness score and how to raise it | org admin | `GET /organizations/{id}/profile/completeness` |
-| Add/remove declared portfolio entry | org admin | `POST /organizations/{id}/portfolio` · `DELETE …/{entryId}` |
-| Search companies | ANY | `GET /directory/organizations?specialty=&municipality=&kind=&min_rating=&cursor=` |
-| View a company (profile, portfolio, rating, metrics) | ANY | `GET /directory/organizations/{id}` |
-| Specialty catalogue | ANY | `GET /specialties` |
+| My profile as I edit it | org admin/manager | `GET /organizations/{id}/profile` |
+| Create / edit my profile: specialties, base + radius, availability, stated credentials (PRD-03 R-3, R-20) | org admin/manager | `PUT /organizations/{id}/profile` (If-Match once it exists) |
+| Completeness checklist — never changes the order (R-19, D-46) | org admin/manager | `GET /organizations/{id}/profile/completeness` |
+| Your listing, last 30 days (R-17) | org admin/manager | `GET /organizations/{id}/listing-stats` |
+| Add/remove stated portfolio entry | org admin/manager | `POST /organizations/{id}/portfolio` · `DELETE …/{entryId}` |
+| Find companies near a build (R-4..R-7, D-46) | ANY (public) | `GET /directory/organizations?specialty=&near_project=\|lat=&lng=&radius_km=&municipality=&can_start_by=&work_type=&proof=&size=&claimed=&cursor=` |
+| A company's public profile (R-10..R-16) | ANY (public) | `GET /directory/organizations/by-slug/{slug}` · `GET /directory/organizations/{id}` |
+| Claim an unclaimed profile — link to the profile's e-mail (R-16) | org admin/manager | `POST /directory/organizations/{id}:claim` · `POST /directory/claims/{token}:accept` |
+| Show my build's name on its companies' profiles (R-12) | OW | `GET`/`PUT /projects/{id}/portfolio-consent` |
+| Specialty taxonomy, two levels PT/EN (R-1) | ANY (public) | `GET /specialties` |
+| Plan specialty labels (free text, per org) | ANY | `GET`/`POST /specialty-labels` |
 
 ## Project (pre-project)
 | Use case | Actor | Endpoint |
@@ -169,7 +174,6 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Reviews I can write now | ANY | `GET /me/reviews/eligible` |
 | Write / reply | eligible reviewer / subject | `POST /reviews` · `POST /reviews/{id}:reply` |
 | Reviews & metrics of an org | ANY | `GET /organizations/{id}/reviews` · `GET /organizations/{id}/metrics` |
-| Consent to portfolio photos | OW | `PUT /projects/{id}/portfolio-consent` |
 
 ## Billing
 | Use case | Actor | Endpoint |

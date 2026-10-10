@@ -17,9 +17,9 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 | `project.invitation.accepted` | Project | Notifications (inviter org) | ● |
 | `tendering.rfp.published`, `.addendum_issued`, `.closed`, `.awarded`, `.cancelled` | Tendering | Notifications (`.awarded`, `.cancelled` → bidders), Directory (open listing), Planning (`.awarded` → baseline at award, D-43) | ● |
 | `tendering.clarification.answered` | Tendering | Notifications | ● |
-| `tendering.proposal.submitted`, `.withdrawn` | Tendering | Notifications (issuer) | ● (scope: rfp issuer + bidder) |
-| `contracting.contract.created`, `.signed`, `.activated`, `.provisionally_received`, `.closed`, `.terminated` | Contracting | Project (participation), Planning (bind + baseline — a no-op when the award already took it), Reputation, Billing | ● |
-| `contracting.change_order.submitted`, `.approved`, `.rejected` | Contracting | Planning (re-baseline on time CO), Notifications | ● |
+| `tendering.proposal.submitted`, `.withdrawn` | Tendering | Notifications (issuer), Directory (listing stats: proposals sent, PRD-03 R-17) | ● (scope: rfp issuer + bidder) |
+| `contracting.contract.created`, `.signed`, `.activated`, `.provisionally_received`, `.closed`, `.terminated` | Contracting | Project (participation), Planning (bind + baseline — a no-op when the award already took it), Reputation, Billing, Directory (on the record: `.signed` and the state changes, PRD-03 R-11) | ● |
+| `contracting.change_order.submitted`, `.approved`, `.rejected` | Contracting | Planning (re-baseline on time CO), Notifications, Directory (change orders raised/approved, PRD-03 R-11) | ● |
 | `contracting.measurement.submitted`, `.approved`, `.disputed` | Contracting | Notifications | ● |
 | `contracting.payment.declared`, `.confirmed`, `.disputed` | Contracting | Reputation (payment reliability) | ● |
 | `planning.task.created`, `.updated` (field delta), `.deleted`, `.moved` | Planning | Feed, SSE | ● |
@@ -27,7 +27,7 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 | `planning.variation.recorded`, `.updated`, `.acknowledged`, `.questioned`, `.formalised`, `.closed` | Planning | Notifications (owner digest, 15 min window), Feed, SSE | ● |
 | `planning.edit.overwritten` | Planning | Notifications (overwritten author) | — |
 | `planning.link.added`, `.changed`, `.removed` | Planning | SSE | ● |
-| `planning.progress.reported` | Planning | Quality (on done), Feed, SSE | ● |
+| `planning.progress.reported` | Planning | Quality (on done), Contracting (activation), Directory (tasks finished on the planned date, PRD-03 R-11), Feed, SSE | ● |
 | `planning.baseline.taken` | Planning | Feed | ● |
 | `planning.deliverable.submitted`, `.approved`, `.changes_requested` | Planning | Notifications (submitted → client side of the task; decided → submitter + assignee org) | ● (sha256) |
 | `quality.verification.accepted`, `.rejected` | Quality | Planning, Contracting (measurable qty), Reputation | ● |
@@ -116,3 +116,21 @@ who are not project participants. A person with `in_app` off for the category ge
 (the default) a new row is also mailed through the shared MailSender port, after the row is written — a replayed
 event inserts nothing and so mails nothing.
 
+### Directory read model — "On the record" (PRD-03 R-11, D-46)
+
+Directory never reads another module's tables for the facts it shows: it keeps its own read model
+(`directory.record_contract`, `record_task`, `record_change_order`, `record_proposal`), filled by an idempotent consumer
+(dedupe on `event_id` in `directory.consumed_event`; every write is an upsert by the source id):
+
+| Event | Read-model effect |
+|---|---|
+| `contracting.contract.signed` (`kind, client_org_id, supplier_org_id`) | contract row, `status = signed`, `signed_at` — the supplier gains a **verified client** (D-46) |
+| `contracting.contract.activated` / `.provisionally_received` / `.closed` / `.terminated` (`from, to`) | contract status; `closed`/`terminated` stamp `finished_at` |
+| `contracting.change_order.submitted` / `.approved` / `.rejected` / `.withdrawn` (`change_order_id, contract_id`) | change-order status (raised = reached `submitted`) |
+| `planning.progress.reported` with `status = done` | task row: `assignee_org_id, contract_id, baseline_finish, actual_finish` (on time ⇔ actual ≤ baseline) |
+| `planning.progress.reported` with `not_started` / `in_progress` / `blocked` | removes the task row (a rejected verification re-opens the work); `verified` keeps it |
+| `tendering.proposal.submitted` (`proposal_id, bidder_org_id`) / `tendering.rfp.awarded` (`proposal_id`) | proposals sent / awarded for the listing stats |
+
+**`planning.progress.reported` data on `done` (PRD-03):** adds `assignee_org_id` (the row's effective assignee),
+`contract_id` (its branch contract, null outside any branch), `baseline_finish` and `actual_finish` (`YYYY-MM-DD` or
+null). Amounts never travel. Directory produces no events.

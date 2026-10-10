@@ -484,25 +484,22 @@ paths:
       schema:
         type: string
         format: uuid
-    put:
+    get:
       tags:
       - Directory
-      operationId: putProfile
-      summary: Edit my public profile, areas, specialties, declared credentials
-      description: '**Clerk permission:** `org:profile:manage`
+      operationId: getMyProfile
+      summary: My public profile as I edit it (PRD-03 R-20)
+      description: 'The editor''s view of the active organisation''s directory profile: every stated field, the slug,
+        the `version` for If-Match, `completeness` and `listed`. 404 until the first `putProfile`.
 
 
-        **Relationship (LinkNMS):** none'
+        **Clerk permission:** `org:profile:manage`
+
+
+        **Relationship (LinkNMS):** the profile is the active organisation''s (`orgId` = active org)'
       x-clerk-permission: org:profile:manage
       parameters:
       - $ref: '#/components/parameters/orgId'
-      - $ref: '#/components/parameters/IfMatch'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrganizationProfile'
       responses:
         '200':
           description: OK
@@ -516,8 +513,57 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-        '402':
-          $ref: '#/components/responses/NotEntitled'
+    put:
+      tags:
+      - Directory
+      operationId: putProfile
+      summary: Create or edit my public profile — specialties, base and radius, availability, stated credentials (PRD-03
+        R-3, R-20)
+      description: 'Creates the profile on the first call (no If-Match; the slug is minted from the display name, see
+        to-be/20 §5.2) and replaces the stated fields afterwards (If-Match = `version`, 409 `version_conflict` when
+        stale). `specialties` are taxonomy codes (`listSpecialties`); `tags` are free text. Credentials are **stated**
+        (D-17 as amended by D-46): stored and shown as written, never checked. Completeness is recomputed and returned;
+        it never changes the order of search results (D-46).
+
+
+        **Clerk permission:** `org:profile:manage`
+
+
+        **Relationship (LinkNMS):** `orgId` = active org; household organisations have no listing (403)'
+      x-clerk-permission: org:profile:manage
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      - name: If-Match
+        in: header
+        required: false
+        schema:
+          type: string
+        description: Current `version`; required once the profile exists
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationProfileWrite'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationProfile'
+        '201':
+          description: Created (first save)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationProfile'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -534,11 +580,15 @@ paths:
       tags:
       - Directory
       operationId: getCompleteness
-      summary: Completeness score and what raises it
-      description: '**Clerk permission:** `org:profile:manage`
+      summary: Completeness checklist and score (PRD-03 R-19)
+      description: 'What the profile has and what is missing: specialties, base location and radius, description, licence,
+        insurance, portfolio, availability. Shown to the company only; it never changes the order of results (D-46).
 
 
-        **Relationship (LinkNMS):** none'
+        **Clerk permission:** `org:profile:manage`
+
+
+        **Relationship (LinkNMS):** `orgId` = active org'
       x-clerk-permission: org:profile:manage
       parameters:
       - $ref: '#/components/parameters/orgId'
@@ -549,6 +599,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Completeness'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /organizations/{orgId}/listing-stats:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Directory
+      operationId: getListingStats
+      summary: Your listing over the last 30 days (PRD-03 R-17)
+      description: 'Times shown in search results, profile views (both counted by the directory, never from the
+        company''s own organisation), proposals sent and proposals awarded (from tendering events). Requests received
+        arrive with PRD-04.
+
+
+        **Clerk permission:** `org:profile:manage`
+
+
+        **Relationship (LinkNMS):** `orgId` = active org'
+      x-clerk-permission: org:profile:manage
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingStats'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -567,20 +655,26 @@ paths:
       tags:
       - Directory
       operationId: addPortfolioEntry
-      summary: Add a declared portfolio entry
-      description: '**Clerk permission:** `org:profile:manage`
+      summary: Add a stated portfolio entry (PRD-03 R-13)
+      description: 'A `declared` entry, labelled "Stated". Entries from a LinkNMS build (`source: platform`, shown
+        only with the owner''s consent) are not generated yet. Photos are not accepted yet: a public photo needs a
+        public document scope in Documents, which does not exist.
 
 
-        **Relationship (LinkNMS):** none'
+        **Clerk permission:** `org:profile:manage`
+
+
+        **Relationship (LinkNMS):** `orgId` = active org, with a profile'
       x-clerk-permission: org:profile:manage
       parameters:
       - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PortfolioEntry'
+              $ref: '#/components/schemas/PortfolioEntryWrite'
       responses:
         '201':
           description: Created
@@ -594,10 +688,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-        '402':
-          $ref: '#/components/responses/NotEntitled'
-        '409':
-          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /organizations/{orgId}/portfolio/{entryId}:
@@ -618,11 +708,14 @@ paths:
       tags:
       - Directory
       operationId: deletePortfolioEntry
-      summary: Remove a declared portfolio entry
-      description: '**Clerk permission:** `org:profile:manage`
+      summary: Remove a stated portfolio entry
+      description: 'Only `declared` entries; a `platform` entry belongs to the record (409 `invalid_transition`).
 
 
-        **Relationship (LinkNMS):** none'
+        **Clerk permission:** `org:profile:manage`
+
+
+        **Relationship (LinkNMS):** `orgId` = active org'
       x-clerk-permission: org:profile:manage
       parameters:
       - $ref: '#/components/parameters/orgId'
@@ -636,33 +729,87 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-        '402':
-          $ref: '#/components/responses/NotEntitled'
         '409':
           $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/ValidationFailed'
   /directory/organizations:
     get:
       tags:
       - Directory
       operationId: searchOrganizations
-      summary: Search companies by specialty, area, kind, rating
-      description: '**Clerk permission:** none beyond an authenticated session
+      summary: 'Find companies: specialty, near a build or a point, radius, can start by, facets (PRD-03 R-4..R-7, D-46)'
+      description: 'Public (`security: []`); `near_project` additionally needs a session whose organisation takes part in
+        that build (404 otherwise).
 
 
-        **Relationship (LinkNMS):** none
+        **Where.** `near_project` (the build''s point, R-3) or `lat`+`lng` give distances: only companies whose base
+        lies within `radius_km` of the point **and** whose own service radius reaches it are returned. `municipality` /
+        `district` (INE codes) without a point match the base municipality or a listed service area — no distance.
+
+
+        **Order (D-46).** Ranked companies first: those with at least one client verified by the platform (a client that
+        signed a contract with them on LinkNMS). Among them: verified clients (desc), then the on-time rate of the tasks
+        they finished under those contracts (smoothed (x+1)/(y+2), desc), then builds (desc), then distance, then
+        specialty match. Then every company with no verified client yet (`record.ranked = false`), by distance, then
+        specialty match. Completeness, stated data and payment never change the order. No promoted placement exists yet.
+
+
+        **Facets** count the result set before the facet filters (`work_type`, `proof`, `size`, `claimed`) are applied.
+
+
+        **Clerk permission:** none (public)
+
+
+        **Relationship (LinkNMS):** `near_project` → project.participant
 
 
         **MCP tool:** `find_companies`'
       x-mcp-tool: find_companies
       x-mcp-mode: read
+      security: []
       parameters:
       - name: specialty
         in: query
         required: false
         schema:
           type: string
+        description: Taxonomy code; matches the code, its parent and its children
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 80
+        description: Text in the company name
+      - name: near_project
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: lat
+        in: query
+        required: false
+        schema:
+          type: number
+          minimum: -90
+          maximum: 90
+      - name: lng
+        in: query
+        required: false
+        schema:
+          type: number
+          minimum: -180
+          maximum: 180
+      - name: radius_km
+        in: query
+        required: false
+        schema:
+          type: integer
+          enum:
+          - 25
+          - 50
+          - 100
+          default: 50
       - name: municipality
         in: query
         required: false
@@ -678,43 +825,67 @@ paths:
         required: false
         schema:
           type: string
+          enum:
+          - contractor
+          - consultant
+          - supplier
+      - name: can_start_by
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        description: Drops companies whose stated `available_from` is later; companies that state no date stay in
+      - name: work_type
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Comma-separated sub-specialty codes (facet)
+      - name: proof
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 'Comma-separated: `on_record` (builds on LinkNMS), `licence` (licence number stated), `portfolio`'
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Comma-separated `team_size_band` values
+      - name: claimed
+        in: query
+        required: false
+        schema:
+          type: boolean
       - name: min_rating
         in: query
         required: false
+        deprecated: true
         schema:
           type: string
-      - name: cursor
-        in: query
-        required: false
-        schema:
-          type: string
+        description: Ignored — there are no ratings (D-16 reputation is a later slice; D-46 ranks on the record)
+      - $ref: '#/components/parameters/Cursor'
       - name: limit
         in: query
         required: false
         schema:
-          type: string
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                allOf:
-                - $ref: '#/components/schemas/Page'
-                - type: object
-                  properties:
-                    items:
-                      type: array
-                      items:
-                        $ref: '#/components/schemas/OrganizationProfile'
-                  required:
-                  - items
-        '401':
-          $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: '#/components/schemas/DirectorySearchResult'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /directory/organizations/{orgId}:
     parameters:
     - name: orgId
@@ -727,8 +898,11 @@ paths:
       tags:
       - Directory
       operationId: getDirectoryOrganization
-      summary: 'A company: profile, portfolio, rating, metrics'
-      description: '**Clerk permission:** none beyond an authenticated session
+      summary: 'A company''s public profile by id: stated data, on the record, portfolio (PRD-03 R-10..R-14, R-16)'
+      description: 'Same body as `getDirectoryProfileBySlug`. Unlisted profiles answer 404.
+
+
+        **Clerk permission:** none (public)
 
 
         **Relationship (LinkNMS):** none
@@ -737,6 +911,7 @@ paths:
         **MCP tool:** `get_company`'
       x-mcp-tool: get_company
       x-mcp-mode: read
+      security: []
       parameters:
       - $ref: '#/components/parameters/orgId'
       responses:
@@ -745,20 +920,140 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrganizationProfile'
+                $ref: '#/components/schemas/DirectoryProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /directory/organizations/by-slug/{slug}:
+    parameters:
+    - name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
+    get:
+      tags:
+      - Directory
+      operationId: getDirectoryProfileBySlug
+      summary: 'A company''s public profile by slug — what /companies/{slug} shows (PRD-03 R-10..R-16)'
+      description: '**Header**: name, claimed or not, base, service radius, size, on LinkNMS since. **On the record**
+        (`record`): builds with a signed contract, tasks finished on the planned date (x of y), change orders raised
+        and approved — counted by the directory''s read model from contracting and planning events, never from stated
+        data. `record.builds[]` carry state and dates; a build''s name only when its owner consented
+        (`putPortfolioConsent`); **amounts never**. **Stated**: description, licence, insurance, availability — absent on
+        an unclaimed profile, which offers `claim.available`. A view is counted for the company''s listing stats
+        (never the company''s own).
+
+
+        **Clerk permission:** none (public)
+
+
+        **Relationship (LinkNMS):** none'
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectoryProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /directory/organizations/{orgId}:claim:
+    parameters:
+    - name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Directory
+      operationId: claimProfile
+      summary: Start claiming an unclaimed profile — a link goes to the profile's e-mail (PRD-03 R-16)
+      description: 'Control of the e-mail the profile was created from is the proof: a single-use link (7 days) is mailed
+        to it and only that link completes the claim (`acceptProfileClaim`). The address itself is never returned,
+        only masked. 409 when the profile is already claimed or the active organisation already has a profile.
+
+
+        **Clerk permission:** `org:profile:manage`
+
+
+        **Relationship (LinkNMS):** none (the active organisation becomes the claimant)'
+      x-clerk-permission: org:profile:manage
+      x-human-only: true
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      responses:
+        '202':
+          description: Link sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileClaimStarted'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /directory/claims/{token}:accept:
+    parameters:
+    - name: token
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - Directory
+      operationId: acceptProfileClaim
+      summary: Complete a claim from the e-mailed link (PRD-03 R-16)
+      description: 'The token is the proof of e-mail control; the session''s active organisation must be the one that
+        started the claim. The profile becomes the organisation''s, claimed. Unknown, used or expired tokens answer
+        410 `gone` without saying which.
+
+
+        **Clerk permission:** `org:profile:manage`
+
+
+        **Relationship (LinkNMS):** active org = claimant'
+      x-clerk-permission: org:profile:manage
+      x-human-only: true
+      responses:
+        '200':
+          description: Claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationProfile'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          description: Link unknown, used or expired
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /specialties:
     get:
       tags:
       - Directory
       operationId: listSpecialties
-      summary: Specialty catalogue
-      description: '**Clerk permission:** none beyond an authenticated session
+      summary: Specialty taxonomy, two levels, PT/EN (PRD-03 R-1)
+      description: 'Public. Parents come before their children (`position`). `impic_ref` is reference metadata pointing
+        at an IMPIC alvará category/sub-category; it is **unverified** (`impic_ref_verified: false`) and never used as
+        proof.
+
+
+        **Clerk permission:** none (public)
 
 
         **Relationship (LinkNMS):** none
@@ -767,6 +1062,7 @@ paths:
         **MCP tool:** `list_specialties`'
       x-mcp-tool: list_specialties
       x-mcp-mode: read
+      security: []
       parameters:
       - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/Limit'
@@ -786,12 +1082,75 @@ paths:
                         $ref: '#/components/schemas/Specialty'
                   required:
                   - items
+  /specialty-labels:
+    get:
+      tags:
+      - Planning
+      operationId: listSpecialtyLabels
+      summary: Specialty labels for the plan picker — the built-in set plus the ones the organisation typed (LINA-380)
+      description: 'Free-text labels shown on plan rows (`Task.specialty`), separate from the directory taxonomy
+        (`specialty_code`). Served at `/specialties` before PRD-03; moved here because that path is the taxonomy.
+
+
+        **Clerk permission:** none beyond an authenticated session with an active organisation
+
+
+        **Relationship (LinkNMS):** none'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  specialties:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        label:
+                          type: string
         '401':
           $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - Planning
+      operationId: createSpecialtyLabel
+      summary: Remember a specialty label for the organisation (idempotent)
+      description: '**Clerk permission:** none beyond an authenticated session with an active organisation
+
+
+        **Relationship (LinkNMS):** none'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  maxLength: 120
+              required:
+              - label
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  specialty:
+                    type: object
+                    properties:
+                      label:
+                        type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /projects:
     post:
       tags:
@@ -9386,16 +9745,53 @@ paths:
       schema:
         type: string
         format: uuid
-    put:
+    get:
       tags:
-      - Reputation
-      operationId: putPortfolioConsent
-      summary: Owner consents to photos in suppliers' portfolios
-      description: '**Clerk permission:** none beyond an authenticated session
+      - Directory
+      operationId: getPortfolioConsent
+      summary: Whether this build's name may show on its companies' public profiles (PRD-03 R-12)
+      description: 'Default: not shown (no consent recorded).
+
+
+        **Clerk permission:** none beyond an authenticated session
 
 
         **Relationship (LinkNMS):** project.owner'
       x-relationship: project.owner
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioConsent'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+      - Directory
+      operationId: putPortfolioConsent
+      summary: The owner allows or withdraws showing the build's name on its companies' public profiles (PRD-03 R-12)
+      description: 'With consent, the build''s name (as it is when consent is given — re-save to refresh it) appears in
+        the "On the record" build list of every company with a signed contract on it. Without it, builds show state
+        and dates only. (Platform portfolio entries with photos, which this consent will also cover, are not generated
+        yet.) Amounts are never shown either way.
+        Owned by Directory (it owns `portfolio_entry.owner_consent`, to-be/15); was tagged Reputation before PRD-03.
+
+
+        **Clerk permission:** `org:plan:edit`
+
+
+        **Relationship (LinkNMS):** project.owner'
+      x-clerk-permission: org:plan:edit
+      x-relationship: project.owner
+      x-human-only: true
       parameters:
       - $ref: '#/components/parameters/projectId'
       requestBody:
@@ -9403,20 +9799,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Decision'
+              $ref: '#/components/schemas/PortfolioConsentWrite'
       responses:
-        '204':
-          description: No content
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioConsent'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-        '402':
-          $ref: '#/components/responses/NotEntitled'
-        '409':
-          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
   /billing/plans:
@@ -10264,16 +10660,29 @@ components:
         person_id: *id001
     OrganizationProfile:
       type: object
+      description: The editor's view of a directory profile (the owning organisation only). Credentials are stated
+        (D-17 as amended by D-46), never checked.
       properties:
         org_id: *id001
+        slug:
+          type: string
+          description: Minted from the display name at creation, numeric suffix on collision; frozen (to-be/20 §5.2)
         display_name:
           type: string
+        kind:
+          type: string
+          enum:
+          - contractor
+          - consultant
+          - supplier
+        claimed: *id002
         description:
           type: string
         specialties:
           type: array
           items:
             type: string
+          description: Taxonomy codes (listSpecialties)
         tags:
           type: array
           items:
@@ -10283,6 +10692,12 @@ components:
           items:
             type: string
             description: INE municipality or district code
+        base:
+          $ref: '#/components/schemas/DirectoryBase'
+        service_radius_km:
+          type: integer
+          minimum: 1
+          maximum: 300
         team_size_band:
           type: string
           enum:
@@ -10293,6 +10708,10 @@ components:
           - 50+
         founded_year:
           type: integer
+        available_from:
+          type: string
+          format: date
+          description: Stated — when the company can start new work
         declared:
           type: object
           properties:
@@ -10304,26 +10723,124 @@ components:
               type: string
             insurance:
               type: string
-          description: Self-declared (D-17), never shown as verified
+          description: Stated (D-17, D-46), never shown as checked
         listed: *id002
         completeness:
           type: integer
           minimum: 0
           maximum: 100
-        rating:
+        created_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+      required:
+      - org_id
+      - slug
+      - display_name
+      - claimed
+      - listed
+      - completeness
+      - version
+    OrganizationProfileWrite:
+      type: object
+      properties:
+        display_name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+        specialties:
+          type: array
+          maxItems: 30
+          items:
+            type: string
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 40
+        service_areas:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            pattern: ^\d{2}(\d{2})?$
+        base:
+          $ref: '#/components/schemas/DirectoryBase'
+        service_radius_km:
+          type: integer
+          minimum: 1
+          maximum: 300
+        team_size_band:
+          type: string
+          enum:
+          - '1'
+          - 2-5
+          - 6-20
+          - 21-50
+          - 50+
+        founded_year:
+          type: integer
+        available_from:
+          oneOf:
+          - type: string
+            format: date
+          - type: 'null'
+        declared:
           type: object
           properties:
-            average:
-              type: number
-            count:
-              type: integer
-        metrics:
-          $ref: '#/components/schemas/PerformanceMetrics'
+            nif:
+              type: string
+            impic_number:
+              type: string
+            impic_class:
+              type: string
+            insurance:
+              type: string
+        listed: *id002
+      required:
+      - display_name
+    DirectoryBase:
+      type: object
+      description: Where the company works from (R-3). A point gives distances; the municipality alone does not.
+      properties:
+        municipality_code:
+          type: string
+          pattern: ^\d{4}$
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
     Completeness:
       type: object
       properties:
         score:
           type: integer
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              item:
+                type: string
+                enum:
+                - specialties
+                - base
+                - description
+                - licence
+                - insurance
+                - portfolio
+                - availability
+              done: *id002
+              points:
+                type: integer
         missing:
           type: array
           items:
@@ -10333,6 +10850,20 @@ components:
                 type: string
               points:
                 type: integer
+    ListingStats:
+      type: object
+      properties:
+        days:
+          type: integer
+          description: Window length (30)
+        shown_in_searches:
+          type: integer
+        profile_views:
+          type: integer
+        proposals_sent:
+          type: integer
+        proposals_awarded:
+          type: integer
     PortfolioEntry:
       type: object
       properties:
@@ -10342,6 +10873,7 @@ components:
           enum:
           - platform
           - declared
+          description: '`platform` = built on LinkNMS (on the record, shown only with owner consent); `declared` = stated'
         title:
           type: string
         municipality_code:
@@ -10361,17 +10893,288 @@ components:
         photo_document_ids:
           type: array
           items: *id001
+    PortfolioEntryWrite:
+      type: object
+      properties:
+        id: *id001
+        title:
+          type: string
+          maxLength: 160
+        municipality_code:
+          type: string
+        typology:
+          type: string
+          maxLength: 60
+        specialties:
+          type: array
+          items:
+            type: string
+        start_date: *id003
+        end_date: *id003
+      required:
+      - id
+      - title
     Specialty:
       type: object
       properties:
         code:
           type: string
+          description: Also the public slug (/specialties/{code})
         name_pt:
           type: string
         name_en:
           type: string
         parent_code:
+          oneOf:
+          - type: string
+          - type: 'null'
+        position:
+          type: integer
+        impic_ref:
+          oneOf:
+          - type: string
+          - type: 'null'
+          description: Reference only — IMPIC alvará category/sub-category this maps to, e.g. "1.ª cat. / 4.ª subcat."
+        impic_ref_verified:
+          type: boolean
+          description: Always false — the mapping has not been checked against the current official classification
+    DirectoryOnRecord:
+      type: object
+      description: '"On the record" — counted from LinkNMS builds by the directory''s read model (contract, task and
+        change-order events), never from stated data. No amounts.'
+      properties:
+        ranked:
+          type: boolean
+          description: Has at least one client verified by the platform (D-46). False → "No verified clients yet".
+        verified_clients:
+          type: integer
+          description: Distinct clients that signed a contract with the company on LinkNMS (terminated ones excluded)
+        builds:
+          type: integer
+          description: Builds with a signed contract
+        tasks_finished:
+          type: integer
+          description: Tasks finished under those contracts that had a planned (baseline) finish
+        tasks_on_time:
+          type: integer
+          description: Of those, finished on or before the planned date
+        change_orders_raised:
+          type: integer
+        change_orders_approved:
+          type: integer
+    DirectoryStated:
+      type: object
+      description: What the company states about itself — labelled "Stated". Absent on unclaimed profiles.
+      properties:
+        licence_number_given: *id002
+        impic_class:
           type: string
+        insurance_given: *id002
+        available_from:
+          type: string
+          format: date
+        portfolio_count:
+          type: integer
+    DirectoryCard:
+      type: object
+      properties:
+        org_id: *id001
+        slug:
+          type: string
+        display_name:
+          type: string
+        kind:
+          type: string
+        claimed: *id002
+        base_municipality_code:
+          type: string
+        distance_km:
+          type: number
+          description: Present when the search had a point and the company states one
+        service_radius_km:
+          type: integer
+        team_size_band:
+          type: string
+        specialties:
+          type: array
+          items:
+            type: string
+        specialty_match:
+          type: string
+          enum:
+          - exact
+          - related
+          description: exact = the searched code itself; related = its parent or a child
+        record:
+          $ref: '#/components/schemas/DirectoryOnRecord'
+        stated:
+          $ref: '#/components/schemas/DirectoryStated'
+      required:
+      - org_id
+      - slug
+      - display_name
+      - claimed
+      - record
+    DirectorySearchResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectoryCard'
+        next_cursor:
+          oneOf:
+          - type: string
+          - type: 'null'
+        total:
+          type: integer
+          description: Matches after facet filters
+        ranked_total:
+          type: integer
+          description: Of those, companies with verified clients (D-46)
+        near:
+          oneOf:
+          - type: object
+            properties:
+              source:
+                type: string
+                enum:
+                - project
+                - point
+                - municipality
+                - district
+              lat:
+                type: number
+              lng:
+                type: number
+              radius_km:
+                type: integer
+              code:
+                type: string
+              label:
+                type: string
+          - type: 'null'
+        facets:
+          type: object
+          properties:
+            work_types:
+              type: array
+              items:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  count:
+                    type: integer
+            proof:
+              type: object
+              properties:
+                on_record:
+                  type: integer
+                licence:
+                  type: integer
+                portfolio:
+                  type: integer
+            size:
+              type: array
+              items:
+                type: object
+                properties:
+                  band:
+                    type: string
+                  count:
+                    type: integer
+            claimed:
+              type: integer
+      required:
+      - items
+      - next_cursor
+      - total
+      - facets
+    DirectoryBuild:
+      type: object
+      description: One build on the record. `name` only with the owner's consent; amounts never.
+      properties:
+        state:
+          type: string
+          enum:
+          - in_progress
+          - closed
+          - terminated
+        signed_on:
+          type: string
+          format: date
+        finished_on:
+          type: string
+          format: date
+        name:
+          type: string
+        tasks_finished:
+          type: integer
+        tasks_on_time:
+          type: integer
+    DirectoryProfile:
+      allOf:
+      - $ref: '#/components/schemas/DirectoryCard'
+      - type: object
+        properties:
+          description:
+            type: string
+          tags:
+            type: array
+            items:
+              type: string
+          service_areas:
+            type: array
+            items:
+              type: string
+          founded_year:
+            type: integer
+          on_linknms_since:
+            type: string
+            format: date
+          builds:
+            type: array
+            items:
+              $ref: '#/components/schemas/DirectoryBuild'
+          portfolio:
+            type: array
+            items:
+              $ref: '#/components/schemas/PortfolioEntry'
+          claim:
+            type: object
+            properties:
+              available: *id002
+    ProfileClaimStarted:
+      type: object
+      properties:
+        sent_to:
+          type: string
+          description: The profile's e-mail, masked (j***@d***.pt)
+        expires_at:
+          type: string
+          format: date-time
+    PortfolioConsentWrite:
+      type: object
+      properties:
+        show_on_profiles:
+          type: boolean
+        note:
+          type: string
+          maxLength: 500
+      required:
+      - show_on_profiles
+    PortfolioConsent:
+      type: object
+      properties:
+        project_id: *id001
+        show_on_profiles: *id002
+        name:
+          type: string
+          description: The build name shown while consent stands
+        decided_at:
+          type: string
+          format: date-time
     Project:
       type: object
       properties:
@@ -10388,6 +11191,24 @@ components:
           type: number
         indicative_budget:
           $ref: '#/components/schemas/Money'
+        location:
+          oneOf:
+          - type: object
+            properties:
+              lat:
+                type: number
+                minimum: -90
+                maximum: 90
+              lng:
+                type: number
+                minimum: -180
+                maximum: 180
+            required:
+            - lat
+            - lng
+          - type: 'null'
+          description: 'PRD-03 R-3: the build''s point, for "companies near this build". Optional; the municipality
+            stays required. Null clears it (updateProject).'
         owner_org_id: *id001
         status:
           type: string
@@ -10428,6 +11249,24 @@ components:
           type: number
         indicative_budget:
           $ref: '#/components/schemas/Money'
+        location:
+          oneOf:
+          - type: object
+            properties:
+              lat:
+                type: number
+                minimum: -90
+                maximum: 90
+              lng:
+                type: number
+                minimum: -180
+                maximum: 180
+            required:
+            - lat
+            - lng
+          - type: 'null'
+          description: 'PRD-03 R-3: the build''s point, for "companies near this build". Optional; the municipality
+            stays required. Null clears it (updateProject).'
         on_behalf_of_owner_email:
           type: string
           format: email
@@ -10735,6 +11574,11 @@ components:
           type: string
         specialty:
           type: string
+        specialty_code:
+          type: string
+          pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
+          description: 'PRD-03 R-2: optional directory taxonomy code (listSpecialties); `specialty` stays the free-text
+            label shown on the row'
         location_id: *id001
         assignee:
           type: object
@@ -10879,6 +11723,11 @@ components:
           type: string
         specialty:
           type: string
+        specialty_code:
+          type: string
+          pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
+          description: 'PRD-03 R-2: optional directory taxonomy code (listSpecialties); `specialty` stays the free-text
+            label shown on the row'
         location_id: *id001
         dating_mode:
           type: string
@@ -10911,7 +11760,7 @@ components:
           additionalProperties:
             $ref: '#/components/schemas/FieldChange'
           description: 'keys: name, description, kind (task ↔ milestone only; to/from summary is derived from children), specialty,
-            location_id, dating_mode, start, finish, duration_wd, assignee_org_id, assignee_person_id, acceptance_criteria'
+            specialty_code (taxonomy code or null, PRD-03 R-2), location_id, dating_mode, start, finish, duration_wd, assignee_org_id, assignee_person_id, acceptance_criteria'
         confirm_not_assignee:
           type: boolean
           description: UI confirmed 'you are not responsible for this row'

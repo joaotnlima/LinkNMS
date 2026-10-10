@@ -2,6 +2,35 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-10 — Company directory: taxonomy, search near a build, public profiles, claim (PRD-03 R-1..R-20, D-46)
+
+- **Directory, now implemented.** `listSpecialties` — `GET /specialties` is the two-level PT/EN taxonomy (`Specialty`
+  gains `position`, `impic_ref`, `impic_ref_verified` — always false). Public (`security: []`).
+- `searchOrganizations` — `GET /directory/organizations` is public and answers `DirectorySearchResult` (cards, facets,
+  `near`, `ranked_total`) instead of a page of `OrganizationProfile` (it had no implementation or caller). New params
+  `q`, `near_project`, `lat`, `lng`, `radius_km` (25/50/100), `can_start_by`, `work_type`, `proof`, `size`, `claimed`;
+  `kind`, `municipality`, `district` kept; `min_rating` deprecated and ignored (no ratings — D-16 is a later slice).
+  Order per **D-46**: companies with verified clients first, by their record; then "No verified clients yet" by
+  distance and specialty match.
+- `getDirectoryOrganization` — public, answers `DirectoryProfile`. **New:** `getDirectoryProfileBySlug` —
+  `GET /directory/organizations/by-slug/{slug}`.
+- `putProfile` creates on first save (201, slug minted, to-be/20 §5.2) and takes `OrganizationProfileWrite`
+  (base point + municipality, service radius, availability). **New:** `getMyProfile` (`GET
+  /organizations/{orgId}/profile`), `getListingStats` (`GET /organizations/{orgId}/listing-stats`). `Completeness`
+  gains `items[]`. `addPortfolioEntry` takes `PortfolioEntryWrite` (no photos yet).
+- **New:** `claimProfile` — `POST /directory/organizations/{orgId}:claim` (mails a single-use link to the profile's
+  e-mail) and `acceptProfileClaim` — `POST /directory/claims/{token}:accept`.
+- `putPortfolioConsent` moves from Reputation to Directory and takes `PortfolioConsentWrite {show_on_profiles}`
+  (answers `PortfolioConsent`; it was a body-less `Decision` with no implementation). **New:** `getPortfolioConsent`.
+- **Project:** `Project` / `ProjectCreate` gain `location {lat, lng}` (R-3).
+- **Planning:** `Task`, `TaskCreate` and the `TaskDelta` keys gain `specialty_code` (R-2). The per-org plan labels move
+  from the undocumented `/specialties` routes to `listSpecialtyLabels` / `createSpecialtyLabel` (`GET`/`POST
+  /specialty-labels`); `/specialties` is the taxonomy, as the contract always said.
+- Events: `planning.progress.reported` with status `done` carries `assignee_org_id`, `contract_id`, `baseline_finish`,
+  `actual_finish` (additive). Directory consumes contract, change-order, progress and proposal events into its own
+  read model (to-be/10).
+- Migrations `db/v2/0020_project_build_location.sql`, `0021_planning_task_specialty_code.sql`, `0022_directory.sql`.
+
 ## 2026-10-10 — The shared project model: record-side edits only (PRD-07 M-1..M-9, M-11, M-12, M-14..M-18; D-45)
 
 - **New (Documents):** `getProjectModel` — `GET /projects/{projectId}/model?version=` (`ProjectModel`: the build's model,

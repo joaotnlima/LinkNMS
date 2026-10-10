@@ -80,6 +80,8 @@ Covers the full to-be surface from [02](./02-domain-map.md) / [12](./12-api-cata
 | `/companies/{slug}` | public company profile (e.g. `/companies/construtora-silva`) |
 | `/companies/{slug}/portfolio` | public track record / portfolio entries |
 | `/specialties/{slug}` | specialty landing (directory facet, SEO) |
+| `/companies/{slug}/claim` | claim an unclaimed profile: sends a link to the profile's e-mail (PRD-03 R-16) |
+| `/companies/{slug}/claim/{token}` | the e-mailed link that completes the claim (token = credential, signed-in) |
 | `/rfps/{token}` | public RFP response form (single-use token, LINA-294 contract) |
 | `/rfps/{token}/submitted` | post-submission confirmation |
 | `/invitations/{token}` | invitation landing (preview + accept form; POST accepts) |
@@ -175,6 +177,10 @@ is behind auth on a pre-launch product; a 404 costs nothing and dead routes cost
    suffix on collision, or org-chosen (with reserved-word list)? Are slugs renameable (needs
    permanent 301 from old slug) or frozen at creation? Recommendation: auto-mint, one rename
    allowed, old slug 301s forever.
+   **Default applied (PRD-03, 2026-10-10, until the founder decides):** auto-minted at the first profile save from the
+   display name — lowercased, diacritics stripped, non-alphanumerics → `-`, at most 60 characters — with `-2`, `-3`, …
+   on collision; reserved words (`claim`, `new`, `search`, `by-slug`) take a suffix too. **Frozen**: no rename yet (so
+   no 301 table); renaming is the recommended follow-up. The slug is unique across claimed and unclaimed profiles.
 3. **Project slugs.** Keep project URLs UUID-only (private, recommended) or add a vanity slug
    (`/projects/{id}/{slug}` with slug ignored) for readability in shared links? Costs little,
    decide only if sharing outside the participant set becomes a feature.
