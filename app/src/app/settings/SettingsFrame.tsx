@@ -23,6 +23,10 @@ const SAVED: Record<string, string> = {
   subscribed: 'Subscription started.',
   plan: 'Plan changed.',
   canceled: 'Subscription canceled.',
+  directory: 'Company profile saved.',
+  portfolio: 'Portfolio entry added.',
+  portfolio_removed: 'Portfolio entry removed.',
+  claimed: 'Profile claimed — it is now your company profile.',
 };
 
 export function SettingsFrame({
