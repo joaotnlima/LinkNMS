@@ -17,6 +17,7 @@ import { fileTypeOf, initialPreviewStatus } from '../domain/files.mjs';
 import { linkQueries, insertLinksOn } from './pg-links.mjs';
 import { markupQueries } from './pg-markups.mjs';
 import { previewQueries } from './pg-previews.mjs';
+import { modelQueries } from './pg-model.mjs';
 
 export function createDocumentsStore(pool) {
   async function tx(fn) {
@@ -41,6 +42,8 @@ export function createDocumentsStore(pool) {
     ...markupQueries(pool, tx),
     // DWG / DXF previews keyed by the bytes (PRD-06) — infra/pg-previews.mjs.
     ...previewQueries(pool, tx),
+    // The shared project model and its record-side edits (PRD-07) — infra/pg-model.mjs.
+    ...modelQueries(pool, tx),
 
     // ── identity / project guards (same ports as the sibling modules) ─────
     async getPersonByClerkId(clerkUserId) {
@@ -313,12 +316,13 @@ export function createDocumentsStore(pool) {
      * document stays invisible on every read until its v1 is proven.
      */
     async createDocument({ id, projectId, scopeType, scopeId, kind, title, shareWithAncestors, file, storageKey, actor,
-      privateToOrgId = null, note = null, previewStatus = 'ready', links = [] }) {
+      privateToOrgId = null, note = null, previewStatus = 'ready', links = [], isProjectModel = false }) {
       return tx(async (client) => {
         await client.query(
-          `INSERT INTO documents.document (id, project_id, scope_type, scope_id, kind, title, share_with_ancestors, private_to_org_id, preview_status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-          [id, projectId, scopeType, scopeId, kind, title, shareWithAncestors, privateToOrgId, previewStatus],
+          `INSERT INTO documents.document
+             (id, project_id, scope_type, scope_id, kind, title, share_with_ancestors, private_to_org_id, preview_status, is_project_model)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [id, projectId, scopeType, scopeId, kind, title, shareWithAncestors, privateToOrgId, previewStatus, isProjectModel],
         );
         const { rows } = await client.query(
           `INSERT INTO documents.document_version

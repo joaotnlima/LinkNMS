@@ -53,6 +53,10 @@ export async function saveDocumentMarkups({ viewer, store, documentId, body }) {
   if (!doc.project_id || !PROJECT_FILE_SCOPES.includes(doc.scope_type) || doc.private_to_org_id) {
     throw new ProblemError('forbidden', 'markups are kept on project, location and task files', { reason: 'scope' });
   }
+  if (doc.is_project_model) {
+    // The model's record-side edits are links and issue pins (PRD-07), saved by saveModelEdits.
+    throw new ProblemError('forbidden', 'the project model takes links and issue pins, not drawing markups', { reason: 'scope' });
+  }
   const { errors, drafts } = validateMarkupSave(body);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
   if (doc.current_version < 1) throw new ProblemError('not_found');

@@ -127,6 +127,10 @@ export async function createDocumentVersion({ viewer, store, storage, documentId
   if (!(await store.canEditScope({ scopeType: doc.scope_type, scopeId: doc.scope_id, orgId: viewer.orgId }))) {
     throw new ProblemError('forbidden', 'attaching documents needs edit scope of the object', { reason: 'relationship' });
   }
+  // PRD-07 M-9: only the author uploads a new .ifc of the project model.
+  if (doc.is_project_model && (await store.modelAuthorOrgId(doc.id)) !== viewer.orgId) {
+    throw new ProblemError('forbidden', 'only the model\'s author uploads a new .ifc', { reason: 'relationship' });
+  }
   const actor = await requireActor(store, viewer);
   const version = await store.addVersion({
     documentId,

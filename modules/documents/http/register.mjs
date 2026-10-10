@@ -14,11 +14,15 @@ import {
   listDocumentMarkups, saveDocumentMarkups, closeMarkup, reopenMarkup, linkMarkup,
 } from '../application/markups.mjs';
 import { getDocumentViewUrl, getDocumentPreview } from '../application/viewing.mjs';
+import {
+  getProjectModel, reserveProjectModelVersion, saveModelEdits, restoreProjectModel, compareModelRecord, getTaskModel,
+} from '../application/project-model.mjs';
 
 /**
- * @param {{ store: object, storage: object, planning?: { descendantIds: Function },
+ * @param {{ store: object, storage: object, planning?: { descendantIds: Function, modelScopes?: Function },
  *   questions?: { questionFacts: Function }, nonconformities?: { nonconformityFacts: Function } }} deps
- *   `planning` — the planning task port, for "also on sub-tasks" (PRD-05 F-10);
+ *   `planning` — the planning task port, for "also on sub-tasks" (PRD-05 F-10)
+ *   and the model edit scope (PRD-07 M-8);
  *   `questions` / `nonconformities` — the Collaboration and Quality ports a
  *   markup link is checked through (PRD-06 V-8).
  */
@@ -73,4 +77,23 @@ export function registerDocuments(router, { store, storage, planning, questions,
 
   router.register('GET', '/document-versions/{versionId}/preview', 'getDocumentPreview', ({ viewer, params }) =>
     getDocumentPreview({ viewer, store, storage, versionId: params.versionId }));
+
+  // ── PRD-07: the shared project model, record-side edits only (D-45) ──────
+  router.register('GET', '/projects/{projectId}/model', 'getProjectModel', ({ viewer, params, query }) =>
+    getProjectModel({ viewer, store, planning, projectId: params.projectId, query }));
+
+  router.register('POST', '/projects/{projectId}/model/versions', 'reserveProjectModelVersion', ({ viewer, params, body }) =>
+    reserveProjectModelVersion({ viewer, store, storage, projectId: params.projectId, body }));
+
+  router.register('POST', '/projects/{projectId}/model:save', 'saveModelEdits', ({ viewer, params, body }) =>
+    saveModelEdits({ viewer, store, planning, projectId: params.projectId, body }));
+
+  router.register('POST', '/projects/{projectId}/model:restore', 'restoreProjectModel', ({ viewer, params, body }) =>
+    restoreProjectModel({ viewer, store, planning, projectId: params.projectId, body }));
+
+  router.register('GET', '/projects/{projectId}/model/record-diff', 'compareModelRecord', ({ viewer, params, query }) =>
+    compareModelRecord({ viewer, store, projectId: params.projectId, query }));
+
+  router.register('GET', '/tasks/{taskId}/model', 'getTaskModel', ({ viewer, params }) =>
+    getTaskModel({ viewer, store, planning, taskId: params.taskId }));
 }
