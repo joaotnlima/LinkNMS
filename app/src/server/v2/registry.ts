@@ -27,6 +27,7 @@ import { registerCollaboration } from '@modules/collaboration/http/register.mjs'
 import { createCollaborationStore } from '@modules/collaboration/infra/pg-store.mjs';
 import { registerBilling } from '@modules/billing/http/register.mjs';
 import { createBillingStore } from '@modules/billing/infra/pg-store.mjs';
+import { createEntitlements } from '@modules/billing/application/entitled.mjs';
 import { registerRecord } from '@modules/record/http/register.mjs';
 import { createRecordStore } from '@modules/record/infra/pg-store.mjs';
 
@@ -56,6 +57,43 @@ const clerkGateway = {
     });
     return { clerkOrgId: org.id };
   },
+
+  // Member management (PRD-12 N-9). Free tier (D-38): Clerk knows org:admin /
+  // org:member; the catalogue role rides on public_metadata.org_role, which the
+  // membership webhook mirrors (modules/identity/domain/mirror.mjs).
+  async createOrganizationInvitation(args: {
+    clerkOrgId: string; emailAddress: string; role: string;
+    inviterClerkUserId: string; publicMetadata: Record<string, unknown>;
+  }) {
+    const client = await clerkClient();
+    const inv = await client.organizations.createOrganizationInvitation({
+      organizationId: args.clerkOrgId,
+      emailAddress: args.emailAddress,
+      role: args.role,
+      inviterUserId: args.inviterClerkUserId,
+      publicMetadata: args.publicMetadata,
+    });
+    return { id: inv.id };
+  },
+
+  async updateMembership(args: {
+    clerkOrgId: string; clerkUserId: string; role: string; publicMetadata: Record<string, unknown>;
+  }) {
+    const client = await clerkClient();
+    await client.organizations.updateOrganizationMembership({
+      organizationId: args.clerkOrgId, userId: args.clerkUserId, role: args.role,
+    });
+    await client.organizations.updateOrganizationMembershipMetadata({
+      organizationId: args.clerkOrgId, userId: args.clerkUserId, publicMetadata: args.publicMetadata,
+    });
+  },
+
+  async deleteMembership(args: { clerkOrgId: string; clerkUserId: string }) {
+    const client = await clerkClient();
+    await client.organizations.deleteOrganizationMembership({
+      organizationId: args.clerkOrgId, userId: args.clerkUserId,
+    });
+  },
 };
 
 export function getRouter() {
@@ -66,6 +104,9 @@ export function getRouter() {
   registerIdentity(router, {
     store: createIdentityStore(getPool()),
     clerk: clerkGateway,
+    // Billing's published entitlements port: the `seats` check on inviteMember
+    // (doc 16 conjunction, D-05).
+    entitlements: createEntitlements(createBillingStore(getPool())),
     webhookSecret: () => process.env.CLERK_WEBHOOK_SIGNING_SECRET,
   });
 
