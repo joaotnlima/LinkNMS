@@ -190,6 +190,8 @@ export interface TaskDraft {
   assigneePartyId: string | null;
   /** Free-form specialty label ("Electrical"), '' = none. The chip's text. */
   trade: string;
+  /** The directory taxonomy code picked with the label (PRD-03 R-2); absent/'' = free text only. */
+  tradeCode?: string;
   /** Child tasks under this one. Always [] at MAX_DEPTH (the outline cap). */
   children: TaskDraft[];
   /**
@@ -206,6 +208,7 @@ export interface PhaseDraft {
   /** A phase is a stage like any other — it may be owned and tagged too. */
   assigneePartyId: string | null;
   trade: string;
+  tradeCode?: string;
 }
 
 let keySeq = 0;
@@ -1622,7 +1625,7 @@ export function detectCycle(phases: PhaseDraft[]): PlanNodeRef[] | null {
 function patchStage(
   phases: PhaseDraft[],
   key: string,
-  patch: { assigneePartyId?: string | null; trade?: string },
+  patch: { assigneePartyId?: string | null; trade?: string; tradeCode?: string },
 ): PhaseDraft[] {
   const visit = (t: TaskDraft): TaskDraft => {
     if (t.key === key) return { ...t, ...patch };
@@ -1651,9 +1654,13 @@ export function setAssignee(
   return patchStage(phases, key, { assigneePartyId });
 }
 
-/** Set a stage's free-form specialty label ('' clears it). */
-export function setTrade(phases: PhaseDraft[], key: string, trade: string): PhaseDraft[] {
-  return patchStage(phases, key, { trade });
+/**
+ * Set a stage's specialty label ('' clears it). `tradeCode` is the directory
+ * taxonomy code when the label was picked from the taxonomy (PRD-03 R-2); a
+ * free-text label clears any code, so the two never disagree.
+ */
+export function setTrade(phases: PhaseDraft[], key: string, trade: string, tradeCode = ''): PhaseDraft[] {
+  return patchStage(phases, key, { trade, tradeCode: trade ? tradeCode : '' });
 }
 
 /** One stage's owner + specialty, by key — for the row controls. */
@@ -1759,6 +1766,8 @@ export interface AuthoredNode {
   assigneePartyId?: string | null;
   /** Free-form specialty label, or null. Always sent, so clearing clears. */
   trade?: string | null;
+  /** Directory taxonomy code (PRD-03 R-2) — present only when one is picked. */
+  tradeCode?: string | null;
   plannedStartDate?: string | null;
   plannedEndDate?: string | null;
   children?: AuthoredNode[];
@@ -1858,6 +1867,7 @@ export function toWire(phases: PhaseDraft[]): AuthoredNode[] {
       name: n, key: t.key, dependsOn: wireDeps(t.dependsOn),
       description: (t.description ?? '').trim() || null,
       assigneePartyId: t.assigneePartyId ?? null, trade: textOrNull(t.trade),
+      ...(textOrNull(t.tradeCode) ? { tradeCode: textOrNull(t.tradeCode) } : {}),
       plannedStartDate: dateOrNull(t.start), plannedEndDate: dateOrNull(t.end),
       // Omitted, not `[]`, when there is no level below: a two-level plan puts
       // exactly the bytes on the wire it did before deeper levels existed.
@@ -1879,6 +1889,7 @@ export function toWire(phases: PhaseDraft[]): AuthoredNode[] {
     stages.push({
       name, key: phase.key, dependsOn: wireDeps(phase.dependsOn),
       assigneePartyId: phase.assigneePartyId ?? null, trade: textOrNull(phase.trade),
+      ...(textOrNull(phase.tradeCode) ? { tradeCode: textOrNull(phase.tradeCode) } : {}),
       children,
     });
   }

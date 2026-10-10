@@ -89,6 +89,20 @@ export function BasicsForm({
           />
         </label>
 
+        {/* PRD-03 R-3: where exactly — optional. With a point, "find companies
+            near this build" measures distances; without it the municipality is
+            used. Decimal degrees, both or neither (validated by the action). */}
+        <div className="bwx-row2">
+          <label className="field">
+            <span className="metric-lbl">Latitude (optional)</span>
+            <input name="locationLat" type="text" inputMode="decimal" maxLength={12} autoComplete="off" placeholder="38.8029" />
+          </label>
+          <label className="field">
+            <span className="metric-lbl">Longitude (optional)</span>
+            <input name="locationLng" type="text" inputMode="decimal" maxLength={12} autoComplete="off" placeholder="-9.3817" />
+          </label>
+        </div>
+
         <div className="bwx-row2">
           <label className="field">
             <span className="metric-lbl">Build type</span>

@@ -91,6 +91,8 @@ export interface V2TaskChanges {
   name?: V2FieldChange<string>;
   description?: V2FieldChange<string | null>;
   specialty?: V2FieldChange<string | null>;
+  /** PRD-03 R-2: the directory taxonomy code; null clears it. */
+  specialty_code?: V2FieldChange<string | null>;
   dating_mode?: V2FieldChange<'dated' | 'undated'>;
   start?: V2FieldChange<string | null>;
   finish?: V2FieldChange<string | null>;
@@ -208,6 +210,7 @@ function createSpec(node: AuthoredNode, parentId: string | null): V2CreateRowSpe
     dating_mode: start ? 'dated' : 'undated',
   };
   if (node.trade) spec.specialty = node.trade;
+  if (node.tradeCode) spec.specialty_code = node.tradeCode;
   if (node.description) spec.description = node.description;
   if (start !== undefined) spec.start = start;
   if (finish !== undefined) spec.finish = finish;
@@ -234,6 +237,10 @@ export function diffFields(prev: AuthoredNode, next: AuthoredNode): V2TaskChange
   const prevTrade = prev.trade ?? null;
   const nextTrade = next.trade ?? null;
   if (prevTrade !== nextTrade) changes.specialty = { value: nextTrade, base: prevTrade };
+
+  const prevCode = prev.tradeCode ?? null;
+  const nextCode = next.tradeCode ?? null;
+  if (prevCode !== nextCode) changes.specialty_code = { value: nextCode, base: prevCode };
 
   const prevStart = prev.plannedStartDate ?? null;
   const nextStart = next.plannedStartDate ?? null;

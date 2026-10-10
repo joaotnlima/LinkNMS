@@ -281,7 +281,7 @@ export interface PlanGridProps {
    *  next group drag re-captures a fresh base. Fires on pointer-up/cancel. */
   onShiftGroupEnd?: () => void;
   onAssign: (nodeKey: string, partyId: string | null) => void;
-  onTrade: (nodeKey: string, trade: string) => void;
+  onTrade: (nodeKey: string, trade: string, code?: string) => void;
   /** Add ops return the NEW node's key so the grid can open rename on it. */
   onAddPhase: () => string;
   /** Add a child under the row at `parentPath` — a task under a phase, a sub-task under a task. */
@@ -441,7 +441,7 @@ export function PlanGrid(props: PlanGridProps) {
   // remembers it for next time. The fetch + remember now live in a shared hook
   // (./plan-fields) so the detail drawer's specialty control reads the SAME
   // catalog as the grid, rather than a second copy.
-  const { specialties, remember: rememberSpecialty } = useSpecialtyCatalog();
+  const { specialties, taxonomy, remember: rememberSpecialty } = useSpecialtyCatalog();
 
   // ── Accordion fold, phases AND tasks (LINA-306) ────────────────────────────
   // Any row that HAS children folds: a phase folds its tasks (and the "+ Add
@@ -1650,9 +1650,10 @@ export function PlanGrid(props: PlanGridProps) {
                       key="trade"
                       value={r.phase.trade}
                       options={specialties}
+                      taxonomy={taxonomy}
                       disabled={disabled}
                       ariaLabel={`Specialty for phase ${r.pi + 1}`}
-                      onSet={(label) => props.onTrade(r.key, label)}
+                      onSet={(label, code) => props.onTrade(r.key, label, code)}
                       onRemember={rememberSpecialty}
                     />
                   );
@@ -1737,9 +1738,10 @@ export function PlanGrid(props: PlanGridProps) {
                     key="trade"
                     value={r.node.trade}
                     options={specialties}
+                    taxonomy={taxonomy}
                     disabled={disabled}
                     ariaLabel={`Specialty for ${what} ${id}`}
-                    onSet={(label) => props.onTrade(r.key, label)}
+                    onSet={(label, code) => props.onTrade(r.key, label, code)}
                     onRemember={rememberSpecialty}
                   />
                 );

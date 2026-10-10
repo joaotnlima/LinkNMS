@@ -368,8 +368,14 @@ export function OwnerField({
 // remembers it (POST, idempotent) so it is offered next time. Enhancement-only —
 // a failure never loses the typed label (the stage already holds it); the picker
 // just does not learn it.
-export function useSpecialtyCatalog(): { specialties: string[]; remember: (label: string) => void } {
+/** A directory taxonomy entry as the picker shows it (PRD-03 R-2). */
+export type TaxonomyOption = { code: string; label: string };
+
+export function useSpecialtyCatalog(): {
+  specialties: string[]; taxonomy: TaxonomyOption[]; remember: (label: string) => void;
+} {
   const [specialties, setSpecialties] = useState<string[]>([]);
+  const [taxonomy, setTaxonomy] = useState<TaxonomyOption[]>([]);
   useEffect(() => {
     let live = true;
     fetch('/api/v2/specialty-labels', { headers: { accept: 'application/json' } })
@@ -378,6 +384,19 @@ export function useSpecialtyCatalog(): { specialties: string[]; remember: (label
         if (live && d?.specialties) setSpecialties(d.specialties.map((s) => s.label));
       })
       .catch(() => { /* picker is enhancement-only; the free-form input stands */ });
+    // PRD-03 R-2: the directory taxonomy (public, two levels). Picking one sets
+    // the row's specialty_code as well as its label; free text stays possible.
+    fetch('/api/v2/specialties?limit=200', { headers: { accept: 'application/json' } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { items?: Array<{ code: string; name_en: string; parent_code: string | null }> } | null) => {
+        if (!live || !d?.items) return;
+        const names = new Map(d.items.map((s) => [s.code, s.name_en]));
+        setTaxonomy(d.items.map((s) => ({
+          code: s.code,
+          label: s.parent_code ? `${names.get(s.parent_code) ?? s.parent_code} › ${s.name_en}` : s.name_en,
+        })));
+      })
+      .catch(() => { /* enhancement-only */ });
     return () => { live = false; };
   }, []);
 
@@ -395,7 +414,7 @@ export function useSpecialtyCatalog(): { specialties: string[]; remember: (label
     }).catch(() => { /* enhancement-only */ });
   }, []);
 
-  return { specialties, remember };
+  return { specialties, taxonomy, remember };
 }
 
 // ── SpecialtyField ────────────────────────────────────────────────────────────
@@ -405,14 +424,18 @@ export function useSpecialtyCatalog(): { specialties: string[]; remember: (label
 // the deliberate escape hatch from LINA-306, kept alive. Selection is
 // presentational over the draft; nothing writes until the editor's autosave lands.
 const ADD_SPECIALTY = '__add_specialty__';
+const TAXONOMY_PREFIX = 'tx:';
 export function SpecialtyField({
-  value, options, disabled, ariaLabel, onSet, onRemember,
+  value, options, taxonomy = [], disabled, ariaLabel, onSet, onRemember,
 }: {
   value: string;
   options: string[];
+  /** Directory taxonomy entries (PRD-03 R-2), offered before the free labels. */
+  taxonomy?: TaxonomyOption[];
   disabled: boolean;
   ariaLabel: string;
-  onSet: (label: string) => void;
+  /** `code` is set when a taxonomy entry was picked; a free label sends none. */
+  onSet: (label: string, code?: string) => void;
   onRemember: (label: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -461,11 +484,18 @@ export function SpecialtyField({
         value={value}
         trigger={<span className={`fm-specialty-word${value ? '' : ' is-empty'}`}>{value || 'Specialty…'}</span>}
         options={[
+          ...taxonomy.map((t) => ({ value: `${TAXONOMY_PREFIX}${t.code}`, label: t.label, note: 'directory' })),
           ...opts.map((s) => ({ value: s, label: s })),
           { value: ADD_SPECIALTY, label: '＋ Add new…', isAction: true },
         ]}
         onSelect={(v) => {
           if (v === ADD_SPECIALTY) { setAdding(true); return; }
+          if (v.startsWith(TAXONOMY_PREFIX)) {
+            const code = v.slice(TAXONOMY_PREFIX.length);
+            const label = taxonomy.find((t) => t.code === code)?.label.split(' › ').pop() ?? code;
+            onSet(label, code);
+            return;
+          }
           onSet(v);
         }}
       />

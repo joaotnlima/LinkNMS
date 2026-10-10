@@ -17,6 +17,7 @@ import {
   ApiError, PlanLimitError, type PlanLimit,
 } from '@/lib/api';
 import { createBuildDraftV2 } from '@/lib/v2/build';
+import { parseBuildPoint } from '@/lib/v2/build-create';
 import { acceptInvitation } from '@/lib/v2/invitations';
 
 export interface FormState {
@@ -90,6 +91,9 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
   // service stores null for blanks regardless.
   const siteAddress = String(form.get('siteAddress') ?? '').trim() || undefined;
   const buildType = String(form.get('buildType') ?? '').trim() || undefined;
+  // PRD-03 R-3: the optional point, for "companies near this build".
+  const point = parseBuildPoint(String(form.get('locationLat') ?? ''), String(form.get('locationLng') ?? ''));
+  if (point.error) return { error: point.error };
 
   // NOTE (LINA-365 / LINA-367 Option A): creation now writes to /api/v2, whose
   // ProjectCreate carries only the brief. The v1 wizard's operating-model fields —
@@ -102,7 +106,7 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
   try {
     // Draft baseline is 0; the accepted plan establishes the authoritative figure
     // (LINA-219). The v2 draft carries no budget at all.
-    ({ id } = await createBuildDraftV2({ name, municipalityCode, siteAddress, buildType }));
+    ({ id } = await createBuildDraftV2({ name, municipalityCode, siteAddress, buildType, location: point.location }));
   } catch (err) {
     // A viewer with no active v2 org / lacking org:projects:create gets a V2Error
     // here (the onboarding org-provisioning increment makes a fresh signup have

@@ -57,6 +57,11 @@ export interface BuildDraftV2Input {
    * (`on_behalf_of_owner_email`, doc 14 Q4). Optional; omitted when blank.
    */
   onBehalfOfOwnerEmail?: string;
+  /**
+   * The build's point (PRD-03 R-3), as typed: decimal degrees. Both or neither;
+   * parse them with `parseBuildPoint` first — this seam only forwards a valid pair.
+   */
+  location?: { lat: number; lng: number };
 }
 
 /** The `ProjectCreate` wire body, exactly as openapi `ProjectCreate` requires.
@@ -68,6 +73,7 @@ export interface ProjectCreateBody {
   address?: string;
   typology?: string;
   on_behalf_of_owner_email?: string;
+  location?: { lat: number; lng: number };
 }
 
 const clean = (v: string | undefined): string | undefined => {
@@ -94,5 +100,26 @@ export function toProjectCreateBody(input: BuildDraftV2Input, id: string): Proje
   if (typology) body.typology = typology;
   const onBehalf = clean(input.onBehalfOfOwnerEmail);
   if (onBehalf) body.on_behalf_of_owner_email = onBehalf.toLowerCase();
+  if (input.location) body.location = { lat: input.location.lat, lng: input.location.lng };
   return body;
+}
+
+/**
+ * The optional "where exactly" pair of Basics (PRD-03 R-3): both blank → no
+ * point; one blank, not a number or out of range → an error sentence for the
+ * form. Decimal comma accepted ("38,80").
+ */
+export function parseBuildPoint(
+  rawLat: string | undefined,
+  rawLng: string | undefined,
+): { location?: { lat: number; lng: number }; error?: string } {
+  const a = (rawLat ?? '').trim().replace(',', '.');
+  const b = (rawLng ?? '').trim().replace(',', '.');
+  if (!a && !b) return {};
+  const lat = Number(a);
+  const lng = Number(b);
+  if (!a || !b || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return { error: 'Give both latitude and longitude in decimal degrees (e.g. 38.8029 and -9.3817), or leave both blank.' };
+  }
+  return { location: { lat, lng } };
 }

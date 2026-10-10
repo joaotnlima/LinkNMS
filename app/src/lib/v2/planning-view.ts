@@ -73,6 +73,8 @@ export interface V2Task {
   name: string;
   description?: string;
   specialty?: string;
+  /** PRD-03 R-2: the directory taxonomy code, when the row carries one. */
+  specialty_code?: string;
   location_id?: string;
   assignee?: V2TaskAssignee;
   dating_mode?: string;
@@ -215,6 +217,7 @@ export function toStageRows(tasks: V2Task[]): StageRow[] {
       key: t.id, // v2 task ids are stable (doc 05); no draft re-mint, so id IS the key
       name: t.name,
       trade: t.specialty ?? null,
+      tradeCode: t.specialty_code ?? null,
       assigneePartyId: t.assignee?.org_id ?? null, // org is the party in v2
       start: t.start,
       end: t.finish,

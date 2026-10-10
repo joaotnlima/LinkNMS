@@ -676,7 +676,7 @@ export function PlanBuildEditor({
   const dir = useMemo(() => partyIndex(parties), [parties]);
   // The drawer's Specialty control reads the SAME catalog the grid does (LINA-404),
   // so the two surfaces offer identical trades and both learn a newly-typed one.
-  const { specialties, remember: rememberSpecialty } = useSpecialtyCatalog();
+  const { specialties, taxonomy, remember: rememberSpecialty } = useSpecialtyCatalog();
 
   // The picker already refuses a choice that would loop, so this should never
   // fire — it is the belt to that braces: "Save plan" stays disabled while a
@@ -892,8 +892,8 @@ export function PlanBuildEditor({
     apply(setAssignee(phases, nodeKey, partyId));
   }, [apply, phases]);
 
-  const retrade = useCallback((nodeKey: string, trade: string) => {
-    apply(setTrade(phases, nodeKey, trade));
+  const retrade = useCallback((nodeKey: string, trade: string, code?: string) => {
+    apply(setTrade(phases, nodeKey, trade, code));
   }, [apply, phases]);
 
   // Set a leaf task's status straight from the draft grid (LINA-307, founder ask
@@ -1484,9 +1484,10 @@ export function PlanBuildEditor({
               <SpecialtyField
                 value={isTaskRow ? active!.trade : activePhase.trade}
                 options={specialties}
+                taxonomy={taxonomy}
                 disabled={!activeKey}
                 ariaLabel="Specialty (trade)"
-                onSet={(label) => activeKey && retrade(activeKey, label)}
+                onSet={(label, code) => activeKey && retrade(activeKey, label, code)}
                 onRemember={rememberSpecialty}
               />
 

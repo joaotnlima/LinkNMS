@@ -141,6 +141,7 @@ function toTaskDraft(
     dependsOn: depsFor(row.id, bySuccessor, rendered),
     assigneePartyId: row.assigneePartyId,
     trade: row.trade ?? '',
+    ...(row.tradeCode ? { tradeCode: row.tradeCode } : {}),
     // Carry a MEANINGFUL reported status (draft or baselined) so a progress report
     // the owner made survives a page reload (LINA-404). `not_started` is the default
     // and stays un-carried, so an untouched plan is status-less and reads all-grey
@@ -172,6 +173,7 @@ export function planGridToDraft(view: PlanGridView): PhaseDraft[] {
     dependsOn: depsFor(phase.id, view.dependenciesBySuccessor, rendered),
     assigneePartyId: phase.assigneePartyId,
     trade: phase.trade ?? '',
+    ...(phase.tradeCode ? { tradeCode: phase.tradeCode } : {}),
     tasks: phase.children.map((t) => toTaskDraft(t, 2, view.dependenciesBySuccessor, rendered)),
   }));
 }

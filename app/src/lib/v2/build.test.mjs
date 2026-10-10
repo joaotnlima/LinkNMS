@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { toProjectCreateBody } from './build-create.ts';
+import { toProjectCreateBody, parseBuildPoint } from './build-create.ts';
 
 const ID = '00000000-0000-4000-8000-000000000001';
 
@@ -64,4 +64,14 @@ test('throws on a blank name (the form must validate first)', () => {
 
 test('throws on a blank municipality code (GAP-1)', () => {
   assert.throws(() => toProjectCreateBody({ name: 'Maple', municipalityCode: '' }, ID), /municipality code is required/);
+});
+
+test('the build point (PRD-03 R-3): both or neither, decimal comma, range-checked', () => {
+  assert.deepEqual(parseBuildPoint('', ' '), {});
+  assert.deepEqual(parseBuildPoint('38,8029', '-9.3817'), { location: { lat: 38.8029, lng: -9.3817 } });
+  assert.ok(parseBuildPoint('38.8', '').error);
+  assert.ok(parseBuildPoint('98', '1').error);
+  assert.ok(parseBuildPoint('north', '1').error);
+  const body = toProjectCreateBody({ name: 'Encosta', municipalityCode: '1111', location: { lat: 38.8, lng: -9.38 } }, ID);
+  assert.deepEqual(body.location, { lat: 38.8, lng: -9.38 });
 });
