@@ -1,9 +1,11 @@
 // Tendering module use cases (phase 6) — one function per operationId:
 //   createRfp, getRfp, updateRfp, addRecipients, previewInviteEmail, listRecipients, publishRfp,
-//   addAddendum, closeRfp, cancelRfp, browseOpenRfps, applyToOpenRfp, listMyRfps,
+//   addAddendum, closeRfp, cancelRfp, browseOpenRfps, listMyRfps,
 //   askClarification(+ByToken), answerClarification, listProposalLanes, getProposal,
 //   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
 //   getComparison, shortlistProposal, awardRfp.
+// PRD-04 (D-47): applyToOpenRfp (now ask to bid) and the bid-request decisions
+// live in ./bid-requests.mjs, the company inbox in ./company-inbox.mjs.
 //
 // Authorization is the doc-16 conjunction, in order:
 //   permission (viewer.has, token-only) ∧ relationship ∧ staffing.
@@ -75,6 +77,7 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
   if (body?.visibility !== undefined && !VISIBILITIES.has(body.visibility)) {
     errors.visibility = 'invite_only or open';
   }
+  if (body?.listed !== undefined && typeof body.listed !== 'boolean') errors.listed = 'true or false';
   // Purpose / mode (D-39): design is always light (prices a service, no BoQ),
   // execution defaults to detailed (the as-is). An explicit mode is honoured
   // but may not contradict the design⇒light invariant the DB also pins.
@@ -130,7 +133,7 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
       mode,
       title: body.title.trim(),
       scopeText: body.scope_text ?? null,
-      visibility: body.visibility ?? 'invite_only',
+      listed: listedOf(body) ?? false,
       questionsDeadline: body.questions_deadline ?? null,
       submissionDeadline: body.submission_deadline,
       rootTaskIds: uniqueRoots,
@@ -617,6 +620,7 @@ export async function updateRfp({ viewer, store, rfpId, body, ifMatch }) {
   const errors = {};
   if (body?.title !== undefined && (typeof body.title !== 'string' || !body.title.trim())) errors.title = 'required';
   if (body?.visibility !== undefined && !VISIBILITIES.has(body.visibility)) errors.visibility = 'invite_only or open';
+  if (body?.listed !== undefined && typeof body.listed !== 'boolean') errors.listed = 'true or false';
   validateDeadlines(body, errors, { submissionRequired: false });
   validateExclusions(body, errors);
   if (body?.root_task_ids !== undefined) {
@@ -652,7 +656,7 @@ export async function updateRfp({ viewer, store, rfpId, body, ifMatch }) {
     set: {
       title: body?.title?.trim(),
       scopeText: body?.scope_text,
-      visibility: body?.visibility,
+      listed: listedOf(body),
       questionsDeadline: body?.questions_deadline,
       submissionDeadline: body?.submission_deadline,
     },
@@ -683,7 +687,7 @@ function secureLinkUrl(linkBaseUrl, token) {
  * the lane stays `queued` for a later re-issue to retry. Returns the (possibly
  * updated) recipient row and the message id (null when nothing was sent).
  */
-async function dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, token, reissue = false }) {
+export async function dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, token, reissue = false }) {
   if (!mailSender || !token) return { recipient, messageId: null };
   const email = renderInviteEmail({ rfp, linkUrl: secureLinkUrl(linkBaseUrl, token), reissue });
   try {
@@ -698,8 +702,15 @@ async function dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, 
   }
 }
 
-/** operationId: addRecipients — each opens a lane; one personal token each. */
-export async function addRecipients({ viewer, store, mailSender, linkBaseUrl, rfpId, body }) {
+/**
+ * operationId: addRecipients — each opens a lane; one personal token each.
+ * PRD-04 X-1/X-6: a recipient is a directory company (`company_id`, resolved
+ * through the directory's published port: a claimed profile is its
+ * organisation, an unclaimed one is invited at its e-mail), a platform
+ * organisation (`org_id`) — both source `directory` — or an address (`email`,
+ * source `email`).
+ */
+export async function addRecipients({ viewer, store, directory, mailSender, linkBaseUrl, rfpId, body }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
   if (!['draft', 'published'].includes(rfp.status)) {
     throw new ProblemError('invalid_transition', `cannot invite on a ${rfp.status} RFP`);
@@ -710,29 +721,48 @@ export async function addRecipients({ viewer, store, mailSender, linkBaseUrl, rf
   }
   const errors = {};
   list.forEach((r, i) => {
+    if (r?.company_id !== undefined) {
+      if (!UUID.test(r.company_id ?? '')) errors[`recipients[${i}].company_id`] = 'a directory profile id';
+      if (r.org_id !== undefined || r.email !== undefined) errors[`recipients[${i}]`] = 'company_id alone';
+      return;
+    }
     if (r?.org_id !== undefined && !UUID.test(r.org_id ?? '')) errors[`recipients[${i}].org_id`] = 'an organisation id';
-    if (r?.org_id === undefined && !EMAIL.test(r?.email ?? '')) errors[`recipients[${i}].email`] = 'org_id or a valid email required';
+    if (r?.org_id === undefined && !EMAIL.test(r?.email ?? '')) errors[`recipients[${i}].email`] = 'org_id, company_id or a valid email required';
     if (r?.email !== undefined && !EMAIL.test(r.email)) errors[`recipients[${i}].email`] = 'a valid email';
   });
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const resolved = [];
   for (const r of list) {
-    if (r.org_id) {
-      const org = await store.getOrganization(r.org_id);
+    let orgId = r.org_id ?? null;
+    let email = r.email ?? null;
+    let companyName = null;
+    let source = orgId ? 'directory' : 'email';
+    if (r.company_id) {
+      const company = directory ? await directory.contactOf(r.company_id) : null;
+      if (!company) {
+        throw new ProblemError('validation_failed', null, { errors: { recipients: `no listed company ${r.company_id}` } });
+      }
+      source = 'directory';
+      companyName = company.display_name;
+      if (company.claimed) orgId = company.org_id;
+      else email = company.email;
+    }
+    if (orgId) {
+      const org = await store.getOrganization(orgId);
       if (!org) {
-        throw new ProblemError('validation_failed', null, { errors: { recipients: `unknown organisation ${r.org_id}` } });
+        throw new ProblemError('validation_failed', null, { errors: { recipients: `unknown organisation ${orgId}` } });
       }
       if (org.id === rfp.issuer_org_id) {
         throw new ProblemError('validation_failed', null, { errors: { recipients: 'the issuer cannot invite itself' } });
       }
-      resolved.push({ orgId: org.id, email: r.email ?? org.billing_email ?? org.contact_email ?? null, name: org.legal_name });
-      if (!resolved[resolved.length - 1].email) {
+      email = email ?? org.billing_email ?? org.contact_email ?? null;
+      if (!email) {
         throw new ProblemError('validation_failed', null, { errors: { recipients: `organisation ${org.id} has no contact email — pass one` } });
       }
-    } else {
-      resolved.push({ orgId: null, email: r.email, name: null });
+      companyName = companyName ?? org.legal_name ?? null;
     }
+    resolved.push({ orgId, email: email.toLowerCase(), name: companyName, source, companyName });
   }
 
   const actor = await requireActor(store, viewer);
@@ -741,6 +771,7 @@ export async function addRecipients({ viewer, store, mailSender, linkBaseUrl, rf
     projectId: rfp.project_id,
     recipients: resolved,
     actor: actorOf(actor, viewer),
+    published: rfp.status === 'published',
   });
   // A DRAFT is private until it is sent (D-29, PRD-02 T-6/T-7): the recipient
   // is only queued — nothing is emailed and no token leaves the server (the
@@ -841,7 +872,7 @@ export async function publishRfp({ viewer, store, mailSender, linkBaseUrl, rfpId
   const outcome = rfpTransition(rfp.status, 'publish');
   if (!outcome.ok) throw new ProblemError('invalid_transition', outcome.reason);
   const recipients = await store.recipientCount(rfpId);
-  if (recipients === 0 && rfp.visibility === 'invite_only') {
+  if (recipients === 0 && !rfp.listed) {
     throw new ProblemError('validation_failed', null, { errors: { recipients: 'invite at least one recipient before publishing' } });
   }
   const actor = await requireActor(store, viewer);
@@ -849,7 +880,11 @@ export async function publishRfp({ viewer, store, mailSender, linkBaseUrl, rfpId
     rfpId, from: rfp.status, to: outcome.to,
     eventType: 'tendering.rfp.published',
     projectId: rfp.project_id,
-    data: { visibility: rfp.visibility, submission_deadline: iso(rfp.submission_deadline), specialties: rfp.specialties ?? [] },
+    data: {
+      visibility: rfp.visibility, listed: Boolean(rfp.listed),
+      submission_deadline: iso(rfp.submission_deadline), specialties: rfp.specialties ?? [],
+      specialty_codes: rfp.specialty_codes ?? [],
+    },
     actor: actorOf(actor, viewer),
   });
   if (!published) throw new ProblemError('invalid_transition', 'someone moved this RFP first');
@@ -928,7 +963,7 @@ async function transitionRfpOp({ viewer, store, rfpId, action, eventType, data =
 
 // ── discovery (bidder side) ────────────────────────────────────────────────
 
-/** operationId: browseOpenRfps — open listing (D-15), published only. */
+/** operationId: browseOpenRfps — listed RFPs (D-15/D-47), published only. Deprecated by listOpenRequests. */
 export async function browseOpenRfps({ viewer, store, query }) {
   requireActiveOrg(viewer);
   if (!viewer.has('org:tendering:bid')) throw new ProblemError('forbidden', null, { reason: 'role' });
@@ -941,51 +976,8 @@ export async function browseOpenRfps({ viewer, store, query }) {
   return { status: 200, body: { items: items.map(rfpBody), next_cursor: nextCursor } };
 }
 
-/**
- * operationId: applyToOpenRfp — the self-serve hinge of the open marketplace
- * (D-15, LINA-406). A bidder that found an OPEN, published RFP through the
- * directory claims its OWN lane, instead of waiting for the issuer to mint one.
- * From here the authed proposal endpoints (putProposal, submitProposal) carry
- * the lane exactly as they do an invited bidder's — the only thing the invite
- * flow did that this skips is the emailed token (the applicant is signed in).
- *
- * Idempotent: the first apply creates the lane (201); re-applying returns the
- * same lane (200), so a double-click or a retry never forks a second lane. A
- * prior email-only invite for the org's address is adopted, not duplicated
- * (store, UNIQUE (rfp_id, email)). This is the `proposal.submit_open`
- * entitlement's surface; enforcement waits on billing (phase 8).
- */
-export async function applyToOpenRfp({ viewer, store, rfpId }) {
-  requireActiveOrg(viewer);
-  if (!viewer.has('org:tendering:bid')) throw new ProblemError('forbidden', null, { reason: 'role' });
-  const rfp = await store.getRfp(rfpId);
-  // 404, not 403: an invite-only or unpublished RFP must not be an existence
-  // oracle to a stranger (V8) — only an OPEN published one is discoverable.
-  if (!rfp || rfp.visibility !== 'open' || rfp.status !== 'published') {
-    throw new ProblemError('not_found');
-  }
-  if (rfp.issuer_org_id === viewer.orgId) {
-    throw new ProblemError('validation_failed', null, { errors: { rfp: 'the issuer cannot bid on its own RFP' } });
-  }
-  if (new Date(rfp.submission_deadline) < new Date()) {
-    throw new ProblemError('invalid_transition', 'the submission deadline has passed');
-  }
-  const org = await store.getOrganization(viewer.orgId);
-  const email = org?.billing_email ?? org?.contact_email ?? null;
-  if (!email) {
-    throw new ProblemError('validation_failed', null, { errors: { org: 'your organisation needs a contact email before bidding' } });
-  }
-  const actor = await requireActor(store, viewer);
-  const { proposalId, created } = await store.applyToOpenRfp({
-    rfpId, projectId: rfp.project_id, orgId: viewer.orgId, email, actor: actorOf(actor, viewer),
-  });
-  const proposal = await store.getProposal(proposalId);
-  const doc = await store.proposalDoc(proposalId);
-  return {
-    status: created ? 201 : 200,
-    body: proposalBody(proposal, { ...doc, seesMoney: viewer.has('org:money:view') }),
-  };
-}
+// operationId: applyToOpenRfp — ask to bid since D-47: ./bid-requests.mjs.
+export { applyToOpenRfp } from './bid-requests.mjs';
 
 /** operationId: listMyRfps — RFPs my org issued, was invited to, or applied to. */
 export async function listMyRfps({ viewer, store, query }) {
@@ -1536,10 +1528,10 @@ async function requireRfpRead({ viewer, store, rfpId }) {
     await requireStaffing({ viewer, store, projectId: rfp.project_id });
     return { rfp, isIssuer };
   }
-  // An open published RFP is readable by any org that could bid on it (D-15);
-  // an invite-only one just by its recipients.
+  // A listed published RFP is readable by any org that could ask to bid on
+  // it (D-15/D-47); an unlisted one just by its recipients.
   const invited = await store.isRecipient(rfpId, viewer.orgId);
-  const open = rfp.visibility === 'open' && rfp.status === 'published';
+  const open = Boolean(rfp.listed) && rfp.status === 'published';
   if (!invited && !open) throw new ProblemError('not_found');
   return { rfp, isIssuer: false };
 }
@@ -1606,6 +1598,13 @@ function requireVersionMatch(ifMatch, version) {
 
 export function actorOf(person, viewer) {
   return { personId: person.id, orgId: viewer.orgId, orgRole: viewer.orgRole, channel: viewer.channel };
+}
+
+/** `listed` wins; the deprecated `visibility` maps open → listed (D-47). */
+function listedOf(body) {
+  if (typeof body?.listed === 'boolean') return body.listed;
+  if (body?.visibility !== undefined) return body.visibility === 'open';
+  return undefined;
 }
 
 function clampLimit(raw) {

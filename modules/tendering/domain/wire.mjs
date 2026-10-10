@@ -22,7 +22,10 @@ export function rfpBody(row) {
     title: row.title,
     scope_text: row.scope_text ?? undefined,
     specialties: row.specialties ?? [],
+    // `visibility` is deprecated and kept in step with `listed` (D-47, PRD-04 X-3).
     visibility: row.visibility,
+    listed: Boolean(row.listed),
+    specialty_codes: row.specialty_codes ?? [],
     questions_deadline: iso(row.questions_deadline),
     submission_deadline: iso(row.submission_deadline),
     package_version: row.package_version,
@@ -78,6 +81,9 @@ export function recipientBody(row, { token } = {}) {
     id: row.id,
     ...(row.org_id ? { org_id: row.org_id } : {}),
     email: row.email,
+    // Where the bidder came from (PRD-04 §3); the directory name when added from it.
+    source: row.source ?? 'email',
+    ...(row.company_name ? { company_name: row.company_name } : {}),
     status: row.status,
     sent_at: iso(row.sent_at),
     opened_at: iso(row.opened_at),

@@ -20,6 +20,7 @@ import { publishEvent } from '../../../platform/outbox.mjs';
 import { withIdempotency } from '../../../platform/idempotency.mjs';
 import { clarificationQueries } from './pg-clarifications.mjs';
 import { audienceQueries } from './pg-audience.mjs';
+import { bidRequestQueries } from './pg-bid-requests.mjs';
 
 export function createTenderingStore(pool) {
   async function tx(fn) {
@@ -92,6 +93,9 @@ export function createTenderingStore(pool) {
     ...clarificationQueries(pool, tx),
     // The notification audience port's reads (PRD-12) — infra/pg-audience.mjs.
     ...audienceQueries(pool),
+    // Requests to bid, the company inbox and the directory links (PRD-04) —
+    // infra/pg-bid-requests.mjs.
+    ...bidRequestQueries(pool, tx),
 
     // ── cross-schema reads (query ports) ─────────────────────────────────
     async getPersonByClerkId(clerkUserId) {
@@ -176,7 +180,7 @@ export function createTenderingStore(pool) {
            )
          SELECT id AS task_id,
                 CASE WHEN rel_depth = 0 THEN NULL ELSE parent_id END AS parent_task_id,
-                name, description AS scope_text, specialty, position
+                name, description AS scope_text, specialty, specialty_code, position
            FROM sub ORDER BY rel_depth, position`,
         [projectId, rootTaskIds],
       );
@@ -603,14 +607,14 @@ export function createTenderingStore(pool) {
       return rows;
     },
 
-    /** Open listing (D-15): published, visibility open, filterable. */
+    /** Listed RFPs (D-15/D-47): published, listed, filterable (deprecated read). */
     async browseOpenRfps({ specialty, municipality, cursor, limit }) {
       const { rows } = await pool.query(
         `SELECT r.*,
                 coalesce((SELECT array_agg(task_id) FROM tendering.rfp_root WHERE rfp_id = r.id), '{}') AS root_task_ids
            FROM tendering.rfp r
            JOIN project.project pr ON pr.id = r.project_id
-          WHERE r.visibility = 'open' AND r.status = 'published'
+          WHERE r.listed AND r.status = 'published'
             AND ($1::text IS NULL OR $1 = ANY(r.specialties))
             AND ($2::text IS NULL OR pr.municipality_code = $2)
             AND ($3::uuid IS NULL OR r.id > $3)
@@ -651,17 +655,18 @@ export function createTenderingStore(pool) {
     // ── writes (ledger + outbox on the same client — §6.3/§6.4) ──────────
 
     async createRfp({ id, projectId, issuerOrgId, level, parentContractId, purpose, mode, title, scopeText,
-      visibility, questionsDeadline, submissionDeadline, rootTaskIds, excludedTaskIds = [], packageRows, packageItems, actor }) {
+      listed = false, questionsDeadline, submissionDeadline, rootTaskIds, excludedTaskIds = [], packageRows, packageItems, actor }) {
       return tx(async (client) => {
         const specialties = [...new Set(packageRows.map((r) => r.specialty).filter(Boolean))];
+        // `visibility` (deprecated) follows `listed` through the 0023 trigger.
         await client.query(
           `INSERT INTO tendering.rfp
              (id, project_id, issuer_org_id, level, parent_contract_id, purpose, mode, title, scope_text,
-              specialties, visibility, questions_deadline, submission_deadline, excluded_task_ids)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+              specialties, specialty_codes, listed, questions_deadline, submission_deadline, excluded_task_ids)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
           [id, projectId, issuerOrgId, level, parentContractId,
             purpose ?? 'execution', mode ?? 'detailed', title, scopeText,
-            specialties, visibility, questionsDeadline, submissionDeadline, excludedTaskIds],
+            specialties, specialtyCodesOf(packageRows), Boolean(listed), questionsDeadline, submissionDeadline, excludedTaskIds],
         );
         for (const taskId of rootTaskIds) {
           await client.query('INSERT INTO tendering.rfp_root (rfp_id, task_id) VALUES ($1, $2)', [id, taskId]);
@@ -675,7 +680,7 @@ export function createTenderingStore(pool) {
           scope: { type: 'project', id: projectId },
           object: { type: 'rfp', id },
           payload: {
-            level, title, root_task_ids: rootTaskIds, visibility, items: packageItems.length,
+            level, title, root_task_ids: rootTaskIds, listed: Boolean(listed), items: packageItems.length,
             ...(excludedTaskIds.length ? { excluded_task_ids: excludedTaskIds } : {}),
           },
           channel: actor.channel,
@@ -690,7 +695,7 @@ export function createTenderingStore(pool) {
           `UPDATE tendering.rfp SET
              title = coalesce($3, title),
              scope_text = CASE WHEN $4::boolean THEN $5 ELSE scope_text END,
-             visibility = coalesce($6, visibility),
+             listed = coalesce($6::boolean, listed),
              questions_deadline = CASE WHEN $7::boolean THEN $8::timestamptz ELSE questions_deadline END,
              submission_deadline = coalesce($9::timestamptz, submission_deadline),
              excluded_task_ids = coalesce($10::uuid[], excluded_task_ids),
@@ -700,7 +705,7 @@ export function createTenderingStore(pool) {
           [rfpId, expectedVersion,
             set.title ?? null,
             set.scopeText !== undefined, set.scopeText ?? null,
-            set.visibility ?? null,
+            set.listed ?? null,
             set.questionsDeadline !== undefined, set.questionsDeadline ?? null,
             set.submissionDeadline ?? null,
             excludedTaskIds],
@@ -715,7 +720,8 @@ export function createTenderingStore(pool) {
           await client.query('DELETE FROM tendering.rfp_package_row WHERE rfp_id = $1 AND package_version = 1', [rfpId]);
           await insertPackage(client, { rfpId, packageVersion: 1, packageRows, packageItems });
           const specialties = [...new Set(packageRows.map((r) => r.specialty).filter(Boolean))];
-          await client.query('UPDATE tendering.rfp SET specialties = $2 WHERE id = $1', [rfpId, specialties]);
+          await client.query('UPDATE tendering.rfp SET specialties = $2, specialty_codes = $3 WHERE id = $1',
+            [rfpId, specialties, specialtyCodesOf(packageRows)]);
         }
         await appendAuditEvent(client, {
           projectId: rows[0].project_id, actor,
@@ -739,68 +745,7 @@ export function createTenderingStore(pool) {
      * D-36). The raw token is returned ONCE; only its hash is stored.
      * A re-add of the same email is absorbed (UNIQUE rfp_id, email).
      */
-    /**
-     * Self-serve apply to an OPEN RFP (LINA-406): a bidder that discovered the
-     * RFP through the marketplace claims its own lane, the mirror of the issuer
-     * minting one with addRecipients. Idempotent and collision-safe:
-     *   - a re-apply hits UNIQUE (rfp_id, email) and the lane is returned as-is
-     *     (created=false), so a retry never forks a second lane;
-     *   - a prior email-only invite for the org's address (org_id NULL) is
-     *     ADOPTED — org_id and the proposal's bidder_org_id are backfilled — so
-     *     "the issuer emailed me, then I signed in and applied" lands on one lane.
-     * A token is minted only to satisfy the NOT NULL/UNIQUE token_hash column;
-     * it is never surfaced — the applicant is authenticated and drives the lane
-     * through the authed proposal endpoints, not the public link.
-     */
-    async applyToOpenRfp({ rfpId, projectId, orgId, email, actor }) {
-      return tx(async (client) => {
-        const token = randomBytes(32).toString('hex');
-        const { rows: recRows } = await client.query(
-          `INSERT INTO tendering.rfp_recipient (id, rfp_id, org_id, email, token_hash, expires_at)
-           VALUES ($1,$2,$3,$4,$5,
-             (SELECT submission_deadline + interval '14 days' FROM tendering.rfp WHERE id = $2))
-           ON CONFLICT (rfp_id, email) DO UPDATE
-             SET org_id = COALESCE(tendering.rfp_recipient.org_id, EXCLUDED.org_id)
-           RETURNING *`,
-          [randomUUID(), rfpId, orgId, email, sha256(token)],
-        );
-        const recipient = recRows[0];
-        let { rows: propRows } = await client.query(
-          'SELECT * FROM tendering.proposal WHERE recipient_id = $1',
-          [recipient.id],
-        );
-        let created = false;
-        if (!propRows.length) {
-          ({ rows: propRows } = await client.query(
-            `INSERT INTO tendering.proposal (id, rfp_id, recipient_id, bidder_org_id)
-             VALUES ($1,$2,$3,$4) RETURNING *`,
-            [randomUUID(), rfpId, recipient.id, orgId],
-          ));
-          created = true;
-        } else if (propRows[0].bidder_org_id == null) {
-          ({ rows: propRows } = await client.query(
-            'UPDATE tendering.proposal SET bidder_org_id = $2 WHERE id = $1 RETURNING *',
-            [propRows[0].id, orgId],
-          ));
-        }
-        if (created) {
-          await appendAuditEvent(client, {
-            projectId, actor,
-            category: 'tendering',
-            type: 'tendering.rfp.applied',
-            scope: { type: 'project', id: projectId },
-            object: { type: 'rfp', id: rfpId },
-            // D-29: bidder identity lives in tendering.*, never the ledger —
-            // the record only notes that a self-serve apply happened.
-            payload: {},
-            channel: actor.channel,
-          });
-        }
-        return { proposalId: propRows[0].id, created };
-      });
-    },
-
-    async addRecipients({ rfpId, projectId, recipients, actor }) {
+    async addRecipients({ rfpId, projectId, recipients, actor, published = false }) {
       return tx(async (client) => {
         const out = [];
         for (const r of recipients) {
@@ -808,12 +753,13 @@ export function createTenderingStore(pool) {
           const { rows } = await client.query(
             // expires_at = the RFP's submission deadline + a 14-day proposal
             // validity window (gap S1, doc 21); a re-issue later rotates it.
-            `INSERT INTO tendering.rfp_recipient (id, rfp_id, org_id, email, token_hash, expires_at)
+            // source / company_name: where the bidder came from (PRD-04 §3).
+            `INSERT INTO tendering.rfp_recipient (id, rfp_id, org_id, email, token_hash, expires_at, source, company_name)
              VALUES ($1,$2,$3,$4,$5,
-               (SELECT submission_deadline + interval '14 days' FROM tendering.rfp WHERE id = $2))
+               (SELECT submission_deadline + interval '14 days' FROM tendering.rfp WHERE id = $2), $6, $7)
              ON CONFLICT (rfp_id, email) DO NOTHING
              RETURNING *`,
-            [randomUUID(), rfpId, r.orgId, r.email, sha256(token)],
+            [randomUUID(), rfpId, r.orgId, r.email, sha256(token), r.source ?? 'email', r.companyName ?? null],
           );
           if (!rows.length) {
             const { rows: existing } = await client.query(
@@ -842,6 +788,20 @@ export function createTenderingStore(pool) {
           payload: { count: out.length },
           channel: actor.channel,
         });
+        // "Invite more" on a sent RFP mints and mails links now: the directory
+        // seeds unclaimed profiles for new address-only invitees (PRD-04 X-2),
+        // as it does at publish. Outbox only — the ledger entry is above.
+        const minted = out.filter((o) => o.token).length;
+        if (published && minted) {
+          await publishEvent(client, {
+            event_id: randomUUID(),
+            type: 'tendering.rfp.recipients_added',
+            project_id: projectId,
+            actor: { person_id: actor.personId, org_id: actor.orgId },
+            scope: { type: 'project', id: projectId },
+            data: { rfp_id: rfpId, project_id: projectId, count: minted },
+          });
+        }
         return out;
       });
     },
@@ -1359,6 +1319,11 @@ export function createTenderingStore(pool) {
       return tx((client) => withIdempotency(client, meta, fn));
     },
   };
+}
+
+/** Taxonomy codes of the package rows (planning task.specialty_code, PRD-03 R-2). */
+function specialtyCodesOf(packageRows) {
+  return [...new Set(packageRows.map((r) => r.specialty_code).filter(Boolean))].sort();
 }
 
 function sha256(raw) {

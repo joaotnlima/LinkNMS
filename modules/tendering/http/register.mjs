@@ -16,6 +16,8 @@ import {
 import { listTaskProcurement } from '../application/task-procurement.mjs';
 import { listProjectRfps } from '../application/project-rfps.mjs';
 import { removeRecipient } from '../application/recipients.mjs';
+import { listBidRequests, approveBidRequest, declineBidRequest } from '../application/bid-requests.mjs';
+import { listRequestsForMe, listOpenRequests, declineRfpInvitation } from '../application/company-inbox.mjs';
 
 /**
  * @param {{ store: object, storage: object, contractingAward: Function,
@@ -31,8 +33,14 @@ import { removeRecipient } from '../application/recipients.mjs';
  *   documentsStore — the Documents module's store (LINA-409 / doc 24): the RFP
  *     BIM model is a documents.document; tendering owns the RFP authorization
  *     and delegates the model's persistence to this injected store.
+ *   directory — the directory's published company port (PRD-04): a profile's
+ *     contact for an invite, proof lines, a company's bidding profile.
+ *   builds — the project module's build port (`factsOf`): build name,
+ *     municipality and point for the inbox and distances.
  */
-export function registerTendering(router, { store, storage, documentsStore, contractingAward, mailSender, linkBaseUrl } = {}) {
+export function registerTendering(router, {
+  store, storage, documentsStore, contractingAward, mailSender, linkBaseUrl, directory, builds,
+} = {}) {
   // The link origin may be supplied as a thunk (env read deferred to request
   // time, as the project module's shareBaseUrl is); resolve it per call.
   const baseUrl = () => (typeof linkBaseUrl === 'function' ? linkBaseUrl() : linkBaseUrl);
@@ -107,7 +115,7 @@ export function registerTendering(router, { store, storage, documentsStore, cont
     updateRfp({ viewer, store, rfpId: params.rfpId, body, ifMatch: headers['if-match'] }));
 
   router.register('POST', '/rfps/{rfpId}/recipients', 'addRecipients', ({ viewer, params, body }) =>
-    addRecipients({ viewer, store, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId, body }));
+    addRecipients({ viewer, store, directory, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId, body }));
 
   router.register('GET', '/rfps/{rfpId}/recipients', 'listRecipients', ({ viewer, params, query }) =>
     listRecipients({ viewer, store, rfpId: params.rfpId, query }));
@@ -143,13 +151,35 @@ export function registerTendering(router, { store, storage, documentsStore, cont
   router.register('GET', '/marketplace/rfps', 'browseOpenRfps', ({ viewer, query }) =>
     browseOpenRfps({ viewer, store, query }));
 
-  // Self-serve apply: a bidder claims its own lane on an open RFP it found in
-  // the marketplace (LINA-406). The authed proposal endpoints take it from here.
+  // Ask to bid on a listed RFP (D-47, PRD-04 X-13): a PENDING request, never
+  // a lane. The issuer approves (lane + link) or declines.
   router.register('POST', '/rfps/{rfpId}:apply', 'applyToOpenRfp', ({ viewer, params }) =>
     applyToOpenRfp({ viewer, store, rfpId: params.rfpId }));
 
+  router.register('GET', '/rfps/{rfpId}/bid-requests', 'listBidRequests', ({ viewer, params }) =>
+    listBidRequests({ viewer, store, directory, builds, rfpId: params.rfpId }));
+
+  router.register('POST', '/bid-requests/{bidRequestId}:approve', 'approveBidRequest', ({ viewer, params }) =>
+    approveBidRequest({
+      viewer, store, directory, builds, mailSender, linkBaseUrl: baseUrl(), bidRequestId: params.bidRequestId,
+    }));
+
+  router.register('POST', '/bid-requests/{bidRequestId}:decline', 'declineBidRequest', ({ viewer, params }) =>
+    declineBidRequest({ viewer, store, bidRequestId: params.bidRequestId }));
+
   router.register('GET', '/me/rfps', 'listMyRfps', ({ viewer, query }) =>
     listMyRfps({ viewer, store, query }));
+
+  // The company inbox (PRD-04 X-9, X-10): requests for you, open requests near
+  // you, and declining an invitation.
+  router.register('GET', '/me/rfp-requests', 'listRequestsForMe', ({ viewer, query }) =>
+    listRequestsForMe({ viewer, store, builds, query }));
+
+  router.register('GET', '/me/open-requests', 'listOpenRequests', ({ viewer }) =>
+    listOpenRequests({ viewer, store, directory, builds }));
+
+  router.register('POST', '/rfps/{rfpId}/invitation:decline', 'declineRfpInvitation', ({ viewer, params }) =>
+    declineRfpInvitation({ viewer, store, builds, rfpId: params.rfpId }));
 
   router.register('POST', '/rfps/{rfpId}/clarifications', 'askClarification', ({ viewer, params, body }) =>
     askClarification({ viewer, store, rfpId: params.rfpId, body }));
