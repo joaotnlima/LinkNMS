@@ -183,6 +183,6 @@ export function taskDeliverablesBody({ taskId, deliverables, side, orgId }) {
     can_edit: side.clientSide,
     can_submit: side.canSubmit,
     can_review: side.clientSide,
-    items: live.map(deliverableBody),
+    items: live.map((d) => ({ ...deliverableBody(d), can_decide: canDecide(side, currentSubmission(d.submissions), orgId) })),
   };
 }

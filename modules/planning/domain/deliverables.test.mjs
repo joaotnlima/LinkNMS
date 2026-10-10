@@ -126,5 +126,6 @@ describe('wire', () => {
       [body.required_count, body.approved_count, body.done_blocked, body.to_review_count, body.can_edit, body.can_submit],
       [2, 1, true, 2, true, false],
     );
+    assert.deepEqual(body.items.map((d) => d.can_decide), [false, true, true]);
   });
 });

@@ -10729,6 +10729,10 @@ components:
           items:
             $ref: '#/components/schemas/DeliverableSubmission'
         created_at: *id004
+        can_decide:
+          type: boolean
+          description: '`listTaskDeliverables` only — the viewer''s org may approve / request changes on the current
+            submission (client side, not the submitter).'
     TaskDeliverables:
       type: object
       properties:

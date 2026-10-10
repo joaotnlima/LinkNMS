@@ -136,9 +136,13 @@ export async function submitDeliverable({ viewer, store, documents, deliverableI
     });
   }
   const current = currentSubmission(deliverable.submissions);
-  if (current && current.document_id === facts.document_id && current.version_no === facts.version_no
-      && current.status !== 'changes_requested') {
-    throw new ProblemError('invalid_transition', `version ${facts.version_no} is already ${current.status}`);
+  if (current && current.document_id === facts.document_id && current.version_no === facts.version_no) {
+    // Idempotent: the same version already waits for review (e.g. the new-version
+    // consumer re-submitted it first) — answer it unchanged.
+    if (current.status === 'submitted') return { status: 200, body: deliverableBody(deliverable) };
+    if (current.status === 'approved') {
+      throw new ProblemError('invalid_transition', `version ${facts.version_no} is already approved`);
+    }
   }
   const updated = await store.submitDeliverable({ id: deliverableId, facts, note: note.value, actor: actorOf(actor, viewer) });
   if (!updated) throw new ProblemError('not_found');
