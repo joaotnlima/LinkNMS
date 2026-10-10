@@ -41,6 +41,12 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 transaction (ledger payload `links_minted`); the individual emails leave after commit. Removing a queued recipient from a draft is
 ledgered as `tendering.rfp.recipient_removed` (audit only, no outbox event — nothing was ever sent).
 
+**`tendering.clarification.answered` data (PRD-08 H-8):** `rfp_id, clarification_id` — scope `project`; never the asker
+(V8). The answer is public to every bidder of the RFP. Consumers: the notification centre (PRD-12) notifies every bidder org;
+token-only bidders (recipients with no org) are emailed a link-less notice by tendering itself after commit (their personal
+links are stored hashed, so no link can be put in the mail). `tendering.clarification.asked` is ledger-only (scope
+`rfp_private`), no outbox event.
+
 **`tendering.rfp.awarded` data (D-43):** `rfp_id, proposal_id, contract_id, root_task_ids[], supplier_org_id, start, duration_wd` —
 the winning proposal's start (`summary_start`) and duration (`summary_duration_wd`), `null` when the bid carries none. Planning
 takes the awarded branch's baseline v1 (reason `award`) from these facts alone; it never reads `tendering.*`.

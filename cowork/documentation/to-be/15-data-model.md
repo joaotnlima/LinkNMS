@@ -107,7 +107,7 @@ holidays are resolved from a shared `platform.holiday(date, scope: national|muni
 **rfp_recipient**: `rfp_id, org_id?, email, token_hash, email_message_id, status (queued/sent/opened/declined/proposal_submitted/bounced), sent_at, opened_at` — **one individual email per row** (D-29). On a draft the row is only queued (its `token_hash` belongs to a token nobody holds); publish mints the real link per queued row and a queued row may be removed while the RFP is a draft (PRD-02 T-6/T-7).
 **rfp_addendum**: `rfp_id, package_version, summary, published_at`.
 **project.operating_model** is derived (D-35): prime only ⇒ turnkey · direct only ⇒ direct · both ⇒ hybrid.
-**clarification**: `rfp_id, asked_by_org_id (never exposed to other bidders), question, answer, answered_at, status (open/answered)`.
+**clarification**: `rfp_id, asked_by_org_id?, asked_by_recipient_id? (the personal-link asker, PRD-08 H-6; at least one asker — CHECK), question (1–4000), answer, answered_at, asked_at, status (open/answered)` — the asker is never on the wire (only `mine` to the asker itself); answers are public to every bidder; asking is refused once `rfp.questions_deadline` has passed (0015).
 
 **proposal** — one per recipient (the **lane**, D-36), `UNIQUE(rfp_id, recipient_id)`
 | Column | Type | Notes |

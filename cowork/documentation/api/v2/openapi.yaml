@@ -3445,6 +3445,48 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+    get:
+      tags:
+      - Tendering
+      operationId: listProjectRfps
+      summary: The tendering home of a project — every RFP the viewer can see, with its counts (PRD-08 H-1)
+      description: 'One read behind `/projects/{id}/tendering`: every RFP of the project the
+        viewer''s active organisation ISSUED (drafts included — a draft is private to its issuer),
+        plus every non-draft RFP it was invited to or holds a lane on. Each item carries its covered
+        root tasks (named from the package snapshot), the package row count, and — for the issuer
+        only — `invited_count`, `submitted_count`, `open_question_count` and `awarded_to`; a bidder
+        gets its own lane (`my_proposal`) instead and never another bidder''s count (V8). No money.
+        Bounded by the project''s tenders, so not paginated; newest first.
+
+
+        **Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant | recipient/bidder of an RFP of the
+        project; items: issuer | recipient | bidder'
+      x-relationship: 'project.participant | rfp recipient; items: issuer | recipient | bidder'
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProjectRfp'
+                required:
+                - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /projects/{projectId}/task-procurement:
     parameters:
     - name: projectId
@@ -3530,7 +3572,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [project, rfp, recipient_email, closed, proposal]
+                required: [project, rfp, recipient_email, closed, proposal, questions_open, clarifications]
                 properties:
                   project:
                     type: object
@@ -3548,6 +3590,7 @@ paths:
                       purpose: { type: string, enum: [design, execution], description: 'D-39: the tender purpose, so the form can label the bid.' }
                       mode: { type: string, enum: [light, detailed], description: 'The bid shape the form must render (light = fee + references, detailed = BoQ).' }
                       submission_deadline: { type: string, format: date-time }
+                      questions_deadline: { type: string, format: date-time, description: 'When asking closes (PRD-08 H-9); absent when the issuer set none.' }
                       package:
                         type: object
                         description: Subtree structure and BoQ quantities, never prices (doc 05 §10).
@@ -3584,6 +3627,14 @@ paths:
                   closed:
                     type: boolean
                     description: True when the RFP is no longer receiving proposals.
+                  questions_open:
+                    type: boolean
+                    description: 'Whether this recipient may still ask (PRD-08 H-6/H-9): the RFP is published and its questions deadline has not passed.'
+                  clarifications:
+                    type: array
+                    description: 'Every ANSWERED question of the RFP (public to all its bidders, asker never shown) plus this recipient''s own open ones (`mine`).'
+                    items:
+                      $ref: '#/components/schemas/Clarification'
                   proposal:
                     nullable: true
                     allOf:
@@ -3641,6 +3692,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Proposal'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /rfp-links/{token}/clarifications:
+    parameters:
+    - name: token
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{64}$'
+    post:
+      tags:
+      - Tendering
+      operationId: askClarificationByToken
+      summary: 'RFP personal link: ask a question about the package (PRD-08 H-6, anonymous)'
+      description: 'The token-only twin of askClarification: a bidder who has only the emailed
+        personal link asks the issuer a question. The token is the authority (global security
+        overridden to none). Allowed while the RFP is published and before its `questions_deadline`
+        (409 `invalid_transition` afterwards — enforced here, not in the form). The question is
+        recorded against the recipient; once answered it is published to every bidder with the
+        asker never shown. Idempotent on the client-generated `id`. A refusal never distinguishes
+        an unknown token from a dead one (uniform 404).
+
+
+        **Clerk permission:** none (token-authenticated)
+
+
+        **Relationship (LinkNMS):** the invited recipient'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, question]
+              properties:
+                id: { type: string, format: uuid, description: Client-generated UUIDv7 (idempotency). }
+                question: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clarification'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -4713,7 +4814,11 @@ paths:
       - Tendering
       operationId: askClarification
       summary: Ask a question about the package
-      description: '**Clerk permission:** `org:tendering:bid`
+      description: 'Allowed while the RFP is published and before its `questions_deadline`;
+        afterwards 409 `invalid_transition` (PRD-08 H-9, enforced server-side).
+
+
+        **Clerk permission:** `org:tendering:bid`
 
 
         **Relationship (LinkNMS):** recipient'
@@ -4759,7 +4864,14 @@ paths:
       - Tendering
       operationId: answerClarification
       summary: Answer (published to all bidders, asker anonymised)
-      description: '**Clerk permission:** `org:tendering:issue`
+      description: 'The answer is public to every bidder of the RFP (no private answers — the
+        fairness rule, PRD-08 §5) and the asker is never shown. Emits
+        `tendering.clarification.answered` on the outbox (notification centre, PRD-12); each
+        token-only bidder (no platform org) is also emailed a notice — without a link, since
+        personal links are stored hashed — telling them to reopen their invitation link.
+
+
+        **Clerk permission:** `org:tendering:issue`
 
 
         **Relationship (LinkNMS):** issuer'
@@ -10222,9 +10334,16 @@ components:
         clarifications:
           type: array
           description: 'Response-only, on getRfp: askers anonymised; a bidder sees
-            answered questions and its own open ones.'
+            answered questions and its own open ones. Answers are public to every
+            bidder of the RFP and form part of its package (PRD-08 H-8).'
           items:
             $ref: '#/components/schemas/Clarification'
+        questions_open:
+          type: boolean
+          description: 'Response-only, on getRfp and listProjectRfps: whether a bidder
+            may still ask — the RFP is published and its `questions_deadline` (if any)
+            has not passed. Computed server-side; askClarification enforces the same
+            rule (PRD-08 H-9).'
     RfpModel:
       type: object
       properties:
@@ -10376,7 +10495,84 @@ components:
           - open
           - answered
         answered_at: *id004
-      description: The asker is never exposed to other bidders.
+        asked_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: When the question was asked.
+        mine:
+          type: boolean
+          readOnly: true
+          description: 'Response-only: true when the viewer (org, or the personal-link
+            recipient) asked it — lets a bidder tell its own open question apart. Never
+            identifies another asker (PRD-08 H-7).'
+      description: The asker is never exposed to other bidders (nor on the wire at all).
+    ProjectRfp:
+      description: 'One RFP of a project as the tendering home lists it (PRD-08 H-1): the
+        Rfp plus the viewer''s relation to it and the counts the home prints. Issuer-only
+        facts (`invited_count`, `submitted_count`, `open_question_count`, `awarded_to`)
+        are ABSENT for a bidder (V8: a bidder never learns how many others bid). No money.'
+      allOf:
+      - $ref: '#/components/schemas/Rfp'
+      - type: object
+        properties:
+          viewer_role:
+            type: string
+            enum:
+            - issuer
+            - bidder
+          covers:
+            type: array
+            description: The root tasks the RFP tenders, named from its package snapshot.
+            items:
+              type: object
+              properties:
+                task_id: *id001
+                name:
+                  type: string
+              required:
+              - task_id
+              - name
+          covered_task_count:
+            type: integer
+            minimum: 0
+            description: Rows in the current package (roots and kept descendants).
+          invited_count:
+            type: integer
+            minimum: 0
+            description: Issuer only. Every lane, whatever its state (the `m` of `n/m in`).
+          submitted_count:
+            type: integer
+            minimum: 0
+            description: Issuer only. Lanes whose bid has landed (the `n` of `n/m in`).
+          open_question_count:
+            type: integer
+            minimum: 0
+            description: Issuer only. Clarifications still waiting for an answer.
+          awarded_to:
+            type: object
+            nullable: true
+            description: Issuer only. The winning bidder once awarded.
+            properties:
+              org_id:
+                type: string
+                format: uuid
+                nullable: true
+              name:
+                type: string
+          my_proposal:
+            type: object
+            nullable: true
+            description: Bidder only. The viewer org's own lane on this RFP.
+            properties:
+              id: *id001
+              status:
+                type: string
+        required:
+        - viewer_role
+        - covers
+        - covered_task_count
+        - questions_open
     ProposalLane:
       type: object
       properties:
@@ -10528,6 +10724,11 @@ components:
           type: integer
           minimum: 0
           description: Lanes whose bid has landed (submitted, shortlisted or awarded).
+        open_question_count:
+          type: integer
+          minimum: 0
+          description: Clarifications on the governing RFP still waiting for the issuer's
+            answer — the panel's Tender-tab badge (PRD-08 H-7).
         awarded_to:
           type: object
           nullable: true

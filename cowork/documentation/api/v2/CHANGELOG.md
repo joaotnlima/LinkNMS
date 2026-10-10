@@ -2,6 +2,25 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-10 — Tendering at its own address, and clarifications (PRD-08; additive)
+
+- **New (Tendering):** `listProjectRfps` — `GET /projects/{projectId}/rfps`. The tendering home in one read:
+  every RFP of the project the viewer's org issued (drafts included) or, once sent, was invited to / bids on,
+  as `ProjectRfp` = `Rfp` + `viewer_role`, `covers[] {task_id, name}` (package roots), `covered_task_count`,
+  `questions_open`; issuer only: `invited_count`, `submitted_count`, `open_question_count`, `awarded_to`;
+  bidder only: `my_proposal {id, status}` (V8 — a bidder never sees the counts). Not paginated (bounded).
+- **New (Tendering):** `askClarificationByToken` — `POST /rfp-links/{token}/clarifications` `{id, question}`,
+  `security: []` (H-6): a link-only bidder asks; idempotent on `id`; 409 after `questions_deadline` (H-9).
+- `getRfpByToken` gains `rfp.questions_deadline`, `questions_open` and `clarifications[]` (answered ones +
+  the recipient's own).
+- `getRfp` gains `questions_open`. `Clarification` gains `asked_at` and `mine` (response-only; the asker is
+  still never on the wire). `TaskProcurement` gains `open_question_count` (the panel's Tender-tab badge, H-7).
+- `askClarification` / `answerClarification`: behaviour documented (deadline enforced server-side; answers
+  public to all bidders; `tendering.clarification.answered` on the outbox; link-only bidders get a link-less
+  email notice). Question ≤ 4000, answer ≤ 8000 characters.
+- Migration `db/v2/0015_tendering_clarifications.sql`: `clarification.asked_by_org_id` nullable,
+  `asked_by_recipient_id`, `asked_at`, at-least-one-asker CHECK.
+
 ## 2026-10-10 — Tender from the task panel (PRD-02, D-42; additive + one behaviour fix)
 
 - **New (Planning):** `getTenderWindow` — `GET /projects/{projectId}/schedule/tender-window?task_ids=&include=&bids_due=`.
