@@ -84,9 +84,9 @@ export function createLibreDwgConverter({ binDir = null, timeoutMs = 60_000, run
         } catch {
           warnings.push({ code: 'layers_unavailable', detail: 'the layer list could not be read from this file' });
         }
-        const layouts = [{ name: 'Model', svg: tagLayers(model.stdout, layerOf) }];
+        const layouts = [{ name: 'Model', svg: foreground(tagLayers(model.stdout, layerOf)) }];
         if (sheet.stdout.trim() && sheet.stdout !== model.stdout) {
-          layouts.push({ name: 'Paper space', svg: tagLayers(sheet.stdout, layerOf) });
+          layouts.push({ name: 'Paper space', svg: foreground(tagLayers(sheet.stdout, layerOf)) });
         }
         if (/unknown font|font .*not found|substitut/i.test(`${model.stderr}\n${sheet.stderr}`)) {
           warnings.push({ code: 'fonts_substituted', detail: 'some text uses fonts that are not available; it may shift slightly' });
@@ -172,4 +172,14 @@ export function tagLayers(svg, layerOf) {
     const name = layerOf.get(Number(n));
     return name ? `${m} data-layer="${escapeAttr(name)}"` : m;
   });
+}
+
+/**
+ * dwg2SVG writes ACI colour 7 as `white` and ByLayer / ByBlock as `black`. In
+ * CAD, colour 7 is the FOREGROUND (white on dark, black on light), so both are
+ * drawn as black here: the preview is for a light ground and the viewer's dark
+ * mode inverts lightness (V-12 light / dark).
+ */
+export function foreground(svg) {
+  return String(svg).replace(/(stroke|fill)\s*:\s*white\b/g, '$1:black').replace(/(stroke|fill)="white"/g, '$1="black"');
 }

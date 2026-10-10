@@ -7874,7 +7874,7 @@ paths:
         `base_version_no: n`, the SAME `storage_key`, mime, size and `sha256` as *n* (no byte copy) and advances
         `current_version` — then writes the markups with `version_no = n+1`. `base_version_no` must be the current
         version (409 `version_conflict` otherwise: a newer file was uploaded since the viewer opened it). Geometry is in
-        sheet units (PDF user-space points of the page at scale 1, or the DWG preview''s SVG units) and is validated per
+        sheet units (PDF points of the page as displayed at scale 1, rotation applied, or the DWG preview''s SVG units) and is validated per
         kind. Markup ids are client-generated: replaying the same ids answers the saved markups (201); an id used for
         another markup answers 409. Ledgered as `documents.markups.saved` (sha256 of the unchanged bytes, scope
         `project`); no outbox event — a markup-only version neither notifies task owners nor re-opens a deliverable
@@ -12817,7 +12817,7 @@ components:
       - calibration
     MarkupGeometry:
       type: object
-      description: 'Points in sheet units — PDF user-space points of the page at scale 1, or the DWG preview''s SVG units —
+      description: 'Points in sheet units — PDF points of the page as displayed at scale 1 (rotation applied), or the DWG preview''s SVG units —
         so a length is isotropic and resolution-independent. `cloud`, `arrow`, `measure`, `calibration`: exactly 2
         points; `text`: exactly 1. Every coordinate finite, |v| ≤ 1e9. `length_mm` (calibration only): the real length
         of the measured dimension, > 0.'

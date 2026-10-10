@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 
 import {
-  createNoopDwgConverter, createLibreDwgConverter, selectDwgConverter, layersFromJson, tagLayers, reasonOf,
+  createNoopDwgConverter, createLibreDwgConverter, selectDwgConverter, layersFromJson, tagLayers, reasonOf, foreground,
 } from './dwg-converters.mjs';
 
 const MODEL = '<svg viewBox="0 0 10 10"><path id="dwg-object-7" d="M 0,0 L 1,1"/></svg>';
@@ -93,5 +93,10 @@ describe('LibreDWG adapter (fake CLI)', () => {
     const { layerOf } = layersFromJson({ OBJECTS: [{ object: 'LAYER', handle: [0, 5], name: 'A"<B' }, { entity: 'ARC', index: 1, layer: [5, 5] }] });
     assert.equal(tagLayers('<path id="dwg-object-1"/><path id="dwg-object-2"/>', layerOf),
       '<path id="dwg-object-1" data-layer="A&quot;&lt;B"/><path id="dwg-object-2"/>');
+  });
+
+  test('colour 7 (white) is the foreground: drawn black for the light ground', () => {
+    assert.equal(foreground('<path style="fill:none;stroke:white;stroke-width:0.1px"/><text fill="white">A</text>'),
+      '<path style="fill:none;stroke:black;stroke-width:0.1px"/><text fill="black">A</text>');
   });
 });

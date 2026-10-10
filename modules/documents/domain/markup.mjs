@@ -2,8 +2,8 @@
 // markups-only version a save appends, and the wire body. No I/O.
 //
 // LinkNMS never authors drawings: "edit" on a PDF or DWG is a layer of markups
-// kept on the record. Geometry is in SHEET UNITS — PDF user-space points of the
-// page at scale 1, or the DWG preview's SVG units — so a length is isotropic and
+// kept on the record. Geometry is in SHEET UNITS — PDF points of the page as
+// displayed at scale 1 (rotation applied), or the DWG preview's SVG units — so a length is isotropic and
 // independent of the zoom the author drew at.
 
 export const MARKUP_KINDS = Object.freeze(['cloud', 'arrow', 'text', 'measure', 'calibration']);
