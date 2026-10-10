@@ -22,6 +22,14 @@ import { createContractingStore } from '@modules/contracting/infra/pg-store.mjs'
 import { createPlanningStore } from '@modules/planning/infra/pg-store.mjs';
 import { createQualityStore } from '@modules/quality/infra/pg-store.mjs';
 import { createCollaborationStore } from '@modules/collaboration/infra/pg-store.mjs';
+// Published notification audience ports (PRD-12 N-1, doc 10 §Notification
+// centre): collaboration names recipients through these, never other tables.
+import { createIdentityAudience } from '@modules/identity/application/audience.mjs';
+import { createIdentityStore } from '@modules/identity/infra/pg-store.mjs';
+import { createTenderingAudience } from '@modules/tendering/application/audience.mjs';
+import { createTenderingStore } from '@modules/tendering/infra/pg-store.mjs';
+import { createPlanningAudience } from '@modules/planning/application/audience.mjs';
+import { createMailSender } from '@modules/tendering/infra/mail-sender.mjs';
 
 import { getPool } from './registry';
 
@@ -36,7 +44,20 @@ function getHandlers(): Handlers {
       contractingConsumers(createContractingStore(pool)),
       planningConsumers(createPlanningStore(pool)),
       qualityConsumers(createQualityStore(pool)),
-      collaborationConsumers(createCollaborationStore(pool)),
+      collaborationConsumers(createCollaborationStore(pool), {
+        identity: createIdentityAudience(createIdentityStore(pool)),
+        tendering: createTenderingAudience(createTenderingStore(pool)),
+        planning: createPlanningAudience(createPlanningStore(pool)),
+        // Notification e-mails reuse the one MailSender port (LINA-412): same
+        // provider selection, same never-log-the-body rule. NOTIFICATIONS_MAIL_PROVIDER
+        // can hold them back (e.g. `noop`) independently of tender invites.
+        mail: {
+          sender: createMailSender({ provider: process.env.NOTIFICATIONS_MAIL_PROVIDER || undefined }),
+          baseUrl: () =>
+            process.env.NEXT_PUBLIC_APP_URL
+            ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://portal.linknms.com'),
+        },
+      }),
     );
   }
   return handlers;

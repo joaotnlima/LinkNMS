@@ -73,13 +73,20 @@ export function minuteBody(row, items = [], acks = []) {
   };
 }
 
-/** Wire body (schema Notification). */
+/**
+ * Wire body (schema Notification). `object_ref.url` is always present: rows
+ * written before PRD-12 carried none, so they fall back to their project, or
+ * to the notification centre itself. `event_ids` (digest dedupe) is internal.
+ */
 export function notificationBody(row) {
+  const { event_ids: _internal, ...ref } = row.object_ref ?? {};
+  const url = ref.url
+    ?? (ref.project_id ? `/projects/${ref.project_id}` : ref.type === 'project' && ref.id ? `/projects/${ref.id}` : '/notifications');
   return {
     id: row.id,
     category: row.category,
     title: row.title,
-    object_ref: row.object_ref,
+    object_ref: { ...ref, url },
     created_at: row.created_at,
     read_at: row.read_at ?? null,
   };

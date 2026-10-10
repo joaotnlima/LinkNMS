@@ -6,7 +6,7 @@ import {
   listComments, createComment, answerQuestion, resolveQuestion,
   listMyQuestions, createMinute, circulateMinute, acknowledgeMinute,
   listActivity, listNotifications, markNotificationsRead,
-  putNotificationPreferences,
+  getNotificationPreferences, putNotificationPreferences,
 } from '../application/use-cases.mjs';
 
 /**
@@ -45,6 +45,9 @@ export function registerCollaboration(router, { store }) {
 
   router.register('POST', '/notifications:mark-read', 'markNotificationsRead', ({ viewer, body }) =>
     markNotificationsRead({ viewer, store, body }));
+
+  router.register('GET', '/me/notification-preferences', 'getNotificationPreferences', ({ viewer }) =>
+    getNotificationPreferences({ viewer, store }));
 
   router.register('PUT', '/me/notification-preferences', 'putNotificationPreferences', ({ viewer, body }) =>
     putNotificationPreferences({ viewer, store, body }));

@@ -2,7 +2,7 @@
 //   listComments, createComment, answerQuestion, resolveQuestion,
 //   listMyQuestions, createMinute, circulateMinute, acknowledgeMinute,
 //   listActivity, listNotifications, markNotificationsRead,
-//   putNotificationPreferences.
+//   getNotificationPreferences, putNotificationPreferences.
 //
 // The contract asks for no Clerk permission beyond a session; authorization
 // is relationships: a thread's visibility IS its object's (doc 08 — "anyone
@@ -18,6 +18,7 @@ import {
   THREAD_OBJECT_TYPES, questionTransition, minuteTransition,
   commentBody, minuteBody, notificationBody, activityItem,
 } from '../domain/lifecycle.mjs';
+import { NOTIFICATION_CATEGORIES, effectivePreferences } from '../domain/notifications.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -258,16 +259,27 @@ export async function listActivity({ viewer, store, projectId, query }) {
   return { status: 200, body: { items: items.map(activityItem), next_cursor: nextCursor } };
 }
 
-/** operationId: listNotifications — mine, newest first. */
+/** operationId: listNotifications — mine, newest first, with the bell's unread count. */
 export async function listNotifications({ viewer, store, query }) {
+  const category = query?.category ?? null;
+  if (category !== null && !NOTIFICATION_CATEGORIES.includes(category)) {
+    throw new ProblemError('validation_failed', null, { errors: { category: `one of ${NOTIFICATION_CATEGORIES.join(', ')}` } });
+  }
   const actor = await requireActor(store, viewer);
-  const { items, nextCursor } = await store.listNotifications({
-    personId: actor.id,
-    unread: query?.unread === 'true' || query?.unread === '1',
-    cursor: query?.cursor ?? null,
-    limit: clampLimit(query?.limit),
-  });
-  return { status: 200, body: { items: items.map(notificationBody), next_cursor: nextCursor } };
+  const [{ items, nextCursor }, unreadCount] = await Promise.all([
+    store.listNotifications({
+      personId: actor.id,
+      unread: query?.unread === 'true' || query?.unread === '1',
+      category,
+      cursor: query?.cursor ?? null,
+      limit: clampLimit(query?.limit),
+    }),
+    store.countUnread(actor.id),
+  ]);
+  return {
+    status: 200,
+    body: { items: items.map(notificationBody), next_cursor: nextCursor, unread_count: unreadCount },
+  };
 }
 
 /** operationId: markNotificationsRead — {ids} or {all:true}; 204. */
@@ -282,23 +294,30 @@ export async function markNotificationsRead({ viewer, store, body }) {
   return { status: 204, body: null };
 }
 
-/** operationId: putNotificationPreferences — replace-by-upsert, answer all. */
+/** operationId: getNotificationPreferences — the effective set, defaults filled in. */
+export async function getNotificationPreferences({ viewer, store }) {
+  const actor = await requireActor(store, viewer);
+  const stored = await store.listPreferences(actor.id);
+  return { status: 200, body: { items: effectivePreferences(stored), next_cursor: null } };
+}
+
+/** operationId: putNotificationPreferences — upsert the pairs sent, answer the effective set. */
 export async function putNotificationPreferences({ viewer, store, body }) {
   const items = Array.isArray(body) ? body : body?.items;
   if (!Array.isArray(items) || !items.length
       || items.some((p) => !p || typeof p !== 'object'
-        || typeof p.category !== 'string' || !p.category.trim()
+        || !NOTIFICATION_CATEGORIES.includes(p.category)
         || !CHANNELS.has(p.channel) || typeof p.enabled !== 'boolean')) {
     throw new ProblemError('validation_failed', null, {
-      errors: { items: 'a list of {category, channel: in_app|email, enabled}' },
+      errors: { items: `a list of {category: ${NOTIFICATION_CATEGORIES.join('|')}, channel: in_app|email, enabled}` },
     });
   }
   const actor = await requireActor(store, viewer);
   const saved = await store.putPreferences({
     personId: actor.id,
-    items: items.map((p) => ({ category: p.category.trim(), channel: p.channel, enabled: p.enabled })),
+    items: items.map((p) => ({ category: p.category, channel: p.channel, enabled: p.enabled })),
   });
-  return { status: 200, body: { items: saved, next_cursor: null } };
+  return { status: 200, body: { items: effectivePreferences(saved), next_cursor: null } };
 }
 
 // ── shared helpers ───────────────────────────────────────────────────────
