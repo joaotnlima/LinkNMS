@@ -13,6 +13,7 @@ import {
   reserveProposalDocumentByToken, completeProposalDocumentByToken, downloadProposalDocument,
   reserveRfpModel, completeRfpModel, removeRfpModel, rfpModelViewUrl, rfpModelViewUrlByToken,
 } from '../application/use-cases.mjs';
+import { listTaskProcurement } from '../application/task-procurement.mjs';
 
 /**
  * @param {{ store: object, storage: object, contractingAward: Function,
@@ -63,6 +64,11 @@ export function registerTendering(router, { store, storage, documentsStore, cont
 
   router.register('POST', '/projects/{projectId}/rfps', 'createRfp', ({ viewer, params, body, headers }) =>
     createRfp({ viewer, store, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] }));
+
+  // The plan's per-task procurement projection (PRD-01 G-2/G-3): one read for
+  // the Tender column + Gantt band, issuer-scoped, no money.
+  router.register('GET', '/projects/{projectId}/task-procurement', 'listTaskProcurement', ({ viewer, params }) =>
+    listTaskProcurement({ viewer, store, projectId: params.projectId }));
 
   router.register('GET', '/rfps/{rfpId}', 'getRfp', ({ viewer, params }) =>
     getRfp({ viewer, store, documentsStore, rfpId: params.rfpId }));

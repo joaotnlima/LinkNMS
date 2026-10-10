@@ -1536,8 +1536,11 @@ async function requireActor(store, viewer) {
   return person;
 }
 
-/** Participant + staffing conjunction on the RFP's project (doc 16 §4). */
-async function requireParticipant({ viewer, store, projectId }) {
+/**
+ * Participant + staffing conjunction on the RFP's project (doc 16 §4).
+ * Exported for the module's sibling queries (application/task-procurement.mjs).
+ */
+export async function requireParticipant({ viewer, store, projectId }) {
   requireActiveOrg(viewer);
   const project = await store.getProject(projectId);
   if (!project) throw new ProblemError('not_found');

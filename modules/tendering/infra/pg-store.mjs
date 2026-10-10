@@ -513,6 +513,37 @@ export function createTenderingStore(pool) {
       return rows[0] ?? null;
     },
 
+    /**
+     * The per-task procurement read model of a project (PRD-01 G-2/G-3): one
+     * row per (root task, RFP) pair of the tenders `issuerOrgId` ISSUED on the
+     * project — the issuer clause is in SQL, so no other org's tender or lane
+     * ever leaves here (V8). Each row carries the RFP's roots, its lane-status
+     * histogram ({status: n}, never a price) and the awarded bidder's identity;
+     * domain/task-procurement.mjs picks the governing RFP per task and folds
+     * the counts. One query, whatever the number of tendered rows.
+     */
+    async taskProcurementOfProject(projectId, issuerOrgId) {
+      const { rows } = await pool.query(
+        `SELECT rr.task_id, r.id, r.title, r.status, r.created_at, r.submission_deadline,
+                coalesce((SELECT array_agg(x.task_id ORDER BY x.task_id) FROM tendering.rfp_root x
+                           WHERE x.rfp_id = r.id), '{}') AS root_task_ids,
+                coalesce((SELECT jsonb_object_agg(s.status, s.n)
+                            FROM (SELECT p.status, count(*)::int AS n FROM tendering.proposal p
+                                   WHERE p.rfp_id = r.id GROUP BY p.status) s), '{}'::jsonb) AS lane_counts,
+                ap.bidder_org_id AS awarded_org_id,
+                coalesce(o.legal_name, rec.email) AS awarded_name
+           FROM tendering.rfp r
+           JOIN tendering.rfp_root rr ON rr.rfp_id = r.id
+           LEFT JOIN tendering.proposal ap ON ap.id = r.awarded_proposal_id
+           LEFT JOIN tendering.rfp_recipient rec ON rec.id = ap.recipient_id
+           LEFT JOIN identity.organization o ON o.id = ap.bidder_org_id
+          WHERE r.project_id = $1 AND r.issuer_org_id = $2
+          ORDER BY rr.task_id, r.id`,
+        [projectId, issuerOrgId],
+      );
+      return rows;
+    },
+
     /** Every lane of an RFP — issuer-side internals (award, comparison). */
     async lanesOfRfp(rfpId) {
       const { rows } = await pool.query(
@@ -562,9 +593,9 @@ export function createTenderingStore(pool) {
 
     /**
      * The org's own tenders — every RFP it ISSUED, plus the ones it was invited
-     * to or bid on. The issuer clause is not optional: the plan's per-task tender
-     * bands and the "open the existing tender" resolution both read this list as
-     * the issuer's own tenders (app getProcurementWindows / procurement page), so
+     * to or bid on. The issuer clause is not optional: the "open the existing
+     * tender" resolution reads this list as the issuer's own tenders (the
+     * procurement page; the plan's bands now read taskProcurementOfProject), so
      * an issuer-only RFP that this query dropped read to the owner as "no tender
      * here at all" — the owner could not see a single submitted proposal on a
      * tender they ran (LINA-420). Issuer OR recipient OR bidder, de-duplicated.

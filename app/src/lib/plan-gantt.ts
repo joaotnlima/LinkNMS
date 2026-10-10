@@ -332,10 +332,11 @@ export type RfpLifecycle = 'draft' | 'published' | 'closed' | 'awarded' | 'cance
 export type ProcurementState = 'draft' | 'tendering' | 'bids_in' | 'awarded' | 'cancelled';
 
 /**
- * The governing RFP of a row, as the bridge reads it off
- * `GET /tasks/{id}/proposal-lanes` (the `rfp` block) plus the lanes it already
- * holds. Dates are the same pure 'YYYY-MM-DD' calendar days the rest of this
- * module speaks — the caller slices the wire's timestamps to the day.
+ * The governing RFP of a row, as the tendering module projects it
+ * (`GET /projects/{id}/task-procurement`, mapped in
+ * `v2/task-procurement-view.ts`). Dates are the same pure 'YYYY-MM-DD'
+ * calendar days the rest of this module speaks — the mapper slices the wire's
+ * timestamps to the day.
  */
 export interface ProcurementRfp {
   status: RfpLifecycle;
