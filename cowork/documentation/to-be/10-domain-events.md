@@ -15,8 +15,11 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 | `project.created`, `project.status_changed` | Project | Feed, Billing (usage) | ● |
 | `project.location_changed` | Project | Planning | ● |
 | `project.invitation.accepted` | Project | Notifications (inviter org) | ● |
-| `tendering.rfp.published`, `.addendum_issued`, `.closed`, `.awarded`, `.cancelled` | Tendering | Notifications (`.awarded`, `.cancelled` → bidders), Directory (open listing), Planning (`.awarded` → baseline at award, D-43) | ● |
+| `tendering.rfp.published`, `.addendum_issued`, `.closed`, `.awarded`, `.cancelled` | Tendering | Notifications (`.awarded`, `.cancelled` → bidders), Directory (`.published` → unclaimed profiles for address-only invitees, PRD-04 X-2), Planning (`.awarded` → baseline at award, D-43) | ● |
 | `tendering.clarification.answered` | Tendering | Notifications | ● |
+| `tendering.bid_request.requested`, `.approved`, `.declined` (D-47, PRD-04) | Tendering | Notifications (`.requested` → issuer; `.approved` / `.declined` → the asking company) | ● (scope: rfp_private) |
+| `tendering.rfp.recipients_added` (invite more on a sent RFP, PRD-04 X-2) | Tendering | Directory (unclaimed profiles for address-only invitees) | — (the ledger entry of the same name is the audit) |
+| `directory.profile.claimed` (PRD-04 §6.3) | Directory | Tendering (back-fill the organisation on past invites to the address) | — |
 | `tendering.proposal.submitted`, `.withdrawn` | Tendering | Notifications (issuer), Directory (listing stats: proposals sent, PRD-03 R-17) | ● (scope: rfp issuer + bidder) |
 | `contracting.contract.created`, `.signed`, `.activated`, `.provisionally_received`, `.closed`, `.terminated` | Contracting | Project (participation), Planning (bind + baseline — a no-op when the award already took it), Reputation, Billing, Directory (on the record: `.signed` and the state changes, PRD-03 R-11) | ● |
 | `contracting.change_order.submitted`, `.approved`, `.rejected` | Contracting | Planning (re-baseline on time CO), Notifications, Directory (change orders raised/approved, PRD-03 R-11) | ● |
@@ -43,6 +46,26 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 **`tendering.rfp.published` (PRD-02 T-7):** the personal links of the recipients queued on the draft are minted in the same
 transaction (ledger payload `links_minted`); the individual emails leave after commit. Removing a queued recipient from a draft is
 ledgered as `tendering.rfp.recipient_removed` (audit only, no outbox event — nothing was ever sent).
+
+**`tendering.rfp.published` data (PRD-04):** adds `listed` and `specialty_codes` (`visibility` stays, deprecated, in step with
+`listed`).
+
+**`tendering.bid_request.*` data (D-47, PRD-04 X-13):** `rfp_id, bid_request_id, org_id` (the asking company); `.approved` adds
+`adopted` (true when a prior e-mail invite to the org's address became its lane). Scope `rfp_private` (id = the request): the
+ledger payload carries `rfp_id, bid_request_id` (+ `adopted`) and **no organisation** (D-29: who bids stays in `tendering.*`);
+the outbox data carries `org_id` so the notification centre can tell the company. `tendering.rfp.invitation_declined` (a
+company declines its invite from the inbox) is ledger-only, no outbox event.
+
+**`tendering.rfp.recipients_added` (outbox only, PRD-04 X-2):** `rfp_id, project_id, count` — published only when links were
+minted on an already-sent RFP. The directory then reads the address-only invitees through tendering's published
+**invitee port** (`emailInviteesOf(rfpId)` → `{emails, specialty_codes}`, sent RFPs only) and seeds one unclaimed profile
+per company address (`domain/unclaimed.mjs`: the name is the address's domain; personal-mail hosts are skipped — no person
+is ever listed). Addresses never travel on an event or the ledger here.
+
+**`directory.profile.claimed` data (PRD-04 §6 criterion 3):** `org_id` (the claimant), `previous_profile_id`, `slug`,
+`email` (the address the claim link went to). Scope `org_private` (the claimant), no project, outbox only (directory
+writes are not ledgered). Tendering's consumer sets `org_id` on every invite to that address that has none — and the
+`bidder_org_id` of their lanes — except on the claimant's own RFPs; it only fills NULLs, so a replay changes nothing.
 
 **`tendering.clarification.answered` data (PRD-08 H-8):** `rfp_id, clarification_id` — scope `project`; never the asker
 (V8). The answer is public to every bidder of the RFP. Consumers: the notification centre (PRD-12) notifies every bidder org;
@@ -102,6 +125,8 @@ injected at the composition root (`app/src/server/v2/dispatcher.ts`):
 | `tendering.clarification.answered` | `tendering` | bidder orgs with an account (never the issuer) | tendering `rfpAudience` | `/projects/{p}/tendering/rfps/{rfp}?tab=clarifications` |
 | `tendering.rfp.awarded` | `tendering` | winner org ("won"), every other bidder org ("not selected") | tendering `rfpAudience` | `/projects/{p}/tendering/rfps/{rfp}` |
 | `tendering.rfp.cancelled` | `tendering` | bidder orgs | tendering `rfpAudience` | `/projects/{p}/tendering/rfps/{rfp}` |
+| `tendering.bid_request.requested` | `bids` | issuer org | tendering `rfpAudience` | `/projects/{p}/plan?task={root}&tab=tender` |
+| `tendering.bid_request.approved` / `.declined` | `tendering` | the asking company (`data.org_id`, by role `org:tendering:bid`) | — (on the event) | `/requests/{rfp}` · `/requests?tab=near` |
 | `planning.variation.recorded`, `.updated` | `variations` (15-min digest) | owner + client of the row's contract, narrowed by `collaboration.variation_subscription` | planning `variationAudience` | `/projects/{p}/plan` |
 | `project.invitation.accepted` | `invitations` | inviter org | — (on the event) | `/projects/{p}` |
 | `collaboration.question.*`, `quality.nonconformity.raised` | `questions`, `quality` | addressee / asker / assigned org | — (on the event) | `/projects/{p}` |
@@ -133,4 +158,4 @@ Directory never reads another module's tables for the facts it shows: it keeps i
 
 **`planning.progress.reported` data on `done` (PRD-03):** adds `assignee_org_id` (the row's effective assignee),
 `contract_id` (its branch contract, null outside any branch), `baseline_finish` and `actual_finish` (`YYYY-MM-DD` or
-null). Amounts never travel. Directory produces no events.
+null). Amounts never travel. Directory produces one event, `directory.profile.claimed` (PRD-04, above).

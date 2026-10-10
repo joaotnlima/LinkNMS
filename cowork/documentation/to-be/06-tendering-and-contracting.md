@@ -37,9 +37,17 @@ sequenceDiagram
 | `root_task_ids` | the plan rows being tendered; the package is their **subtrees** ([05 §10](./05-planning-and-execution.md)) |
 | `package` | snapshot of the subtrees: structure, scope text, documents, cost lines with quantities and **no prices** |
 | `recipients[]` | platform organisations and/or email addresses; **each receives an individual email** with a personal link — never a shared or CC'd message |
-| `visibility` | `invite_only` · `open` (listed to orgs matching specialty + municipality — D-15) |
+| `listed` | also listed as an **open request** (D-15 as amended by D-47, PRD-04): companies whose specialty and service area match see it in their inbox and **ask to bid**; nobody gets a lane or a link until the issuer approves. Replaces `visibility = open` (kept, deprecated, in step) |
 | `submission_deadline`, `questions_deadline` | |
 | `status` | `draft` → `published` → `closed` → `awarded` (· `cancelled`) |
+
+Bidders and requests (PRD-04)
+- Every bidder is an **invite** with a `source`: `directory` (added from the search or a company profile), `email`
+  (typed), `asked_to_bid` (an approved request). An e-mail invitee gets an unclaimed directory profile when the RFP is
+  sent; claiming it back-fills the organisation on every past invite to that address.
+- A **bid request** (`pending` → `approved` | `declined`, decided by the issuer) is the only way into a listed RFP for a
+  company that was not invited. Approval creates the lane and sends the personal link, adopting a prior e-mail invite to
+  the company's address (D-47 amends D-40 Slice 1, which created the lane on apply).
 
 Rules
 - R1 A `sub`-level RFP can only package BoQ items and tasks belonging to the issuer's contract.

@@ -86,13 +86,17 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Use case | Actor | Endpoint |
 |---|---|---|
 | Create RFP from one or more plan rows (package = subtree + docs + cost lines without prices) | OW · GC (own branch) | `POST /projects/{id}/rfps {root_task_ids[]}` |
-| Add recipients: platform orgs (search by specialty + area) and/or emails | issuer | `POST /rfps/{id}/recipients` · `GET /directory/organizations?specialty=&municipality=` |
+| Add recipients: directory companies (`company_id`, suggested on the task's specialty near the build — PRD-04 X-1), platform orgs and/or emails; each tagged by source | issuer | `POST /rfps/{id}/recipients` · `GET /directory/organizations?specialty=&near_project=` |
 | Per-recipient delivery status (sent / opened / proposal / declined) | issuer | `GET /rfps/{id}/recipients` |
 | Remove a queued bidder from a draft (nothing was sent yet) | issuer | `DELETE /rfps/{id}/recipients/{recipientId}` |
 | Edit package (BoQ template, tasks, docs) | issuer | `PATCH /rfps/{id}` · `PUT /rfps/{id}/boq` |
 | Publish (mints a link per queued recipient and sends one individual email each) / addendum / close / cancel (optional reason) | issuer | `POST /rfps/{id}:publish` · `/addenda` · `:close` · `:cancel {reason?}` |
-| Browse open RFPs matching me | SP, GC | `GET /marketplace/rfps?specialty=&municipality=` |
-| My RFP inbox (invited + applied) | SP, GC | `GET /me/rfps` |
+| Browse listed RFPs (deprecated by "open requests near you") | SP, GC | `GET /marketplace/rfps?specialty=&municipality=` |
+| My RFP list (issued, invited, bid on) | SP, GC | `GET /me/rfps` |
+| Company inbox — requests for you: origin, bids due, tasks, files, lane (PRD-04 X-9) / decline one | SP, GC | `GET /me/rfp-requests` · `POST /rfps/{id}/invitation:decline` |
+| Company inbox — open requests near you: listed RFPs matching my specialties and service area (X-10) | SP, GC | `GET /me/open-requests` |
+| Ask to bid on a listed RFP — a pending request, never a lane (D-47, X-13) | SP, GC | `POST /rfps/{id}:apply` |
+| Requests to bid on my RFP, with proof lines; approve (lane + link) / decline (X-5) | issuer | `GET /rfps/{id}/bid-requests` · `POST /bid-requests/{id}:approve` · `:decline` |
 | Ask / answer clarification (asking only until `questions_deadline`; answers public to all bidders, asker never shown) | bidder / issuer | `POST /rfps/{id}/clarifications` · `POST /clarifications/{id}:answer` |
 | Ask a clarification from the personal link (no session) | link-only bidder | `POST /rfp-links/{token}/clarifications` |
 | Tendering home of a project: every RFP the viewer can see, with covered tasks, bids due, `n/m in` and open questions (issuer); own lane (bidder) | participant · bidder | `GET /projects/{id}/rfps` |

@@ -92,8 +92,10 @@ holidays are resolved from a shared `platform.holiday(date, scope: national|muni
 | purpose | text | `design` (pre-construction, a service) · `execution` (built work, a BoQ) — D-39 |
 | mode | text | `light` (fee + portfolio + references + PDF, no BoQ) · `detailed` (priced BoQ); a `design` RFP is always `light` |
 | title, scope_text | text | |
-| specialties | text[] | specialty codes |
-| visibility | text | `invite_only` · `open` |
+| specialties | text[] | the package rows' free-text specialty labels |
+| specialty_codes | text[] | the package rows' taxonomy codes (planning `task.specialty_code`, PRD-03 R-2) — what open requests are matched on (PRD-04; 0023) |
+| listed | boolean | "also list it as an open request" (D-47, PRD-04 X-3; 0023): companies with a matching specialty and service area see it and can **ask to bid** |
+| visibility | text | **deprecated** by `listed` (0023): kept in step with it by the `rfp_sync_listed` trigger (`open` ⇔ `listed`), because it is in the v2 contract and billing's open-listing usage counts it |
 | questions_deadline, submission_deadline | timestamptz | |
 | package_version | int | incremented by each addendum |
 | status | text | `draft` · `published` · `closed` · `awarded` · `cancelled` |
@@ -106,8 +108,9 @@ holidays are resolved from a shared `platform.holiday(date, scope: national|muni
 **rfp_root** — `PK(rfp_id, task_id)`: the plan rows being tendered; the package is their subtrees.
 **rfp_package_row**: snapshot of each packaged row at publish/addendum — `rfp_id, package_version, task_id, parent_task_id, name, scope_text, duration_wd?, position`.
 **rfp_item** (packaged cost lines, **no prices**): `rfp_id, package_version, task_id, code, description, unit, quantity, material_spec, specialty`.
-**rfp_recipient**: `rfp_id, org_id?, email, token_hash, email_message_id, status (queued/sent/opened/declined/proposal_submitted/bounced), sent_at, opened_at` — **one individual email per row** (D-29). On a draft the row is only queued (its `token_hash` belongs to a token nobody holds); publish mints the real link per queued row and a queued row may be removed while the RFP is a draft (PRD-02 T-6/T-7).
+**rfp_recipient**: `rfp_id, org_id?, email, token_hash, email_message_id, status (queued/sent/opened/declined/proposal_submitted/bounced), sent_at, opened_at, source (directory/email/asked_to_bid), company_name?, created_at` — **one individual email per row** (D-29). `source` says where the bidder came from (PRD-04 §3; 0023): added from the directory, typed by the issuer, or an approved request to bid. The PRD's `company_id` **is** `org_id` (a directory profile is keyed by its organisation): empty for an address no organisation holds, back-filled on every past invite to that address when its unclaimed profile is claimed (`directory.profile.claimed`). `company_name` snapshots the directory name when added from it. A company may decline its invite while its lane is untouched (status `declined`, PRD-04 X-9). On a draft the row is only queued (its `token_hash` belongs to a token nobody holds); publish mints the real link per queued row and a queued row may be removed while the RFP is a draft (PRD-02 T-6/T-7).
 **rfp_addendum**: `rfp_id, package_version, summary, published_at`.
+**bid_request** (D-47, PRD-04 X-13; 0023): `id, rfp_id, org_id, status (pending/approved/declined), requested_by_person_id, requested_at, decided_by_person_id?, decided_at?, recipient_id?` — `UNIQUE(rfp_id, org_id)` (asking again answers the same request); decided ⇔ `decided_*` set; approved ⇔ `recipient_id` set (the invite approval created, or the prior e-mail invite to the org's address it adopted). A request never creates a lane by itself.
 **project.operating_model** is derived (D-35): prime only ⇒ turnkey · direct only ⇒ direct · both ⇒ hybrid.
 **clarification**: `rfp_id, asked_by_org_id?, asked_by_recipient_id? (the personal-link asker, PRD-08 H-6; at least one asker — CHECK), question (1–4000), answer, answered_at, asked_at, status (open/answered)` — the asker is never on the wire (only `mine` to the asker itself); answers are public to every bidder; asking is refused once `rfp.questions_deadline` has passed (0015).
 

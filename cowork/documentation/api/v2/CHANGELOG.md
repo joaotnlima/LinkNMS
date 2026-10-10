@@ -2,6 +2,37 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-11 — Connecting the RFP and the directory: ask to bid, company inbox (PRD-04 X-1..X-13, D-47)
+
+- **BREAKING (meaning) — `applyToOpenRfp`** (`POST /rfps/{rfpId}:apply`) is now **ask to bid** (D-47 amends D-40 Slice 1):
+  it creates a PENDING `BidRequest` (`201`; asking again answers the same request, `200`) and **never a lane**. It used to
+  answer a `Proposal` lane. Same path and operationId (renaming is itself breaking); `409` when the org is already invited.
+  Taken inside v2 under the pre-launch exemption of [versioning-and-deprecation.md](./versioning-and-deprecation.md): no
+  external caller exists, and the only first-party caller (`/marketplace`, `loadBidContext`) moved in the same change — the
+  bid page no longer applies, it opens the lane the org already holds. A lane without the issuer's approval is no longer
+  reachable at all, which is the point of D-47.
+- **New (Tendering):** `listBidRequests` — `GET /rfps/{rfpId}/bid-requests` (issuer; each with the company's `CompanyProof`
+  read through the directory port); `approveBidRequest` — `POST /bid-requests/{id}:approve` (creates the lane with source
+  `asked_to_bid` and e-mails the link, or adopts a prior e-mail invite to the org's address); `declineBidRequest` —
+  `POST /bid-requests/{id}:decline`; the company inbox: `listRequestsForMe` — `GET /me/rfp-requests` (`CompanyRequest`:
+  origin, issuer level, build, bids due, task and file counts, invite and lane state) and `listOpenRequests` —
+  `GET /me/open-requests` (`OpenRequest`: listed RFPs matching the company's specialties and service area, nearest first,
+  with its bid request); `declineRfpInvitation` — `POST /rfps/{rfpId}/invitation:decline`.
+- `Rfp` / `RfpCreate` gain `listed` ("also list it as an open request", X-3) and `Rfp` gains `specialty_codes`. **`visibility`
+  is deprecated**, not removed: dropping it would break the contract (and billing's open-listing usage reads it), so the
+  column stays and a trigger keeps it in step (`open` ⇔ `listed`); a client that only sends `visibility` still means the
+  same thing, and `listed` wins when both are sent.
+- `RecipientAdd` items take `company_id` (a directory profile: claimed → its organisation, unclaimed → its e-mail);
+  `Recipient` gains `source` (`directory` · `email` · `asked_to_bid`) and `company_name`. Addresses are stored lower-case.
+- `browseOpenRfps` is **deprecated** (reads `listed`; replaced by `listOpenRequests`).
+- Events: `tendering.bid_request.requested` / `.approved` / `.declined` (ledger `rfp_private` without the org; outbox with
+  it) → notifications (issuer; the asking company). `tendering.rfp.recipients_added` (outbox only) and
+  `tendering.rfp.published` (gains `listed`, `specialty_codes`) → the directory seeds unclaimed profiles for address-only
+  invitees through tendering's invitee port. **New producer:** `directory.profile.claimed` → tendering back-fills the
+  organisation on every past invite to the claimed address. See to-be/10.
+- Migration `db/v2/0023_tendering_rfp_directory.sql` (`rfp_recipient.source`, `company_name`, `created_at`; `rfp.listed`,
+  `specialty_codes`, the sync trigger; `tendering.bid_request`).
+
 ## 2026-10-10 — Company directory: taxonomy, search near a build, public profiles, claim (PRD-03 R-1..R-20, D-46)
 
 - **Directory, now implemented.** `listSpecialties` — `GET /specialties` is the two-level PT/EN taxonomy (`Specialty`

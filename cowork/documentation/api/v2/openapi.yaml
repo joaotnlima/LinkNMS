@@ -5623,45 +5623,244 @@ paths:
       tags:
       - Tendering
       operationId: applyToOpenRfp
-      summary: Apply to an open RFP (self-serve)
-      description: 'A bidder that found an open, published RFP through the
-        marketplace claims its own proposal lane, instead of waiting for the
-        issuer to invite it. Idempotent: the first apply creates the lane
-        (`201`), re-applying returns the same lane (`200`). From here the
-        authed proposal endpoints (`putProposal`, `submitProposal`) carry the
-        lane exactly as an invited bidder''s.
+      summary: Ask to bid on a listed RFP (D-47, PRD-04 X-13)
+      description: 'Since D-47 this is **ask to bid**: a company that found a LISTED, published RFP
+        among its open requests asks the issuer for a place among the bidders. It creates a PENDING
+        bid request and **never a lane**: nobody gets a personal link until the issuer approves
+        (`approveBidRequest` creates the lane, adopting a prior email invite to the organisation''s
+        address, and sends the link) or declines (`declineBidRequest`). Idempotent per (RFP,
+        organisation): the first ask answers `201`; asking again answers the existing request
+        (`200`) in whatever state it is in — a declined request is not re-opened, and an
+        organisation already invited answers `409`. The issuer cannot ask on its own RFP (`422`).
+        An unlisted, unpublished or unknown RFP answers `404` (no existence oracle, V8).
+
+
+        Breaking change of meaning inside v2, taken under the pre-launch exemption of the
+        versioning policy (no external caller; the only first-party caller moved in the same
+        change): before D-47 this created the lane directly (D-40 Slice 1). See CHANGELOG
+        2026-10-11.
 
 
         **Clerk permission:** `org:tendering:bid`
 
 
-        **Relationship (LinkNMS):** none (any org that could bid on an open
-        listing, D-15)'
+        **Relationship (LinkNMS):** none (any organisation that sees the listed request, D-15/D-47)'
       x-clerk-permission: org:tendering:bid
       x-relationship: none
       parameters:
       - $ref: '#/components/parameters/rfpId'
+      - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
-          description: The existing lane (already applied)
+          description: The existing request (already asked)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Proposal'
+                $ref: '#/components/schemas/BidRequest'
         '201':
-          description: A new lane was created
+          description: A pending request was created; the issuer is notified
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Proposal'
+                $ref: '#/components/schemas/BidRequest'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-        '402':
-          $ref: '#/components/responses/NotEntitled'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /rfps/{rfpId}/bid-requests:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Tendering
+      operationId: listBidRequests
+      summary: Requests to bid on my listed RFP, with each company's proof (PRD-04 X-5)
+      description: 'Every request companies made to bid on this RFP (pending first, then decided,
+        newest first), each with the company as the directory shows it — name, profile slug, claim
+        state and its "on the record" counts (D-46), read through the directory''s published port.
+        Bounded by the RFP, so not paginated.
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** issuer'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: issuer
+      parameters:
+      - $ref: '#/components/parameters/rfpId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BidRequest'
+                required:
+                - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /bid-requests/{bidRequestId}:approve:
+    parameters:
+    - name: bidRequestId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Tendering
+      operationId: approveBidRequest
+      summary: Approve a request to bid — the company becomes a bidder and gets its link (PRD-04 X-5, X-13)
+      description: 'Approving creates the company''s proposal lane exactly as an invite does
+        (source `asked_to_bid`): a recipient with a fresh personal link, emailed to the
+        organisation''s address. A prior email invite to that address is ADOPTED (its row gains the
+        organisation and keeps its source), never duplicated. Only while the RFP is published and
+        the request pending (`409 invalid_transition` otherwise). Publishes
+        `tendering.bid_request.approved` (the company is notified).
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** issuer'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: issuer
+      parameters:
+      - name: bidRequestId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Approved; `recipient_id` names the new (or adopted) invite
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /bid-requests/{bidRequestId}:decline:
+    parameters:
+    - name: bidRequestId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Tendering
+      operationId: declineBidRequest
+      summary: Decline a request to bid (PRD-04 X-5)
+      description: 'The request becomes `declined` (decided by/at stamped); no lane, no link.
+        Publishes `tendering.bid_request.declined` (the company is notified). Only a pending
+        request (`409 invalid_transition` otherwise).
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** issuer'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: issuer
+      parameters:
+      - name: bidRequestId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Declined
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /rfps/{rfpId}/invitation:decline:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Tendering
+      operationId: declineRfpInvitation
+      summary: Decline an invitation to bid, from the company inbox (PRD-04 X-9)
+      description: 'The invited organisation says it will not bid: its invite becomes `declined`
+        and it leaves the tender''s audience (no more clarification or cancellation notices). Only
+        while its lane is untouched (`invited` / `draft`) on a published RFP; declining twice
+        answers the same item. Ledgered as `tendering.rfp.invitation_declined` (audit only, no
+        outbox event).
+
+
+        **Clerk permission:** `org:tendering:bid`
+
+
+        **Relationship (LinkNMS):** recipient'
+      x-clerk-permission: org:tendering:bid
+      x-relationship: recipient
+      parameters:
+      - $ref: '#/components/parameters/rfpId'
+      responses:
+        '200':
+          description: Declined
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -5671,8 +5870,15 @@ paths:
       tags:
       - Tendering
       operationId: browseOpenRfps
-      summary: Open RFPs matching my specialties and areas
-      description: '**Clerk permission:** `org:tendering:bid`
+      summary: Listed RFPs, filtered by specialty and municipality (deprecated — use listOpenRequests)
+      deprecated: true
+      description: 'Every LISTED (`listed = true`, D-47), published RFP, filtered only by the
+        explicit query params. Deprecated by `listOpenRequests` (PRD-04 X-10), which matches the
+        requests to the company''s own specialties and service area and carries the build, the
+        distance and the company''s bid request. Sunset with the next first-party caller audit.
+
+
+        **Clerk permission:** `org:tendering:bid`
 
 
         **Relationship (LinkNMS):** none
@@ -5763,6 +5969,93 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /me/rfp-requests:
+    get:
+      tags:
+      - Tendering
+      operationId: listRequestsForMe
+      summary: Company inbox — requests for you (PRD-04 X-9)
+      description: 'Every published (or later) RFP my organisation was invited to — by the issuer
+        from the directory, by email (back-filled when the address''s profile was claimed), or
+        after an approved request to bid — newest first. Each item says where the invite came from
+        (`origin`), who is asking (owner or a general contractor), the build, bids due, the
+        package''s task count and files, the invite and lane state, and the lane''s id for pricing
+        in-app (`putProposal` / `submitOwnBid`, X-11). Never another bidder, never a price.
+
+
+        **Clerk permission:** `org:tendering:bid`
+
+
+        **Relationship (LinkNMS):** recipient (own organisation)'
+      x-clerk-permission: org:tendering:bid
+      x-relationship: recipient
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/CompanyRequest'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /me/open-requests:
+    get:
+      tags:
+      - Tendering
+      operationId: listOpenRequests
+      summary: Company inbox — open requests near you (PRD-04 X-3, X-10)
+      description: 'LISTED, published RFPs whose bids are still due and that match my organisation''s
+        directory profile: an RFP specialty in the family of one of my specialties (itself, its
+        parent or a child — the taxonomy, PRD-03 R-1) AND the build within my service radius of my
+        base point, or the build''s municipality (or its district) among my service areas. The
+        profile comes from the directory''s published port and the build''s point from the project''s
+        — tendering reads neither table. Only the distance is returned, never the build''s point.
+        RFPs my organisation issued or is already invited to are left out. Each item carries my bid
+        request, if I asked. Without a listed directory profile the list is empty with
+        `profile_missing: true`. Nearest first, at most 100.
+
+
+        **Clerk permission:** `org:tendering:bid`
+
+
+        **Relationship (LinkNMS):** none (matching profile, D-47)'
+      x-clerk-permission: org:tendering:bid
+      x-relationship: none
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OpenRequest'
+                  profile_missing:
+                    type: boolean
+                required:
+                - items
+                - profile_missing
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /rfps/{rfpId}/clarifications:
     parameters:
     - name: rfpId
@@ -12810,9 +13103,23 @@ components:
             type: string
         visibility:
           type: string
+          deprecated: true
+          description: 'Deprecated by `listed` (D-47, PRD-04): kept in step with it — `open` ⇔
+            `listed = true`.'
           enum:
           - invite_only
           - open
+        listed:
+          type: boolean
+          description: 'D-47 / PRD-04 X-3: also listed as an OPEN REQUEST — companies whose
+            specialty and service area match see it in their inbox and can ask to bid. Nobody gets
+            a link until the issuer approves.'
+        specialty_codes:
+          type: array
+          description: 'The directory taxonomy codes of the package rows (planning
+            `task.specialty_code`, PRD-03 R-2) — what open requests are matched on.'
+          items:
+            type: string
         questions_deadline: *id004
         submission_deadline: *id004
         package_version:
@@ -12950,9 +13257,15 @@ components:
           type: string
         visibility:
           type: string
+          deprecated: true
+          description: 'Deprecated by `listed`; `open` is read as `listed: true`. When both are
+            sent, `listed` wins.'
           enum:
           - invite_only
           - open
+        listed:
+          type: boolean
+          description: Also list it as an open request (D-47, PRD-04 X-3). Default false.
         purpose:
           type: string
           description: 'D-39. Omit for the as-is execution tender; design pins the
@@ -12984,7 +13297,15 @@ components:
           type: array
           items:
             type: object
+            description: 'Exactly one of `company_id` (a directory profile — PRD-04 X-1, X-6:
+              source `directory`; an unclaimed profile is invited at its e-mail), `org_id` (a
+              platform organisation: source `directory`) or `email` (source `email`; with
+              `org_id`, the address to use).'
             properties:
+              company_id:
+                type: string
+                format: uuid
+                description: The directory profile's id (`DirectoryCard.org_id`).
               org_id: *id001
               email:
                 type: string
@@ -12996,10 +13317,27 @@ components:
       type: object
       properties:
         id: *id001
-        org_id: *id001
+        org_id:
+          type: string
+          format: uuid
+          description: 'The company (PRD-04 §5 `company_id`): the bidder organisation. Absent for an
+            invite to an address no organisation holds yet; back-filled when that address''s
+            unclaimed directory profile is claimed.'
         email:
           type: string
           format: email
+        source:
+          type: string
+          description: 'Where the bidder came from (PRD-04 §3): `directory` (added from the search
+            or a profile), `email` (typed by the issuer), `asked_to_bid` (an approved request to
+            bid on a listed RFP).'
+          enum:
+          - directory
+          - email
+          - asked_to_bid
+        company_name:
+          type: string
+          description: The directory display name when added from the directory (a snapshot).
         status:
           type: string
           enum:
@@ -13032,6 +13370,184 @@ components:
             this echo lets the issuer re-send manually. Same rationale as
             ProjectInvitation.token.'
       description: Visible to the issuer only.
+    CompanyProof:
+      type: object
+      description: 'A company as the directory shows it (PRD-03, D-46), read through the directory''s
+        published port: never an amount, never stated data presented as checked.'
+      properties:
+        org_id: *id001
+        display_name:
+          type: string
+        slug:
+          type: string
+        claimed:
+          type: boolean
+        verified_clients:
+          type: integer
+        builds:
+          type: integer
+        tasks_finished:
+          type: integer
+        tasks_on_time:
+          type: integer
+        distance_km:
+          type: number
+          description: From the RFP's build to the company's base, when both are known.
+      required:
+      - org_id
+      - display_name
+      - claimed
+      - verified_clients
+      - builds
+      - tasks_finished
+      - tasks_on_time
+    BidRequest:
+      type: object
+      description: 'A company''s request to bid on a listed RFP (D-47, PRD-04 X-13). The issuer
+        sees `company`; the asking company sees its own request.'
+      properties:
+        id: *id001
+        rfp_id: *id001
+        org_id: *id001
+        status:
+          type: string
+          enum:
+          - pending
+          - approved
+          - declined
+        requested_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+        decided_by_person_id:
+          type: string
+          format: uuid
+          description: Issuer side only.
+        recipient_id:
+          type: string
+          format: uuid
+          description: The invite approval created or adopted.
+        company:
+          $ref: '#/components/schemas/CompanyProof'
+      required:
+      - id
+      - rfp_id
+      - org_id
+      - status
+      - requested_at
+    CompanyRequest:
+      type: object
+      description: One invite in the company inbox — "Requests for you" (PRD-04 X-9).
+      properties:
+        rfp_id: *id001
+        recipient_id: *id001
+        title:
+          type: string
+        origin:
+          type: string
+          description: '`directory` — found you in the directory; `email` — invited by email;
+            `asked_to_bid` — you asked and the issuer approved.'
+          enum:
+          - directory
+          - email
+          - asked_to_bid
+        issuer_level:
+          type: string
+          description: '`owner` — from the owner; `sub` — from a general contractor.'
+          enum:
+          - owner
+          - sub
+        build:
+          type: object
+          properties:
+            name:
+              type: string
+            municipality_code:
+              type: string
+        rfp_status:
+          type: string
+          enum:
+          - published
+          - closed
+          - awarded
+          - cancelled
+        submission_deadline: *id004
+        task_count:
+          type: integer
+          description: Rows in the current package version.
+        file_count:
+          type: integer
+          description: 'Files the package carries for the bidder: today the build''s model when
+            the RFP references one (0 or 1). Task files are the Documents module''s and are not
+            counted here.'
+        invitation_status:
+          type: string
+          enum:
+          - queued
+          - sent
+          - opened
+          - declined
+          - proposal_submitted
+          - bounced
+        proposal_id: *id001
+        proposal_status:
+          type: string
+        awarded_to_me:
+          type: boolean
+        received_at:
+          type: string
+          format: date-time
+      required:
+      - rfp_id
+      - recipient_id
+      - title
+      - origin
+      - issuer_level
+      - rfp_status
+      - submission_deadline
+      - task_count
+      - file_count
+      - invitation_status
+    OpenRequest:
+      type: object
+      description: A listed RFP matching the company — "Open requests near you" (PRD-04 X-10).
+      properties:
+        rfp_id: *id001
+        title:
+          type: string
+        issuer_level:
+          type: string
+          enum:
+          - owner
+          - sub
+        build:
+          type: object
+          properties:
+            name:
+              type: string
+            municipality_code:
+              type: string
+        distance_km:
+          type: number
+        specialty_codes:
+          type: array
+          items:
+            type: string
+        submission_deadline: *id004
+        task_count:
+          type: integer
+        my_request:
+          $ref: '#/components/schemas/BidRequest'
+      required:
+      - rfp_id
+      - title
+      - issuer_level
+      - specialty_codes
+      - submission_deadline
+      - task_count
     InviteEmailPreview:
       type: object
       description: 'The rendered invite email (LINA-412, previewInviteEmail). The secure link in

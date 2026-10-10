@@ -103,6 +103,8 @@ accept screen; the verb segment adds nothing (accepting stays a POST).
 | `/settings/organization/profile` | edit the public Directory profile (what `/companies/{slug}` shows) |
 | `/settings/billing` | subscription, entitlements, invoices |
 | `/notifications` | notification center (Collaboration) |
+| `/requests` | the company inbox (PRD-04 X-9, X-10, D-47): `?tab=for-you` (default) requests for you · `?tab=near` open requests near you |
+| `/requests/{rfpId}` | one request: the package, price and send in-app (X-11), clarifications |
 
 ### Authenticated — project level (all UUID, breadcrumb-aligned)
 
@@ -162,6 +164,8 @@ replace + delete. "Replace" = update in-app links, old path 404s.
 | `/rfp/[token]`, `/rfp/[token]/submitted` | `/rfps/{token}[/submitted]` | **301** — token links may have been sent to bidders |
 | `/sign-in`, `/sign-up`, `/no-access`, `/onboarding/setup` | same | keep |
 | — | `/companies`, `/companies/{slug}`, `/specialties/{slug}`, `/pricing`, `/settings/*`, `/notifications`, `/projects/{id}/{tendering,contracts,quality,documents,model,questions,locations}` | new |
+| `/marketplace` | `/requests?tab=near` | **307** (PRD-04 X-12): the inverted marketplace is retired; the company inbox replaces it |
+| `/marketplace/bid/{rfpId}` | `/requests/{rfpId}` | **307** (X-12): the proposal for that RFP |
 
 The only redirects that matter: the two **token families** (invitations, RFP). Everything else
 is behind auth on a pre-launch product; a 404 costs nothing and dead routes cost maintenance.
