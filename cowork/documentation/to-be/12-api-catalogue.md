@@ -23,7 +23,7 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Create / edit my profile: specialties, base + radius, availability, stated credentials (PRD-03 R-3, R-20) | org admin/manager | `PUT /organizations/{id}/profile` (If-Match once it exists) |
 | Completeness checklist — never changes the order (R-19, D-46) | org admin/manager | `GET /organizations/{id}/profile/completeness` |
 | Your listing, last 30 days (R-17) | org admin/manager | `GET /organizations/{id}/listing-stats` |
-| Add/remove stated portfolio entry | org admin/manager | `POST /organizations/{id}/portfolio` · `DELETE …/{entryId}` |
+| My portfolio; add/remove a stated entry | org admin/manager | `GET`/`POST /organizations/{id}/portfolio` · `DELETE …/{entryId}` |
 | Find companies near a build (R-4..R-7, D-46) | ANY (public) | `GET /directory/organizations?specialty=&near_project=\|lat=&lng=&radius_km=&municipality=&can_start_by=&work_type=&proof=&size=&claimed=&cursor=` |
 | A company's public profile (R-10..R-16) | ANY (public) | `GET /directory/organizations/by-slug/{slug}` · `GET /directory/organizations/{id}` |
 | Claim an unclaimed profile — link to the profile's e-mail (R-16) | org admin/manager | `POST /directory/organizations/{id}:claim` · `POST /directory/claims/{token}:accept` |

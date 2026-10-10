@@ -651,6 +651,40 @@ paths:
       schema:
         type: string
         format: uuid
+    get:
+      tags:
+      - Directory
+      operationId: listMyPortfolio
+      summary: My portfolio entries, as I edit them (PRD-03 R-13)
+      description: 'Every entry of the active organisation, listed or not: `declared` (stated) and `platform` (on the
+        record; public only with the owner''s consent).
+
+
+        **Clerk permission:** `org:profile:manage`
+
+
+        **Relationship (LinkNMS):** `orgId` = active org'
+      x-clerk-permission: org:profile:manage
+      parameters:
+      - $ref: '#/components/parameters/orgId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PortfolioEntry'
+                required:
+                - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags:
       - Directory

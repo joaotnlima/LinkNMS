@@ -6,7 +6,7 @@ import {
   listSpecialties, searchOrganizations, getDirectoryOrganization, getDirectoryProfileBySlug,
 } from '../application/search.mjs';
 import {
-  getMyProfile, putProfile, getCompleteness, getListingStats, addPortfolioEntry, deletePortfolioEntry,
+  getMyProfile, putProfile, getCompleteness, getListingStats, listMyPortfolio, addPortfolioEntry, deletePortfolioEntry,
   getPortfolioConsent, putPortfolioConsent,
 } from '../application/profiles.mjs';
 import { claimProfile, acceptProfileClaim } from '../application/claims.mjs';
@@ -44,6 +44,9 @@ export function registerDirectory(router, { store, builds, mail }) {
 
   router.register('GET', '/organizations/{orgId}/listing-stats', 'getListingStats', ({ viewer, params }) =>
     getListingStats({ viewer, store, orgId: params.orgId }));
+
+  router.register('GET', '/organizations/{orgId}/portfolio', 'listMyPortfolio', ({ viewer, params }) =>
+    listMyPortfolio({ viewer, store, orgId: params.orgId }));
 
   router.register('POST', '/organizations/{orgId}/portfolio', 'addPortfolioEntry', ({ viewer, params, body, headers }) =>
     addPortfolioEntry({ viewer, store, orgId: params.orgId, body, idempotencyKey: headers['idempotency-key'] }));

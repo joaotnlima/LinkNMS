@@ -74,6 +74,13 @@ export async function getListingStats({ viewer, store, orgId }) {
   };
 }
 
+/** operationId: listMyPortfolio — every entry, listed or not (the editor's view). */
+export async function listMyPortfolio({ viewer, store, orgId }) {
+  requireOwnProfileOrg(viewer, orgId);
+  const items = await store.listPortfolio(orgId, { all: true });
+  return { status: 200, body: { items: items.map(portfolioBody) } };
+}
+
 /** operationId: addPortfolioEntry — a stated (`declared`) entry; no photos yet. */
 export async function addPortfolioEntry({ viewer, store, orgId, body, idempotencyKey }) {
   requireOwnProfileOrg(viewer, orgId);

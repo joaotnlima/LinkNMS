@@ -17,7 +17,8 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
 - `putProfile` creates on first save (201, slug minted, to-be/20 §5.2) and takes `OrganizationProfileWrite`
   (base point + municipality, service radius, availability). **New:** `getMyProfile` (`GET
   /organizations/{orgId}/profile`), `getListingStats` (`GET /organizations/{orgId}/listing-stats`). `Completeness`
-  gains `items[]`. `addPortfolioEntry` takes `PortfolioEntryWrite` (no photos yet).
+  gains `items[]`. `addPortfolioEntry` takes `PortfolioEntryWrite` (no photos yet); **new** `listMyPortfolio` (`GET
+  /organizations/{orgId}/portfolio`).
 - **New:** `claimProfile` — `POST /directory/organizations/{orgId}:claim` (mails a single-use link to the profile's
   e-mail) and `acceptProfileClaim` — `POST /directory/claims/{token}:accept`.
 - `putPortfolioConsent` moves from Reputation to Directory and takes `PortfolioConsentWrite {show_on_profiles}`

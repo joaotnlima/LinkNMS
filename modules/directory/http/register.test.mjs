@@ -222,6 +222,9 @@ describe('company side', () => {
     const add = await call('POST', `/organizations/${ROOFER}/portfolio`, { v, body: { id, title: 'Moradia T4' } });
     assert.equal(add.status, 201);
     assert.equal(add.body.source, 'declared');
+    const mine = await call('GET', `/organizations/${ROOFER}/portfolio`, { v });
+    assert.deepEqual(mine.body.items.map((e) => e.id), [id]);
+    assert.equal((await call('GET', `/organizations/${ROOFER}/portfolio`, { v: viewer({ orgId: OWNER }) })).status, 403);
     const photos = await call('POST', `/organizations/${ROOFER}/portfolio`, { v, body: { id, title: 'x', photo_document_ids: [id] } });
     assert.equal(photos.status, 422);
     assert.equal((await call('DELETE', `/organizations/${ROOFER}/portfolio/${id}`, { v })).status, 204);

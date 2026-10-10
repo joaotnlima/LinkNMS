@@ -125,15 +125,16 @@ export function createDirectoryStore(pool) {
     },
 
     // ── portfolio ────────────────────────────────────────────────────────
-    async listPortfolio(orgId) {
+    /** Public: stated entries + platform entries with consent; `all` for the owner's editor. */
+    async listPortfolio(orgId, { all = false } = {}) {
       const { rows } = await pool.query(
         `SELECT id, org_id, source, contract_id, title, municipality_code, typology, specialties,
                 to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(end_date, 'YYYY-MM-DD') AS end_date,
                 variance_wd, photo_document_ids, owner_consent
            FROM directory.portfolio_entry
-          WHERE org_id = $1 AND (source = 'declared' OR owner_consent)
+          WHERE org_id = $1 AND ($2::boolean OR source = 'declared' OR owner_consent)
           ORDER BY end_date DESC NULLS LAST, created_at DESC`,
-        [orgId],
+        [orgId, all],
       );
       return rows;
     },
