@@ -178,6 +178,7 @@ function fakeStore() {
             state.links = state.links.map((l) => (l.id === id ? { ...l, ...patch } : l));
           },
           removeLink: (id) => { state.links = state.links.filter((l) => l.id !== id); },
+          insertProgress: (args) => this.insertProgress(args),
           ledger: (entry) => state.ledger.push(entry.type),
           publish: (evt) => state.events.push(evt),
         },
@@ -440,7 +441,12 @@ describe('planning over the /api/v2 router', () => {
         start: '2026-09-23', finish: '2026-09-25',
       });
       assert.equal(res.status, 200);
-      assert.deepEqual(res.body.would_move, [{ id: TASK_B, start: '2026-09-28', finish: '2026-09-29' }]);
+      assert.deepEqual(res.body.would_move, [{ id: TASK_B, name: 'Estrutura', start: '2026-09-28', finish: '2026-09-29' }]);
+      // PRD-13 S-10: the impact note — new project finish; no baseline here, so
+      // no delta vs baseline and nobody is notified.
+      assert.equal(res.body.project_finish.after, '2026-09-29');
+      assert.equal(res.body.baseline_delta_wd, undefined);
+      assert.deepEqual(res.body.notify, []);
       assert.equal(store.state.tasks.get(TASK_A).start, '2026-09-21'); // untouched
     });
   });

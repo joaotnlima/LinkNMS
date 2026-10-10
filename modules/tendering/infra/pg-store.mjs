@@ -1238,7 +1238,7 @@ export function createTenderingStore(pool) {
      * contract draft written by contracting's award port on this client.
      */
     async awardRfp({ rfpId, from, winnerProposalId, declineProposalIds, note,
-      projectId, actor, createContract }) {
+      projectId, actor, createContract, planFacts = {} }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `UPDATE tendering.rfp SET status = 'awarded', awarded_proposal_id = $3, version = version + 1
@@ -1280,7 +1280,7 @@ export function createTenderingStore(pool) {
           project_id: projectId,
           actor: { person_id: actor.personId, org_id: actor.orgId },
           scope: { type: 'project', id: projectId },
-          data: { rfp_id: rfpId, proposal_id: winnerProposalId, contract_id: award.contract.id },
+          data: { rfp_id: rfpId, proposal_id: winnerProposalId, contract_id: award.contract.id, ...planFacts },
         });
         return award;
       });

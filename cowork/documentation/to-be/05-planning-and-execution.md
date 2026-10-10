@@ -110,7 +110,8 @@ and municipal holidays, project closures. Non-working days are shaded on the can
 
 ## 5. Baseline and execution control (D-23)
 
-- On contract signature, the covered branch gets a **baseline snapshot** per row: dates, duration,
+- On **award** (D-43; the winning proposal's start and duration land on the tendered rows first) — or, where no award
+  took one, on contract signature — the covered branch gets a **baseline snapshot** per row: dates, duration,
   scope text, acceptance criteria (quality) and cost lines (cost). Baselines are versioned; a new one
   is taken only when a change is formally accepted into the baseline (§6).
 - For every controlled row the API returns render-ready **segments**, so no client computes them:
@@ -121,7 +122,13 @@ and municipal holidays, project closures. Non-working days are shaded on the can
 | `current` | the current planned span | normal bar |
 | `extension` | part of `current` beyond `baseline.finish` | **clay** (`status-pending-change`, #a9601f / dark #c9812f), always with a label, never colour alone |
 | `delay_start` | gap between `baseline.start` and `current.start` | clay hatch on the ghost |
-| `actual` | from the actual start to today / the actual finish | progress fill |
+| `actual` | from the actual start to today / the actual finish | progress fill (`closed_early` + negative `delta_wd` when closed before the baseline finish) |
+| `overrun` | a leaf not closed past its current finish: current finish → today (D-44). Needs no baseline | **hatched clay** with an arrow tip at today, labelled `not closed` |
+| `projected` | the push an overrun would make on a linked successor (D-44) — computed, **never written** | dashed clay outline, labelled `pushed by …` |
+
+  Clay segments carry `delta_wd` and `cause` (`moved` · `pushed` · `not_closed` · `closed_late` · `closed_early` · `net`)
+  so every label reads without colour (PRD-13 S-4). Each row also carries `baseline_delta_wd` (vs baseline, summaries
+  net), `overrun_wd` and `projected`; the schedule carries `handover` and the `changes` count (PRD-13 S-5/S-6).
 
 - Rows **added** after the baseline inside a controlled branch carry `added_after_baseline`. Rows
   **removed** stay visible to the owner as removed (soft delete) in the change view.

@@ -24,6 +24,7 @@
 // entries carry scope rfp_private (V7/V8).
 import { randomUUID } from 'node:crypto';
 
+import { awardedPlanFacts } from '../domain/award.mjs';
 import { ProblemError } from '../../../platform/errors.mjs';
 import { visibilityOf, contractBody } from '../../contracting/domain/lifecycle.mjs';
 import { rfpTransition, proposalTransition } from '../domain/lifecycle.mjs';
@@ -1334,6 +1335,9 @@ export async function awardRfp({ viewer, store, rfpId, body, contractingAward })
     note: typeof body?.note === 'string' && body.note.trim() ? body.note.trim() : null,
     projectId: rfp.project_id,
     actor: actorOf(actor, viewer),
+    // D-43: what planning needs to take the branch baseline at award, carried
+    // on tendering.rfp.awarded (planning never reads tendering tables).
+    planFacts: awardedPlanFacts(rfp, winner),
     // The contracting module's award port, run on the SAME client/transaction.
     createContract: (client) => contractingAward(client, {
       rfp,

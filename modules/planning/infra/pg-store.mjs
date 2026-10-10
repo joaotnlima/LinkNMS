@@ -76,7 +76,9 @@ function variationN(r) {
     lastChangedAt: r.last_changed_at?.toISOString?.() ?? r.last_changed_at,
     lastChangedByOrgId: r.last_changed_by_org_id,
     status: r.status, changeOrderId: r.change_order_id,
+    reason: r.reason ?? null,
     taskName: r.task_name ?? undefined,
+    changedByOrgName: r.changed_by_org_name ?? undefined,
   };
 }
 
@@ -146,9 +148,11 @@ export function createPlanningStore(pool) {
         [projectId],
       ),
       q.query(
-        `SELECT DISTINCT o.id, o.legal_name FROM identity.organization o
-           JOIN planning.task t ON t.assignee_org_id = o.id
-          WHERE t.project_id = $1`,
+        `SELECT o.id, o.legal_name FROM identity.organization o
+          WHERE o.id IN (SELECT assignee_org_id FROM planning.task WHERE project_id = $1)
+             OR o.id IN (SELECT client_org_id FROM contracting.contract WHERE project_id = $1)
+             OR o.id IN (SELECT supplier_org_id FROM contracting.contract WHERE project_id = $1)
+             OR o.id IN (SELECT owner_org_id FROM project.project WHERE id = $1)`,
         [projectId],
       ),
       q.query(
@@ -156,7 +160,12 @@ export function createPlanningStore(pool) {
           WHERE project_id = $1 AND status IN ('open', 'acknowledged')`,
         [projectId],
       ),
-      q.query('SELECT DISTINCT contract_id FROM planning.baseline WHERE project_id = $1', [projectId]),
+      q.query(
+        `SELECT DISTINCT ON (contract_id) contract_id, version, reason, taken_at
+           FROM planning.baseline WHERE project_id = $1
+          ORDER BY contract_id, version DESC`,
+        [projectId],
+      ),
       q.query(
         `SELECT DISTINCT ON (bt.task_id) bt.task_id, bt.scope_text, bt.acceptance_criteria
            FROM planning.baseline_task bt
@@ -190,6 +199,10 @@ export function createPlanningStore(pool) {
         return [`${v.taskId}|${v.kind}|${v.scopeId}`, v];
       })),
       baselinedContractIds: new Set(baselineRows.map((r) => r.contract_id)),
+      baselineMeta: new Map(baselineRows.map((r) => [r.contract_id, {
+        version: r.version, reason: r.reason,
+        takenAt: r.taken_at?.toISOString?.() ?? r.taken_at,
+      }])),
       baselineText: new Map(baselineTextRows.map((r) => [r.task_id, {
         scopeText: r.scope_text, acceptanceCriteria: r.acceptance_criteria,
       }])),
@@ -263,11 +276,13 @@ export function createPlanningStore(pool) {
       insertVariation: (v) => client.query(
         `INSERT INTO planning.variation
            (id, project_id, task_id, kind, scope_type, scope_id, baseline_value, current_value,
-            delta, cause, cause_task_id, first_changed_at, last_changed_at, last_changed_by_org_id, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now(),$12,'open')`,
+            delta, cause, cause_task_id, first_changed_at, last_changed_at, last_changed_by_org_id, status,
+            reason)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now(),$12,'open',$13)`,
         [v.id, v.projectId, v.taskId, v.kind, v.scopeType, v.scopeId,
           JSON.stringify(v.baselineValue ?? null), JSON.stringify(v.currentValue ?? null),
-          JSON.stringify(v.delta), v.cause, v.causeTaskId ?? null, v.lastChangedByOrgId],
+          JSON.stringify(v.delta), v.cause, v.causeTaskId ?? null, v.lastChangedByOrgId,
+          v.reason ?? null],
       ),
       patchVariation: (id, patch) => {
         const cols = {
@@ -278,6 +293,7 @@ export function createPlanningStore(pool) {
           lastChangedByOrgId: ['last_changed_by_org_id', (x) => x],
           status: ['status', (x) => x],
           changeOrderId: ['change_order_id', (x) => x],
+          reason: ['reason', (x) => x ?? null],
         };
         const sets = ['last_changed_at = now()'];
         const values = [id];
@@ -312,6 +328,10 @@ export function createPlanningStore(pool) {
         return client.query(`UPDATE contracting.boq_item SET ${sets.join(', ')} WHERE id = $1`, values);
       },
       deleteCostLine: (id) => client.query('DELETE FROM contracting.boq_item WHERE id = $1', [id]),
+      insertProgress: (args) => insertProgressOn(client, args),
+      // D-43: bind the awarded branch + take its baseline on THIS plan
+      // transaction (the caller holds the plan lock and has set the dates).
+      takeBaseline: (args) => takeBaselineOn(client, args),
       ledger: (entry) => appendAuditEvent(client, entry),
       publish: (evt) => publishEvent(client, evt),
     };
@@ -459,11 +479,6 @@ export function createPlanningStore(pool) {
         const roots = rootRows.map((r) => r.task_id);
         if (!roots.length) return { bound: false, reason: 'no tendered roots recorded' };
 
-        await client.query(
-          'UPDATE planning.task SET contract_id = $1 WHERE id = ANY($2::uuid[])',
-          [contractId, roots],
-        );
-
         // D-36: for an AWARDED contract whose winning proposal was built on
         // the platform, the bidder's plan is copied into the project under
         // the tendered rows NOW — before the branch walk, so the copied rows
@@ -471,78 +486,11 @@ export function createPlanningStore(pool) {
         // packaged children (the supplier details them later; plan health
         // flags the gap). Assignment: the supplier takes the roots.
         const copied = await copyAwardedProposal(client, { contractId, projectId, roots, actor });
-        // The branch: the roots and everything under them, stopping at rows
-        // bound to their own (deeper) contract.
-        const { rows: branchRows } = await client.query(
-          `WITH RECURSIVE branch AS (
-             SELECT id FROM planning.task WHERE id = ANY($1::uuid[])
-             UNION ALL
-             SELECT t.id FROM planning.task t
-               JOIN branch b ON t.parent_id = b.id
-              WHERE t.contract_id IS NULL AND t.deleted_at IS NULL
-           ) SELECT id FROM branch`,
-          [roots],
-        );
-        const branchIds = branchRows.map((r) => r.id);
-        await client.query(
-          'UPDATE planning.task SET branch_contract_id = $1 WHERE id = ANY($2::uuid[])',
-          [contractId, branchIds],
-        );
-
-        const baselineId = randomUUID();
-        await client.query(
-          `INSERT INTO planning.baseline (id, project_id, contract_id, version, reason)
-           VALUES ($1, $2, $3, 1, 'contract_signed')`,
-          [baselineId, projectId, contractId],
-        );
-        await client.query(
-          'INSERT INTO planning.baseline_root (baseline_id, task_id) SELECT $1, unnest($2::uuid[])',
-          [baselineId, roots],
-        );
-        await client.query(
-          `INSERT INTO planning.baseline_task
-             (baseline_id, task_id, start, finish, duration_wd, name, scope_text, acceptance_criteria)
-           SELECT $1, id, start, finish, duration_wd, name, description, acceptance_criteria
-             FROM planning.task WHERE id = ANY($2::uuid[])`,
-          [baselineId, branchIds],
-        );
-        await client.query(
-          `INSERT INTO planning.baseline_cost_line (baseline_id, boq_item_id, quantity, unit_price_cents, material_spec)
-           SELECT $1, id, quantity, unit_price_cents, material_spec
-             FROM contracting.boq_item
-            WHERE contract_id = $2 AND superseded_by_change_order_id IS NULL`,
-          [baselineId, contractId],
-        );
-        await client.query(
-          `UPDATE planning.task
-              SET baseline_start = start, baseline_finish = finish, schedule_state = 'on_baseline'
-            WHERE id = ANY($1::uuid[])`,
-          [branchIds],
-        );
-
-        await appendAuditEvent(client, {
-          projectId,
-          actor: { personId: actor?.personId ?? null, orgId: actor?.orgId ?? null },
-          category: 'planning',
-          type: 'planning.baseline.taken',
-          scope: { type: 'project', id: projectId },
-          object: { type: 'baseline', id: baselineId },
-          payload: {
-            contract_id: contractId, version: 1, roots, rows: branchIds.length,
-            ...(copied ? { copied_proposal_id: copied.proposalId, copied_rows: copied.inserted } : {}),
-          },
-          channel: 'system',
+        const taken = await takeBaselineOn(client, {
+          contractId, projectId, roots, reason: 'contract_signed', actor,
+          payload: copied ? { copied_proposal_id: copied.proposalId, copied_rows: copied.inserted } : {},
         });
-        await publishEvent(client, {
-          event_id: randomUUID(),
-          type: 'planning.baseline.taken',
-          version: 1,
-          project_id: projectId,
-          actor: { person_id: actor?.personId ?? null, org_id: actor?.orgId ?? null },
-          scope: { type: 'project', id: projectId },
-          data: { baseline_id: baselineId, contract_id: contractId, version: 1, root_task_ids: roots },
-        });
-        return { bound: true, baselineId, rows: branchIds.length };
+        return { bound: true, baselineId: taken.baselineId, rows: taken.rows };
       });
     },
 
@@ -554,8 +502,9 @@ export function createPlanningStore(pool) {
 
     async listVariations(projectId, { kind, status, since, taskId } = {}) {
       const { rows } = await pool.query(
-        `SELECT v.*, t.name AS task_name
+        `SELECT v.*, t.name AS task_name, o.legal_name AS changed_by_org_name
            FROM planning.variation v JOIN planning.task t ON t.id = v.task_id
+           LEFT JOIN identity.organization o ON o.id = v.last_changed_by_org_id
           WHERE v.project_id = $1
             AND ($2::text IS NULL OR v.kind = $2)
             AND ($3::text IS NULL OR v.status = $3)
@@ -569,8 +518,10 @@ export function createPlanningStore(pool) {
 
     async getVariation(variationId) {
       const { rows } = await pool.query(
-        `SELECT v.*, t.name AS task_name, t.project_id AS task_project_id
+        `SELECT v.*, t.name AS task_name, t.project_id AS task_project_id,
+                o.legal_name AS changed_by_org_name
            FROM planning.variation v JOIN planning.task t ON t.id = v.task_id
+           LEFT JOIN identity.organization o ON o.id = v.last_changed_by_org_id
           WHERE v.id = $1`,
         [variationId],
       );
@@ -582,41 +533,14 @@ export function createPlanningStore(pool) {
     /** open → acknowledged + the who/when row; a second ack just records. */
     async acknowledgeVariation({ variationId, actor }) {
       return tx(async (client) => {
-        const { rows } = await client.query(
-          'SELECT * FROM planning.variation WHERE id = $1 FOR UPDATE', [variationId],
-        );
-        const v = rows[0];
-        await client.query(
-          `INSERT INTO planning.variation_ack (variation_id, org_id, person_id)
-           VALUES ($1, $2, $3)`,
-          [variationId, actor.orgId, actor.personId],
-        );
-        if (v.status === 'open') {
-          await client.query(
-            `UPDATE planning.variation SET status = 'acknowledged' WHERE id = $1`, [variationId],
-          );
-        }
-        await appendAuditEvent(client, {
-          projectId: v.project_id,
-          actor,
-          category: 'planning',
-          type: 'planning.variation.acknowledged',
-          scope: variationScope(v),
-          object: { type: 'variation', id: variationId },
-          payload: { task_id: v.task_id, kind: v.kind },
-          channel: actor.channel ?? 'ui',
-        });
-        await publishEvent(client, {
-          event_id: randomUUID(),
-          type: 'planning.variation.acknowledged',
-          project_id: v.project_id,
-          actor: { person_id: actor.personId, org_id: actor.orgId },
-          scope: variationScope(v),
-          data: { variation_id: variationId, task_id: v.task_id, kind: v.kind },
-        });
-        const [out] = await attachAcks(client, [variationN({ ...v, status: v.status === 'open' ? 'acknowledged' : v.status })]);
+        const [out] = await acknowledgeOn(client, [variationId], actor);
         return out;
       });
+    },
+
+    /** PRD-13 S-15: several acknowledgements, ONE transaction. */
+    async acknowledgeVariations({ variationIds, actor }) {
+      return tx((client) => acknowledgeOn(client, variationIds, actor));
     },
 
     /** The question lives in collaboration.comment (one thread per object). */
@@ -664,48 +588,10 @@ export function createPlanningStore(pool) {
     },
 
     /** Append-only progress + planning.progress.reported, one transaction. */
-    async insertProgress({ taskId, projectId, status, percent, note, photoDocumentIds, taskName, criteria, actor }) {
+    async insertProgress(args) {
       return tx(async (client) => {
-        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`plan:${projectId}`]);
-        const { rows } = await client.query(
-          `INSERT INTO planning.progress_report
-             (task_id, seq, status, percent, note, photo_document_ids, reported_by_org_id, reported_by_person_id)
-           SELECT $1, coalesce(max(seq), 0) + 1, $2, $3, $4, $5, $6, $7
-             FROM planning.progress_report WHERE task_id = $1
-           RETURNING *`,
-          [taskId, status, percent, note, photoDocumentIds ?? [], actor.orgId, actor.personId],
-        );
-        const report = rows[0];
-        await appendAuditEvent(client, {
-          projectId,
-          actor,
-          category: 'planning',
-          type: 'planning.progress.reported',
-          scope: { type: 'project', id: projectId },
-          object: { type: 'task', id: taskId },
-          payload: { seq: report.seq, status, ...(percent != null ? { percent } : {}), ...(note ? { note } : {}) },
-          channel: actor.channel ?? 'ui',
-        });
-        // Quality consumes this to open a verification request on `done`
-        // (criteria snapshot travels along); contracting consumes it to
-        // activate signed contracts when work starts.
-        await publishEvent(client, {
-          event_id: randomUUID(),
-          type: 'planning.progress.reported',
-          project_id: projectId,
-          actor: { person_id: actor.personId, org_id: actor.orgId },
-          scope: { type: 'project', id: projectId },
-          data: {
-            task_id: taskId,
-            task_name: taskName,
-            project_id: projectId,
-            status,
-            ...(note ? { note } : {}),
-            reported_by_org_id: actor.orgId,
-            ...(criteria ? { criteria } : {}),
-          },
-        });
-        return progressN(report);
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`plan:${args.projectId}`]);
+        return insertProgressOn(client, args);
       });
     },
 
@@ -1044,6 +930,179 @@ export function createPlanningStore(pool) {
       });
     },
   };
+}
+
+/**
+ * Bind a branch to its contract and take baseline v1 — shared by the
+ * signature consumer (D-13) and the award use case (D-43). Runs on the
+ * caller's client INSIDE its transaction, under the plan lock the caller
+ * holds: stamp contract_id on the roots, walk the branch (stopping at rows
+ * bound to their own deeper contract), snapshot dates / scope / cost lines,
+ * set baseline_start/finish, ledger + planning.baseline.taken on the same
+ * client. Returns null when the contract already has a v1 (idempotent).
+ */
+async function takeBaselineOn(client, { contractId, projectId, roots, reason, actor, payload = {} }) {
+  const { rows: existing } = await client.query(
+    'SELECT 1 FROM planning.baseline WHERE contract_id = $1 AND version = 1', [contractId],
+  );
+  if (existing.length) return null;
+
+  await client.query(
+    'UPDATE planning.task SET contract_id = $1 WHERE id = ANY($2::uuid[])',
+    [contractId, roots],
+  );
+  const { rows: branchRows } = await client.query(
+    `WITH RECURSIVE branch AS (
+       SELECT id FROM planning.task WHERE id = ANY($1::uuid[])
+       UNION ALL
+       SELECT t.id FROM planning.task t
+         JOIN branch b ON t.parent_id = b.id
+        WHERE t.contract_id IS NULL AND t.deleted_at IS NULL
+     ) SELECT id FROM branch`,
+    [roots],
+  );
+  const branchIds = branchRows.map((r) => r.id);
+  await client.query(
+    'UPDATE planning.task SET branch_contract_id = $1 WHERE id = ANY($2::uuid[])',
+    [contractId, branchIds],
+  );
+
+  const baselineId = randomUUID();
+  await client.query(
+    `INSERT INTO planning.baseline (id, project_id, contract_id, version, reason)
+     VALUES ($1, $2, $3, 1, $4)`,
+    [baselineId, projectId, contractId, reason],
+  );
+  await client.query(
+    'INSERT INTO planning.baseline_root (baseline_id, task_id) SELECT $1, unnest($2::uuid[])',
+    [baselineId, roots],
+  );
+  await client.query(
+    `INSERT INTO planning.baseline_task
+       (baseline_id, task_id, start, finish, duration_wd, name, scope_text, acceptance_criteria)
+     SELECT $1, id, start, finish, duration_wd, name, description, acceptance_criteria
+       FROM planning.task WHERE id = ANY($2::uuid[])`,
+    [baselineId, branchIds],
+  );
+  await client.query(
+    `INSERT INTO planning.baseline_cost_line (baseline_id, boq_item_id, quantity, unit_price_cents, material_spec)
+     SELECT $1, id, quantity, unit_price_cents, material_spec
+       FROM contracting.boq_item
+      WHERE contract_id = $2 AND superseded_by_change_order_id IS NULL`,
+    [baselineId, contractId],
+  );
+  await client.query(
+    `UPDATE planning.task
+        SET baseline_start = start, baseline_finish = finish, schedule_state = 'on_baseline'
+      WHERE id = ANY($1::uuid[])`,
+    [branchIds],
+  );
+
+  await appendAuditEvent(client, {
+    projectId,
+    actor: { personId: actor?.personId ?? null, orgId: actor?.orgId ?? null },
+    category: 'planning',
+    type: 'planning.baseline.taken',
+    scope: { type: 'project', id: projectId },
+    object: { type: 'baseline', id: baselineId },
+    payload: { contract_id: contractId, version: 1, reason, roots, rows: branchIds.length, ...payload },
+    channel: 'system',
+  });
+  await publishEvent(client, {
+    event_id: randomUUID(),
+    type: 'planning.baseline.taken',
+    version: 1,
+    project_id: projectId,
+    actor: { person_id: actor?.personId ?? null, org_id: actor?.orgId ?? null },
+    scope: { type: 'project', id: projectId },
+    data: { baseline_id: baselineId, contract_id: contractId, version: 1, reason, root_task_ids: roots },
+  });
+  return { baselineId, rows: branchIds.length, branchIds };
+}
+
+/** Acknowledge each variation on `client`: who/when row, open → acknowledged,
+ *  ledger + planning.variation.acknowledged. Returns the variations as read. */
+async function acknowledgeOn(client, variationIds, actor) {
+  const out = [];
+  for (const variationId of variationIds) {
+    const { rows } = await client.query(
+      'SELECT * FROM planning.variation WHERE id = $1 FOR UPDATE', [variationId],
+    );
+    const v = rows[0];
+    await client.query(
+      `INSERT INTO planning.variation_ack (variation_id, org_id, person_id)
+       VALUES ($1, $2, $3)`,
+      [variationId, actor.orgId, actor.personId],
+    );
+    if (v.status === 'open') {
+      await client.query(
+        `UPDATE planning.variation SET status = 'acknowledged' WHERE id = $1`, [variationId],
+      );
+    }
+    await appendAuditEvent(client, {
+      projectId: v.project_id,
+      actor,
+      category: 'planning',
+      type: 'planning.variation.acknowledged',
+      scope: variationScope(v),
+      object: { type: 'variation', id: variationId },
+      payload: { task_id: v.task_id, kind: v.kind },
+      channel: actor.channel ?? 'ui',
+    });
+    await publishEvent(client, {
+      event_id: randomUUID(),
+      type: 'planning.variation.acknowledged',
+      project_id: v.project_id,
+      actor: { person_id: actor.personId, org_id: actor.orgId },
+      scope: variationScope(v),
+      data: { variation_id: variationId, task_id: v.task_id, kind: v.kind },
+    });
+    out.push(variationN({ ...v, status: v.status === 'open' ? 'acknowledged' : v.status }));
+  }
+  return attachAcks(client, out);
+}
+
+/** Append-only progress + planning.progress.reported, on the caller's client. */
+async function insertProgressOn(client, { taskId, projectId, status, percent, note, photoDocumentIds, taskName, criteria, actor }) {
+  const { rows } = await client.query(
+    `INSERT INTO planning.progress_report
+       (task_id, seq, status, percent, note, photo_document_ids, reported_by_org_id, reported_by_person_id)
+     SELECT $1, coalesce(max(seq), 0) + 1, $2, $3, $4, $5, $6, $7
+       FROM planning.progress_report WHERE task_id = $1
+     RETURNING *`,
+    [taskId, status, percent, note, photoDocumentIds ?? [], actor.orgId, actor.personId],
+  );
+  const report = rows[0];
+  await appendAuditEvent(client, {
+    projectId,
+    actor,
+    category: 'planning',
+    type: 'planning.progress.reported',
+    scope: { type: 'project', id: projectId },
+    object: { type: 'task', id: taskId },
+    payload: { seq: report.seq, status, ...(percent != null ? { percent } : {}), ...(note ? { note } : {}) },
+    channel: actor.channel ?? 'ui',
+  });
+  // Quality consumes this to open a verification request on `done`
+  // (criteria snapshot travels along); contracting consumes it to
+  // activate signed contracts when work starts.
+  await publishEvent(client, {
+    event_id: randomUUID(),
+    type: 'planning.progress.reported',
+    project_id: projectId,
+    actor: { person_id: actor.personId, org_id: actor.orgId },
+    scope: { type: 'project', id: projectId },
+    data: {
+      task_id: taskId,
+      task_name: taskName,
+      project_id: projectId,
+      status,
+      ...(note ? { note } : {}),
+      reported_by_org_id: actor.orgId,
+      ...(criteria ? { criteria } : {}),
+    },
+  });
+  return progressN(report);
 }
 
 /**

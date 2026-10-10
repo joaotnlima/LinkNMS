@@ -10,6 +10,7 @@ import {
   listSpecialties, createUserSpecialty,
   resolvePlanTemplate, savePlanTemplate,
 } from '../application/use-cases.mjs';
+import { acknowledgeVariations } from '../application/baseline-changes.mjs';
 
 /**
  * @param {{ store: object }} deps
@@ -72,6 +73,12 @@ export function registerPlanning(router, { store }) {
 
   router.register('POST', '/variations/{variationId}:acknowledge', 'acknowledgeVariation', ({ viewer, params }) =>
     acknowledgeVariation({ viewer, store, variationId: params.variationId }));
+
+  router.register('POST', '/projects/{projectId}/variations:acknowledge', 'acknowledgeVariations', ({ viewer, params, body, headers }) =>
+    store.idempotent(
+      { key: headers['idempotency-key'] ?? null, caller: viewer.clerkUserId, operationId: 'acknowledgeVariations', body },
+      () => acknowledgeVariations({ viewer, store, projectId: params.projectId, body }),
+    ));
 
   router.register('POST', '/variations/{variationId}:question', 'questionVariation', ({ viewer, params, body }) =>
     questionVariation({ viewer, store, variationId: params.variationId, body }));

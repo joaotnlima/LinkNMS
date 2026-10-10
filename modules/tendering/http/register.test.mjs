@@ -338,7 +338,8 @@ function fakeStore() {
       events.push('tendering.proposal.submitted');
       return withRfpFacts(next);
     },
-    async awardRfp({ rfpId, from, winnerProposalId, declineProposalIds, createContract }) {
+    async awardRfp({ rfpId, from, winnerProposalId, declineProposalIds, createContract, planFacts }) {
+      this.awardPlanFacts = planFacts;
       const r = rfps.get(rfpId);
       if (!r || r.status !== from) return null;
       rfps.set(rfpId, { ...r, status: 'awarded', awarded_proposal_id: winnerProposalId });
@@ -691,6 +692,11 @@ describe('tendering over the /api/v2 router', () => {
       assert.equal(store.lanes.get(LANE1).status, 'awarded');
       assert.equal(store.lanes.get(LANE2).status, 'declined');
       assert.ok(store.events.includes('tendering.rfp.awarded'));
+      // D-43: the award event carries what planning needs for the baseline.
+      assert.deepEqual(store.awardPlanFacts.root_task_ids, [TASK]);
+      assert.equal(store.awardPlanFacts.supplier_org_id, BIDDER_ORG);
+      assert.equal(store.awardPlanFacts.start, '2027-02-01');
+      assert.equal(store.awardPlanFacts.duration_wd, 9);
     });
 
     test('published but every invitee responded → allowed', async () => {

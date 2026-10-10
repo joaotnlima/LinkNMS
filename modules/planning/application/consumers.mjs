@@ -1,6 +1,10 @@
 // Planning-module event consumers (doc 10). Planning OWNS the plan rows, the
 // baselines, the variations and the progress trail, so:
+//   tendering.rfp.awarded              → D-43: the winning start/duration on
+//                                        the tendered rows, bind the branch +
+//                                        baseline v1 (reason 'award')
 //   contracting.contract.signed        → bind the tendered branch + baseline v1
+//                                        (a no-op when the award took it)
 //   contracting.change_order.approved  → next baseline from the CO's time
 //                                        entries; from_variation_ids formalised
 //   quality.verification.accepted     → append a 'verified' progress report
@@ -12,9 +16,15 @@
 // progress appends skip when the outcome is already the latest report, digest
 // rows are found-or-created per (project, recipient, window).
 import { windowOf } from '../domain/variations.mjs';
+import { takeAwardBaseline } from './baseline-changes.mjs';
 
 export function planningConsumers(store) {
   return {
+    'tendering.rfp.awarded': async (evt) => {
+      if (evt.type !== 'tendering.rfp.awarded') return;
+      await takeAwardBaseline({ store, evt });
+    },
+
     'contracting.contract.signed': async (evt) => {
       await store.bindSignedContract({
         contractId: evt.scope.id,

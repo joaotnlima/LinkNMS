@@ -233,7 +233,7 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 | lag_wd | int | default 0, may be negative |
 | created_by_org_id, created_by_person_id | uuid | must have the successor in edit scope (D-33) |
 
-**baseline** — `UNIQUE(root_task_id, version)`: `project_id, root_task_id (the baselined branch), contract_id, version, reason (contract_signed/change_order), change_order_id?, taken_at`.
+**baseline** — `UNIQUE(root_task_id, version)`: `project_id, root_task_id (the baselined branch), contract_id, version, reason (award/contract_signed/change_order — `award` since D-43, migration 0012), change_order_id?, taken_at`.
 **baseline_task** — `PK(baseline_id, task_id)`: `start, finish, duration_wd, name, scope_text, acceptance_criteria` (immutable snapshot: time, scope, quality).
 **baseline_cost_line** — `PK(baseline_id, boq_item_id)`: `quantity, unit_price_cents, material_spec` (cost snapshot; commercial visibility applies).
 
@@ -246,7 +246,8 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 | baseline_value, current_value | jsonb | e.g. `{"finish": "2026-09-11"}` vs `{"finish": "2026-09-25"}` |
 | delta | jsonb | e.g. `{"finish_wd": 10}`, `{"amount_cents": 246000}` |
 | first_changed_at, last_changed_at, last_changed_by_org_id | | |
-| cause | text | `direct` · `propagated` (+ `cause_task_id`) |
+| cause | text | `direct` · `propagated` (+ `cause_task_id`) · `closed_late` (closed with an actual finish past the baseline, PRD-13 §5; 0012) |
+| reason | text | optional "why" of the latest direct change, ≤ 500 chars (PRD-13 S-11; 0012) |
 | status | text | `open` · `acknowledged` · `formalised` · `closed` |
 | change_order_id | uuid | when formalised |
 

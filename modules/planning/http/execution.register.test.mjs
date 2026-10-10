@@ -236,6 +236,7 @@ function fakeStore() {
             state.boqLines = state.boqLines.map((l) => (l.id === id ? { ...l, ...patch } : l));
           },
           deleteCostLine: (id) => { state.boqLines = state.boqLines.filter((l) => l.id !== id); },
+          insertProgress: (args) => this.insertProgress(args),
           ledger: (entry) => state.ledger.push(entry.type),
           publish: (evt) => state.events.push(evt),
         },
