@@ -227,6 +227,17 @@ proceeding is allowed.
 - Which rows are tendered also decides the contract shape: turnkey, direct or hybrid is derived from
   the tree, never declared (D-35).
 - Tendering rules (clarifications, comparison, award) are in [06](./06-tendering-and-contracting.md).
+- **What a tender means for the plan** (PRD-02, `getTenderWindow`) is computed by planning, which owns the
+  calendar, the links and the critical path; tendering owns only the bids-due date:
+  - *coverage* — the roots and their sub-trees, minus descendants that already have their own owner
+    (another party than the root's), each listed with why; the issuer may include one back. The RFP
+    records the rows left out (`excluded_task_ids`) and its package omits them with their sub-trees;
+  - *work window* — the envelope of the covered rows' dates, which lock while the tender is out;
+  - *critical path* — a covered row is critical when a one-working-day slip of it moves the project
+    finish, pushed through the rigid links (§4) with the same engine as a real move, never written;
+  - *award-by* — planned start − the project's **mobilisation lead** (`planning.project_setting`, default
+    5 working days, editable by the owner or the live prime), with the working days left between
+    bids-due and that date.
 
 ## 11. Templates (D-30)
 

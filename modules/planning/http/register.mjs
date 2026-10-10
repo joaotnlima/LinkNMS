@@ -11,6 +11,7 @@ import {
   resolvePlanTemplate, savePlanTemplate,
 } from '../application/use-cases.mjs';
 import { acknowledgeVariations } from '../application/baseline-changes.mjs';
+import { getTenderWindow, getPlanningSettings, putPlanningSettings } from '../application/tender-window.mjs';
 
 /**
  * @param {{ store: object }} deps
@@ -21,6 +22,17 @@ export function registerPlanning(router, { store }) {
 
   router.register('GET', '/projects/{projectId}/schedule/health', 'getPlanHealth', ({ viewer, params, query }) =>
     getScheduleHealth({ viewer, store, projectId: params.projectId, query }));
+
+  // PRD-02: the plan side of a tender (coverage, work window, critical path,
+  // award-by) and the mobilisation lead it is computed with.
+  router.register('GET', '/projects/{projectId}/schedule/tender-window', 'getTenderWindow', ({ viewer, params, query }) =>
+    getTenderWindow({ viewer, store, projectId: params.projectId, query }));
+
+  router.register('GET', '/projects/{projectId}/planning-settings', 'getPlanningSettings', ({ viewer, params }) =>
+    getPlanningSettings({ viewer, store, projectId: params.projectId }));
+
+  router.register('PUT', '/projects/{projectId}/planning-settings', 'putPlanningSettings', ({ viewer, params, body }) =>
+    putPlanningSettings({ viewer, store, projectId: params.projectId, body }));
 
   router.register('GET', '/projects/{projectId}/assignable-parties', 'listAssignableParties', ({ viewer, params }) =>
     listAssignableParties({ viewer, store, projectId: params.projectId }));

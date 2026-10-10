@@ -271,6 +271,8 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 
 `task.status` = status of the latest row (derived, never a column).
 
+**project_setting** (0014): `project_id PK, mobilisation_lead_wd smallint (0–60, default 5), updated_at, updated_by_person_id` — absent row ⇒ defaults. The award-by date of a tender = the covered rows' planned start − `mobilisation_lead_wd` on the project calendar (PRD-02 §5, `getTenderWindow`).
+
 **plan_template** (D-30): `scope (personal/org/public/library), owner_person_id?, owner_org_id?, name, description, construction_type (detached_house/terraced/renovation/allotment/…), phase_tags text[], created_from_task_id?, uses_count`.
 **plan_template_row**: `template_id, row_key, parent_row_key, position, kind (task/summary/milestone), name, specialty` — **no dates, durations, assignees or prices**.
 **plan_template_link**: `template_id, from_row_key, to_row_key, from_anchor, to_anchor, lag_wd`.

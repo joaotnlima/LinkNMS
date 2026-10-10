@@ -349,6 +349,54 @@ export function createPlanningStore(pool) {
       return rows[0] ?? null;
     },
 
+    /** The live prime contractor (putPlanningSettings' gate, as putCalendar's). */
+    async isPrimeSupplier(projectId, orgId) {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM contracting.contract
+          WHERE project_id = $1 AND supplier_org_id = $2 AND kind = 'prime'
+            AND status IN ('signed','active','provisionally_received')
+          LIMIT 1`,
+        [projectId, orgId],
+      );
+      return rows.length > 0;
+    },
+
+    /** planning.project_setting (0014) — null when the project uses the defaults. */
+    async getPlanningSettings(projectId) {
+      const { rows } = await pool.query(
+        'SELECT mobilisation_lead_wd, updated_at FROM planning.project_setting WHERE project_id = $1',
+        [projectId],
+      );
+      return rows[0] ?? null;
+    },
+
+    /** Upsert the settings with their ledger entry, in one transaction. */
+    async putPlanningSettings({ projectId, mobilisationLeadWd, actor }) {
+      return tx(async (client) => {
+        const { rows } = await client.query(
+          `INSERT INTO planning.project_setting (project_id, mobilisation_lead_wd, updated_by_person_id)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (project_id) DO UPDATE
+             SET mobilisation_lead_wd = excluded.mobilisation_lead_wd,
+                 updated_by_person_id = excluded.updated_by_person_id,
+                 updated_at = now()
+           RETURNING mobilisation_lead_wd, updated_at`,
+          [projectId, mobilisationLeadWd, actor.personId],
+        );
+        await appendAuditEvent(client, {
+          projectId,
+          actor,
+          category: 'planning',
+          type: 'planning.settings.updated',
+          scope: { type: 'project', id: projectId },
+          object: { type: 'project', id: projectId },
+          payload: { mobilisation_lead_wd: mobilisationLeadWd },
+          channel: actor.channel,
+        });
+        return rows[0];
+      });
+    },
+
     async isParticipant(projectId, orgId) {
       const { rows } = await pool.query(
         `SELECT 1 FROM project.participation WHERE project_id = $1 AND org_id = $2 AND status = 'active'`,
