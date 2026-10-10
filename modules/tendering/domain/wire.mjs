@@ -161,6 +161,8 @@ export function laneBody(row, { seesMoney }) {
       ? { total: money(row.summary_total_cents) } : {}),
     duration_wd: row.summary_duration_wd ?? undefined,
     start: dateOnly(row.summary_start),
+    validity_until: dateOnly(row.validity_until),
+    rfp_id: row.rfp_id,
     missing_lines: Number(row.missing_lines ?? 0),
     variant_lines: Number(row.variant_lines ?? 0),
     document_count: (row.document_ids ?? []).length,

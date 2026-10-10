@@ -192,3 +192,17 @@ describe('PRD-02 tendering over the /api/v2 router', () => {
     });
   });
 });
+
+describe('ProposalLane carries validity_until and rfp_id (T-14)', () => {
+  test('laneBody projects both; validity is a calendar day', async () => {
+    const { laneBody } = await import('../domain/wire.mjs');
+    const lane = laneBody({
+      id: NEW_ID, rfp_id: RFP, email: 'a@x.pt', channel: 'email', status: 'submitted',
+      summary_total_cents: 2140000, summary_duration_wd: 22, summary_start: new Date('2027-02-01T00:00:00Z'),
+      validity_until: new Date('2027-02-28T00:00:00Z'), document_ids: ['d1', 'd2'],
+    }, { seesMoney: false });
+    assert.equal(lane.validity_until, '2027-02-28');
+    assert.equal(lane.rfp_id, RFP);
+    assert.equal('total' in lane, false);
+  });
+});

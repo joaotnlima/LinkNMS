@@ -10410,6 +10410,14 @@ components:
           type: integer
         start: *id003
         finish: *id003
+        validity_until:
+          allOf:
+          - *id003
+          description: Until when the bid holds (PRD-02 T-14 "Valid until"); absent when not given.
+        rfp_id:
+          allOf:
+          - *id001
+          description: The RFP this lane answers — a task tendered more than once has lanes of several.
         missing_lines:
           type: integer
         variant_lines:

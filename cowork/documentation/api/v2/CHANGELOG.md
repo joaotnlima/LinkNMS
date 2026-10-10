@@ -17,6 +17,8 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
   sub-trees, T-3). `Rfp` gains `excluded_task_ids`, `created_at`, `published_at`, `closed_at`, `awarded_at`,
   `cancelled_at`, `cancel_reason`; `TaskProcurement` gains `excluded_task_ids`, the four stamps and
   `cancel_reason` (T-10, T-19).
+- `ProposalLane` gains `validity_until` (the panel's side-by-side "Valid until", T-14) and `rfp_id` (a re-tendered
+  task has lanes of several RFPs; the panel shows only the governing one's).
 - `cancelRfp` accepts an optional body `{reason}` (≤ 500); `tendering.rfp.cancelled` carries it.
 - **Behaviour fix — a draft is private until it is sent (D-29, T-6/T-7):** `addRecipients` on a **draft**
   only queues the recipient: no email is sent and no `token` is returned. `publishRfp` mints a fresh personal
