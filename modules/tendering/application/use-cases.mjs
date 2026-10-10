@@ -152,7 +152,7 @@ export async function getRfp({ viewer, store, documentsStore, rfpId }) {
   const clarifications = visibleClarifications(await store.clarificationsOf(rfpId), {
     isIssuer, asker: { orgId: viewer.orgId },
   }).map(({ row, mine }) => clarificationBody(row, { mine }));
-  const models = await loadRfpModels(documentsStore, rfpId);
+  const models = await loadRfpModels(documentsStore, rfp);
   return {
     status: 200,
     body: {
@@ -188,7 +188,7 @@ export async function getRfpByToken({ store, documentsStore, token }) {
   await store.markRecipientOpened(rec.id).catch(() => {});
   const pkg = await store.packageOf(rec.rfp_id, rec.package_version);
   const proposal = await loadOwnProposalEcho(store, rec.proposal_id);
-  const models = await loadRfpModels(documentsStore, rec.rfp_id);
+  const models = await loadRfpModels(documentsStore, rec);
   const rfp = {
     title: rec.title, scope_text: rec.scope_text, specialties: rec.specialties,
     purpose: rec.purpose, mode: rec.mode, questions_deadline: rec.questions_deadline,
@@ -421,62 +421,72 @@ export async function downloadProposalDocument({ viewer, store, storage, proposa
   return { status: 302, body: null, headers: { location: url, 'cache-control': 'no-store' } };
 }
 
-// ── RFP BIM model (LINA-409, doc 24) ────────────────────────────────────────
-// A read-only IFC 3D model attached to a (design) RFP so bidders can SEE the
-// building before pricing. The model is a Documents-module document
-// (scope_type='rfp', kind='bim') — no schema change (decision 2). Authorization
-// lives HERE (decision 3): attach/replace/remove are issuer-only on a draft;
-// the two view-url routes mint a short-TTL presigned INLINE GET after the RFP
-// read rule passes — the authed one via requireRfpRead, the public one with the
-// token as the sole authority. Tendering owns the gate; the documents store
-// owns persistence and the storage port owns bytes. Read-only always: no route
-// ever writes the model.
+// ── RFP BIM model (LINA-409, doc 24; PRD-07 §5) ─────────────────────────────
+// Since PRD-07 the model is the BUILD's: one project-scoped `bim` document
+// (documents.document.is_project_model) that every participant reads. An RFP
+// no longer owns a model — it REFERENCES the project model, following its
+// current version or pinned to one (tendering.rfp.model_document_id /
+// model_version_no). Bidders who are not participants see the model only
+// through that reference (M-7), under the RFP read rule:
+// the authed view-url via requireRfpRead, the public one with the token as the
+// sole authority. Tendering owns the gate; the documents store owns
+// persistence and the storage port owns bytes. Attaching, pinning and
+// detaching are issuer-only on a draft. Uploading the .ifc itself follows the
+// model's rule (PRD-07 M-9): the first model of a build may be put up by the
+// issuer; later versions only by the model's author.
 
-/** Completed, non-deleted BIM models of an RFP, newest facts first. Auth-free —
- *  the caller already authorized the RFP read. Phase 1 surfaces models[0]. */
-async function loadRfpModels(documentsStore, rfpId) {
-  if (!documentsStore) return [];
-  const docs = await documentsStore.listScopeDocuments({ scopeType: 'rfp', scopeId: rfpId, kind: 'bim' });
-  const out = [];
-  for (const doc of docs) {
-    const version = await documentsStore.getVersion(doc.id, doc.current_version);
-    out.push(modelBody(doc, version));
-  }
-  return out;
+/** The RFP's model descriptor(s): [] or [the referenced model at its version]. */
+async function loadRfpModels(documentsStore, rfp) {
+  if (!documentsStore || !rfp?.model_document_id) return [];
+  const doc = await documentsStore.getDocument(rfp.model_document_id);
+  if (!doc || doc.current_version < 1) return [];
+  const versionNo = rfp.model_version_no ?? doc.current_version;
+  const version = await documentsStore.getVersion(doc.id, versionNo);
+  return version ? [modelBody(doc, version, { pinned: rfp.model_version_no != null })] : [];
 }
 
-/** The model as a Documents-module document of THIS rfp, or null (existence
- *  hiding: a document id from another scope is indistinguishable from absent). */
-async function rfpModelDocument(documentsStore, rfpId, documentId) {
-  if (!UUID.test(documentId ?? '')) return null;
+/** The document + version the RFP references, when `documentId` names it; else null
+ *  (existence hiding: any other document id is indistinguishable from absent). */
+async function rfpModelVersion(documentsStore, rfp, documentId) {
+  if (!UUID.test(documentId ?? '') || rfp?.model_document_id !== documentId) return null;
   const doc = await documentsStore.getDocument(documentId);
-  if (!doc || doc.scope_type !== 'rfp' || doc.scope_id !== rfpId
-      || doc.kind !== 'bim' || doc.current_version < 1) return null;
-  return doc;
+  if (!doc || doc.kind !== 'bim' || doc.current_version < 1) return null;
+  const version = await documentsStore.getVersion(documentId, rfp.model_version_no ?? doc.current_version);
+  return version ? { doc, version } : null;
+}
+
+function requireDraftPackage(rfp, what) {
+  if (rfp.status !== 'draft') {
+    throw new ProblemError('invalid_transition', `the model can only be ${what} while the RFP is a draft`);
+  }
 }
 
 /** operationId: reserveRfpModel — POST /rfps/{rfpId}/model. Issuer, draft only.
- *  One model per RFP (Phase 1): a second attach replaces the first as a new
- *  VERSION of the same document (the byte ledger is append-only). */
+ *  Deprecated by PRD-07 (attachRfpModel): uploads the next .ifc of the BUILD's
+ *  model — its first, or a new version when the issuer is the model's author —
+ *  and `completeRfpModel` then attaches it to this RFP (following current). */
 export async function reserveRfpModel({ viewer, store, documentsStore, storage, rfpId, body }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
-  if (rfp.status !== 'draft') {
-    throw new ProblemError('invalid_transition', 'the model can only be attached while the RFP is a draft');
-  }
+  requireDraftPackage(rfp, 'attached');
   const errors = validateModelFile(body?.file);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const actor = actorOf(await requireActor(store, viewer), viewer);
   // mime is normalised — IFC carries no agreed browser mime (domain MODEL_MIME).
   const file = { name: body.file.name, mime: MODEL_MIME, size_bytes: body.file.size_bytes, sha256: body.file.sha256 };
-  const existing = await documentsStore.listScopeDocuments({ scopeType: 'rfp', scopeId: rfpId, kind: 'bim' });
+  const existing = await documentsStore.getProjectModel(rfp.project_id);
 
   let version;
-  if (existing.length) {
-    const documentId = existing[0].id;
+  if (existing) {
+    const documentId = existing.id;
+    if (existing.current_version >= 1 && (await documentsStore.modelAuthorOrgId(documentId)) !== viewer.orgId) {
+      throw new ProblemError('forbidden',
+        'only the model\'s author uploads a new .ifc — attach the build\'s model to this RFP instead', { reason: 'relationship' });
+    }
     version = await documentsStore.addVersion({
       documentId,
       file,
+      meta: { changeKind: 'upload', baseVersionNo: existing.current_version || null },
       storageKeyOf: (versionNo) => documentStorageKey({ documentId, versionNo, fileName: file.name, random: randomUUID() }),
       actor,
     });
@@ -485,11 +495,12 @@ export async function reserveRfpModel({ viewer, store, documentsStore, storage, 
     version = await documentsStore.createDocument({
       id,
       projectId: rfp.project_id,
-      scopeType: 'rfp',
-      scopeId: rfpId,
+      scopeType: 'project',
+      scopeId: rfp.project_id,
       kind: 'bim',
       title: file.name,
       shareWithAncestors: false,
+      isProjectModel: true,
       file,
       storageKey: documentStorageKey({ documentId: id, versionNo: 1, fileName: file.name, random: randomUUID() }),
       actor,
@@ -503,20 +514,18 @@ export async function reserveRfpModel({ viewer, store, documentsStore, storage, 
 }
 
 /** operationId: completeRfpModel — POST /rfps/{rfpId}/model/{documentId}:complete.
- *  Issuer. Prove the bytes arrived (size; sha256 was pinned into the PUT), then
- *  advance the version and ledger it (documents store). Returns the descriptor. */
+ *  Issuer. Prove the bytes arrived (size; sha256 was pinned into the PUT), advance
+ *  the build model's version (documents store, ledgered), then attach it to this
+ *  RFP following its current version. Returns the descriptor. */
 export async function completeRfpModel({ viewer, store, documentsStore, storage, rfpId, documentId }) {
-  await requireIssuer({ viewer, store, rfpId });
+  const { rfp } = await requireIssuer({ viewer, store, rfpId });
   if (!UUID.test(documentId ?? '')) throw new ProblemError('not_found');
   const doc = await documentsStore.getDocument(documentId);
-  if (!doc || doc.scope_type !== 'rfp' || doc.scope_id !== rfpId || doc.kind !== 'bim') {
-    throw new ProblemError('not_found');
-  }
-  // The version just reserved is current_version + 1 (createDocument reserves v1
-  // with current_version still 0; addVersion reserves max+1).
+  if (!doc || !doc.is_project_model || doc.project_id !== rfp.project_id) throw new ProblemError('not_found');
+  // The version just reserved is the one above current, uploaded by this org.
   const versionNo = doc.current_version + 1;
   const version = await documentsStore.getVersion(documentId, versionNo);
-  if (!version) throw new ProblemError('not_found');
+  if (!version || version.uploaded_by_org_id !== viewer.orgId) throw new ProblemError('not_found');
 
   const head = await storage.head({ key: version.storage_key });
   if (!head) {
@@ -531,34 +540,53 @@ export async function completeRfpModel({ viewer, store, documentsStore, storage,
   const actor = actorOf(await requireActor(store, viewer), viewer);
   const result = await documentsStore.completeUpload({ documentId, versionNo, actor });
   if (!result) throw new ProblemError('not_found');
-  return { status: 200, body: modelBody(result.doc, version) };
+  if (rfp.status === 'draft') await store.setRfpModel({ rfpId, documentId, versionNo: null });
+  return { status: 200, body: modelBody(result.doc, version, { pinned: false }) };
+}
+
+/** operationId: attachRfpModel — PUT /rfps/{rfpId}/model. Issuer, draft only.
+ *  The RFP references the build's model, following its current version
+ *  (`version_no` null) or pinned to a proven one (PRD-07 §5). */
+export async function attachRfpModel({ viewer, store, documentsStore, rfpId, body }) {
+  const { rfp } = await requireIssuer({ viewer, store, rfpId });
+  requireDraftPackage(rfp, 'attached');
+  const errors = {};
+  if (!UUID.test(body?.document_id ?? '')) errors.document_id = 'the build\'s model document id';
+  const pin = body?.version_no ?? null;
+  if (pin !== null && (!Number.isInteger(pin) || pin < 1)) errors.version_no = 'a version number, or null to follow the current version';
+  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+  const model = await documentsStore.getProjectModel(rfp.project_id);
+  if (!model || model.id !== body.document_id || model.current_version < 1) {
+    throw new ProblemError('validation_failed', null, { errors: { document_id: 'the model of this RFP\'s build' } });
+  }
+  if (pin !== null && pin > model.current_version) {
+    throw new ProblemError('validation_failed', null, { errors: { version_no: `a version from 1 to ${model.current_version}` } });
+  }
+  await store.setRfpModel({ rfpId, documentId: model.id, versionNo: pin });
+  const version = await documentsStore.getVersion(model.id, pin ?? model.current_version);
+  return { status: 200, body: modelBody(model, version, { pinned: pin !== null }) };
 }
 
 /** operationId: removeRfpModel — DELETE /rfps/{rfpId}/model/{documentId}.
- *  Issuer, draft only. SOFT delete on the document (the append-only byte ledger
- *  is never touched — doc 24 read-only invariant + the audit trail). 204. */
+ *  Issuer, draft only. DETACHES the build's model from the RFP; the model
+ *  itself stays the build's (never deleted). 204. */
 export async function removeRfpModel({ viewer, store, documentsStore, rfpId, documentId }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
-  if (rfp.status !== 'draft') {
-    throw new ProblemError('invalid_transition', 'the model can only be removed while the RFP is a draft');
-  }
-  const doc = await rfpModelDocument(documentsStore, rfpId, documentId);
-  if (!doc) throw new ProblemError('not_found');
-  await documentsStore.softDeleteDocument(documentId);
+  requireDraftPackage(rfp, 'removed');
+  if (!(await rfpModelVersion(documentsStore, rfp, documentId))) throw new ProblemError('not_found');
+  await store.setRfpModel({ rfpId, documentId: null, versionNo: null });
   return { status: 204, body: null };
 }
 
 /** operationId: rfpModelViewUrl — GET /rfps/{rfpId}/model/{documentId}:view-url.
  *  Any RFP reader (issuer or invited/open recipient). Short-TTL presigned INLINE
- *  GET so the browser can fetch()+ArrayBuffer the model into the viewer. */
+ *  GET of the version the RFP references. */
 export async function rfpModelViewUrl({ viewer, store, documentsStore, storage, rfpId, documentId }) {
-  await requireRfpRead({ viewer, store, rfpId });
-  const doc = await rfpModelDocument(documentsStore, rfpId, documentId);
-  if (!doc) throw new ProblemError('not_found');
-  const version = await documentsStore.getVersion(documentId, doc.current_version);
-  if (!version) throw new ProblemError('not_found');
+  const { rfp } = await requireRfpRead({ viewer, store, rfpId });
+  const found = await rfpModelVersion(documentsStore, rfp, documentId);
+  if (!found) throw new ProblemError('not_found');
   const { url, expiresAt } = await storage.signDownload({
-    key: version.storage_key, fileName: doc.title, disposition: 'inline',
+    key: found.version.storage_key, fileName: found.doc.title, disposition: 'inline',
   });
   return { status: 200, body: { url, expiresAt } };
 }
@@ -571,12 +599,10 @@ export async function rfpModelViewUrl({ viewer, store, documentsStore, storage, 
 export async function rfpModelViewUrlByToken({ store, documentsStore, storage, token, documentId }) {
   const rec = await store.findRecipientByToken(token ?? '');
   if (!rec) throw new ProblemError('not_found', 'this link is not valid');
-  const doc = await rfpModelDocument(documentsStore, rec.rfp_id, documentId);
-  if (!doc) throw new ProblemError('not_found');
-  const version = await documentsStore.getVersion(documentId, doc.current_version);
-  if (!version) throw new ProblemError('not_found');
+  const found = await rfpModelVersion(documentsStore, { model_document_id: rec.model_document_id, model_version_no: rec.model_version_no }, documentId);
+  if (!found) throw new ProblemError('not_found');
   const { url, expiresAt } = await storage.signDownload({
-    key: version.storage_key, fileName: doc.title, disposition: 'inline',
+    key: found.version.storage_key, fileName: found.doc.title, disposition: 'inline',
   });
   return { status: 200, body: { url, expiresAt } };
 }

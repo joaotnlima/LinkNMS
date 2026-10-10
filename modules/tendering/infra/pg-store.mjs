@@ -197,6 +197,19 @@ export function createTenderingStore(pool) {
       return loadRfp(pool, rfpId);
     },
 
+    /**
+     * The build's model this RFP references (PRD-07 §5): a document id, and a
+     * pinned version or null (follows the current version). Draft-only is the
+     * use case's rule; a package edit of a draft is not ledgered (the model's
+     * bytes are, by Documents).
+     */
+    async setRfpModel({ rfpId, documentId, versionNo }) {
+      await pool.query(
+        'UPDATE tendering.rfp SET model_document_id = $2, model_version_no = $3 WHERE id = $1',
+        [rfpId, documentId, versionNo],
+      );
+    },
+
     async packageOf(rfpId, packageVersion) {
       const { rows } = await pool.query(
         `SELECT task_id, parent_task_id, name, scope_text, specialty, position
@@ -238,6 +251,7 @@ export function createTenderingStore(pool) {
                 r.title, r.scope_text, r.specialties, r.submission_deadline,
                 r.questions_deadline, r.purpose, r.mode,
                 r.status AS rfp_status, r.project_id, r.package_version,
+                r.model_document_id, r.model_version_no,
                 pr.name AS project_name,
                 -- The site's name is a public-safe locality; the full address
                 -- (PII) is never handed to an anonymous bidder.

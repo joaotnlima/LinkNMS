@@ -11,7 +11,7 @@ import {
   submitOwnBid, getComparison, shortlistProposal, awardRfp,
   getRfpByToken, submitProposalByToken,
   reserveProposalDocumentByToken, completeProposalDocumentByToken, downloadProposalDocument,
-  reserveRfpModel, completeRfpModel, removeRfpModel, rfpModelViewUrl, rfpModelViewUrlByToken,
+  reserveRfpModel, completeRfpModel, removeRfpModel, rfpModelViewUrl, rfpModelViewUrlByToken, attachRfpModel,
 } from '../application/use-cases.mjs';
 import { listTaskProcurement } from '../application/task-procurement.mjs';
 import { listProjectRfps } from '../application/project-rfps.mjs';
@@ -90,6 +90,9 @@ export function registerTendering(router, { store, storage, documentsStore, cont
   // module document; tendering owns the gate, documentsStore owns persistence.
   router.register('POST', '/rfps/{rfpId}/model', 'reserveRfpModel', ({ viewer, params, body }) =>
     reserveRfpModel({ viewer, store, documentsStore, storage, rfpId: params.rfpId, body }));
+
+  router.register('PUT', '/rfps/{rfpId}/model', 'attachRfpModel', ({ viewer, params, body }) =>
+    attachRfpModel({ viewer, store, documentsStore, rfpId: params.rfpId, body }));
 
   router.register('POST', '/rfps/{rfpId}/model/{documentId}:complete', 'completeRfpModel', ({ viewer, params }) =>
     completeRfpModel({ viewer, store, documentsStore, storage, rfpId: params.rfpId, documentId: params.documentId }));
