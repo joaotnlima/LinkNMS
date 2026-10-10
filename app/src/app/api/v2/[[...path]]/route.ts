@@ -34,8 +34,14 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path?: s
     || path[0] === 'rfp-links'
     || (req.method === 'GET' && path[0] === 'project-invitations');
 
+  // Public directory reads (PRD-03 R-9, `security: []`): the taxonomy, company
+  // search and profiles answer anonymous visitors. A signed-in caller is still
+  // resolved — near_project needs its relationships, and a company's own
+  // views are not counted.
+  const publicRead = req.method === 'GET' && (path[0] === 'specialties' || path[0] === 'directory');
+
   const viewer = machineCaller ? null : await viewerFromClerk();
-  if (!viewer && !machineCaller) {
+  if (!viewer && !machineCaller && !publicRead) {
     return respond(problemResponse('unauthenticated', 'sign in to use /api/v2'));
   }
 

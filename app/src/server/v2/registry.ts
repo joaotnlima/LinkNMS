@@ -33,6 +33,10 @@ import { registerBilling } from '@modules/billing/http/register.mjs';
 import { createBillingStore } from '@modules/billing/infra/pg-store.mjs';
 import { createEntitlements } from '@modules/billing/application/entitled.mjs';
 import { registerRecord } from '@modules/record/http/register.mjs';
+import { registerDirectory } from '@modules/directory/http/register.mjs';
+import { createDirectoryStore } from '@modules/directory/infra/pg-store.mjs';
+import { createSpecialtyPort } from '@modules/directory/application/specialty-port.mjs';
+import { createBuildPort } from '@modules/project/application/build-port.mjs';
 import { createRecordStore } from '@modules/record/infra/pg-store.mjs';
 
 let router: ReturnType<typeof createRouter> | null = null;
@@ -116,8 +120,9 @@ export function getRouter() {
 
   // Phase 2 — Project (brief, lifecycle, locations, participants,
   // invitations, calendar, share links).
+  const projectStore = createProjectStore(getPool());
   registerProject(router, {
-    store: createProjectStore(getPool()),
+    store: projectStore,
     shareBaseUrl: () =>
       process.env.NEXT_PUBLIC_APP_URL
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://portal.linknms.com'),
@@ -141,7 +146,14 @@ export function getRouter() {
   // signature) plus execution (progress, variations, cost lines) and the
   // deliverables of a task with the D-48 done gate (PRD-05).
   // Templates and imports land with later phases.
-  registerPlanning(router, { store: planningStore, documents: createDocumentsPort(documentsStore) });
+  // PRD-03 R-2: a row's specialty_code is checked through the directory's
+  // taxonomy port (planning never reads directory.*).
+  const directoryStore = createDirectoryStore(getPool());
+  registerPlanning(router, {
+    store: planningStore,
+    documents: createDocumentsPort(documentsStore),
+    specialties: createSpecialtyPort(directoryStore),
+  });
 
   // Phase 5 — Quality (verification, non-conformities, inspections).
   registerQuality(router, { store: createQualityStore(getPool()) });
@@ -208,7 +220,24 @@ export function getRouter() {
     documents: { store: documentsStore, storage: objectStorage },
   });
 
-  // Module registrations land phase by phase (AGENT-INDEX §5): directory …
+  // Phase 9 — Directory (PRD-03): the specialty taxonomy, public search and
+  // profiles (anonymous GETs — see the /api/v2 route), the company-side
+  // editor, the claim path and the owner's consent. The build's point and
+  // ownership come from the project module's build port; the "On the record"
+  // read model is filled by the directory consumers in dispatcher.ts. Claim
+  // links go out through the shared MailSender port.
+  registerDirectory(router, {
+    store: directoryStore,
+    builds: createBuildPort(projectStore),
+    mail: {
+      sender: createMailSender({ provider: process.env.NOTIFICATIONS_MAIL_PROVIDER || undefined }),
+      baseUrl: () =>
+        process.env.NEXT_PUBLIC_APP_URL
+        ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://portal.linknms.com'),
+    },
+  });
+
+  // Module registrations land phase by phase (AGENT-INDEX §5): reputation …
 
   return router;
 }

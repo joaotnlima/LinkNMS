@@ -10948,7 +10948,7 @@ components:
           description: Has at least one client verified by the platform (D-46). False → "No verified clients yet".
         verified_clients:
           type: integer
-          description: Distinct clients that signed a contract with the company on LinkNMS (terminated ones excluded)
+          description: Distinct clients that signed a contract with the company on LinkNMS (a later termination does not undo the award; its late tasks still count against the on-time rate)
         builds:
           type: integer
           description: Builds with a signed contract

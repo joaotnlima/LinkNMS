@@ -35,7 +35,7 @@ the open-marketplace tender flow (LINA-406) with the least new surface:
 25/50/100 km (the company's own service radius must reach the point), municipality/district, kind, can start by;
 facets for work types, proof, size, claimed. Distances are haversine in SQL (`directory.distance_km`, no extension).
 Ranking comes **only from clients verified by the platform** — clients that signed a contract with the company on
-LinkNMS. Ranked companies (≥ 1 verified client, terminated contracts excluded) come first, ordered by verified
+LinkNMS. Ranked companies (≥ 1 verified client; a terminated contract still counts — the award happened, and its late tasks weigh on the on-time rate) come first, ordered by verified
 clients, then the on-time rate of their tasks under those contracts (smoothed (x+1)/(y+2)), then builds, then
 distance, then specialty match. Companies with no verified client follow, labelled "No verified clients yet", by
 distance then specialty match. Completeness, stated data and payment never change the order. Ratings (D-16) do not

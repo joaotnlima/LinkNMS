@@ -34,6 +34,8 @@ import { createTenderingAudience } from '@modules/tendering/application/audience
 import { createTenderingStore } from '@modules/tendering/infra/pg-store.mjs';
 import { createPlanningAudience } from '@modules/planning/application/audience.mjs';
 import { createMailSender } from '@modules/tendering/infra/mail-sender.mjs';
+import { directoryConsumers } from '@modules/directory/application/consumers.mjs';
+import { createDirectoryStore } from '@modules/directory/infra/pg-store.mjs';
 
 import { getPool } from './registry';
 
@@ -48,6 +50,9 @@ function getHandlers(): Handlers {
       contractingConsumers(createContractingStore(pool)),
       planningConsumers(createPlanningStore(pool)),
       qualityConsumers(createQualityStore(pool)),
+      // PRD-03 R-11: the directory's "On the record" read model (contract,
+      // change-order, done-task and proposal facts — never amounts, D-46).
+      directoryConsumers(createDirectoryStore(pool)),
       // PRD-06: DWG/DXF previews. The converter is a port chosen by
       // DWG_CONVERTER (default `none` → download only, reason
       // converter_not_configured); LibreDWG (GPL) is never bundled — D-49 legal

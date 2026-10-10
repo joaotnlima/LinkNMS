@@ -61,6 +61,7 @@ rule can be seen applied.
 | created_by_org_id | uuid | |
 | name, address | text | |
 | municipality_code | text | INE/DICOFRE code — drives marketplace matching and holiday calendar |
+| location_lat, location_lng | numeric(8,5) | the build's point, both or neither (0020, PRD-03 R-3) — "companies near this build" |
 | typology | text | e.g. `T3` |
 | gross_area_m2 | numeric(10,2) | |
 | indicative_budget_cents | bigint | the brief; never contractual |
@@ -202,7 +203,8 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 | position | text | fractional index among siblings (concurrent reorders never collide) |
 | kind | text | `task` · `summary` · `milestone` — `summary` is **derived** (has children) |
 | name, description | text | |
-| specialty | text | catalogue code |
+| specialty | text | free-text label shown on the row (suggestions: `user_specialty`) |
+| specialty_code | text | optional directory taxonomy code (0021, PRD-03 R-2); checked through the directory specialty port, no FK |
 | location_id | uuid | |
 | contract_id | uuid | set when the branch is awarded/signed; **not shown as a column** (D-27) |
 | assignee_org_id, assignee_person_id | uuid | |
@@ -311,9 +313,19 @@ A deliverable's state is its latest submission's (`not_yet` when none).
 **notification**: `person_id, event_id, category, title, object_ref, read_at` — `UNIQUE(person_id, event_id) WHERE event_id IS NOT NULL` (0005: at-least-once outbox dedupe; digest rows aggregate a window under the first event's id). **notification_preference**: `person_id, category, channel, enabled`.
 
 ### `directory`
-**organization_profile** — `PK(org_id)`: `display_name, description, logo_document_id, specialties text[], tags text[], service_areas text[] (municipality/district codes), team_size_band, founded_year, declared_nif, declared_impic_number, declared_impic_class, declared_insurance, listed bool, completeness smallint (derived, materialised)`.
-**portfolio_entry**: `org_id, source (platform/declared), contract_id?, title, municipality_code, typology, specialties, start_date, end_date, variance_wd?, photo_document_ids, owner_consent bool`.
-**specialty** (catalogue): `code PK, name_pt, name_en, parent_code`.
+Owned by Directory; event-fed, no cross-schema reads (0022, PRD-03).
+**specialty** (taxonomy, seeded): `code PK (also the public slug), name_pt, name_en, parent_code (two levels), position, impic_ref` — `impic_ref` is reference metadata (IMPIC alvará category/sub-category), **unverified**, never proof.
+**organization_profile** — `PK(org_id)`: `slug UNIQUE (minted from display_name, numeric suffix on collision, frozen — to-be/20 §5.2), display_name, kind?, claimed, contact_email? (unclaimed only; CHECK claimed ∨ contact_email), description, logo_document_id, specialties text[] (taxonomy codes), tags text[], service_areas text[] (municipality/district codes), base_municipality_code?, base_lat?, base_lng? (both or neither), service_radius_km? (1–300), team_size_band, founded_year, available_from? (stated), declared_nif, declared_impic_number, declared_impic_class, declared_insurance (all stated — D-17/D-46), listed, completeness (derived, materialised; never used to order), created_at, updated_at, version`. An unclaimed profile's `org_id` is a directory-minted subject id until a claim re-keys it to the claimant org.
+**portfolio_entry**: `org_id, source (platform/declared), contract_id?, title, municipality_code, typology, specialties, start_date, end_date, variance_wd?, photo_document_ids, owner_consent bool, created_at`.
+**profile_claim**: `id, profile_org_id (FK, ON UPDATE CASCADE), claimant_org_id, claimant_person_id, token_hash UNIQUE (sha256), sent_to, created_at, expires_at (7 days), accepted_at?` — the e-mailed single-use link proves control of the profile's e-mail.
+**portfolio_consent** — `PK(project_id)`: `owner_org_id, show_on_profiles, build_name? (snapshot at consent; required when shown), note?, decided_by_person_id, decided_at`. No row = no consent.
+**record_contract** — `PK(contract_id)`: `project_id, kind, client_org_id, supplier_org_id, status (signed/active/provisionally_received/closed/terminated), signed_at, finished_at?` — from `contracting.contract.*`.
+**record_task** — `PK(task_id)`: `project_id, contract_id?, assignee_org_id, baseline_finish?, actual_finish?, reported_at` — a task finished (`done`/`verified`); on time ⇔ `actual_finish ≤ baseline_finish`.
+**record_change_order** — `PK(change_order_id)`: `contract_id, status (submitted/approved/rejected/withdrawn), updated_at`.
+**record_proposal** — `PK(proposal_id)`: `rfp_id, bidder_org_id?, submitted_at?, awarded_at?` (listing stats).
+**consumed_event** — `PK(event_id)`: `type, consumed_at` (consumer dedupe).
+**listing_stat** — `PK(org_id, day, kind)`: `kind (search_impression/profile_view), count`.
+**distance_km(lat1, lng1, lat2, lng2)** — haversine in SQL (no earthdistance/PostGIS).
 
 ### `reputation`
 **review** — `UNIQUE(reviewer_org_id, subject_org_id, anchor_type, anchor_id)`: `anchor_type (contract/subcontract_work), anchor_id, rating_quality, rating_schedule, rating_communication, rating_payment?, body, status (submitted/published), published_at, reply_body, replied_at`.
