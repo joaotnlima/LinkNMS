@@ -61,6 +61,8 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | My rows (this week, late, extended) | ANY | `GET /me/tasks?window=week&state=extended` |
 | Site presence calendar | participant | `GET /projects/{id}/site-calendar?from=&to=` |
 | Project calendar (work days, holidays, closures) | owner/GC edit, participants read | `GET/PUT /projects/{id}/calendar` |
+| Planning settings (mobilisation lead for the award-by date, default 5 wd) | owner/GC edit, participants read | `GET/PUT /projects/{id}/planning-settings` |
+| What tendering some rows means for the plan: covered / left-out rows (and why), work window, critical path, award-by date and working days from bids-due (PRD-02) | participant | `GET /projects/{id}/schedule/tender-window?task_ids=&include=&bids_due=` |
 | Import plan from Excel (under a row) | edit scope contains the target parent | `POST /projects/{id}/schedule-imports` → `:map` → `:preview` → `:confirm` |
 | Template library: browse by construction type / phase / scope (personal, org, public, LinkNMS) | ANY | `GET /plan-templates?construction_type=&phase=&scope=` · `GET /plan-templates/{id}` |
 | Save the plan or a selected subtree as a template (structure + links only) | any participant (reading is enough) | `POST /plan-templates {root_task_ids[], scope, construction_type, phase_tags}` |
@@ -76,8 +78,9 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Create RFP from one or more plan rows (package = subtree + docs + cost lines without prices) | OW · GC (own branch) | `POST /projects/{id}/rfps {root_task_ids[]}` |
 | Add recipients: platform orgs (search by specialty + area) and/or emails | issuer | `POST /rfps/{id}/recipients` · `GET /directory/organizations?specialty=&municipality=` |
 | Per-recipient delivery status (sent / opened / proposal / declined) | issuer | `GET /rfps/{id}/recipients` |
+| Remove a queued bidder from a draft (nothing was sent yet) | issuer | `DELETE /rfps/{id}/recipients/{recipientId}` |
 | Edit package (BoQ template, tasks, docs) | issuer | `PATCH /rfps/{id}` · `PUT /rfps/{id}/boq` |
-| Publish (sends one individual email per recipient) / addendum / close / cancel | issuer | `POST /rfps/{id}:publish` · `/addenda` · `:close` · `:cancel` |
+| Publish (mints a link per queued recipient and sends one individual email each) / addendum / close / cancel (optional reason) | issuer | `POST /rfps/{id}:publish` · `/addenda` · `:close` · `:cancel {reason?}` |
 | Browse open RFPs matching me | SP, GC | `GET /marketplace/rfps?specialty=&municipality=` |
 | My RFP inbox (invited + applied) | SP, GC | `GET /me/rfps` |
 | Ask / answer clarification | bidder / issuer | `POST /rfps/{id}/clarifications` · `POST /clarifications/{id}:answer` |

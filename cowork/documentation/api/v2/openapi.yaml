@@ -2621,6 +2621,143 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /projects/{projectId}/schedule/tender-window:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Planning
+      operationId: getTenderWindow
+      summary: What tendering a set of plan rows means for the schedule (PRD-02 T-3/T-4/T-5/T-13)
+      description: 'The plan side of a tender, computed by planning because planning owns the
+        calendar, the links and the critical path (tendering owns bids-due). For the rows to be
+        tendered (`task_ids`, the roots) it answers: which rows the package covers (the roots and
+        their sub-trees) and which descendants are LEFT OUT and why (already assigned to another
+        party; `include` puts them back); the work window those rows occupy on the plan (dates
+        that lock while the tender is out); whether any covered row is on the critical path
+        (delaying it by one working day moves the project''s finish, D-22 rigid links); and the
+        award-by date = planned start − the project''s mobilisation lead (a planning setting,
+        default 5 working days), with the working days left between `bids_due` and that date.
+        Pure read, never blocking; no money.
+
+
+        **Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant'
+      x-relationship: project.participant
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - name: task_ids
+        in: query
+        required: true
+        description: Comma-separated ids of the rows to tender (the package roots).
+        schema:
+          type: string
+      - name: include
+        in: query
+        required: false
+        description: Comma-separated ids of descendants that would be left out but the issuer
+          chose to include anyway.
+        schema:
+          type: string
+      - name: bids_due
+        in: query
+        required: false
+        description: The tender's bids-due day (`YYYY-MM-DD`); enables the working-day counts.
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenderWindow'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/planning-settings:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Planning
+      operationId: getPlanningSettings
+      summary: The project's planning settings (mobilisation lead for award-by)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant'
+      x-relationship: project.participant
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanningSettings'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+      - Planning
+      operationId: putPlanningSettings
+      summary: Edit the project's planning settings
+      description: 'Same gate as the project calendar the settings work on.
+
+
+        **Clerk permission:** `org:plan:edit`
+
+
+        **Relationship (LinkNMS):** project.owner | prime supplier'
+      x-clerk-permission: org:plan:edit
+      x-relationship: project.owner | prime supplier
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanningSettings'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanningSettings'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/assignable-parties:
     parameters:
     - name: projectId
@@ -3984,7 +4121,13 @@ paths:
       - Tendering
       operationId: addRecipients
       summary: Add recipients (platform orgs and/or emails)
-      description: '**Clerk permission:** `org:tendering:issue`
+      description: 'On a DRAFT the recipients are only queued: no personal link exists yet, nothing
+        is emailed and no `token` is returned — the draft stays private until `publishRfp`, which
+        mints one link per queued recipient and sends each its individual email (D-29, PRD-02
+        T-6/T-7). On a PUBLISHED RFP ("invite more") the link is minted and sent at once.
+
+
+        **Clerk permission:** `org:tendering:issue`
 
 
         **Relationship (LinkNMS):** issuer
@@ -4121,6 +4264,48 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /rfps/{rfpId}/recipients/{recipientId}:
+    parameters:
+    - name: rfpId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: recipientId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    delete:
+      tags:
+      - Tendering
+      operationId: removeRecipient
+      summary: Remove a queued bidder from a DRAFT RFP (PRD-02 T-6)
+      description: 'While the RFP is a draft nobody has been sent anything (the personal links are
+        minted at publish), so a recipient — and the empty lane it opened — can simply be taken
+        off the list. After publication a bidder holds a live link and has been emailed: removal
+        is refused (`409 invalid_transition`); the lane stays as evidence and lapses at award.
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** issuer'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: issuer
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /rfps/{rfpId}/recipients/{recipientId}:reissue:
     parameters:
     - name: rfpId
@@ -4185,7 +4370,10 @@ paths:
       - Tendering
       operationId: publishRfp
       summary: 'Publish: one individual email per recipient'
-      description: 'Never exposed as an MCP write: the human confirms sending.
+      description: 'Mints a fresh personal link for every recipient still queued (added while the
+        RFP was a draft) in the same transaction as the move to `published`, then sends each its
+        individual email; a mail failure leaves that recipient `queued` for a re-issue. Stamps
+        `published_at`. Never exposed as an MCP write: the human confirms sending.
 
 
         **Clerk permission:** `org:tendering:issue`
@@ -4318,7 +4506,11 @@ paths:
       - Tendering
       operationId: cancelRfp
       summary: Cancel
-      description: '**Clerk permission:** `org:tendering:issue`
+      description: 'An optional one-line `reason` is kept on the RFP (`cancel_reason`) and shown
+        wherever the tender reads Cancelled (PRD-02 T-19).
+
+
+        **Clerk permission:** `org:tendering:issue`
 
 
         **Relationship (LinkNMS):** issuer'
@@ -4326,6 +4518,17 @@ paths:
       x-relationship: issuer
       parameters:
       - $ref: '#/components/parameters/rfpId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
       responses:
         '200':
           description: OK
@@ -9526,6 +9729,109 @@ components:
               by:
                 $ref: '#/components/schemas/Actor'
               value: {}
+    PlanningSettings:
+      type: object
+      description: Per-project planning settings. Absent row ⇒ the defaults.
+      properties:
+        mobilisation_lead_wd:
+          type: integer
+          minimum: 0
+          maximum: 60
+          default: 5
+          description: Working days a winning bidder needs between award and starting on
+            site; the award-by date is the planned start minus this (PRD-02 §5).
+      required:
+      - mobilisation_lead_wd
+    TenderWindow:
+      type: object
+      description: The plan facts a tender over some rows needs (getTenderWindow).
+      properties:
+        project_id: *id001
+        root_task_ids:
+          type: array
+          items: *id001
+        covered_task_ids:
+          type: array
+          description: Roots plus every descendant that stays in the package.
+          items: *id001
+        left_out:
+          type: array
+          description: Descendants left out of the package, each with why. Their own
+            sub-trees are left out with them (not listed separately).
+          items:
+            type: object
+            properties:
+              task_id: *id001
+              name:
+                type: string
+              reason:
+                type: string
+                enum:
+                - assigned
+                description: assigned — the row already has its own owner (another party).
+              assignee:
+                type: object
+                properties:
+                  org_id: *id001
+                  name:
+                    type: string
+            required:
+            - task_id
+            - name
+            - reason
+        work_window:
+          type: object
+          nullable: true
+          description: Envelope of the covered rows' current dates; null when undated.
+          properties:
+            start: *id003
+            finish: *id003
+            duration_wd:
+              type: integer
+          required:
+          - start
+          - finish
+          - duration_wd
+        on_critical_path:
+          type: boolean
+          description: A covered row's one-working-day delay moves the project finish.
+        critical_task_ids:
+          type: array
+          items: *id001
+        project_finish:
+          allOf:
+          - *id003
+          nullable: true
+        mobilisation_lead_wd:
+          type: integer
+        award_by:
+          allOf:
+          - *id003
+          nullable: true
+          description: Planned start − mobilisation lead, on the project calendar.
+        bids_due:
+          allOf:
+          - *id003
+          nullable: true
+        wd_bids_due_to_start:
+          type: integer
+          nullable: true
+          description: Working days from bids-due to the planned start (negative = after it).
+        wd_bids_due_to_award_by:
+          type: integer
+          nullable: true
+          description: Working days from bids-due to the award-by date (negative = bids come
+            in after the date by which the award should be made).
+      required:
+      - project_id
+      - root_task_ids
+      - covered_task_ids
+      - left_out
+      - work_window
+      - on_critical_path
+      - critical_task_ids
+      - mobilisation_lead_wd
+      - award_by
     PlanHealth:
       type: object
       properties:
@@ -9836,6 +10142,37 @@ components:
           - closed
           - awarded
           - cancelled
+        excluded_task_ids:
+          type: array
+          description: 'Descendants of the roots LEFT OUT of the package (e.g. already
+            assigned to another party, PRD-02 T-3). The package is the roots'' sub-trees
+            minus these rows and their own sub-trees.'
+          items: *id001
+        created_at:
+          type: string
+          format: date-time
+          description: When the draft was created (the stepper's Draft date).
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When it was sent (publishRfp).
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When bidding closed (early or at the deadline).
+        awarded_at:
+          type: string
+          format: date-time
+          nullable: true
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+        cancel_reason:
+          type: string
+          description: The issuer's one-line reason, when cancelled with one (T-19).
         awarded_proposal_id: *id001
         version:
           type: integer
@@ -9936,6 +10273,11 @@ components:
           enum:
           - light
           - detailed
+        excluded_task_ids:
+          type: array
+          description: Descendants of the roots to leave out of the package (each with its
+            own sub-tree). Must lie inside a root's sub-tree. Draft-only on update.
+          items: *id001
         questions_deadline: *id004
         submission_deadline: *id004
       required:
@@ -10146,6 +10488,30 @@ components:
           type: array
           description: Every root task the governing RFP covers (their subtrees are its scope).
           items: *id001
+        excluded_task_ids:
+          type: array
+          description: Descendants of the roots left out of the package — not covered.
+          items: *id001
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+        awarded_at:
+          type: string
+          format: date-time
+          nullable: true
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+        cancel_reason:
+          type: string
+          nullable: true
+          description: The issuer's reason when the governing tender was cancelled (T-19).
         invited_count:
           type: integer
           minimum: 0

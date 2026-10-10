@@ -2,6 +2,29 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-10 — Tender from the task panel (PRD-02, D-42; additive + one behaviour fix)
+
+- **New (Planning):** `getTenderWindow` — `GET /projects/{projectId}/schedule/tender-window?task_ids=&include=&bids_due=`.
+  The plan side of a tender, computed where the calendar, links and critical path live: covered rows,
+  `left_out[]` (descendants already assigned to another party, with the assignee; `include` puts them back),
+  `work_window {start, finish, duration_wd}`, `on_critical_path` + `critical_task_ids` (a one-working-day
+  delay of the row moves the project finish under D-22 rigid links), `project_finish`, `mobilisation_lead_wd`,
+  `award_by` (planned start − lead, on the project calendar), `wd_bids_due_to_start`, `wd_bids_due_to_award_by`.
+- **New (Planning):** `getPlanningSettings` / `putPlanningSettings` — `GET/PUT /projects/{projectId}/planning-settings`
+  `{mobilisation_lead_wd}` (0–60, default 5; same gate as `putCalendar`).
+- **New (Tendering):** `removeRecipient` — `DELETE /rfps/{rfpId}/recipients/{recipientId}`, draft only (T-6).
+- `RfpCreate` / `updateRfp` accept `excluded_task_ids` (descendants left out of the package with their
+  sub-trees, T-3). `Rfp` gains `excluded_task_ids`, `created_at`, `published_at`, `closed_at`, `awarded_at`,
+  `cancelled_at`, `cancel_reason`; `TaskProcurement` gains `excluded_task_ids`, the four stamps and
+  `cancel_reason` (T-10, T-19).
+- `cancelRfp` accepts an optional body `{reason}` (≤ 500); `tendering.rfp.cancelled` carries it.
+- **Behaviour fix — a draft is private until it is sent (D-29, T-6/T-7):** `addRecipients` on a **draft**
+  only queues the recipient: no email is sent and no `token` is returned. `publishRfp` mints a fresh personal
+  link for every still-queued recipient in the publish transaction and then emails each one. On a published
+  RFP `addRecipients` is unchanged (mint + send at once).
+- Migration `db/v2/0013_tendering_panel.sql` (rfp stamps, reason, exclusions) and
+  `db/v2/0014_planning_settings.sql` (`planning.project_setting`).
+
 ## 2026-10-10 — Changes against the baseline in the plan (PRD-13, D-43, D-44; additive)
 
 - **Schedule / Task read** (`getSchedule`, `getTask`, every `TaskDeltaResult`):
