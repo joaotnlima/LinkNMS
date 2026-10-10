@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { createRouter } from '../../../platform/router.mjs';
 import { createViewerContext } from '../../../platform/viewer-context.mjs';
 import { registerProject } from './register.mjs';
+import { createBuildPort } from '../application/build-port.mjs';
 
 const OWNER_ORG = '01920000-0000-7000-8000-0000000000a1';
 const GC_ORG = '01920000-0000-7000-8000-0000000000a2';
@@ -102,6 +103,7 @@ function fakeStore() {
         id: cmd.id, owner_org_id: cmd.ownerOrgId, created_by_org_id: cmd.createdByOrgId,
         name: cmd.name, municipality_code: cmd.municipalityCode,
         indicative_budget_cents: cmd.indicativeBudgetCents, pending_owner_email: cmd.pendingOwnerEmail,
+        location_lat: cmd.location?.lat ?? null, location_lng: cmd.location?.lng ?? null,
       });
       projects.set(cmd.id, row);
       if (cmd.ownerOrgId) participants.add(`${cmd.id}:${cmd.ownerOrgId}`);
@@ -112,6 +114,10 @@ function fakeStore() {
       const p = projects.get(projectId);
       if (p.version !== expectedVersion) return null;
       const next = { ...p, name: patch.name ?? p.name, version: p.version + 1 };
+      if (patch.location !== undefined) {
+        next.location_lat = patch.location?.lat ?? null;
+        next.location_lng = patch.location?.lng ?? null;
+      }
       projects.set(projectId, next);
       ledger.push('project.brief.updated');
       return next;
@@ -419,6 +425,32 @@ describe('project over the v2 router', () => {
       assert.equal((await call('POST', `/projects/${PROJECT}/share-links`, { body: { audience: 'CM', expires_at: '2020-01-01T00:00:00Z' } })).status, 422);
       const far = new Date(Date.now() + 120 * 24 * 3600 * 1000).toISOString();
       assert.equal((await call('POST', `/projects/${PROJECT}/share-links`, { body: { audience: 'CM', expires_at: far } })).status, 422);
+    });
+  });
+
+  describe('build location (PRD-03 R-3) and the build port', () => {
+    test('a point set at creation, changed and cleared through updateProject', async () => {
+      const res = await call('POST', '/projects', {
+        body: { id: NEW_ID, name: 'Casa da Encosta', municipality_code: '1111', location: { lat: 38.802912345, lng: -9.3817 } },
+      });
+      assert.equal(res.status, 201);
+      assert.deepEqual(res.body.location, { lat: 38.80291, lng: -9.3817 });
+      const bad = await call('POST', '/projects', { body: { id: NEW_ID, name: 'X', municipality_code: '1111', location: { lat: 99, lng: 0 } } });
+      assert.equal(bad.status, 422);
+      assert.ok(bad.body.errors.location);
+      const cleared = await call('PATCH', `/projects/${NEW_ID}`, { body: { location: null }, headers: { 'if-match': '1' } });
+      assert.equal(cleared.status, 200);
+      assert.equal(cleared.body.location, undefined);
+    });
+
+    test('locationFor: participants only (404 otherwise); ownedBuild: the owner only', async () => {
+      store.projects.set(PROJECT, { ...store.projects.get(PROJECT), location_lat: '38.80000', location_lng: '-9.38000' });
+      const port = createBuildPort(store);
+      assert.deepEqual(await port.locationFor({ viewer: gc(), projectId: PROJECT }),
+        { name: 'Casa da Maia', municipality_code: '1306', lat: 38.8, lng: -9.38 });
+      await assert.rejects(port.locationFor({ viewer: stranger(), projectId: PROJECT }), (e) => e.problem.code === 'not_found');
+      assert.deepEqual(await port.ownedBuild({ viewer: owner(), projectId: PROJECT }), { name: 'Casa da Maia' });
+      await assert.rejects(port.ownedBuild({ viewer: gc(), projectId: PROJECT }), (e) => e.problem.code === 'forbidden');
     });
   });
 });

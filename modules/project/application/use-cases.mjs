@@ -42,6 +42,7 @@ export async function createProject({ viewer, store, body, idempotencyKey }) {
   if (body?.indicative_budget && !Number.isInteger(body.indicative_budget.amount_cents)) {
     errors.indicative_budget = 'amount_cents must be integer cents';
   }
+  const location = parseLocation(body?.location, errors);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const actor = await requireActor(store, viewer);
@@ -54,6 +55,7 @@ export async function createProject({ viewer, store, body, idempotencyKey }) {
       typology: body.typology ?? null,
       grossAreaM2: body.gross_area_m2 ?? null,
       indicativeBudgetCents: body.indicative_budget?.amount_cents ?? null,
+      location: location ?? null,
       // Doc 14 Q4: created for an owner → unowned draft until claimed.
       ownerOrgId: onBehalf ? null : viewer.orgId,
       pendingOwnerEmail: onBehalf,
@@ -102,6 +104,7 @@ export async function updateProject({ viewer, store, projectId, body, ifMatch })
   const errors = {};
   if (body?.name !== undefined && !body.name?.trim()) errors.name = 'must not be blank';
   if (body?.municipality_code !== undefined && !body.municipality_code?.trim()) errors.municipality_code = 'must not be blank';
+  const location = parseLocation(body?.location, errors);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const actor = await requireActor(store, viewer);
@@ -115,6 +118,7 @@ export async function updateProject({ viewer, store, projectId, body, ifMatch })
       typology: body?.typology,
       grossAreaM2: body?.gross_area_m2,
       indicativeBudgetCents: body?.indicative_budget === null ? null : body?.indicative_budget?.amount_cents,
+      location,
     },
     actor: actorOf(actor, viewer),
   });
@@ -464,7 +468,7 @@ export async function requireParticipant({ viewer, store, projectId }) {
 }
 
 /** relationship: project.owner (strict — claim has happened). */
-async function requireOwner({ viewer, store, projectId, permission = null }) {
+export async function requireOwner({ viewer, store, projectId, permission = null }) {
   const { project } = await requireParticipant({ viewer, store, projectId });
   if (permission && !viewer.has(permission)) throw new ProblemError('forbidden', null, { reason: 'role' });
   if (project.owner_org_id !== viewer.orgId) {
@@ -491,6 +495,23 @@ async function requireBriefDriver({ viewer, store, projectId, permission }) {
 
 function actorOf(person, viewer) {
   return { personId: person.id, orgId: viewer.orgId, orgRole: viewer.orgRole, channel: viewer.channel };
+}
+
+/**
+ * PRD-03 R-3: the build's point. undefined = not sent (unchanged), null =
+ * clear it, {lat, lng} = set it (WGS84, rounded to 5 decimals ≈ 1 m).
+ */
+function parseLocation(raw, errors) {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  const lat = Number(raw?.lat);
+  const lng = Number(raw?.lng);
+  if (typeof raw !== 'object' || raw?.lat == null || raw?.lng == null
+    || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    errors.location = '{lat, lng} in degrees (lat -90..90, lng -180..180), or null';
+    return undefined;
+  }
+  return { lat: Math.round(lat * 1e5) / 1e5, lng: Math.round(lng * 1e5) / 1e5 };
 }
 
 function parseIfMatch(raw) {
@@ -522,6 +543,7 @@ function projectBody(p, opModel) {
     typology: p.typology ?? undefined,
     gross_area_m2: p.gross_area_m2 == null ? undefined : Number(p.gross_area_m2),
     indicative_budget: money(p.indicative_budget_cents),
+    ...(p.location_lat != null ? { location: { lat: Number(p.location_lat), lng: Number(p.location_lng) } } : {}),
     owner_org_id: p.owner_org_id ?? undefined,
     status: p.status,
     operating_model: opModel,

@@ -214,16 +214,18 @@ export function createProjectStore(pool) {
 
     // ── writes (all ledgered on the same client — §6.4) ──────────────────
     async createProject({ id, name, address, municipalityCode, typology, grossAreaM2,
-      indicativeBudgetCents, ownerOrgId, pendingOwnerEmail, createdByOrgId, actor }) {
+      indicativeBudgetCents, ownerOrgId, pendingOwnerEmail, createdByOrgId, location = null, actor }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `INSERT INTO project.project
              (id, owner_org_id, created_by_org_id, name, address, municipality_code,
-              typology, gross_area_m2, indicative_budget_cents, pending_owner_email)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+              typology, gross_area_m2, indicative_budget_cents, pending_owner_email,
+              location_lat, location_lng)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
            RETURNING *`,
           [id, ownerOrgId, createdByOrgId, name, address, municipalityCode,
-            typology, grossAreaM2, indicativeBudgetCents, pendingOwnerEmail],
+            typology, grossAreaM2, indicativeBudgetCents, pendingOwnerEmail,
+            location?.lat ?? null, location?.lng ?? null],
         );
         if (ownerOrgId) {
           await client.query(
@@ -260,6 +262,8 @@ export function createProjectStore(pool) {
              typology = CASE WHEN $7::boolean THEN $8 ELSE typology END,
              gross_area_m2 = CASE WHEN $9::boolean THEN $10::numeric ELSE gross_area_m2 END,
              indicative_budget_cents = CASE WHEN $11::boolean THEN $12::bigint ELSE indicative_budget_cents END,
+             location_lat = CASE WHEN $13::boolean THEN $14::numeric ELSE location_lat END,
+             location_lng = CASE WHEN $13::boolean THEN $15::numeric ELSE location_lng END,
              version = version + 1
            WHERE id = $1 AND version = $2
            RETURNING *`,
@@ -269,7 +273,8 @@ export function createProjectStore(pool) {
             patch.municipalityCode ?? null,
             patch.typology !== undefined, patch.typology ?? null,
             patch.grossAreaM2 !== undefined, patch.grossAreaM2 ?? null,
-            patch.indicativeBudgetCents !== undefined, patch.indicativeBudgetCents ?? null],
+            patch.indicativeBudgetCents !== undefined, patch.indicativeBudgetCents ?? null,
+            patch.location !== undefined, patch.location?.lat ?? null, patch.location?.lng ?? null],
         );
         if (!rows.length) return null; // version raced — the caller answers 409
         await appendAuditEvent(client, {

@@ -30,7 +30,7 @@ describe('project store over Postgres (v2 migrations)', { skip }, () => {
     await admin.query(`DROP DATABASE IF EXISTS ${DB}`);
     await admin.query(`CREATE DATABASE ${DB}`);
     pool = new pg.Pool({ connectionString: url.replace(/\/[^/]*$/, `/${DB}`), max: 2 });
-    for (const f of ['0001_schema.sql', '0002_platform_idempotency.sql', '0003_project_claim.sql']) {
+    for (const f of ['0001_schema.sql', '0002_platform_idempotency.sql', '0003_project_claim.sql', '0020_project_build_location.sql']) {
       await pool.query(readFileSync(join(ROOT, 'db', 'v2', f), 'utf8'));
     }
     await pool.query(
@@ -98,6 +98,21 @@ describe('project store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(updated.version, 2);
     assert.equal(Number(updated.indicative_budget_cents), 100);
     assert.equal(await store.updateProjectBrief({ projectId: id, expectedVersion: 1, patch: { name: 'V3' }, actor: ACTOR }), null);
+  });
+
+  test('the build point (PRD-03 R-3): set, kept when not patched, cleared; both or neither', async () => {
+    const id = randomUUID();
+    const created = await store.createProject({
+      id, name: 'Encosta', address: null, municipalityCode: '1111', typology: null,
+      grossAreaM2: null, indicativeBudgetCents: null, location: { lat: 38.80291, lng: -9.3817 },
+      ownerOrgId: OWNER_ORG, pendingOwnerEmail: null, createdByOrgId: OWNER_ORG, actor: ACTOR,
+    });
+    assert.deepEqual([Number(created.location_lat), Number(created.location_lng)], [38.80291, -9.3817]);
+    const renamed = await store.updateProjectBrief({ projectId: id, expectedVersion: 1, patch: { name: 'E2' }, actor: ACTOR });
+    assert.equal(Number(renamed.location_lat), 38.80291);
+    const cleared = await store.updateProjectBrief({ projectId: id, expectedVersion: 2, patch: { location: null }, actor: ACTOR });
+    assert.equal(cleared.location_lat, null);
+    await assert.rejects(pool.query('UPDATE project.project SET location_lat = 1 WHERE id = $1', [id]), /project_location_pair/);
   });
 
   test('calendar daterange[] round-trips closures with inclusive bounds', async () => {
