@@ -362,6 +362,8 @@ export interface ProcurementRfp {
   excludedTaskIds?: string[];
   /** The issuer's reason when the tender was cancelled (PRD-02 T-19). */
   cancelReason?: string;
+  /** Bidders' questions still waiting for an answer — the Tender-tab badge (PRD-08 H-7). */
+  openQuestions?: number;
 }
 
 /**

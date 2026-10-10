@@ -123,7 +123,7 @@ export default async function TaskPermalinkPage({
           savedStageKeys={serverRowKeys}
           initialStageIds={Object.fromEntries(serverRowKeys.map((k) => [k, k]))}
           openStageKey={stageKey}
-          procurementHref={`/projects/${id}/plan/procurement`}
+          procurementHref={`/projects/${id}/tendering`}
           canStartTender={canStartTender}
           procurement={procurement}
           tenderInitialRfps={myRfps.filter((r) => r.project_id === id)}

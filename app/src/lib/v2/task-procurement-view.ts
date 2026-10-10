@@ -30,6 +30,8 @@ export interface V2TaskProcurement {
   awarded_at?: string | null;
   cancelled_at?: string | null;
   cancel_reason?: string | null;
+  /** PRD-08 H-7 (absent on an older server). */
+  open_question_count?: number;
 }
 
 /** The projection's items → the plan's `procurement` map, keyed by task id. */
@@ -50,6 +52,7 @@ export function toProcurementWindows(
       rfpId: item.rfp_id,
       ...(item.excluded_task_ids?.length ? { excludedTaskIds: [...item.excluded_task_ids] } : {}),
       ...(item.cancel_reason ? { cancelReason: item.cancel_reason } : {}),
+      ...(item.open_question_count ? { openQuestions: item.open_question_count } : {}),
     };
   }
   return windows;

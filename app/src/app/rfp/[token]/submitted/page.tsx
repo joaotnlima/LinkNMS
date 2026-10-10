@@ -28,7 +28,10 @@ import {
   type ProposalEcho,
 } from '@/lib/v2/rfp-link-view';
 
+import { BidderClarifications } from '@/components/tender/Clarifications';
+
 import { DoneGlyph, RfpShell, RfpState } from '../../RfpShell';
+import { askQuestionAction } from '../actions';
 
 export const metadata: Metadata = {
   title: 'Proposal submitted · LinkNMS',
@@ -64,6 +67,23 @@ export default async function RfpSubmittedPage({
       </RfpState>
 
       {proposal ? <Details proposal={proposal} /> : null}
+
+      {/* PRD-08 H-8: answers published after the bid still reach this bidder. */}
+      {load.state === 'ready' ? (
+        <section className="rfp-sec">
+          <div className="card">
+            <div className="rfp-body">
+              <BidderClarifications
+                items={load.view.clarifications ?? []}
+                questionsOpen={load.view.questions_open ?? false}
+                questionsDeadline={load.view.rfp.questions_deadline ?? null}
+                rfpStatus={load.view.closed ? 'closed' : 'published'}
+                ask={askQuestionAction.bind(null, token)}
+              />
+            </div>
+          </div>
+        </section>
+      ) : null}
     </RfpShell>
   );
 }

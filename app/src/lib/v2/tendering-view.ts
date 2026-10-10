@@ -98,6 +98,20 @@ export interface V2Package {
   models: V2Model[];
 }
 
+/**
+ * #/components/schemas/Clarification (PRD-08). The asker is never on the wire;
+ * `mine` says only that the viewer asked it.
+ */
+export interface V2Clarification {
+  id: string;
+  question: string;
+  answer?: string;
+  status: 'open' | 'answered';
+  answered_at?: string;
+  asked_at?: string;
+  mine?: boolean;
+}
+
 /** #/components/schemas/Rfp (rfpBody). `package` is present only on getRfp. */
 export interface V2Rfp {
   id: string;
@@ -129,6 +143,9 @@ export interface V2Rfp {
   cancel_reason?: string;
   version: number;
   package?: V2Package;
+  /** getRfp only (PRD-08): the questions this viewer may read, and whether asking is open. */
+  clarifications?: V2Clarification[];
+  questions_open?: boolean;
 }
 
 /** #/components/schemas/Recipient — issuer only. `token` returned ONCE on add. */

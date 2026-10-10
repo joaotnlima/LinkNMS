@@ -9,9 +9,11 @@
 // The action RE-VALIDATES with the same pure `validateBid` the client runs for
 // instant feedback: the client check is a courtesy, this one is the authority,
 // exactly as every other write in this app re-derives its guards server-side.
+import { randomUUID } from 'node:crypto';
 import { redirect } from 'next/navigation';
 
 import {
+  askClarificationByToken,
   completeProposalDocument,
   modelViewUrlByToken,
   reserveProposalDocument,
@@ -92,4 +94,17 @@ export async function submitBidAction(
   // record, not a souvenir of this submission. `redirect` throws, so nothing
   // after it runs.
   redirect(submittedPath(token));
+}
+
+// ── Clarifications (PRD-08 H-6) ──────────────────────────────────────────────
+// A link-only bidder asks the issuer. The token is bound by the page (an action
+// arg, server-to-server, like every other write here); the server refuses after
+// the questions deadline and the form shows that refusal. The answer, once
+// published, appears on this page for every bidder — the asker is never named.
+export async function askQuestionAction(
+  token: string,
+  question: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const res = await askClarificationByToken(token, randomUUID(), question);
+  return res.ok ? { ok: true } : { ok: false, message: res.message };
 }

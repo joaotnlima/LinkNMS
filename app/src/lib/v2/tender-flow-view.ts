@@ -364,10 +364,11 @@ export function offersCopyLink(r: Pick<V2Recipient, 'status'>): boolean {
  */
 export function procurementFromRfp(
   rfp: Pick<V2Rfp, 'id' | 'status' | 'title' | 'created_at' | 'submission_deadline' | 'excluded_task_ids' | 'cancel_reason'>,
-  counts: { invited?: number; submitted?: number; awardedTo?: string | null } = {},
+  counts: { invited?: number; submitted?: number; awardedTo?: string | null; openQuestions?: number } = {},
 ): {
   status: RfpStatus; openedDay: string; bidsDueDay: string; submittedCount: number; invitedCount?: number;
   title: string; rfpId: string; excludedTaskIds?: string[]; cancelReason?: string; awardedTo?: string;
+  openQuestions?: number;
 } {
   return {
     status: rfp.status,
@@ -380,6 +381,7 @@ export function procurementFromRfp(
     ...(rfp.excluded_task_ids?.length ? { excludedTaskIds: [...rfp.excluded_task_ids] } : {}),
     ...(rfp.cancel_reason ? { cancelReason: rfp.cancel_reason } : {}),
     ...(counts.awardedTo ? { awardedTo: counts.awardedTo } : {}),
+    ...(counts.openQuestions ? { openQuestions: counts.openQuestions } : {}),
   };
 }
 

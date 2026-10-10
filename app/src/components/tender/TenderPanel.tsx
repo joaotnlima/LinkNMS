@@ -7,10 +7,12 @@
 // the workspace, so an award here produces the same events and records.
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 import { loadComposerAction } from '../procurement-actions';
 import { isLanded, panelFace, type PanelFace } from '@/lib/v2/tender-flow-view';
 import type { V2Rfp } from '@/lib/v2/tendering-view';
+import { rfpPath, tenderingPath } from '@/lib/v2/tendering-home-view';
 import { CancelledBanner, TenderStepper } from './TenderBits';
 import { TenderComposer } from './TenderComposer';
 import { TenderCompare } from './TenderCompare';
@@ -20,11 +22,11 @@ import type { TaskOption } from './types';
 import './tender.css';
 
 export type WorkspaceSection = 'overview' | 'proposals' | 'matrix' | 'files' | 'emailed' | 'clarifications';
-export type PanelCounts = { invited?: number; submitted?: number; awardedTo?: string | null };
+export type PanelCounts = { invited?: number; submitted?: number; awardedTo?: string | null; openQuestions?: number };
 
 export function TenderPanel({
   projectId, taskId, taskName, rfp, tasks, canIssue, saved, todayIso,
-  onRfpChanged, onOpenWorkspace, onFaceChange,
+  onRfpChanged, onOpenWorkspace, onFaceChange, openQuestions = 0,
 }: {
   projectId: string;
   taskId: string;
@@ -40,6 +42,8 @@ export function TenderPanel({
   onOpenWorkspace: (section?: WorkspaceSection) => void;
   /** The panel widens to 640px to compose and to compare (B2/B4). */
   onFaceChange?: (face: PanelFace) => void;
+  /** Bidders' questions waiting for an answer (task-procurement, PRD-08 H-7). */
+  openQuestions?: number;
 }) {
   const [composing, setComposing] = useState(false);
   // A fresh composer per attempt; a save that turns "new" into a draft keeps it mounted.
@@ -66,7 +70,14 @@ export function TenderPanel({
   }, [follow.data]);
 
   if (face === 'none') {
-    if (!canIssue) return <p className="tnd-note">No tender on this task. Only a team member who can issue tenders can start one.</p>;
+    if (!canIssue) {
+      return (
+        <div className="tnd">
+          <p className="tnd-note">No tender on this task. Only a team member who can issue tenders can start one.</p>
+          <Link className="tnd-link" href={tenderingPath(projectId)}>Open in all tenders →</Link>
+        </div>
+      );
+    }
     return (
       <div className="tnd">
         <button type="button" className="tnd-cta" disabled={!saved} onClick={() => setComposing(true)}>
@@ -120,6 +131,11 @@ export function TenderPanel({
   return (
     <div className="tnd">
       {follow.error ? <p className="tnd-err" role="alert">{follow.error}</p> : null}
+      {canIssue && openQuestions > 0 ? (
+        <Link className="tnd-link" href={`${rfpPath(projectId, live.id)}?tab=clarifications`}>
+          {openQuestions} {openQuestions === 1 ? 'question' : 'questions'} from bidders to answer →
+        </Link>
+      ) : null}
       {face === 'follow' ? (
         <TenderFollow
           rfp={live} data={follow.data} window={window} taskName={taskName} todayIso={todayIso}
@@ -140,6 +156,8 @@ export function TenderPanel({
         ) : (
           <button type="button" className="tnd-link" onClick={() => onOpenWorkspace('overview')}>Open the full tender →</button>
         )}
+        {/* PRD-08 H-4: the tender at its own, shareable address. */}
+        <Link className="tnd-link" href={rfpPath(projectId, live.id)}>Open in all tenders →</Link>
       </div>
     </div>
   );

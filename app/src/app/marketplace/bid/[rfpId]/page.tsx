@@ -17,6 +17,9 @@ import { loadBidContext } from '@/lib/v2/marketplace';
 import { getViewerProfile } from '@/lib/v2/profile';
 import { sessionState } from '@/server/session';
 
+import { askClarificationAction } from '@/components/procurement-actions';
+import { BidderClarifications } from '@/components/tender/Clarifications';
+
 import { BidEditor } from './BidEditor';
 import '../../marketplace.css';
 
@@ -43,7 +46,19 @@ export default async function BidPage({
   return (
     <PortalShell user={user} switcherLabel="Marketplace" align="start">
       {ctx.ok ? (
-        <BidEditor rfp={ctx.ctx.rfp} lane={ctx.ctx.lane} />
+        <>
+          <BidEditor rfp={ctx.ctx.rfp} lane={ctx.ctx.lane} />
+          {/* PRD-08 H-6: ask the issuer in-app; answers are public to every bidder. */}
+          <div className="mkt" style={{ marginTop: 24 }}>
+            <BidderClarifications
+              items={ctx.ctx.rfp.clarifications ?? []}
+              questionsOpen={ctx.ctx.rfp.questions_open ?? false}
+              questionsDeadline={ctx.ctx.rfp.questions_deadline ?? null}
+              rfpStatus={ctx.ctx.rfp.status}
+              ask={askClarificationAction.bind(null, ctx.ctx.rfp.id)}
+            />
+          </div>
+        </>
       ) : (
         <div className="mkt">
           <div className="mkt-empty">

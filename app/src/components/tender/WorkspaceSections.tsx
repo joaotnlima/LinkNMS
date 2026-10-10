@@ -2,7 +2,7 @@
 
 // The workspace's extra sections (PRD-02, D-42 — the modal is the full tender
 // workspace): every file of the tender in one place, the emailed bids still to
-// record, and the clarifications placeholder (the feature is PRD-08).
+// record, and the clarifications (PRD-08).
 
 import { useEffect, useMemo, useState } from 'react';
 
@@ -14,6 +14,7 @@ import {
 import { isLanded } from '@/lib/v2/tender-flow-view';
 import OwnerModelViewer from '../ifc/OwnerModelViewer';
 import RfpModelComposer from '../ifc/RfpModelComposer';
+import { IssuerClarifications } from './IssuerClarifications';
 import { RecordOfflineForm } from './RecordOfflineForm';
 
 /** The RFP's model and every landed bid's documents. */
@@ -98,17 +99,7 @@ export function EmailedBidsSection({ rfp, lanes, onRecorded }: {
   );
 }
 
-/** Clarifications land with PRD-08; this is where they will be read and answered. */
-export function ClarificationsSection() {
-  return (
-    <div className="tnd">
-      <p className="tnd-note is-strong">
-        Questions from bidders, and your answers published to all of them with the asker kept anonymous,
-        will live here.
-      </p>
-      <a className="tnd-link" aria-disabled="true" href="#clarifications" onClick={(e) => e.preventDefault()}>
-        Clarifications — coming with PRD-08
-      </a>
-    </div>
-  );
+/** Clarifications (PRD-08 H-7): the issuer reads every question and answers for all bidders. */
+export function ClarificationsSection({ rfp, onOpenCount }: { rfp: V2Rfp; onOpenCount?: (n: number) => void }) {
+  return <IssuerClarifications rfpId={rfp.id} canAnswer onOpenCount={onOpenCount} />;
 }

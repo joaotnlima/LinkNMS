@@ -42,6 +42,7 @@
 // each file and carries the proven ids in `document_ids`.
 
 import { formatCents, parseAmountToCents } from '../format.ts';
+import type { V2Clarification } from './tendering-view.ts';
 
 // ── Wire shapes (modules/tendering/domain/wire.mjs) ──────────────────────────
 // Restated locally on purpose, the same discipline as the other lib/v2 views: a
@@ -105,6 +106,8 @@ export interface RfpLinkRfp {
   mode: RfpMode;
   /** ISO datetime; absent when the RFP set no deadline. */
   submission_deadline?: string;
+  /** PRD-08 H-9: when asking closes; absent when the issuer set none. */
+  questions_deadline?: string;
   package: { rows: PackageRow[]; items: PackageItem[]; models: PackageModel[] };
 }
 
@@ -153,6 +156,10 @@ export interface RfpLinkView {
   recipient_email: string;
   closed: boolean;
   proposal: ProposalEcho | null;
+  /** PRD-08 H-6/H-9: the server's word on whether this recipient may still ask. */
+  questions_open?: boolean;
+  /** PRD-08 H-8: every answered question (asker never shown) + this recipient's own. */
+  clarifications?: V2Clarification[];
 }
 
 // ── The submit body (wire.mjs submitProposalByToken) ─────────────────────────

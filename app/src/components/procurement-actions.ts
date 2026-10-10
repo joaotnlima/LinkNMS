@@ -32,6 +32,8 @@ import {
   getTenderWindow, getTenderFollow, removeRecipient, reissueRecipientLink, type TenderFollow,
 } from '@/lib/v2/tender-flow';
 import type { V2TenderWindow } from '@/lib/v2/tender-flow-view';
+import { askClarification, answerClarification } from '@/lib/v2/tendering-home';
+import type { V2Clarification } from '@/lib/v2/tendering-view';
 
 // ── Result ───────────────────────────────────────────────────────────────────
 
@@ -185,4 +187,28 @@ export async function removeRfpModelAction(rfpId: string, documentId: string): P
 /** Mint a fresh short-TTL presigned inline GET for the model (authed reader). */
 export async function rfpModelViewUrlAction(rfpId: string, documentId: string): Promise<Result<{ url: string; expiresAt: string }>> {
   return guard('The 3D model could not be opened. Try again.', () => rfpModelViewUrl(rfpId, documentId));
+}
+
+// ── Clarifications (PRD-08 H-6..H-9) ─────────────────────────────────────────
+
+/**
+ * The questions this viewer may read on an RFP (the issuer: all; a bidder:
+ * answered + its own) and whether asking is open — both decided server-side.
+ */
+export async function loadClarificationsAction(
+  rfpId: string,
+): Promise<{ items: V2Clarification[]; questionsOpen: boolean } | null> {
+  const rfp = await getRfp(rfpId);
+  if (!rfp) return null;
+  return { items: rfp.clarifications ?? [], questionsOpen: rfp.questions_open ?? false };
+}
+
+/** The issuer answers for every bidder; the asker is never shown. */
+export async function answerClarificationAction(clarificationId: string, answer: string): Promise<Result<V2Clarification>> {
+  return guard('That answer did not publish. Try again.', () => answerClarification(clarificationId, answer));
+}
+
+/** An invited org asks in-app (bound to its RFP by the page). Refused after the questions deadline. */
+export async function askClarificationAction(rfpId: string, question: string): Promise<Result<V2Clarification>> {
+  return guard('Your question did not send. Try again.', () => askClarification(rfpId, question));
 }

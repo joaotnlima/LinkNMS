@@ -1,13 +1,16 @@
 'use client';
 
 // The full tender workspace (PRD-02, D-42): the redesigned LINA-420 modal and
-// the /plan/procurement detail. The SAME step components as the docked panel —
+// the /projects/{id}/tendering routes (PRD-08). The SAME step components as the docked panel —
 // composer, follow, side-by-side compare & award — plus the room the panel
 // does not have: the proposals inbox with shortlist and the Compare drill-down,
 // the line-by-line matrix, every file, the emailed bids still to record, and
-// the clarifications placeholder. Sections replace the old single long form.
+// the clarifications (PRD-08). Sections replace the old single long form. On
+// the dedicated routes (PRD-08 H-2/H-3) `sectionHref` turns a section into a
+// link to its own URL (Overview ↔ Proposals); elsewhere sections are in-place.
 
 import { useState } from 'react';
+import Link from 'next/link';
 
 import { loadComposerAction } from '../procurement-actions';
 import { CompareSurface } from './CompareViews';
@@ -31,7 +34,8 @@ const SECTIONS: Array<[WorkspaceSection, string]> = [
 
 export function TenderWorkspace({
   projectId, rfp, seedTaskId = null, tasks, initialSection = 'overview', initialCompare = null,
-  initialMode = 'detailed', todayIso, onRfpChanged, onBack = null,
+  initialMode = 'detailed', todayIso, onRfpChanged, onBack = null, backLabel = '← All tenders',
+  sectionHref = {}, openQuestions = 0,
 }: {
   projectId: string;
   /** The tender, or null to compose a new one. */
@@ -45,10 +49,16 @@ export function TenderWorkspace({
   todayIso: string;
   onRfpChanged: (rfp: V2Rfp) => void;
   onBack?: (() => void) | null;
+  backLabel?: string;
+  /** Sections that live at their own URL (PRD-08 routes): rendered as links. */
+  sectionHref?: Partial<Record<WorkspaceSection, string>>;
+  /** Open questions known up front (the home / panel read); refreshed by the section. */
+  openQuestions?: number;
 }) {
   const [section, setSection] = useState<WorkspaceSection>(rfp && rfp.status !== 'draft' ? initialSection : 'overview');
   const [rootPick, setRootPick] = useState<string>(seedTaskId ?? '');
   const [error, setError] = useState<string | null>(null);
+  const [openQ, setOpenQ] = useState(openQuestions);
   const sent = rfp !== null && rfp.status !== 'draft';
   const follow = useTenderFollow(sent ? rfp : null);
   const { window } = useRfpWindow(projectId, sent ? rfp : null);
@@ -59,12 +69,15 @@ export function TenderWorkspace({
   const taskName = tasks.find((t) => t.id === rootId)?.name?.trim() || rfp?.title || 'this task';
   const badge = rfp ? rfpStatusBadge(rfp.status) : { label: 'New', tone: 'quiet' };
   const count: Partial<Record<WorkspaceSection, number>> = sent
-    ? { proposals: landed.length, emailed: awaiting, files: landed.reduce((n, l) => n + l.document_count, 0) } : {};
+    ? {
+      proposals: landed.length, emailed: awaiting, files: landed.reduce((n, l) => n + l.document_count, 0),
+      clarifications: openQ,
+    } : {};
 
   return (
     <div className="tnd" aria-label="Tender workspace">
       <header className="tnd-ws-hd">
-        {onBack ? <button type="button" className="btn sm" onClick={onBack}>← All tenders</button> : null}
+        {onBack ? <button type="button" className="btn sm" onClick={onBack}>{backLabel}</button> : null}
         <h3>{rfp?.title ?? 'New request for proposals'}</h3>
         <span className={`tnd-badge ${badge.tone === 'quiet' ? '' : badge.tone}`}>{badge.label}</span>
       </header>
@@ -72,15 +85,26 @@ export function TenderWorkspace({
 
       <div className="tnd-ws">
         <nav className="tnd-ws-nav" aria-label="Tender sections">
-          {SECTIONS.map(([key, label]) => (
-            <button key={key} type="button" aria-current={section === key ? 'page' : undefined}
-              disabled={!sent && key !== 'overview' && key !== 'files'}
-              title={!sent && key !== 'overview' && key !== 'files' ? 'Available once the tender is sent' : undefined}
-              onClick={() => setSection(key)}>
-              <span>{label}</span>
-              {count[key] ? <span className="n">{count[key]}</span> : null}
-            </button>
-          ))}
+          {SECTIONS.map(([key, label]) => {
+            const locked = !sent && key !== 'overview' && key !== 'files';
+            const href = sectionHref[key];
+            const inner = (
+              <>
+                <span>{label}</span>
+                {count[key] ? <span className="n">{count[key]}</span> : null}
+              </>
+            );
+            if (href && !locked && section !== key) {
+              return <Link key={key} href={href} className="tnd-ws-navlink">{inner}</Link>;
+            }
+            return (
+              <button key={key} type="button" aria-current={section === key ? 'page' : undefined}
+                disabled={locked} title={locked ? 'Available once the tender is sent' : undefined}
+                onClick={() => setSection(key)}>
+                {inner}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="tnd-ws-main">
@@ -143,7 +167,7 @@ export function TenderWorkspace({
           {section === 'emailed' && rfp ? (
             <EmailedBidsSection rfp={rfp} lanes={lanes} onRecorded={() => { void follow.reload(); }} />
           ) : null}
-          {section === 'clarifications' ? <ClarificationsSection /> : null}
+          {section === 'clarifications' && rfp && sent ? <ClarificationsSection rfp={rfp} onOpenCount={setOpenQ} /> : null}
         </div>
       </div>
     </div>

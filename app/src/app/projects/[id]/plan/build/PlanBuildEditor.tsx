@@ -327,9 +327,9 @@ export function PlanBuildEditor({
    */
   importHref?: string | null;
   /**
-   * Where the "Tendering" link points, or null to hide it. The plan's Procurement
-   * surface is its own page (LINA-371); this is the door to it from the editor's
-   * tools row, since /plan no longer wraps procurement in an accordion (LINA-306).
+   * Where the "Tendering" link points, or null to hide it: the tendering home
+   * (/projects/{id}/tendering, PRD-08 H-1). The modal's "Open full page" appends
+   * /rfps/{id} (or /rfps/new?task=) to it.
    */
   procurementHref?: string | null;
   /** An existing saved draft to resume editing; absent → scaffold from the template. */
@@ -571,6 +571,7 @@ export function PlanBuildEditor({
           invited: counts.invited ?? (same ? before?.invitedCount : undefined),
           submitted: counts.submitted ?? (same ? before?.submittedCount : undefined),
           awardedTo: counts.awardedTo ?? (same ? before?.awardedTo : undefined),
+          openQuestions: counts.openQuestions ?? (same ? before?.openQuestions : undefined),
         });
       }
       return next;
@@ -1365,6 +1366,12 @@ export function PlanBuildEditor({
                   <span className={`pbx-drawer-tabcount${activeChip ? ` is-${activeChip.state.replace('_', '-')}` : ''}`}>
                     {procurementTabLabel(activeProc)}
                   </span>
+                  {activeProc?.openQuestions ? (
+                    <span className="tnd-tab-q" title={`${activeProc.openQuestions} open questions from bidders`}
+                      aria-label={`${activeProc.openQuestions} open questions from bidders`}>
+                      {activeProc.openQuestions}
+                    </span>
+                  ) : null}
                 </button>
               ) : null}
               {isTaskRow ? (
@@ -1601,6 +1608,7 @@ export function PlanBuildEditor({
                 onRfpChanged={onPanelRfp}
                 onOpenWorkspace={(section) => { if (workspaceKey) openTender(workspaceKey, section); }}
                 onFaceChange={setPanelFace}
+                openQuestions={activeProc?.openQuestions ?? 0}
               />
             ) : null}
 
@@ -1664,7 +1672,7 @@ export function PlanBuildEditor({
 
       {/* The in-place tendering modal (LINA-420). A full-height overlay over the
           plan — the owner never leaves the plan screen. It mounts the SAME
-          <ProcurementSection> the standalone /plan/procurement page uses, scoped to
+          <ProcurementSection> (the tendering pages at /tendering mount the same workspace), scoped to
           the task the drawer/row acted on: an already-tendered task opens on its
           tender (responses + Compare, edit / add docs); a fresh one opens the
           composer pre-picked on that task. ProcurementSection owns its own
@@ -1688,7 +1696,9 @@ export function PlanBuildEditor({
                 {procurementHref ? (
                   <Link
                     className="pbx-icon"
-                    href={`${procurementHref}${tenderExistingRfp ? `?rfp=${encodeURIComponent(tenderExistingRfp.id)}` : `?task=${encodeURIComponent(tenderKey)}`}`}
+                    href={tenderExistingRfp
+                      ? `${procurementHref}/rfps/${encodeURIComponent(tenderExistingRfp.id)}`
+                      : `${procurementHref}/rfps/new?task=${encodeURIComponent(tenderKey)}`}
                     style={{ width: 'auto', padding: '0 10px', display: 'inline-flex', alignItems: 'center' }}
                     title="Open the full tendering page"
                   >

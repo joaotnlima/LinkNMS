@@ -18,7 +18,7 @@ import {
 import type { Inbox } from '@/lib/v2/tendering';
 import OwnerModelViewer from '../ifc/OwnerModelViewer';
 import { CompareSurface, LaneCard } from './CompareViews';
-import { mirrorUrl } from './url';
+import { mirrorCompare } from './url';
 import '../procurement.css';
 
 // ── The inbox (published / closed / awarded) ─────────────────────────────────
@@ -56,8 +56,8 @@ export function ProposalsInbox({
   // Open the drill-down and mirror the chosen bids into `?compare=`; [] closes it.
   const openCompare = useCallback((ids: string[]) => {
     setCompareIds(ids);
-    mirrorUrl(rfp.id, ids.length > 0 ? serializeCompareIds(ids) : null);
-  }, [rfp.id]);
+    mirrorCompare(ids.length > 0 ? serializeCompareIds(ids) : null);
+  }, []);
 
   // Apply `?compare=` once, after the lanes exist to validate it against (a stale
   // link silently drops ids that are not bids on this RFP).

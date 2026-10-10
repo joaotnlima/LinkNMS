@@ -91,7 +91,7 @@ export default async function PlanPage({
     getProcurementWindows(id),
     // The tendering surface now opens IN PLACE as a modal over the plan (LINA-420:
     // "a modal, so I don't exit the plan screen") rather than navigating to the
-    // sibling /plan/procurement route. So the editor needs the same server reads
+    // tendering pages (now /projects/{id}/tendering, PRD-08). So the editor needs the same server reads
     // that page did — the org's tenders for this build (first paint, not a
     // spinner) and whether an org is even selected — to mount <ProcurementSection>
     // in the overlay. Both fail closed (empty list / false).
@@ -198,11 +198,10 @@ export default async function PlanPage({
           // The status picker's v2 progress-write door (LINA-384). Append-only,
           // keyed on the stable v2 task id; refusals roll the picker back inline.
           reportProgressV2={reportProgressV2}
-          // The door to the plan's Procurement surface. Since LINA-420 "Start
-          // tendering" opens IN PLACE as a modal over the plan (below) instead of
-          // navigating here; this href is kept only as the modal's "open the full
-          // tendering page" escape hatch.
-          procurementHref={`/projects/${id}/plan/procurement`}
+          // The tendering home (PRD-08 H-1/H-4): the tools-row "Tendering" link and
+          // the in-place modal's "Open full page" escape hatch, which deep-links to
+          // the open tender's own address (/tendering/rfps/{id}).
+          procurementHref={`/projects/${id}/tendering`}
           // Gate the per-package "Start tendering" deep-link (LINA-407) on the
           // org-role permission, resolved server-side — not a client claim.
           canStartTender={canStartTender}
@@ -224,7 +223,7 @@ export default async function PlanPage({
       ) : (
         <main className="pi">
           <p style={{ marginBottom: '1rem' }}>
-            <Link className="pbx-icon" href={`/projects/${id}/plan/procurement`}
+            <Link className="pbx-icon" href={`/projects/${id}/tendering`}
               title="Put part of the plan out to tender and compare the bids"
               style={{ width: 'auto', padding: '0 10px', display: 'inline-flex', alignItems: 'center' }}>
               Tendering

@@ -10,7 +10,8 @@
 // with the SAME components the docked task panel uses (components/tender/*);
 // the workspace adds the proposals inbox with shortlist and the Compare
 // drill-down, the line-by-line matrix, the files, the emailed bids and the
-// clarifications placeholder.
+// clarifications (PRD-08). Since PRD-08 the standalone page is
+// /projects/:id/tendering; this section stays as the plan's in-place overlay.
 //
 // ── WHAT THIS SURFACE PROMISES (unchanged) ──────────────────────────────────
 // 1. PUBLISH IS A DOOR: sending confirms first and says what it does.

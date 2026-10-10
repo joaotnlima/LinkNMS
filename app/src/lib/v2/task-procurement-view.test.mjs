@@ -61,3 +61,8 @@ test('PRD-02: the governing RFP id, the left-out rows and a cancel reason ride a
   assert.equal(out.cancelReason, 'Owner changed the roof design');
   assert.equal(procurementChip(out).title, 'Tender cancelled — Owner changed the roof design');
 });
+
+test('PRD-08 H-7: open questions ride along for the Tender-tab badge; none → absent', () => {
+  assert.equal(toProcurementWindows([item({ open_question_count: 2 })])[T1].openQuestions, 2);
+  assert.equal('openQuestions' in toProcurementWindows([item({ open_question_count: 0 })])[T1], false);
+});
