@@ -4426,8 +4426,15 @@ paths:
       tags:
       - Tendering
       operationId: reserveRfpModel
-      summary: Reserve an IFC BIM-model upload for an RFP package (issuer, LINA-409)
-      description: 'Reserve the RFP''s BIM model and return a presigned PUT. The declared sha256 is
+      deprecated: true
+      summary: Reserve an IFC upload of the build's model from the RFP composer (issuer; deprecated by attachRfpModel, PRD-07)
+      description: 'Since PRD-07 the model is the BUILD''s: this reserves the build model''s FIRST .ifc (the issuer becomes
+        its author) or, when the issuer is the model''s author, its next version (403 otherwise — attach the build''s
+        model with `attachRfpModel`). `:complete` then attaches it to this RFP following its current version. Use
+        `reserveProjectModelVersion` + `attachRfpModel` instead.
+
+
+        Reserve the BIM model and return a presigned PUT. The declared sha256 is
         pinned into the signature, so storage refuses any bytes but the ones declared; call `:complete`
         once the PUT lands. Bounded to IFC only (`.ifc`) and a 100 MB cap. Only the issuer of a live RFP
         may reserve; otherwise 409. An unknown RFP is a uniform 404.
@@ -4478,6 +4485,50 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+    put:
+      tags:
+      - Tendering
+      operationId: attachRfpModel
+      summary: Attach the build's model to the RFP, following its current version or pinned to one (issuer, PRD-07 §5)
+      description: 'The RFP references the BUILD''s model (PRD-07) instead of owning one. `version_no` null follows the
+        current version; a number pins a proven version. Bidders read the model only through this reference (M-7),
+        under the RFP read rule. Issuer only, while the RFP is a draft (409 otherwise). A document that is not the
+        model of this RFP''s build answers 422.
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** issuer'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: issuer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [document_id]
+              properties:
+                document_id: { type: string, format: uuid }
+                version_no: { type: integer, minimum: 1, nullable: true }
+      responses:
+        '200':
+          description: The attached model as the RFP shows it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfpModel'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /rfps/{rfpId}/model/{documentId}:complete:
     parameters:
     - name: rfpId
@@ -4496,6 +4547,7 @@ paths:
       tags:
       - Tendering
       operationId: completeRfpModel
+      deprecated: true
       summary: Prove the IFC BIM-model upload and attach it to the RFP package (issuer, LINA-409)
       description: 'Prove the bytes reached storage with the declared size (sha256 was already pinned
         into the PUT), then mark the model `stored` and bind it to the RFP package. Idempotent. The
@@ -4542,8 +4594,8 @@ paths:
       - Tendering
       operationId: removeRfpModel
       summary: Remove the IFC BIM model from an RFP package (issuer, LINA-409)
-      description: 'Detach and delete the RFP''s BIM model. Only the issuer may remove it, and only
-        while the RFP still permits package edits; otherwise 409. A model under a different RFP, or an
+      description: 'Detach the build''s model from the RFP (PRD-07: the model is the build''s and is never deleted
+        here). Only the issuer may detach it, and only while the RFP still permits package edits; otherwise 409. A model under a different RFP, or an
         unknown one, is existence-hidden (404).
 
 
@@ -7737,6 +7789,293 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{projectId}/model:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Documents
+      operationId: getProjectModel
+      summary: The build's shared model, its record at a version and the viewer's edit scope (PRD-07 M-1..M-8, D-45)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant (V1/V6)
+
+
+        THE model of the build (one project-scoped `bim` document) with its versions, and the RECORD-SIDE data kept on
+        LinkNMS by element GlobalId: element ↔ task links and issue pins at `version` (default: current). LinkNMS never
+        writes into the IFC (D-45). `tasks[]` are the plan rows with outline code, status, effective assignee and
+        element count (planning task port) for colouring by task / status / who edits (M-3). `viewer.scope` is the
+        viewer''s edit scope (M-8): `author` / `owner` — the whole model; `tasks` — the elements linked to rows in its
+        live D-33 scope (GC: its branch; an awarded company: its awarded rows; closed when the contract ends, M-9);
+        `none`. `access` lists who edits on which scope (M-6). A build without a model answers `document: null`.
+        Bidders on an RFP who are not participants never reach this — they see the RFP''s attached view only (M-7).'
+      x-relationship: project.participant
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - name: version
+        in: query
+        required: false
+        description: the version whose record to answer (1..current)
+        schema:
+          type: integer
+          minimum: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectModel'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/model/versions:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Documents
+      operationId: reserveProjectModelVersion
+      summary: Reserve the next .ifc of the build's model — its first, or a new version by the author (PRD-07 M-9, M-18)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant for the first model (that org becomes the model''s author);
+        the model''s author for every later version
+
+
+        Answers an upload ticket; PUT the bytes, then `completeUpload` proves them (ledgered `documents.version.uploaded`).
+        IFC only (`.ifc`), 100 MB. The new version carries `change_kind: upload` and `base_version_no` = the version it
+        replaces. Element links and issue pins are keyed by GlobalId, so they carry over to the new file with nothing
+        to do; the viewer lists linked elements missing from the new file before upload and warns when an export
+        regenerated its GlobalIds (M-18). `createDocumentVersion` on the model document follows the same author rule.'
+      x-relationship: project.participant (first) | model author
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectModelVersionCreate'
+      responses:
+        '201':
+          description: An upload ticket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadTicket'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/model:save:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Documents
+      operationId: saveModelEdits
+      summary: Save a private draft of record-side edits as a new model version (PRD-07 M-8, M-11, M-12, M-14; D-45)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** model author | project owner (whole model) | an org with rows in its live D-33 edit
+        scope (only elements already linked to those rows)
+
+
+        The draft is the viewer''s own until saved (kept in the browser). Saving appends version *n+1* with
+        `change_kind: edit`, `base_version_no` = the draft''s base, re-pointing the CURRENT bytes (same storage key and
+        sha256 — nothing is written into the IFC), and writes the links / pins / closes in the same transaction.
+        Changes: `link` / `unlink` an element (GlobalId) to a task; `pin` an issue on 1–200 elements naming up to 20
+        tasks; `close_pin`. **Scope (M-8), server-side:** the author and the owner edit the whole model; every other
+        org only rows in its live D-33 scope and only elements already linked to one of them — any other GlobalId or
+        row answers 403 `out_of_scope` with `refused[] {change_index, reason}`. **Concurrent drafts (M-14):** changes
+        to elements nobody touched after the base apply on top of the latest version; an element changed since answers
+        409 `version_conflict` with `conflicts[] {global_id, version, by_org_id}` until the caller resolves each
+        element (`resolutions {global_id: mine|theirs}`) — never last-write-wins. `note` is required (it goes on the
+        record). Ledgered and published as `documents.model.edited` (the author is notified when someone else saved —
+        "edited by"; the owners of the tasks whose elements changed too).'
+      x-relationship: model author | project owner | D-33 edit scope ∋ linked rows
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelEditSave'
+      responses:
+        '201':
+          description: The model with its new current version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelEditResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/model:restore:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Documents
+      operationId: restoreProjectModel
+      summary: Restore vN — appends v(n+1) as a copy of vN; nothing is deleted (PRD-07 M-17)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** model author | project owner
+
+
+        Appends a version with `change_kind: restore`, `base_version_no: N`, re-pointing vN''s bytes, and re-applies
+        vN''s element links (links added since are stamped removed in the new version; links removed since are added
+        back). Issue pins stay (an issue is never taken off the record). Every version stays. Ledgered and published as
+        `documents.model.edited` (`change_kind: restore`).'
+      x-relationship: model author | project owner
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version_no]
+              properties:
+                version_no: { type: integer, minimum: 1 }
+                note: { type: string, maxLength: 2000 }
+      responses:
+        '201':
+          description: The model with its new current version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelEditResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/model/record-diff:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Documents
+      operationId: compareModelRecord
+      summary: Record changes between two model versions — links added / removed, issues pinned / closed (PRD-07 M-16)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        The record half of "compare vA ↔ vB". The file half (elements added / removed / properties changed, matched by
+        GlobalId) is computed by the viewer from the two IFC files themselves — the server never parses IFC.'
+      x-relationship: project.participant
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - { name: from, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: to, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelRecordDiff'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /tasks/{taskId}/model:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Documents
+      operationId: getTaskModel
+      summary: The model card of a task's Files tab — elements linked to the task, and whether the viewer edits them (PRD-05 F-4, PRD-07 M-4)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        `model: null` when the build has no model. `can_edit` is the M-8 rule for this row (`edit_reason`: author,
+        owner, scope, none). The card opens `/projects/{id}/model?task={taskId}` with the task isolated.'
+      x-relationship: project.participant
+      parameters:
+      - $ref: '#/components/parameters/taskId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskModel'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
         '404':
           $ref: '#/components/responses/NotFound'
   /projects/{projectId}/documents:
@@ -11702,6 +12041,8 @@ components:
         mime: { type: string }
         sizeBytes: { type: integer }
         sha256: { type: string, nullable: true }
+        pinned: { type: boolean, description: 'PRD-07: true when the RFP is pinned to `version`; false when it follows the current version' }
+        currentVersion: { type: integer, description: 'PRD-07: the build model''s current version' }
       required: [documentId, version, fileName, mime, sizeBytes]
     Award:
       type: object
@@ -12886,6 +13227,162 @@ components:
       required:
       - base_version_no
       - markups
+    ProjectModelVersionCreate:
+      type: object
+      required: [file]
+      properties:
+        file:
+          $ref: '#/components/schemas/FileDeclaration'
+        note:
+          type: string
+          maxLength: 2000
+    ElementLink:
+      type: object
+      description: An element (IFC GlobalId) linked to a plan row — record-side, survives re-uploads (PRD-07, D-45).
+      properties:
+        global_id: { type: string, pattern: '^[0-9A-Za-z_$]{22}$' }
+        task_id: { type: string, format: uuid }
+        added_in_version: { type: integer }
+        linked_by:
+          $ref: '#/components/schemas/Actor'
+        linked_at: { type: string, format: date-time }
+      required: [global_id, task_id, added_in_version, linked_by, linked_at]
+    ElementPin:
+      type: object
+      description: An issue pinned on model elements, naming the tasks it concerns (PRD-07 M-5).
+      properties:
+        id: { type: string, format: uuid }
+        global_ids: { type: array, items: { type: string }, minItems: 1, maxItems: 200 }
+        task_ids: { type: array, items: { type: string, format: uuid }, maxItems: 20 }
+        text: { type: string }
+        state: { type: string, enum: [open, closed] }
+        version_no: { type: integer }
+        closed_in_version: { type: integer }
+        author:
+          $ref: '#/components/schemas/Actor'
+        created_at: { type: string, format: date-time }
+      required: [id, global_ids, task_ids, text, state, version_no, author, created_at]
+    ModelTask:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, description: 'outline code, e.g. "2.5.1"' }
+        name: { type: string }
+        parent_id: { type: string, format: uuid, nullable: true }
+        status: { type: string }
+        assignee_org_id: { type: string, format: uuid, nullable: true }
+        assignee_org_name: { type: string, nullable: true }
+        element_count: { type: integer }
+      required: [id, code, name, status, element_count]
+    ProjectModel:
+      type: object
+      properties:
+        project_id: { type: string, format: uuid }
+        document:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/Document'
+        author_org_id: { type: string, format: uuid }
+        viewing_version: { type: integer }
+        links: { type: array, items: { $ref: '#/components/schemas/ElementLink' } }
+        pins: { type: array, items: { $ref: '#/components/schemas/ElementPin' } }
+        tasks: { type: array, items: { $ref: '#/components/schemas/ModelTask' } }
+        viewer:
+          type: object
+          properties:
+            scope:
+              type: object
+              properties:
+                kind: { type: string, enum: [author, owner, whole, tasks, none] }
+                task_ids: { type: array, items: { type: string, format: uuid } }
+                element_count: { type: integer, nullable: true }
+            can_upload: { type: boolean }
+            can_restore: { type: boolean }
+        access:
+          type: object
+          properties:
+            readers: { type: string, enum: [participants] }
+            editors:
+              type: array
+              items:
+                type: object
+                properties:
+                  org_id: { type: string, format: uuid }
+                  org_name: { type: string }
+                  role: { type: string, enum: [author, owner, branch] }
+                  task_ids: { type: array, items: { type: string, format: uuid } }
+                  element_count: { type: integer, nullable: true }
+            unassigned_tasks:
+              type: array
+              description: rows with linked elements nobody but the owner edits yet — they open for whoever is awarded them
+              items:
+                type: object
+                properties:
+                  task_id: { type: string, format: uuid }
+                  element_count: { type: integer }
+      required: [project_id, document, links, pins, tasks, viewer, access]
+    ModelEditChange:
+      type: object
+      description: 'One record-side change. `link` / `unlink` need `global_id` + `task_id`; `pin` needs `pin`; `close_pin` needs `pin_id`.'
+      required: [op]
+      properties:
+        op: { type: string, enum: [link, unlink, pin, close_pin] }
+        global_id: { type: string, pattern: '^[0-9A-Za-z_$]{22}$' }
+        task_id: { type: string, format: uuid }
+        pin:
+          type: object
+          required: [id, global_ids, text]
+          properties:
+            id: { type: string, format: uuid }
+            global_ids: { type: array, items: { type: string }, minItems: 1, maxItems: 200 }
+            task_ids: { type: array, items: { type: string, format: uuid }, maxItems: 20 }
+            text: { type: string, minLength: 1, maxLength: 2000 }
+        pin_id: { type: string, format: uuid }
+    ModelEditSave:
+      type: object
+      required: [base_version_no, note, changes]
+      properties:
+        base_version_no: { type: integer, minimum: 1, description: the version the draft was made on }
+        note: { type: string, minLength: 1, maxLength: 2000 }
+        changes: { type: array, minItems: 1, maxItems: 500, items: { $ref: '#/components/schemas/ModelEditChange' } }
+        resolutions:
+          type: object
+          description: 'element-level choices after a 409: {GlobalId: "mine" | "theirs"}'
+          additionalProperties: { type: string, enum: [mine, theirs] }
+    ModelEditResult:
+      type: object
+      properties:
+        document:
+          $ref: '#/components/schemas/Document'
+        version_no: { type: integer }
+        change_count: { type: integer }
+        dropped: { type: integer, description: changes dropped by a "theirs" resolution }
+        edited_by_author: { type: boolean }
+      required: [document, version_no, change_count]
+    ModelRecordDiff:
+      type: object
+      properties:
+        from: { type: integer }
+        to: { type: integer }
+        links_added: { type: array, items: { type: object, properties: { global_id: { type: string }, task_id: { type: string, format: uuid } } } }
+        links_removed: { type: array, items: { type: object, properties: { global_id: { type: string }, task_id: { type: string, format: uuid } } } }
+        pins_added: { type: array, items: { $ref: '#/components/schemas/ElementPin' } }
+        pins_closed: { type: array, items: { $ref: '#/components/schemas/ElementPin' } }
+      required: [from, to, links_added, links_removed, pins_added, pins_closed]
+    TaskModel:
+      type: object
+      properties:
+        model:
+          type: object
+          nullable: true
+          properties:
+            document_id: { type: string, format: uuid }
+            title: { type: string }
+            current_version: { type: integer }
+            element_count: { type: integer }
+            can_edit: { type: boolean }
+            edit_reason: { type: string, enum: [author, owner, scope, none] }
+      required: [model]
     Markup:
       type: object
       properties:
@@ -13030,10 +13527,13 @@ components:
       - warnings
     VersionChangeKind:
       type: string
+      description: '`edit` — a record-side model save (PRD-07 M-12: links / pins, the bytes of the version before);
+        `restore` — Restore vN (M-17: vN''s bytes, `base_version_no` = N).'
       enum:
       - upload
       - markup_only
       - edit
+      - restore
     DocumentLinkRole:
       type: string
       description: '`reference` — what the work is built from; `deliverable` — a file handed over by the task (its review

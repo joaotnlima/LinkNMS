@@ -2,6 +2,30 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-10 — The shared project model: record-side edits only (PRD-07 M-1..M-9, M-11, M-12, M-14..M-18; D-45)
+
+- **New (Documents):** `getProjectModel` — `GET /projects/{projectId}/model?version=` (`ProjectModel`: the build's model,
+  element links and issue pins at a version, plan rows with element counts, the viewer's M-8 scope, who edits);
+  `reserveProjectModelVersion` — `POST /projects/{projectId}/model/versions` (first model by any participant, later
+  `.ifc` by the author only; complete with `completeUpload`); `saveModelEdits` — `POST /projects/{projectId}/model:save`
+  `{base_version_no, note, changes[], resolutions?}` → a `change_kind: edit` version re-pointing the current bytes,
+  403 `out_of_scope` with `refused[]`, 409 `version_conflict` with `conflicts[]` (per-element merge, M-14);
+  `restoreProjectModel` — `POST /projects/{projectId}/model:restore {version_no, note?}` (`change_kind: restore`);
+  `compareModelRecord` — `GET /projects/{projectId}/model/record-diff?from=&to=`; `getTaskModel` —
+  `GET /tasks/{taskId}/model` (Files tab card).
+- `createDocumentVersion` on the project model answers 403 unless the caller is the model's author (M-9);
+  `saveDocumentMarkups` refuses the model (it takes links and pins).
+- **New (Tendering):** `attachRfpModel` — `PUT /rfps/{rfpId}/model {document_id, version_no?}`: the RFP references the
+  build's model, following current or pinned. `RfpModel` gains `pinned`, `currentVersion`. `reserveRfpModel` /
+  `completeRfpModel` are **deprecated** and keep working: they upload the build's model (first, or a new version by
+  its author — 403 otherwise) and attach it following current. `removeRfpModel` now **detaches** (the build keeps its
+  model). The view-url routes serve the version the RFP references.
+- `VersionChangeKind` gains `restore`. New schemas `ProjectModel`, `ProjectModelVersionCreate`, `ElementLink`,
+  `ElementPin`, `ModelTask`, `ModelEditChange`, `ModelEditSave`, `ModelEditResult`, `ModelRecordDiff`, `TaskModel`.
+- Events: `documents.model.edited` (ledgered + outbox) → Notifications (`files`): the model's author when someone
+  else saved, and the owners of the tasks whose elements changed.
+- Migration `db/v2/0019_documents_project_model.sql` (moves the LINA-409 RFP models to their builds).
+
 ## 2026-10-10 — 2D drawings: PDF / DWG viewer, markup layer and DWG preview (PRD-06 V-1..V-17; additive)
 
 - **New (Documents):** `listDocumentMarkups` — `GET /documents/{documentId}/markups`; `saveDocumentMarkups` —

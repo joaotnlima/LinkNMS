@@ -1,7 +1,10 @@
-# 24 — BIM viewer (IFC 3D, view-only)
+# 24 — BIM viewer (IFC 3D) and the shared project model
 
-**Status:** Accepted (D-41) — founder chose `viewer` (IFC 3D view-only inside the RFP) on the LINA-406
-depth question, 2026-10-06. Opened by the Architect for **LINA-409**.
+**Status:** Accepted (D-41), **amended by D-45** (2026-10-10, PRD-07): the model is now the **build's**
+(project scope), read by every participant at `/projects/{id}/model`, and awarded companies **edit
+record-side only** — element ↔ task links, issue pins and new versions by upload. LinkNMS never writes
+into the IFC. Opened by the Architect for **LINA-409**; §"Shared project model (PRD-07)" below supersedes
+the RFP-only scope where they differ.
 **Scope:** a read-only, in-browser IFC 3D viewer embedded in the **project (design) RFP** package, so
 specialties can *see* the building model before pricing. It does **not** design model authoring,
 versioning, federation, clash-check, or award-time edit rights — that is the "collaborative authoring"
@@ -28,14 +31,14 @@ can be decomposed and built against a fixed contract.
 | # | Decision |
 |---|---|
 | 1 | **Renderer:** [`web-ifc`](https://github.com/ThatOpen/engine_web-ifc) (WASM IFC parser) + **Three.js** (`three`) + `OrbitControls`. Client-only. No `@thatopen/components` umbrella — we drive Three.js directly to keep the bundle lean and the surface small for a view-only tool. |
-| 2 | **The IFC is a Documents-module document**, `scope_type = 'rfp'`, `kind = 'bim'`. **No schema change** — `db/v2/0001_schema.sql` already models both. One model per RFP for Phase 1 (the schema allows many; the UI surfaces the first `bim` document). |
+| 2 | **The IFC is a Documents-module document**, `kind = 'bim'`. *(D-45, 0019)* It is the **build's** model: `scope_type = 'project'`, `is_project_model`, one live per project. RFPs **reference** it (`tendering.rfp.model_document_id` + an optional pinned `model_version_no`) instead of owning one; 0019 migrated the LINA-409 RFP models. |
 | 3 | **Authorization lives in the tendering module**, not Documents. New RFP-model routes reuse `requireRfpRead` / issuer checks (`modules/tendering`), and delegate persistence + storage to the injected Documents store/storage. The Documents module is **not** taught the RFP invite-only/open rule. |
 | 4 | **Byte delivery = short-TTL presigned *inline* GET**, minted only after the authorization check passes, returned as JSON (`{ url, expiresAt }`) — not a 302. R2 bucket CORS is configured once for the app origins so the browser `fetch(...).arrayBuffer()` succeeds. We do **not** stream bytes through our origin (serverless size/duration limits, egress cost). |
 | 5 | **Parsing is lazy — nothing loads until the reader clicks "Load 3D model".** As built, the web-ifc WASM parse runs on the main thread behind that explicit click (with a "Loading…" state and a "large model" notice >50 MB), not in a Web Worker. The worker was scoped out of Phase 1: it is a pure performance refinement (the main thread blocks only during the one deliberate parse, never on page load), adds Next worker-bundling complexity, and changes nothing a bidder can do. It is the first optimisation if a real model proves too heavy — tracked as a future refinement, not a gap in the view-only capability. |
 | 6 | **File limits:** upload cap **100 MB** per `.ifc`; the viewer shows a "large model" notice above ~50 MB. IFC only (`application/x-step` / `.ifc`); other model formats are out of scope. |
-| 7 | **Read-only, always.** No route writes to the model. The viewer never mounts an edit affordance. |
+| 7 | **The IFC bytes are never written.** *(D-45)* The only "edits" are record-side (links, pins), saved as a new version that re-points the same bytes; a new `.ifc` comes only by upload from the model's author. |
 
-## Where the IFC lives (data model — no change)
+## Where the IFC lived in Phase 1 (LINA-409, superseded by 0019)
 
 `documents.document` (`db/v2/0001_schema.sql:756-778`) already carries:
 
@@ -141,9 +144,9 @@ consumers. When LINA-407 lands, the viewer replaces the download link in the RFP
 
 ## Out of scope (future epic — do not build here)
 
-Model editing / authoring, collaborative versioning (Yjs/Hocuspocus), per-discipline federation,
-clash-check, award-time edit rights (LINA-406 result #2). Any of these requires its own ADR, budget and
-founder approval.
+Model authoring (writing the IFC), real-time co-editing (Yjs/Hocuspocus), per-discipline federation,
+clash-check (LINA-406 result #2). Any of these requires its own ADR, budget and founder approval.
+Award-time **record-side** edit rights and versioning are now in scope — see "Shared project model" below.
 
 ## Decomposition (LINA-409 children)
 
@@ -156,3 +159,41 @@ founder approval.
 
 **Done (epic):** viewer merged to `main`, visible read-only in the project RFP package across all three
 surfaces, honouring invite-only/open visibility, with this document registered.
+
+## Shared project model (PRD-07, D-45)
+
+**Where it lives.** `documents.document` with `scope_type='project'`, `kind='bim'`, `is_project_model`
+(0019). Author = the org whose upload is v1. Every participant reads it (V1/V6); bidders who are not
+participants see it only through the RFP that references it, under the RFP read rule above (M-7).
+
+**Record-side data (Documents).** `documents.element_link` (GlobalId ↔ task, `added_in_version` /
+`removed_in_version`) and `documents.element_pin` (an issue on 1–200 GlobalIds naming ≤ 20 tasks). Owned by
+Documents because a record edit *is* a model version — the links, the pins and the version commit in one
+transaction with the ledger entry; planning remains the one writer of rows and of the D-33 scope, answering
+through its task port (`modelScopes`). Pins are not Quality non-conformities: an issue here spans several
+elements and tasks during design and has no verification lifecycle.
+
+**Edit scope (M-8/M-9, server-side).** Author and owner: the whole model. Every other org: elements already
+linked to rows in its live D-33 edit scope (GC: its branch; an awarded company: its awarded rows), closed when
+the contract is cancelled, terminated or closed. Only the author uploads a new `.ifc`; author and owner restore.
+
+**Saving (M-11..M-14).** The draft lives in the browser until saved. `POST /projects/{id}/model:save`
+appends `change_kind: edit`, `base_version_no` = the draft's base, re-pointing the current bytes; a required
+note; ledgered + `documents.model.edited` (the author is notified when someone else saved). Concurrent drafts
+merge per element: untouched elements apply on top of the latest version; an element changed since the base
+answers 409 with `conflicts[]` until the caller chooses `mine`/`theirs` per element.
+
+**Versions (M-15..M-18).** History from `Document.versions` (`upload` / `edit` / `restore`). Restore vN
+appends v(n+1) over vN's bytes and re-applies vN's links (pins stay). Compare: record changes from
+`/model/record-diff`; file changes (added / removed / properties changed by GlobalId) computed in the viewer
+from the two IFC files. A new upload keeps links and pins (GlobalId-keyed); the viewer lists linked elements
+missing from the new file and warns when an export regenerated its GlobalIds.
+
+**Viewer.** `ifc-loader` keeps per-element geometry — still one merged buffer per IFC class (batched draw
+calls), with per-element vertex ranges and vertex colours, so picking (face → element), highlight, colour by
+task / status / who edits and isolate (`?task=`) recolour ranges instead of adding meshes. Components:
+`app/src/components/model/`.
+
+**Still out of scope.** IFC property editing and dimensional-property warnings (M-10 properties, M-13),
+geometry authoring, federation, clash detection, server-side IFC parsing.
+

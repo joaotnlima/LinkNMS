@@ -125,6 +125,7 @@ accept screen; the verb segment adds nothing (accepting stays a POST).
 | `/projects/{id}/contracts/{id}/payments` | payments record |
 | `/projects/{id}/quality` | verifications, non-conformities, inspections (Quality) |
 | `/projects/{id}/documents` | files, versions, photos (Documents); `?folder=`/`?type=` filter |
+| `/projects/{id}/model` | the build's shared IFC model (Documents, PRD-07): `?task=` isolates a task's elements, `?version=` opens a version, `?tab=versions` the history; record-side edits only (D-45) |
 | `/projects/{id}/questions` | threads / Q&A / meeting minutes (Collaboration) |
 | `/projects/{id}/history` | the scoped ledger view (Record) — absorbs `/record` + `/audit` + `/decisions` |
 
@@ -158,7 +159,7 @@ replace + delete. "Replace" = update in-app links, old path 404s.
 | `/invitations/[token]/accept` | `/invitations/{token}` | **301** — tokens are live in WhatsApp/email threads |
 | `/rfp/[token]`, `/rfp/[token]/submitted` | `/rfps/{token}[/submitted]` | **301** — token links may have been sent to bidders |
 | `/sign-in`, `/sign-up`, `/no-access`, `/onboarding/setup` | same | keep |
-| — | `/companies`, `/companies/{slug}`, `/specialties/{slug}`, `/pricing`, `/settings/*`, `/notifications`, `/projects/{id}/{tendering,contracts,quality,documents,questions,locations}` | new |
+| — | `/companies`, `/companies/{slug}`, `/specialties/{slug}`, `/pricing`, `/settings/*`, `/notifications`, `/projects/{id}/{tendering,contracts,quality,documents,model,questions,locations}` | new |
 
 The only redirects that matter: the two **token families** (invitations, RFP). Everything else
 is behind auth on a pre-launch product; a 404 costs nothing and dead routes cost maintenance.

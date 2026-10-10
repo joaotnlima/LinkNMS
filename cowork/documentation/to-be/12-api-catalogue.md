@@ -96,6 +96,7 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Build my proposal plan in my lane (rows, durations/dates, links, prices, docs) | bidder | `GET /proposals/{id}` · `POST /proposals/{id}/rows` · `PATCH /proposal-rows/{id}` · `PUT /proposals/{id}/lines` · `POST /proposals/{id}:submit` · `:withdraw` |
 | Record an answer received by email (PDFs + total, duration, conditions) | issuer | `POST /proposals/{id}:record-offline` |
 | Compare proposals line by line | issuer | `GET /rfps/{id}/comparison` |
+| Attach the build's model to the package (follow current or pin a version) / detach it (PRD-07 §5) | issuer, draft | `PUT /rfps/{id}/model` · `DELETE /rfps/{id}/model/{documentId}` · read: `GET /rfps/{id}/model/{documentId}:view-url` (bidders: `/rfp-links/{token}/model/…`) |
 | Shortlist / award (on signature: copy the winner's plan under the tendered row, or assign the row if answered by email) | issuer | `POST /proposals/{id}:shortlist` · `POST /rfps/{id}:award {proposal_id}` |
 
 ## Contracting
@@ -138,6 +139,12 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Markup layer of a drawing (every version) | readers of scope | `GET /documents/{id}/markups` |
 | Save markups — a "markups only" version, same bytes and sha256 | participant reading the file | `POST /documents/{id}/markups:save` |
 | Close / re-open a markup; point it at the question or issue it became | markup author (close: or scope editor) | `POST /markups/{id}:close` · `:reopen` · `:link` |
+| The build's shared model: versions, element ↔ task links and issue pins at a version, the viewer's edit scope, who edits (PRD-07) | participant | `GET /projects/{id}/model?version=` |
+| Upload the model's first / next `.ifc` (links and issues carry over by GlobalId) | participant (first) · model author | `POST /projects/{id}/model/versions` → `POST /document-versions/{id}:complete` |
+| Save a draft of record-side edits (link / unlink / pin / close pin) as a new version; per-element merge of concurrent drafts | author · owner · D-33 scope ∋ linked rows | `POST /projects/{id}/model:save` |
+| Restore vN as v(n+1) | author · owner | `POST /projects/{id}/model:restore` |
+| Record changes between two versions (file changes are compared in the viewer) | participant | `GET /projects/{id}/model/record-diff?from=&to=` |
+| The model card of a task's Files tab | participant | `GET /tasks/{id}/model` |
 
 ## Collaboration
 | Use case | Actor | Endpoint |
