@@ -25,6 +25,9 @@ const isProtectedRoute = createRouteMatcher([
   '/projects(.*)',
   '/change-orders(.*)',
   '/invitations(.*)',
+  // PRD-12: the notification centre and settings are members-only too.
+  '/notifications(.*)',
+  '/settings(.*)',
 ]);
 
 // The Band B invite deep link (M6/D6, LINA-179) is the one route under

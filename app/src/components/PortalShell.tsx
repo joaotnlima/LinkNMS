@@ -24,6 +24,7 @@
 import Link from 'next/link';
 
 import { AccountMenu } from './AccountMenu';
+import { NotificationBell } from './NotificationBell';
 import './portal-shell.css';
 
 const NEW_BUILD_HREF = '/projects/new';
@@ -211,6 +212,8 @@ export function PortalShell({
             </Link>
           )}
 
+          {/* PRD-12 N-1: the bell with the unread count, in both modes. */}
+          <NotificationBell />
           <AccountMenu displayName={user.displayName} roleLabel={user.roleLabel} variant="bar" />
         </header>
 

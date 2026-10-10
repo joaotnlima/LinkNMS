@@ -636,3 +636,71 @@
     font-weight: 600;
   }
 }
+
+/* ── Notification bell (PRD-12 N-1) ─────────────────────────────────────────
+ * A plain link in the top bar, both modes and both breakpoints. It sits right
+ * of the create action; the badge is the unread count (hidden at zero). */
+.psh-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-left: 8px;
+  border-radius: 8px;
+  color: var(--ink);
+  text-decoration: none;
+  flex: none;
+}
+.psh-bell:hover {
+  background: var(--surface-sunken);
+}
+.psh-bell svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.psh-bell-badge {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+/* Mobile: the bell pushes itself and the account glyph to the right edge
+ * whenever no create button is shown ahead of it. */
+@media (max-width: 859px) {
+  .psh-bell {
+    margin-left: auto;
+  }
+  .psh--list .psh-bell {
+    margin-left: 8px;
+  }
+}
+
+.psh-acct-link {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.psh-acct-link:hover {
+  background: var(--surface-sunken, var(--owner-muted));
+}

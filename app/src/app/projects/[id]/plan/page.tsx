@@ -71,10 +71,13 @@ export default async function PlanPage({
   // sibling route, so a server action's revalidation refreshes here rather than
   // navigating. Reading it lets a pasted/reloaded link land with the drawer open —
   // the same affordance the standalone `/plan/tasks/:key` permalink gives.
-  searchParams: Promise<{ task?: string }>;
+  // `&tab=` names the panel tab to open on (PRD-12 N-1: a "bid arrived"
+  // notification lands on the task's Tender tab). Only the tabs the panel has.
+  searchParams: Promise<{ task?: string; tab?: string }>;
 }) {
   const { id } = await params;
-  const { task } = await searchParams;
+  const { task, tab } = await searchParams;
+  const openTab = tab === 'tender' || tab === 'conversation' || tab === 'files' ? tab : null;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan`);
 
   // The grid, the build name, the phases, and who is looking — in one round of
@@ -194,6 +197,7 @@ export default async function PlanPage({
           // Open the task a `?task=` link named, on mount (LINA-404). Unknown keys
           // resolve to no open drawer — the editor's rowOfKey fails closed.
           openStageKey={task ?? null}
+          openStageTab={openTab}
           saveV2={savePlanV2.bind(null, id)}
           // The status picker's v2 progress-write door (LINA-384). Append-only,
           // keyed on the stable v2 task id; refusals roll the picker back inline.

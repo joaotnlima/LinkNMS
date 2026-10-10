@@ -15,6 +15,7 @@
 'use client';
 
 import { Suspense, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth, useClerk, useUser } from '@clerk/nextjs';
 
@@ -283,7 +284,7 @@ function AccountSetupForm() {
           <h1 className="ob-title">Set up your account</h1>
           <p className="ob-sub">
             This is how you appear on every decision you make — attributable and time-stamped. You
-            can change it later in settings.
+            can change it later in <Link href="/settings">settings</Link>.
           </p>
         </header>
 

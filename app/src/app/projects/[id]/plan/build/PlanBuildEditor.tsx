@@ -313,7 +313,7 @@ export type ReportProgressV2 = (
 ) => Promise<{ ok: true } | { ok: false; code: string; message: string }>;
 
 export function PlanBuildEditor({
-  projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null,
+  projectId, initialPhases, templateBody, parties = [], savedStageKeys = [], openStageKey = null, openStageTab = null,
   importHref = null, procurementHref = null, initialStageIds = {}, saveV2, reportProgressV2,
   canStartTender = false, procurement = {},
   tenderInitialRfps = [], tenderTasks = [], tenderHasActiveOrg = true, slip,
@@ -358,6 +358,8 @@ export function PlanBuildEditor({
   initialStageIds?: Record<string, string>;
   /** The task a permalink asked for, opened in the drawer on mount. */
   openStageKey?: string | null;
+  /** The panel tab that permalink asked for (`&tab=`, PRD-12 N-1), applied once on mount. */
+  openStageTab?: 'tender' | 'conversation' | 'files' | null;
   /**
    * The v2 write door (LINA-369). Present → the editor autosaves through
    * `/api/v2` incrementally; absent → the legacy v1 `authorPlan` whole-tree write.
@@ -541,7 +543,8 @@ export function PlanBuildEditor({
   const [drawerTab, setDrawerTab] = useState<'plan' | 'tender' | 'conversation' | 'files'>('plan');
   // "＋ Tender" on a grid row opens that row's panel straight on the Tender tab
   // (PRD-02: tendering starts in the panel); every other row change opens Plan.
-  const pendingTabRef = useRef<'tender' | null>(null);
+  // A permalink's `&tab=` seeds it, so the first open lands on that tab (PRD-12 N-1).
+  const pendingTabRef = useRef<'tender' | 'conversation' | 'files' | null>(openStageKey ? openStageTab : null);
   useEffect(() => { setDrawerTab(pendingTabRef.current ?? 'plan'); pendingTabRef.current = null; }, [activeKey]);
   // The open task's file count, reported by the workspace once it loads — the
   // Files tab label carries it (P-2). Reset when the row changes.
