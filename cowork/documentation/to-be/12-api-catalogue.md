@@ -46,13 +46,14 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Commit a change to one row (name, dates, duration, assignee, description, dating mode) — delta + propagation; response flags `editor_is_assignee` | edit scope contains the row | `PATCH /tasks/{id}` |
 | Move / indent / outdent / delete a subtree, paste rows | edit scope contains every affected row and the target parent | `POST /projects/{id}/schedule:apply` |
 | Add / change / remove a link (`from_anchor`, `to_anchor`, lag) | edit scope contains the successor | `POST /tasks/{id}/links` · `PATCH /links/{id}` · `DELETE /links/{id}` |
-| Preview a drag before committing (resulting lag, rows that would move by propagation) | edit scope contains the row | `POST /tasks/{id}:preview-move {start?, finish?}` |
+| Preview a drag before committing (resulting lag, rows that would move by propagation, new project finish, delta vs baseline, who is notified — PRD-13 S-10) | edit scope contains the row | `POST /tasks/{id}:preview-move {start?, finish?}` |
 | Cost lines on a row (qty, unit, unit price, material spec) | contract party / row editor | `POST /tasks/{id}/cost-lines` · `PATCH /cost-lines/{id}` · `DELETE /cost-lines/{id}` |
 | Record the actual date of an external row (licence issued) | edit scope contains the row | `POST /tasks/{id}:record-actual {finish}` |
 | Task detail (fields, history of every delta, variations, progress, questions, documents) | participant | `GET /tasks/{id}` |
 | Report progress (with photos) | edit scope contains the row (attributed) | `POST /tasks/{id}/progress` |
 | Change view: variations vs baseline (time / cost / material / scope), net and history | participant (cost per V2/V5) | `GET /projects/{id}/variations?kind=&since=&status=` · `GET /variations/{id}` |
 | Acknowledge a variation | owner, contract client | `POST /variations/{id}:acknowledge` |
+| Acknowledge several variations at once ("Acknowledge all in view", PRD-13 S-15) | owner, contract client | `POST /projects/{id}/variations:acknowledge {variation_ids[]}` |
 | Question a variation (opens a question to the responsible party) | participant | `POST /variations/{id}:question` |
 | Formalise variations as a change order (optional) | contract party | `POST /contracts/{id}/change-orders {from_variation_ids[]}` |
 | Plan health (undated, unassigned, open external, sequence warnings, uncosted) | participant | `GET /projects/{id}/schedule/health?root=` |

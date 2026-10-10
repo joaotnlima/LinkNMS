@@ -2,6 +2,31 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-10 — Changes against the baseline in the plan (PRD-13, D-43, D-44; additive)
+
+- **Schedule / Task read** (`getSchedule`, `getTask`, every `TaskDeltaResult`):
+  - `Segment.kind` gains `overrun` (a leaf not closed past its finish, drawn to today — D-44, needs no
+    baseline) and `projected` (the push an overrun would make on a linked successor — never written).
+    Segments gain `moved` (baseline), `delta_wd`, `cause` (`moved` · `pushed` · `not_closed` ·
+    `closed_late` · `closed_early` · `net`), `cause_task_id`, `by_org_id` — labels never rely on colour.
+  - `Task` gains `baseline_delta_wd` (working days vs baseline; summaries net), `overrun_wd`, `projected`
+    and `baseline.reason` / `baseline.taken_at`.
+  - `Schedule` gains `handover` (`finish`, `projected_finish`, `baseline_finish`, `delta_wd`) and
+    `changes` (`total`, `unseen`).
+- **Variation** gains `reason`, `changed_by_org_name`, `seen_by_viewer`, `can_acknowledge`; `cause`
+  gains `closed_late`.
+- `updateTask` (`TaskDelta`) accepts an optional `reason` (≤ 500) stored on the time variation (S-11).
+- `previewMove` (`MovePreviewResult`) gains `would_move[].name`, `project_finish {before, after}`,
+  `baseline_delta_wd` and `notify[]` — the impact note before commit (S-10).
+- `reportProgress` (`ProgressCreate`) accepts `actual_finish`; `done` on a leaf with no actual finish now
+  records one (today by default) in the same commit, so a late close stays drawn (`closed_late`).
+- **New:** `acknowledgeVariations` — `POST /projects/{projectId}/variations:acknowledge`
+  `{variation_ids[]}` ("Acknowledge all in view", S-15): all-or-nothing, one transaction.
+- **Event:** `tendering.rfp.awarded` data gains `root_task_ids`, `supplier_org_id`, `start`, `duration_wd`;
+  planning consumes it to take the awarded branch's baseline at award (D-43, reason `award`).
+- Migration `db/v2/0012_planning_baseline_changes.sql`: `planning.baseline.reason` + `award`,
+  `planning.variation.cause` + `closed_late`, `planning.variation.reason`.
+
 ## 2026-10-10 — Per-task procurement projection (PRD-01 G-2/G-3, additive)
 
 - **One Tendering read** replaces the plan's client-side N+1 composition (`/me/rfps` + one

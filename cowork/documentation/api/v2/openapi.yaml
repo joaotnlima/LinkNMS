@@ -2510,6 +2510,74 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/variations:acknowledge:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Planning
+      operationId: acknowledgeVariations
+      summary: Acknowledge several variations at once ("Acknowledge all in view")
+      description: 'PRD-13 S-15. One command, one transaction: each listed variation is acknowledged exactly
+        as `acknowledgeVariation` would (who/when recorded, open → acknowledged). Every id must be a live
+        variation of this project the viewer may acknowledge, or nothing is written (422 names the refused
+        ids).
+
+
+        **Clerk permission:** `org:variations:acknowledge`
+
+
+        **Relationship (LinkNMS):** project.owner | contract client'
+      x-clerk-permission: org:variations:acknowledge
+      x-relationship: project.owner | contract client
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                variation_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items:
+                    type: string
+                    format: uuid
+              required:
+              - variation_ids
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Variation'
+                required:
+                - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/schedule/health:
     parameters:
     - name: projectId
@@ -8753,9 +8821,36 @@ components:
           - extension
           - delay_start
           - actual
+          - overrun
+          - projected
         from: *id003
         to: *id003
-      description: Render-ready bar segment (05 §5). 'extension' is drawn in clay (status-pending-change).
+        moved:
+          type: boolean
+          description: baseline only — true when the bar no longer sits on its baseline (the ghost is drawn
+            only then, PRD-13 S-1).
+        delta_wd:
+          type: integer
+          description: Working days the segment represents on the project calendar (extension, overrun,
+            projected; a negative value on an 'actual' closed early). Labels never rely on colour alone (S-4).
+        cause:
+          type: string
+          enum:
+          - moved
+          - pushed
+          - not_closed
+          - closed_late
+          - closed_early
+          - net
+          description: 'Why the bar grew: moved (someone edited the finish), pushed (a linked task moved
+            it), not_closed (overrun to today), closed_late / closed_early (actual finish vs baseline), net
+            (a summary row''s roll-up).'
+        cause_task_id: *id001
+        by_org_id: *id001
+      description: 'Render-ready bar segment (05 §5, PRD-13). ''extension'' is solid clay (status-pending-change);
+        ''overrun'' (D-44) is a hatched clay segment from the current finish to today on a leaf that is not
+        closed — computed, never stored, and present with or without a baseline (S-9); ''projected'' is
+        the push an overrun would make on a linked successor — a projection only, no date is written.'
     Task:
       type: object
       properties:
@@ -8824,11 +8919,37 @@ components:
               finish: *id003
               version:
                 type: integer
+              reason:
+                type: string
+                enum:
+                - award
+                - contract_signed
+                - change_order
+                description: when this baseline version was taken (D-43 award, D-13 signature, or a change
+                  order)
+              taken_at: *id004
           - type: 'null'
         segments:
           type: array
           items:
             $ref: '#/components/schemas/Segment'
+        baseline_delta_wd:
+          type: integer
+          description: 'PRD-13 S-5: working days between the baseline finish and the row''s effective finish
+            (actual when closed; otherwise the planned finish, stretched to today while overrunning and
+            to any projected push). Summary rows carry the net of their subtree. Absent without a baseline.'
+        overrun_wd:
+          type: integer
+          description: 'D-44 / S-9: working days a leaf that is not closed has run past its current finish,
+            up to today. Absent when not overrunning. Needs no baseline.'
+        projected:
+          type: object
+          description: 'D-44: where an overrunning predecessor would push this row along its links. A projection
+            only — the row''s stored dates are unchanged. Absent when nothing pushes it.'
+          properties:
+            start: *id003
+            finish: *id003
+            cause_task_id: *id001
         schedule_state:
           type: string
           enum:
@@ -8937,6 +9058,11 @@ components:
         confirm_not_assignee:
           type: boolean
           description: UI confirmed 'you are not responsible for this row'
+        reason:
+          type: string
+          maxLength: 500
+          description: 'PRD-13 S-11: optional "why" for a date change on a baselined row. Stored on the
+            time variation it records or refreshes (and in the ledger entry). No approval step (D-23).'
       required:
       - client_change_id
       - changes
@@ -9118,6 +9244,8 @@ components:
         finish: *id003
     MovePreviewResult:
       type: object
+      description: 'Dry maths, nothing written. PRD-13 S-10: the impact note shown before a date change
+        is committed.'
       properties:
         resulting_lag_wd:
           type: integer
@@ -9127,10 +9255,35 @@ components:
             type: object
             properties:
               id: *id001
+              name:
+                type: string
               start: *id003
               finish: *id003
         project_end_delta_wd:
           type: integer
+        project_finish:
+          type: object
+          properties:
+            before: *id003
+            after: *id003
+        baseline_delta_wd:
+          type: integer
+          description: The moved row's finish vs its baseline finish, working days. Absent without a baseline.
+        notify:
+          type: array
+          description: Who would be told (doc 05 §6) — the project owner and the row's contract client, for
+            a row in a baselined branch; empty otherwise. Changes go out batched per project in 15 minutes.
+          items:
+            type: object
+            properties:
+              org_id: *id001
+              org_name:
+                type: string
+              role:
+                type: string
+                enum:
+                - owner
+                - client
     Schedule:
       type: object
       properties:
@@ -9147,8 +9300,30 @@ components:
           $ref: '#/components/schemas/Calendar'
         health:
           $ref: '#/components/schemas/PlanHealth'
+        handover:
+          $ref: '#/components/schemas/Handover'
+        changes:
+          type: object
+          description: 'PRD-13 S-6: live (open or acknowledged) time and scope variations the viewer may
+            see, and how many of them the viewer may acknowledge and has not seen since their last change.'
+          properties:
+            total:
+              type: integer
+            unseen:
+              type: integer
         stream_cursor:
           type: string
+    Handover:
+      type: object
+      description: 'PRD-13 S-6: the project finish. `projected_finish` includes today''s overruns and the
+        pushes they would make (D-44, never written). `baseline_finish` and `delta_wd` (working days, baseline
+        → projected) are absent without a baseline.'
+      properties:
+        finish: *id003
+        projected_finish: *id003
+        baseline_finish: *id003
+        delta_wd:
+          type: integer
     Link:
       type: object
       properties:
@@ -9279,9 +9454,12 @@ components:
         photo_document_ids:
           type: array
           items: *id001
+        actual_finish: *id003
       required:
       - status
-      description: '''verified'' is written by Quality, never reported.'
+      description: '''verified'' is written by Quality, never reported. `done` on a leaf with no actual finish
+        records one in the same commit (`actual_finish`, today by default) — so a late close stays on the
+        plan as closed_late (PRD-13 S-3, S-12).'
     Variation:
       type: object
       properties:
@@ -9304,9 +9482,24 @@ components:
           enum:
           - direct
           - propagated
+          - closed_late
         cause_task_id: *id001
+        reason:
+          type: string
+          description: The optional "why" the author gave with the latest direct change (PRD-13 S-11).
         last_changed_by:
           $ref: '#/components/schemas/Actor'
+        changed_by_org_name:
+          type: string
+          description: Display name of the organisation behind the latest change.
+        seen_by_viewer:
+          type: boolean
+          description: 'PRD-13 S-13: the viewer''s organisation acknowledged this variation after its latest
+            change (a reopened change is unseen again).'
+        can_acknowledge:
+          type: boolean
+          description: The viewer may acknowledge it (project owner or the scope contract's client, with
+            org:variations:acknowledge, while not settled). Enforced server-side regardless.
         first_changed_at: *id004
         last_changed_at: *id004
         status:
