@@ -1,0 +1,70 @@
+# Keep `dev` ahead-of-or-equal-to `main` (LINA-420 follow-up).
+#
+# INVARIANT (founder, 2026-10-10): the `dev` branch must ALWAYS be ahead of or
+# equal to `main`. It must never fall behind — "isto tem que ser impossivel".
+#
+# WHY IT DRIFTS
+# Promotion is a `dev`->`main` pull request. GitHub creates the merge commit on
+# `main`, so after every release `main` has one commit (`Merge pull request ...`)
+# that `dev` does not. `dev` is instantly one commit behind until someone back-
+# merges by hand. This workflow removes the hand step: on every push to `main`
+# it merges `main` back into `dev` and pushes.
+#
+# HOW IT CONVERGES
+# - Right after a dev->main merge, `main` is strictly ahead of `dev` (dev's tip
+#   is the merge commit's second parent), so the merge fast-forwards cleanly.
+# - If `dev` picked up its own commits in the meantime, `git merge` creates an
+#   ordinary merge commit on `dev`. Either way `dev` ends up >= `main`.
+# - If there is nothing to do, the push is a no-op and the job is green.
+#
+# SECURITY
+# `on: push: branches: [main]` only — never `pull_request`, so a fork PR can
+# neither trigger it nor read the token. Uses the built-in GITHUB_TOKEN with
+# contents:write, scoped to this repo. No environment secrets are referenced.
+name: Back-merge main into dev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two back-merges at once; let an in-flight one finish so pushes
+# serialize instead of racing on the `dev` ref.
+concurrency:
+  group: dev-backmerge
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  backmerge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Persist the token so the follow-up push is authenticated.
+          persist-credentials: true
+
+      - name: Merge main into dev and push
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin main dev
+
+          # Already in sync? Nothing to do.
+          if git merge-base --is-ancestor origin/main origin/dev; then
+            echo "dev already contains main — nothing to back-merge."
+            exit 0
+          fi
+
+          git checkout -B dev origin/dev
+          # Prefer a fast-forward; fall back to a merge commit if dev has
+          # diverging commits of its own.
+          git merge --no-edit origin/main
+          git push origin dev
+          echo "Back-merged main into dev."
