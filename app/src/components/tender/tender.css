@@ -1,0 +1,119 @@
+/* The tender flow (PRD-02, D-42) — one set of step components in two
+   containers: the docked task panel and the full tender workspace (modal).
+   Ported from the design board (planb/tender.css, row 3b). One colour per
+   lifecycle state, shared with the grid chip and the Gantt band (PRD-01 G-8):
+   draft neutral · out for bids owner blue · your move amber · awarded green ·
+   cancelled red. Every state also carries a word. */
+
+.tnd { display: flex; flex-direction: column; gap: 16px; font-size: 13px; color: var(--fg); }
+.tnd-note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.tnd-note.is-strong { font-size: 13px; }
+.tnd-err { margin: 0; color: var(--bad-fg); font-size: 12px; font-weight: 600; }
+.tnd-h { margin: 0; font-size: 14px; font-weight: 650; }
+.tnd-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tnd-row.is-split { justify-content: space-between; }
+.tnd-link { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; font-weight: 600; color: var(--owner); cursor: pointer; text-decoration: none; }
+.tnd-link:hover { text-decoration: underline; }
+.tnd .btn.sm, .tnd-foot .btn.sm { font-size: 12.5px; padding: 5px 10px; }
+.tnd-label { font-size: 12px; font-weight: 600; color: var(--fg); }
+.tnd-field { display: flex; flex-direction: column; gap: 6px; }
+.tnd-input { font: inherit; font-size: 13px; padding: 7px 9px; border: 1px solid var(--outline); border-radius: var(--r-ctrl); background: var(--raised); color: var(--fg); min-width: 0; }
+.tnd-input:focus { outline: none; border-color: var(--owner); }
+textarea.tnd-input { min-height: 56px; resize: vertical; }
+
+/* Request proposals (T-1): an owner-blue, neutral action — never builder orange. */
+.tnd-cta { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; padding: 12px 14px; border: 1px solid var(--plan-baseline-line); border-radius: 8px; background: var(--raised); color: var(--fg); cursor: pointer; font: inherit; }
+.tnd-cta:hover { border-color: var(--owner); }
+.tnd-cta:disabled { opacity: .6; cursor: not-allowed; }
+.tnd-cta-icon { width: 22px; height: 22px; border-radius: 50%; background: var(--owner-muted); color: var(--owner-fg); display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; font-weight: 700; }
+.tnd-cta b { display: block; font-size: 13.5px; }
+.tnd-cta span span { font-size: 12px; color: var(--muted); }
+
+/* Banners */
+.tnd-private { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--sunken); color: var(--muted); font-size: 12.5px; }
+.tnd-cancelled { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--bad-bd); background: var(--bad-bg); color: var(--bad-fg); font-size: 13px; }
+.tnd-cp { display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(109,75,214,.35); background: rgba(109,75,214,.07); font-size: 13px; color: var(--fg); line-height: 1.45; }
+.tnd-crit { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 650; color: #4b2fa8; background: rgba(109,75,214,.1); border: 1px solid rgba(109,75,214,.35); border-radius: 999px; padding: 3px 8px; flex: 0 0 auto; height: fit-content; }
+
+/* Composer steps (T-8) */
+.tnd-st { border: 1px solid var(--outline); border-radius: var(--r-overlay); background: var(--paper); }
+.tnd-st-h { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+.tnd-st-h b { flex: 1; font-size: 13.5px; }
+.tnd-st-n { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: var(--sunken); color: var(--muted); flex: 0 0 auto; }
+.tnd-st.is-done .tnd-st-n { background: var(--owner); color: #fff; }
+.tnd-st.is-open { border-color: var(--owner); box-shadow: 0 0 0 3px var(--owner-muted); }
+.tnd-st.is-open .tnd-st-n { background: var(--owner-muted); color: var(--owner-fg); }
+.tnd-st.is-locked { opacity: .6; }
+.tnd-st-b { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 12px; }
+.tnd-st-sum { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.tnd-cap { font-size: 12px; color: var(--muted); }
+.tnd-seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.tnd-seg button { font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--outline); background: var(--raised); color: var(--fg); cursor: pointer; }
+.tnd-seg button[aria-checked="true"] { border-color: var(--owner); background: var(--owner-muted); color: var(--owner-fg); }
+.tnd-seg button:disabled { cursor: not-allowed; opacity: .7; }
+.tnd-badge { display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--outline); background: var(--sunken); color: var(--muted); white-space: nowrap; }
+.tnd-badge.live { color: var(--owner-fg); background: var(--owner-muted); border-color: var(--plan-baseline-line); }
+.tnd-badge.good { color: var(--ok-fg); background: var(--ok-bg); border-color: var(--ok-bd); }
+.tnd-badge.warn { color: var(--warn-fg); background: var(--warn-bg); border-color: var(--warn-bd); }
+.tnd-badge.off { color: var(--bad-fg); background: var(--bad-bg); border-color: var(--bad-bd); }
+.tnd-picker { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow: auto; border: 1px solid var(--outline); border-radius: 8px; padding: 6px 8px; background: var(--raised); }
+.tnd-picker label { display: flex; gap: 8px; align-items: center; font-size: 12.5px; }
+
+/* Lifecycle stepper (T-10) */
+.tnd-lc { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin: 0; padding: 0; list-style: none; }
+.tnd-lc > li { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--muted); }
+.tnd-lc > li::before { content: ""; height: 4px; border-radius: 2px; background: var(--line); }
+.tnd-lc .is-done::before { background: var(--owner); }
+.tnd-lc .is-done { color: var(--fg); }
+.tnd-lc .is-now::before { background: var(--state-warning); }
+.tnd-lc .is-now { color: var(--warn-fg); font-weight: 650; }
+.tnd-lc .is-won::before { background: var(--success); }
+.tnd-lc .is-won { color: var(--ok-fg); font-weight: 650; }
+.tnd-lc b { font-weight: 650; }
+
+.tnd-kv { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px 12px; align-items: center; font-size: 13px; margin: 0; }
+.tnd-kv dt { color: var(--muted); }
+.tnd-kv dd { margin: 0; }
+
+/* Bidders + bids */
+.tnd-card { border: 1px solid var(--outline); border-radius: 8px; padding: 4px 12px; background: var(--raised); }
+.tnd-inv { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.tnd-inv:last-child { border-bottom: 0; }
+.tnd-inv .e { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tnd-num { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tnd-bid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 12px; border: 1px solid var(--outline); border-radius: 8px; background: var(--raised); }
+.tnd-bid .co { font-weight: 650; font-size: 13.5px; }
+.tnd-bid .amt { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.tnd-bid .meta { font-size: 12px; color: var(--muted); }
+.tnd-sub { border: 1px dashed var(--outline); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+/* Side by side (T-14) — columns per proposal, no averages, no ranking */
+.tnd-cmp-wrap { overflow-x: auto; }
+.tnd-cmp { display: grid; font-size: 12.5px; min-width: 100%; }
+.tnd-cmp > span { padding: 7px 8px; border-bottom: 1px solid var(--line); min-width: 0; overflow-wrap: anywhere; }
+.tnd-cmp .l { color: var(--muted); }
+.tnd-cmp .hd { font-weight: 650; }
+.tnd-cmp .pk { background: var(--owner-muted); }
+.tnd-cmp .n { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tnd-cmp .nofit { color: var(--warn-fg); font-weight: 600; }
+.tnd-cmp .last { border-bottom: 0; }
+.tnd-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--warn-bd); color: var(--warn-fg); font-size: 13px; }
+.tnd-confirm .tnd-row { justify-content: flex-end; }
+
+/* Panel footer */
+.tnd-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 12px; border-top: 1px solid var(--outline); flex-wrap: wrap; }
+
+/* The full workspace (modal) — same steps, room for the matrix and the files */
+.tnd-ws { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 20px; min-height: 0; }
+.tnd-ws-nav { display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--outline); padding-right: 12px; }
+.tnd-ws-nav button { text-align: left; font: inherit; font-size: 13px; font-weight: 600; padding: 8px 10px; border-radius: 8px; border: 0; background: none; color: var(--muted); cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+.tnd-ws-nav button[aria-current="page"] { background: var(--owner-muted); color: var(--owner-fg); }
+.tnd-ws-nav button:hover { color: var(--fg); }
+.tnd-ws-nav .n { font-size: 11px; font-weight: 700; color: var(--muted); }
+.tnd-ws-main { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.tnd-ws-hd { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tnd-ws-hd h3 { margin: 0; font-size: 17px; font-weight: 650; flex: 1; min-width: 0; }
+@media (max-width: 760px) {
+  .tnd-ws { grid-template-columns: minmax(0, 1fr); }
+  .tnd-ws-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--outline); padding: 0 0 8px; }
+}

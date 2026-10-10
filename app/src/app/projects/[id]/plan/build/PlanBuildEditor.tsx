@@ -76,8 +76,9 @@ import {
   StatusPicker, OwnerField, SpecialtyField, useSpecialtyCatalog,
 } from './plan-fields';
 import { ProcurementSection, type TaskOption } from '@/components/ProcurementSection';
-import { TenderDrawerTab } from '@/components/TenderDrawerTab';
+import { TenderPanel, type PanelCounts, type WorkspaceSection } from '@/components/tender/TenderPanel';
 import type { V2Rfp } from '@/lib/v2/tendering-view';
+import { governingRfp, procurementFromRfp, type PanelFace } from '@/lib/v2/tender-flow-view';
 import type { PlanSlipView } from '@/lib/v2/slip-view';
 import { SlipHeader } from '@/components/SlipHeader';
 import { ChangesPanel } from '@/components/ChangesPanel';
@@ -538,20 +539,54 @@ export function PlanBuildEditor({
   // opens on Plan and resets there whenever a different row opens, so a tender
   // tab left open on one task does not bleed onto the next.
   const [drawerTab, setDrawerTab] = useState<'plan' | 'tender' | 'conversation' | 'files'>('plan');
-  useEffect(() => { setDrawerTab('plan'); }, [activeKey]);
+  // "＋ Tender" on a grid row opens that row's panel straight on the Tender tab
+  // (PRD-02: tendering starts in the panel); every other row change opens Plan.
+  const pendingTabRef = useRef<'tender' | null>(null);
+  useEffect(() => { setDrawerTab(pendingTabRef.current ?? 'plan'); pendingTabRef.current = null; }, [activeKey]);
   // The open task's file count, reported by the workspace once it loads — the
   // Files tab label carries it (P-2). Reset when the row changes.
   const [fileCount, setFileCount] = useState<number | null>(null);
   useEffect(() => { setFileCount(null); }, [activeKey]);
 
-  // The live tender rooted on the open task, if any (same resolution the in-place
-  // modal uses). A phase never tenders — only a task/sub-task row carries one.
+  // Tender writes made in the panel (PRD-02) update the plan in place — the
+  // RFP list and the per-task chip/band — without a navigation (which would
+  // drop the editor's unsaved draft, LINA-404). The server reads replace these
+  // on the next page load.
+  const [rfpOverrides, setRfpOverrides] = useState<Record<string, V2Rfp>>({});
+  const [procOverrides, setProcOverrides] = useState<Record<string, ProcurementRfp>>({});
+  const allRfps = useMemo(() => {
+    const known = new Set(tenderInitialRfps.map((r) => r.id));
+    const fresh = Object.values(rfpOverrides).filter((r) => !known.has(r.id));
+    return [...fresh, ...tenderInitialRfps.map((r) => rfpOverrides[r.id] ?? r)];
+  }, [tenderInitialRfps, rfpOverrides]);
+  const procurementView = useMemo(() => ({ ...procurement, ...procOverrides }), [procurement, procOverrides]);
+  const onPanelRfp = useCallback((rfp: V2Rfp, counts: PanelCounts) => {
+    setRfpOverrides((prev) => ({ ...prev, [rfp.id]: rfp }));
+    setProcOverrides((prev) => {
+      const next = { ...prev };
+      for (const taskId of rfp.root_task_ids) {
+        const before = next[taskId] ?? procurement[taskId];
+        const same = before?.rfpId === rfp.id;
+        next[taskId] = procurementFromRfp(rfp, {
+          invited: counts.invited ?? (same ? before?.invitedCount : undefined),
+          submitted: counts.submitted ?? (same ? before?.submittedCount : undefined),
+          awardedTo: counts.awardedTo ?? (same ? before?.awardedTo : undefined),
+        });
+      }
+      return next;
+    });
+  }, [procurement]);
+
+  // The tender that governs the open task (the one the server's task-procurement
+  // read named, else the newest live one). A phase never tenders.
   const activeRfp = useMemo(
     () => (activeKey && isTaskRow
-      ? tenderInitialRfps.find((r) => r.root_task_ids.includes(activeKey)) ?? null
+      ? governingRfp(allRfps, activeKey, procurementView[activeKey]?.rfpId)
       : null),
-    [activeKey, isTaskRow, tenderInitialRfps],
+    [activeKey, isTaskRow, allRfps, procurementView],
   );
+  const [panelFace, setPanelFace] = useState<PanelFace>('none');
+  const [workspaceSection, setWorkspaceSection] = useState<WorkspaceSection>('overview');
 
   // Which rows drive the build's finish (CPM) — read off the SAME draft the grid
   // overlays, so the drawer's critical-path warning agrees with the grid toggle.
@@ -568,7 +603,10 @@ export function PlanBuildEditor({
   const [tenderKey, setTenderKey] = useState<string | null>(null);
   const tenderKeyRef = useRef<string | null>(null);
   tenderKeyRef.current = tenderKey;
-  const openTender = useCallback((key: string) => setTenderKey(key), []);
+  const openTender = useCallback((key: string, section: WorkspaceSection = 'overview') => {
+    setWorkspaceSection(section);
+    setTenderKey(key);
+  }, []);
   const closeTender = useCallback(() => {
     setTenderKey(null);
     // ProcurementSection mirrors its selection into ?rfp=/?compare= via the raw
@@ -589,8 +627,8 @@ export function PlanBuildEditor({
   // tender already exists / let me edit it" ask). A task may root more than one RFP
   // over its life; getMyRfps is newest-first, so the first match is the live one.
   const tenderExistingRfp = useMemo(
-    () => (tenderKey ? tenderInitialRfps.find((r) => r.root_task_ids.includes(tenderKey)) ?? null : null),
-    [tenderKey, tenderInitialRfps],
+    () => (tenderKey ? governingRfp(allRfps, tenderKey, procurementView[tenderKey]?.rfpId) : null),
+    [tenderKey, allRfps, procurementView],
   );
 
   useEffect(() => {
@@ -1060,13 +1098,13 @@ export function PlanBuildEditor({
   const panelWhat = !isTaskRow ? 'Phase details' : isSubRow ? 'Sub-task details' : 'Task details';
   // The bridge's window when it has one; else the bare RFP status from the list
   // (a tender whose lanes read failed still says what state it is in).
-  const activeProc: ProcurementRfp | undefined = (activeKey ? procurement[activeKey] : undefined)
+  const activeProc: ProcurementRfp | undefined = (activeKey ? procurementView[activeKey] : undefined)
     ?? (activeRfp
       ? { status: activeRfp.status, openedDay: '', bidsDueDay: '', submittedCount: 0, title: activeRfp.title }
       : undefined);
   const activeChip = procurementChip(activeProc);
-  // Comparing bids wants room: the Tender tab widens the panel once bids are in.
-  const panelWide = drawerTab === 'tender' && (activeChip?.state === 'bids_in' || activeChip?.state === 'awarded');
+  // Composing and comparing want room (B2/B4): the Tender tab widens to 640px.
+  const panelWide = drawerTab === 'tender' && (panelFace === 'compose' || panelFace === 'compare');
 
   return (
     <main className={`pbx pbx--grid${panelOpen ? (panelWide ? ' has-panel is-wide' : ' has-panel') : changesOpen ? ' has-panel' : ''}`}>
@@ -1178,13 +1216,23 @@ export function PlanBuildEditor({
         onUnlinkDep={unlinkDep}
         onSetStatus={setStatus}
         statusSettableKeys={statusSettableKeys}
-        onStartTender={canStartTender ? openTender : undefined}
+        onStartTender={canStartTender ? (key) => {
+          // PRD-02: tendering starts in the row's panel, on the Tender tab.
+          const path = pathOfKey(phases, key);
+          if (!path) return;
+          // A phase never tenders: its panel opens on Plan as usual.
+          const tab = index.get(key)?.isPhase ? null : 'tender';
+          pendingTabRef.current = tab;
+          setChangesOpen(false);
+          setOpenRow([...path]);
+          if (activeKey === key && tab) setDrawerTab(tab);
+        } : undefined}
         // Only server-persisted rows can be tendered — the composer pre-selects a
         // real task id, so a not-yet-saved row offers no "Start tendering" link.
         // The kind (design vs execution) is the owner's choice in the composer
         // (LINA-420), so the deep-link no longer pins a mode.
         tenderableKeys={saved}
-        procurement={procurement}
+        procurement={procurementView}
       />
 
       <p className="pgd-hint">
@@ -1541,18 +1589,18 @@ export function PlanBuildEditor({
                 Deep actions (invite / compare / award) open the in-place modal,
                 which owns those writes; this tab never forks that logic. */}
             {drawerTab === 'tender' && showTenderTab && activeKey ? (
-              <TenderDrawerTab
+              <TenderPanel
+                projectId={projectId}
+                taskId={workspaceTaskId ?? activeKey}
                 taskName={(active?.name ?? activePhase.name).trim() || 'this task'}
-                taskStart={isTaskRow ? active?.start : undefined}
-                taskEnd={isTaskRow ? active?.end : undefined}
                 rfp={activeRfp}
-                proc={procurement[activeKey]}
-                onCriticalPath={criticalKeys.has(activeKey)}
-                canStartTender={canStartTender}
+                tasks={tenderTasks}
+                canIssue={canStartTender}
                 saved={!!workspaceKey}
-                onStart={() => { if (workspaceKey) openTender(workspaceKey); }}
-                onOpenFull={() => { if (workspaceKey) openTender(workspaceKey); }}
                 todayIso={todayIso}
+                onRfpChanged={onPanelRfp}
+                onOpenWorkspace={(section) => { if (workspaceKey) openTender(workspaceKey, section); }}
+                onFaceChange={setPanelFace}
               />
             ) : null}
 
@@ -1661,10 +1709,12 @@ export function PlanBuildEditor({
                 projectId={projectId}
                 tasks={tenderTasks}
                 hasActiveOrg={tenderHasActiveOrg}
-                initialMyRfps={tenderInitialRfps}
+                initialMyRfps={allRfps}
                 composeTaskId={tenderExistingRfp ? null : tenderKey}
                 openRfpId={tenderExistingRfp?.id ?? null}
                 composeMode="detailed"
+                initialSection={workspaceSection}
+                onRfpChanged={(rfp) => onPanelRfp(rfp, {})}
               />
             </div>
           </aside>

@@ -366,30 +366,6 @@
 
 .pbx-drawer-status { display: flex; flex-direction: column; gap: var(--s2); }
 
-/* The task-level tendering action (LINA-420). A first-class, unmistakable entry
-   on the task — the ticket's approved design — in the --builder (tendering) hue,
-   not the plan-baseline blue the rest of the drawer uses. */
-.pbx-drawer-actions-block { display: flex; flex-direction: column; gap: 6px; margin-top: var(--s3); }
-.pbx-drawer-sectlabel {
-  margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--muted);
-}
-.pbx-tender-cta {
-  display: flex; align-items: center; gap: 12px; width: 100%; text-align: start;
-  padding: 12px 14px; border-radius: 10px; border: 1px solid var(--builder);
-  background: var(--builder); color: #fff; cursor: pointer;
-}
-.pbx-tender-cta:hover { filter: brightness(0.95); }
-.pbx-tender-cta:focus-visible { outline: 2px solid var(--builder); outline-offset: 2px; }
-.pbx-tender-cta.is-waiting {
-  background: transparent; color: var(--muted); border-style: dashed;
-  border-color: var(--outline); cursor: default; margin: 0;
-}
-.pbx-tender-cta-icon { font-size: 18px; line-height: 1; flex: 0 0 auto; }
-.pbx-tender-cta-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; }
-.pbx-tender-cta-title { font-size: 14px; font-weight: 700; }
-.pbx-tender-cta-sub { font-size: 12px; opacity: 0.9; }
-.pbx-tender-cta-go { font-size: 20px; line-height: 1; flex: 0 0 auto; }
 .pbx-status-chip {
   align-self: flex-start; padding: 3px 10px; border-radius: 999px;
   border: 1px solid var(--outline); background: var(--sunken);
@@ -1327,62 +1303,4 @@ button.pgd-tenderchip:focus-visible { outline: 2px solid var(--accent); outline-
 }
 .pbx-drawer-tab.is-active .pbx-drawer-tabcount { background: var(--owner-muted); color: var(--owner-fg); }
 
-.pbx-tender-tab { display: flex; flex-direction: column; gap: var(--s3); }
-
-/* Lifecycle wizard: four steps, the current one filled, the done ones toned. */
-.pbx-tw-steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; gap: 8px; }
-.pbx-tw-step { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.pbx-tw-step-bar { height: 3px; border-radius: 3px; background: var(--outline); }
-.pbx-tw-step.is-done .pbx-tw-step-bar { background: var(--plan-baseline-line); }
-.pbx-tw-step.is-now .pbx-tw-step-bar { background: var(--plan-baseline); }
-.pbx-tw-step-label {
-  font-size: 12px; font-weight: 600; color: var(--muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.pbx-tw-step.is-now .pbx-tw-step-label { color: var(--fg); }
-
-/* Key dates + scope, a two-column definition list. */
-.pbx-tw-meta {
-  display: grid; grid-template-columns: max-content 1fr; gap: 6px var(--s3);
-  margin: 0; align-items: baseline;
-}
-.pbx-tw-meta dt { font-size: 13px; font-weight: 600; color: var(--muted); }
-.pbx-tw-meta dd { margin: 0; font-size: 14px; color: var(--fg); }
-.pbx-tw-due { color: var(--muted); }
-
-/* Critical-path warning — this task drives the build's finish (CPM). */
-.pbx-tw-crit {
-  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px;
-  border-radius: var(--r-ctrl); background: var(--owner-muted);
-  border: 1px solid var(--plan-baseline-line); font-size: 13px; color: var(--fg);
-}
-.pbx-tw-crit-dot { color: var(--plan-baseline); line-height: 1.3; flex: 0 0 auto; }
-
-.pbx-tw-sect { display: flex; flex-direction: column; gap: 8px; }
-.pbx-tw-sect-hd { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
-.pbx-tw-link {
-  appearance: none; border: none; background: none; cursor: pointer; padding: 0;
-  color: var(--builder); font-size: 13px; font-weight: 600;
-}
-.pbx-tw-link:hover { text-decoration: underline; }
-.pbx-tw-link:focus-visible { outline: 2px solid var(--builder); outline-offset: 2px; border-radius: 3px; }
-
-.pbx-tw-bidders, .pbx-tw-proposals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.pbx-tw-bidder {
-  display: flex; align-items: center; gap: var(--s2); padding: 8px 10px;
-  border: 1px solid var(--outline); border-radius: var(--r-ctrl); background: var(--paper);
-}
-.pbx-tw-bidder-email { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.pbx-tw-bidder-amt { font-weight: 700; font-size: 13px; white-space: nowrap; }
-
-.pbx-tw-proposal {
-  display: flex; flex-direction: column; gap: 4px; padding: 10px;
-  border: 1px solid var(--outline); border-radius: var(--r-ctrl); background: var(--paper);
-}
-.pbx-tw-proposal-top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
-.pbx-tw-proposal-name { font-weight: 700; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pbx-tw-proposal-amt { font-weight: 700; font-size: 14px; white-space: nowrap; }
-.pbx-tw-proposal-sub { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
-
-.pbx-tw-err { margin: 0; color: var(--bad-fg); font-size: 13px; }
-.pbx-tw-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-top: 4px; }
+/* The Tender tab's styles live in components/tender/tender.css (PRD-02). */
