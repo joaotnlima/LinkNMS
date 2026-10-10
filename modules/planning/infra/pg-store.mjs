@@ -13,6 +13,7 @@ import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { publishEvent } from '../../../platform/outbox.mjs';
 import { withIdempotency } from '../../../platform/idempotency.mjs';
 import { audienceQueries } from './pg-audience.mjs';
+import { deliverableQueries } from './pg-deliverables.mjs';
 
 const D = (col) => `to_char(${col}, 'YYYY-MM-DD')`;
 const TASK_SELECT = `
@@ -341,6 +342,8 @@ export function createPlanningStore(pool) {
   return {
     // The notification audience port's read (PRD-12) — infra/pg-audience.mjs.
     ...audienceQueries(pool),
+    // Deliverables and their review (PRD-05, D-48) — infra/pg-deliverables.mjs.
+    ...deliverableQueries(pool, tx),
 
     // ── plain reads ────────────────────────────────────────────────────────
     async getPersonByClerkId(clerkUserId) {

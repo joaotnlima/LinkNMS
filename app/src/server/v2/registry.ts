@@ -14,6 +14,7 @@ import { registerContracting } from '@modules/contracting/http/register.mjs';
 import { createContractingStore } from '@modules/contracting/infra/pg-store.mjs';
 import { registerPlanning } from '@modules/planning/http/register.mjs';
 import { createPlanningStore } from '@modules/planning/infra/pg-store.mjs';
+import { createPlanningTaskPort } from '@modules/planning/application/task-port.mjs';
 import { registerQuality } from '@modules/quality/http/register.mjs';
 import { createQualityStore } from '@modules/quality/infra/pg-store.mjs';
 import { registerTendering } from '@modules/tendering/http/register.mjs';
@@ -22,6 +23,7 @@ import { createMailSender } from '@modules/tendering/infra/mail-sender.mjs';
 import { createContractFromAward } from '@modules/contracting/application/award.mjs';
 import { registerDocuments } from '@modules/documents/http/register.mjs';
 import { createDocumentsStore } from '@modules/documents/infra/pg-store.mjs';
+import { createDocumentsPort } from '@modules/documents/application/port.mjs';
 import { createR2ObjectStorage } from '@modules/documents/infra/storage.mjs';
 import { registerCollaboration } from '@modules/collaboration/http/register.mjs';
 import { createCollaborationStore } from '@modules/collaboration/infra/pg-store.mjs';
@@ -124,11 +126,20 @@ export function getRouter() {
   // change orders, measurements, payments, cash-flow).
   registerContracting(router, { store: createContractingStore(getPool()) });
 
+  // Documents store (phase 7) is built up-front: Planning reads it through
+  // the documents query port (PRD-05 deliverables bind a proven version),
+  // Tendering injects it for the RFP BIM model (LINA-409 / doc 24 — the model
+  // is a documents.document; tendering owns the RFP authorization, documents
+  // owns persistence), and Record reuses the same instance for its export.
+  const documentsStore = createDocumentsStore(getPool());
+  const planningStore = createPlanningStore(getPool());
+
   // Phases 4 + 5 — Planning: the WBS plan (rows, links, working-day
   // propagation, D-26 deltas, D-33 edit scope, baseline binding on
-  // signature) plus execution (progress, variations, cost lines).
+  // signature) plus execution (progress, variations, cost lines) and the
+  // deliverables of a task with the D-48 done gate (PRD-05).
   // Templates and imports land with later phases.
-  registerPlanning(router, { store: createPlanningStore(getPool()) });
+  registerPlanning(router, { store: planningStore, documents: createDocumentsPort(documentsStore) });
 
   // Phase 5 — Quality (verification, non-conformities, inspections).
   registerQuality(router, { store: createQualityStore(getPool()) });
@@ -137,12 +148,6 @@ export function getRouter() {
   // proposal attachments Tendering exposes (LINA-370) — one private bucket,
   // presigned both ways.
   const objectStorage = createR2ObjectStorage();
-
-  // Documents store (phase 7) is built up-front: Tendering injects it for the
-  // RFP BIM model (LINA-409 / doc 24 — the model is a documents.document;
-  // tendering owns the RFP authorization, documents owns persistence), and
-  // Record reuses the same instance for its export artefact.
-  const documentsStore = createDocumentsStore(getPool());
 
   // Phase 6 — Tendering (RFPs, lanes, comparison, award). The award
   // transaction runs contracting's award port on the same client so the
@@ -166,9 +171,12 @@ export function getRouter() {
   // Phase 7 — Documents (versioned files on R2 behind presigned tickets,
   // sha256 proven in the ledger, downloads gated by V6 scope visibility).
   // The store is created above (shared into Tendering and Record).
+  // PRD-05: task links + task/project file reads; "also on sub-tasks" asks
+  // the planning task port for a row's descendants.
   registerDocuments(router, {
     store: documentsStore,
     storage: objectStorage,
+    planning: createPlanningTaskPort(planningStore),
   });
 
   // Phase 7 — Collaboration (threads with addressed questions, meeting

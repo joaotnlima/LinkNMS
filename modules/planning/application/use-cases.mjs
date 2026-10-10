@@ -37,6 +37,7 @@ import { costLineVisibleTo, costLineBody, taskContractTotalCents } from '../doma
 import {
   taskBody, linkBody, planHealth, projectionCtx, variationBody, handoverBody,
 } from './projection.mjs';
+import { assertDeliverablesApproved } from './deliverables.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -967,6 +968,8 @@ export async function reportProgress({ viewer, store, taskId, body }) {
     else if (body.actual_finish > today()) errors.actual_finish = 'not in the future';
   }
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+  // D-48: a task with required deliverables is done only once all are approved.
+  if (body.status === 'done') await assertDeliverablesApproved(store, taskId);
 
   const progress = {
     taskId,

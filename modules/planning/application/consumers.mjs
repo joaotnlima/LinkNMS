@@ -12,17 +12,29 @@
 //   planning.variation.recorded/.updated → fold into the 15-minute digest
 //                                        (doc 05 §6; rows persisted, sent_at
 //                                        NULL — e-mail is a later phase)
+//   tendering.rfp.awarded (design)     → PRD-05 F-12: the RFP's deliverables
+//                                        become required deliverables of the
+//                                        first tendered row (once per title)
+//   documents.version.uploaded         → PRD-05 F-15: a new version of a
+//                                        submitted document goes back to review
 // All idempotent: baselines absorb on (contract_id, version) / change_order_id,
 // progress appends skip when the outcome is already the latest report, digest
 // rows are found-or-created per (project, recipient, window).
 import { windowOf } from '../domain/variations.mjs';
 import { takeAwardBaseline } from './baseline-changes.mjs';
+import { seedAwardDeliverables, resubmitOnNewVersion } from './deliverables.mjs';
 
 export function planningConsumers(store) {
   return {
     'tendering.rfp.awarded': async (evt) => {
       if (evt.type !== 'tendering.rfp.awarded') return;
       await takeAwardBaseline({ store, evt });
+      await seedAwardDeliverables({ store, evt });
+    },
+
+    'documents.version.uploaded': async (evt) => {
+      if (evt.type !== 'documents.version.uploaded') return;
+      await resubmitOnNewVersion({ store, evt });
     },
 
     'contracting.contract.signed': async (evt) => {

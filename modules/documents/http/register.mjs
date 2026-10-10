@@ -15,7 +15,7 @@ import {
  * @param {{ store: object, storage: object, planning?: { descendantIds: Function } }} deps
  *   `planning` — the planning task port, for "also on sub-tasks" (PRD-05 F-10).
  */
-export function registerDocuments(router, { store, storage, planning = null }) {
+export function registerDocuments(router, { store, storage, planning }) {
   router.register('POST', '/documents', 'createDocument', ({ viewer, body }) =>
     createDocument({ viewer, store, storage, body, planning }));
 

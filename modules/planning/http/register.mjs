@@ -12,11 +12,17 @@ import {
 } from '../application/use-cases.mjs';
 import { acknowledgeVariations } from '../application/baseline-changes.mjs';
 import { getTenderWindow, getPlanningSettings, putPlanningSettings } from '../application/tender-window.mjs';
+import {
+  listTaskDeliverables, listProjectDeliverables, createDeliverable, updateDeliverable, deleteDeliverable,
+  submitDeliverable, approveDeliverable, requestDeliverableChanges,
+} from '../application/deliverables.mjs';
 
 /**
- * @param {{ store: object }} deps
+ * @param {{ store: object, documents?: { versionFacts: Function } }} deps
+ *   `documents` — the documents query port: a deliverable submission binds a
+ *   proven document version without planning reading documents.* (PRD-05).
  */
-export function registerPlanning(router, { store }) {
+export function registerPlanning(router, { store, documents }) {
   router.register('GET', '/projects/{projectId}/schedule', 'getSchedule', ({ viewer, params, query }) =>
     getSchedule({ viewer, store, projectId: params.projectId, query }));
 
@@ -100,6 +106,31 @@ export function registerPlanning(router, { store }) {
 
   router.register('GET', '/tasks/{taskId}/progress', 'listProgress', ({ viewer, params }) =>
     listProgress({ viewer, store, taskId: params.taskId }));
+
+  // ── PRD-05: deliverables of a task and their review (D-48 gate) ───────────
+  router.register('GET', '/tasks/{taskId}/deliverables', 'listTaskDeliverables', ({ viewer, params }) =>
+    listTaskDeliverables({ viewer, store, taskId: params.taskId }));
+
+  router.register('POST', '/tasks/{taskId}/deliverables', 'createDeliverable', ({ viewer, params, body }) =>
+    createDeliverable({ viewer, store, taskId: params.taskId, body }));
+
+  router.register('GET', '/projects/{projectId}/deliverables', 'listProjectDeliverables', ({ viewer, params }) =>
+    listProjectDeliverables({ viewer, store, projectId: params.projectId }));
+
+  router.register('PATCH', '/deliverables/{deliverableId}', 'updateDeliverable', ({ viewer, params, body }) =>
+    updateDeliverable({ viewer, store, deliverableId: params.deliverableId, body }));
+
+  router.register('DELETE', '/deliverables/{deliverableId}', 'deleteDeliverable', ({ viewer, params }) =>
+    deleteDeliverable({ viewer, store, deliverableId: params.deliverableId }));
+
+  router.register('POST', '/deliverables/{deliverableId}:submit', 'submitDeliverable', ({ viewer, params, body }) =>
+    submitDeliverable({ viewer, store, documents, deliverableId: params.deliverableId, body }));
+
+  router.register('POST', '/deliverables/{deliverableId}:approve', 'approveDeliverable', ({ viewer, params, body }) =>
+    approveDeliverable({ viewer, store, deliverableId: params.deliverableId, body }));
+
+  router.register('POST', '/deliverables/{deliverableId}:request-changes', 'requestDeliverableChanges', ({ viewer, params, body }) =>
+    requestDeliverableChanges({ viewer, store, deliverableId: params.deliverableId, body }));
 
   // ── Specialty catalog (LINA-380) ───────────────────────────────────────────
   router.register('GET', '/specialties', 'listSpecialties', ({ viewer }) =>

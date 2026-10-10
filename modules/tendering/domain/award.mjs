@@ -13,10 +13,45 @@
 //                     (`summary_duration_wd`), null when absent.
 // There is no RFP work window in the model to fall back on (tendering.rfp has
 // none), so a bid without a start leaves the plan's own dates in place.
+//
+// PRD-05 F-12 (D-39, D-48): a DESIGN award also tells planning what the task
+// must hand over —
+//   purpose      — 'design' | 'execution';
+//   deliverables — for a design RFP, the list items of its "Brief &
+//                  deliverables" text (scope_text); [] otherwise. Planning
+//                  seeds them as required deliverables of the first root.
 
-/** @returns {{root_task_ids: string[], supplier_org_id: string|null, start: string|null, duration_wd: number|null}} */
+const MAX_DELIVERABLES = 50;
+const DELIVERABLE_MAX = 300;
+const LIST_ITEM = /^\s*(?:[-*•‣–]|\d{1,3}[.)])\s+(.+?)\s*$/;
+
+/**
+ * The deliverables a design brief lists: one per bullet or numbered line
+ * (`- `, `* `, `• `, `1.`, `1)`). Prose is not a list — it seeds nothing; the
+ * client side adds deliverables on the task instead.
+ */
+export function deliverablesFromScope(scopeText) {
+  const out = [];
+  const seen = new Set();
+  for (const line of String(scopeText ?? '').split(/\r?\n/)) {
+    const m = LIST_ITEM.exec(line);
+    if (!m) continue;
+    const title = m[1].slice(0, DELIVERABLE_MAX);
+    const key = title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(title);
+    if (out.length === MAX_DELIVERABLES) break;
+  }
+  return out;
+}
+
+/** @returns {{root_task_ids: string[], supplier_org_id: string|null, start: string|null, duration_wd: number|null, purpose: string, deliverables: string[]}} */
 export function awardedPlanFacts(rfp, winner) {
+  const purpose = rfp?.purpose === 'design' ? 'design' : 'execution';
   return {
+    purpose,
+    deliverables: purpose === 'design' ? deliverablesFromScope(rfp?.scope_text) : [],
     root_task_ids: [...(rfp?.root_task_ids ?? [])],
     supplier_org_id: winner?.bidder_org_id ?? null,
     start: isoDate(winner?.summary_start),
