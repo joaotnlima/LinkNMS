@@ -33,6 +33,7 @@ import {
   rfpWindowBody,
 } from '../domain/wire.mjs';
 import { comparisonMatrix, missingLineCount } from '../domain/comparison.mjs';
+import { exclusionError, prunePackage } from '../domain/package-scope.mjs';
 import { renderInviteEmail, PREVIEW_LINK_PLACEHOLDER_TOKEN } from '../domain/invite-email.mjs';
 import {
   validateAttachmentFile, attachmentStorageKey, uploadTicketBody, attachmentBody,
@@ -82,6 +83,7 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
   if (!MODES.has(mode)) errors.mode = 'light or detailed';
   else if (purpose === 'design' && mode !== 'light') errors.mode = 'a design RFP is always light';
   validateDeadlines(body, errors, { submissionRequired: true });
+  validateExclusions(body, errors);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const uniqueRoots = [...new Set(roots)];
@@ -113,7 +115,8 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
     parentContractId = contract.id;
   }
 
-  const snapshot = await store.snapshotPackage(projectId, uniqueRoots);
+  const excluded = [...new Set(body?.excluded_task_ids ?? [])];
+  const snapshot = scopedSnapshot(await store.snapshotPackage(projectId, uniqueRoots), excluded);
   const actor = await requireActor(store, viewer);
   return store.idempotent({ key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'createRfp', body }, async () => {
     const created = await store.createRfp({
@@ -130,6 +133,7 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
       questionsDeadline: body.questions_deadline ?? null,
       submissionDeadline: body.submission_deadline,
       rootTaskIds: uniqueRoots,
+      excludedTaskIds: excluded,
       packageRows: snapshot.rows,
       packageItems: snapshot.items,
       actor: actorOf(actor, viewer),
@@ -574,6 +578,7 @@ export async function updateRfp({ viewer, store, rfpId, body, ifMatch }) {
   if (body?.title !== undefined && (typeof body.title !== 'string' || !body.title.trim())) errors.title = 'required';
   if (body?.visibility !== undefined && !VISIBILITIES.has(body.visibility)) errors.visibility = 'invite_only or open';
   validateDeadlines(body, errors, { submissionRequired: false });
+  validateExclusions(body, errors);
   if (body?.root_task_ids !== undefined) {
     const roots = body.root_task_ids;
     if (!Array.isArray(roots) || roots.length === 0 || roots.some((t) => !UUID.test(t ?? ''))) {
@@ -582,16 +587,22 @@ export async function updateRfp({ viewer, store, rfpId, body, ifMatch }) {
   }
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
+  // The package is re-snapshotted when either its roots or its exclusions
+  // change (T-3: "Include it" / "+ Add tasks from the plan" save per step).
   let snapshot = null;
   let roots = null;
-  if (body?.root_task_ids !== undefined) {
-    roots = [...new Set(body.root_task_ids)];
+  let excluded = null;
+  if (body?.root_task_ids !== undefined || body?.excluded_task_ids !== undefined) {
+    roots = body?.root_task_ids !== undefined ? [...new Set(body.root_task_ids)] : [...rfp.root_task_ids];
+    excluded = body?.excluded_task_ids !== undefined
+      ? [...new Set(body.excluded_task_ids)]
+      : [...(rfp.excluded_task_ids ?? [])];
     const known = await store.tasksOfProject(rfp.project_id, roots);
     const missing = roots.filter((t) => !known.has(t));
     if (missing.length) {
       throw new ProblemError('validation_failed', null, { errors: { root_task_ids: `not rows of this project: ${missing.join(', ')}` } });
     }
-    snapshot = await store.snapshotPackage(rfp.project_id, roots);
+    snapshot = scopedSnapshot(await store.snapshotPackage(rfp.project_id, roots), excluded);
   }
 
   const actor = await requireActor(store, viewer);
@@ -606,6 +617,7 @@ export async function updateRfp({ viewer, store, rfpId, body, ifMatch }) {
       submissionDeadline: body?.submission_deadline,
     },
     rootTaskIds: roots,
+    excludedTaskIds: excluded,
     packageRows: snapshot?.rows ?? null,
     packageItems: snapshot?.items ?? null,
     actor: actorOf(actor, viewer),
@@ -690,11 +702,16 @@ export async function addRecipients({ viewer, store, mailSender, linkBaseUrl, rf
     recipients: resolved,
     actor: actorOf(actor, viewer),
   });
-  // Dispatch the invite email per freshly-minted link (token !== null). An
-  // existing recipient (ON CONFLICT → token null) is NOT re-sent here; use
-  // reissue for that. The token stays in the 201 body too (issuer sees it once).
+  // A DRAFT is private until it is sent (D-29, PRD-02 T-6/T-7): the recipient
+  // is only queued — nothing is emailed and no token leaves the server (the
+  // stored hash belongs to a token nobody holds; publishRfp mints the real
+  // link). On a published RFP ("invite more") dispatch the invite email per
+  // freshly-minted link (token !== null). An existing recipient (ON CONFLICT →
+  // token null) is NOT re-sent here; use reissue for that. The token stays in
+  // the 201 body too (issuer sees it once).
   const items = [];
   for (const { recipient, token } of created) {
+    if (rfp.status === 'draft') { items.push(recipientBody(recipient)); continue; }
     const out = token
       ? await dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, token })
       : { recipient };
@@ -742,8 +759,12 @@ export async function listRecipients({ viewer, store, rfpId, query }) {
 export async function reissueRecipientLink({ viewer, store, mailSender, linkBaseUrl, rfpId, recipientId }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
   if (!UUID.test(recipientId ?? '')) throw new ProblemError('not_found', 'no such recipient');
-  if (!['draft', 'published'].includes(rfp.status)) {
-    throw new ProblemError('invalid_transition', `cannot re-issue a link on a ${rfp.status} RFP`);
+  // A draft has no live links to rotate: they are minted at publish (T-7), and
+  // a re-issue would email a bidder about a tender that was never sent.
+  if (rfp.status !== 'published') {
+    throw new ProblemError('invalid_transition', rfp.status === 'draft'
+      ? 'the personal links are minted when the RFP is sent'
+      : `cannot re-issue a link on a ${rfp.status} RFP`);
   }
   const rec = await store.getRecipient(rfpId, recipientId);
   if (!rec) throw new ProblemError('not_found', 'no such recipient');
@@ -769,8 +790,13 @@ export async function reissueRecipientLink({ viewer, store, mailSender, linkBase
   return { status: 200, body: recipientBody(out.recipient, { token: rotated.token }) };
 }
 
-/** operationId: publishRfp — human-only; one individual email per recipient. */
-export async function publishRfp({ viewer, store, rfpId }) {
+/**
+ * operationId: publishRfp — human-only; one individual email per recipient.
+ * The personal links are minted HERE (PRD-02 T-7), in the publish transaction,
+ * for every recipient still queued from the draft; each is then emailed. A mail
+ * failure leaves that recipient queued for a re-issue — never fails the publish.
+ */
+export async function publishRfp({ viewer, store, mailSender, linkBaseUrl, rfpId }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId, humanOnly: 'publishing an RFP' });
   const outcome = rfpTransition(rfp.status, 'publish');
   if (!outcome.ok) throw new ProblemError('invalid_transition', outcome.reason);
@@ -779,15 +805,18 @@ export async function publishRfp({ viewer, store, rfpId }) {
     throw new ProblemError('validation_failed', null, { errors: { recipients: 'invite at least one recipient before publishing' } });
   }
   const actor = await requireActor(store, viewer);
-  const updated = await store.transitionRfp({
+  const published = await store.publishRfp({
     rfpId, from: rfp.status, to: outcome.to,
     eventType: 'tendering.rfp.published',
     projectId: rfp.project_id,
     data: { visibility: rfp.visibility, submission_deadline: iso(rfp.submission_deadline), specialties: rfp.specialties ?? [] },
     actor: actorOf(actor, viewer),
   });
-  if (!updated) throw new ProblemError('invalid_transition', 'someone moved this RFP first');
-  return { status: 200, body: rfpBody(updated) };
+  if (!published) throw new ProblemError('invalid_transition', 'someone moved this RFP first');
+  for (const { recipient, token } of published.links) {
+    await dispatchInvite({ store, mailSender, linkBaseUrl, rfp: published.rfp, recipient, token });
+  }
+  return { status: 200, body: rfpBody(published.rfp) };
 }
 
 /**
@@ -807,7 +836,9 @@ export async function addAddendum({ viewer, store, rfpId, body }) {
 
   // The package is re-snapshotted from the live plan rows (the issuer edits
   // the plan first, then issues the addendum that carries the change).
-  const snapshot = await store.snapshotPackage(rfp.project_id, rfp.root_task_ids);
+  const snapshot = scopedSnapshot(
+    await store.snapshotPackage(rfp.project_id, rfp.root_task_ids), rfp.excluded_task_ids ?? [],
+  );
   const actor = await requireActor(store, viewer);
   const updated = await store.addAddendum({
     rfpId,
@@ -828,12 +859,18 @@ export async function closeRfp({ viewer, store, rfpId }) {
   return transitionRfpOp({ viewer, store, rfpId, action: 'close', eventType: 'tendering.rfp.closed' });
 }
 
-/** operationId: cancelRfp. */
-export async function cancelRfp({ viewer, store, rfpId }) {
-  return transitionRfpOp({ viewer, store, rfpId, action: 'cancel', eventType: 'tendering.rfp.cancelled' });
+/** operationId: cancelRfp — an optional one-line reason (PRD-02 T-19). */
+export async function cancelRfp({ viewer, store, rfpId, body }) {
+  const reason = body?.reason;
+  if (reason !== undefined && reason !== null
+      && (typeof reason !== 'string' || !reason.trim() || reason.trim().length > 500)) {
+    throw new ProblemError('validation_failed', null, { errors: { reason: '1–500 characters' } });
+  }
+  const data = typeof reason === 'string' ? { reason: reason.trim() } : {};
+  return transitionRfpOp({ viewer, store, rfpId, action: 'cancel', eventType: 'tendering.rfp.cancelled', data });
 }
 
-async function transitionRfpOp({ viewer, store, rfpId, action, eventType }) {
+async function transitionRfpOp({ viewer, store, rfpId, action, eventType, data = {} }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
   const outcome = rfpTransition(rfp.status, action);
   if (!outcome.ok) throw new ProblemError('invalid_transition', outcome.reason);
@@ -842,7 +879,7 @@ async function transitionRfpOp({ viewer, store, rfpId, action, eventType }) {
     rfpId, from: rfp.status, to: outcome.to,
     eventType,
     projectId: rfp.project_id,
-    data: {},
+    data,
     actor: actorOf(actor, viewer),
   });
   if (!updated) throw new ProblemError('invalid_transition', 'someone moved this RFP first');
@@ -1465,6 +1502,20 @@ function parseProposalDoc(body, { packageVersion }) {
   };
 }
 
+/** excluded_task_ids: an optional list of task ids (draft scope, T-3). */
+function validateExclusions(body, errors) {
+  const ex = body?.excluded_task_ids;
+  if (ex === undefined) return;
+  if (!Array.isArray(ex) || ex.some((t) => !UUID.test(t ?? ''))) errors.excluded_task_ids = 'a list of task ids';
+}
+
+/** The roots' sub-trees minus the exclusions; a bad exclusion is a 422. */
+function scopedSnapshot(snapshot, excluded) {
+  const bad = exclusionError(snapshot.rows, excluded);
+  if (bad) throw new ProblemError('validation_failed', null, { errors: { excluded_task_ids: bad } });
+  return prunePackage(snapshot, excluded);
+}
+
 function validateDeadlines(body, errors, { submissionRequired }) {
   const ts = /^\d{4}-\d{2}-\d{2}T/;
   if (submissionRequired && !ts.test(body?.submission_deadline ?? '')) {
@@ -1483,7 +1534,7 @@ function validateDeadlines(body, errors, { submissionRequired }) {
 }
 
 /** Load an RFP as issuer (with existence hiding + staffing). */
-async function requireIssuer({ viewer, store, rfpId, humanOnly = null, permission = 'org:tendering:issue' }) {
+export async function requireIssuer({ viewer, store, rfpId, humanOnly = null, permission = 'org:tendering:issue' }) {
   requireActiveOrg(viewer);
   if (humanOnly && viewer.channel === 'mcp') {
     throw new ProblemError('forbidden', `${humanOnly} is human-only`, { reason: 'human_only' });
@@ -1534,7 +1585,7 @@ function seesWholeOrg(viewer) {
   return viewer.orgRole === 'admin' || viewer.orgRole === 'manager';
 }
 
-async function requireActor(store, viewer) {
+export async function requireActor(store, viewer) {
   const person = await store.getPersonByClerkId(viewer.clerkUserId);
   if (!person) throw new ProblemError('version_conflict', 'your identity mirror has not caught up yet — retry');
   return person;
@@ -1574,7 +1625,7 @@ function requireVersionMatch(ifMatch, version) {
   }
 }
 
-function actorOf(person, viewer) {
+export function actorOf(person, viewer) {
   return { personId: person.id, orgId: viewer.orgId, orgRole: viewer.orgRole, channel: viewer.channel };
 }
 

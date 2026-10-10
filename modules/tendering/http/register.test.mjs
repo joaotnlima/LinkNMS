@@ -181,14 +181,21 @@ function fakeStore() {
       ledger.push('tendering.rfp.updated');
       return next;
     },
-    async transitionRfp({ rfpId, from, to, eventType }) {
+    async transitionRfp({ rfpId, from, to, eventType, data }) {
       const r = rfps.get(rfpId);
       if (!r || r.status !== from) return null;
-      const next = { ...r, status: to, version: r.version + 1 };
+      const next = {
+        ...r, status: to, version: r.version + 1,
+        ...(to === 'cancelled' ? { cancelled_at: FUTURE, cancel_reason: data?.reason ?? null } : {}),
+      };
       rfps.set(rfpId, next);
       ledger.push(eventType);
       events.push(eventType);
       return next;
+    },
+    async publishRfp(cmd) {
+      const rfp = await this.transitionRfp(cmd);
+      return rfp ? { rfp: { ...rfp, published_at: FUTURE }, links: [] } : null;
     },
     async addAddendum({ rfpId, packageVersion }) {
       const r = rfps.get(rfpId);
@@ -472,12 +479,22 @@ describe('tendering over the /api/v2 router', () => {
   });
 
   describe('recipients', () => {
-    test('addRecipients returns the personal token ONCE', async () => {
+    test('addRecipients on a published RFP returns the personal token ONCE', async () => {
       const res = await dispatch('POST', `/rfps/${RFP}/recipients`, viewer(OWNER_ORG), {
         recipients: [{ email: 'novo@sub.pt' }],
       });
       assert.equal(res.status, 201);
       assert.equal(res.body.items[0].token, 'raw-token-0');
+    });
+
+    test('addRecipients on a DRAFT only queues: no token leaves the server (T-6/T-7)', async () => {
+      store.rfps.set(RFP, baseRfp({ status: 'draft' }));
+      const res = await dispatch('POST', `/rfps/${RFP}/recipients`, viewer(OWNER_ORG), {
+        recipients: [{ email: 'novo@sub.pt' }],
+      });
+      assert.equal(res.status, 201);
+      assert.equal(res.body.items[0].status, 'queued');
+      assert.equal(res.body.items[0].token, undefined);
     });
 
     test('listRecipients is issuer-only: a bidder → 404', async () => {

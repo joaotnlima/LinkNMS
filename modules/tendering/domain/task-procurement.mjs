@@ -48,7 +48,8 @@ export function laneCounts(histogram) {
 
 /**
  * @param rows  one per (task_id, RFP) pair: the RFP columns (id, title, status,
- *              created_at, submission_deadline, root_task_ids) + `lane_counts`
+ *              created_at, submission_deadline, root_task_ids, excluded_task_ids,
+ *              the lifecycle stamps, cancel_reason) + `lane_counts`
  *              ({status: n}) + `awarded_org_id` / `awarded_name`
  * @returns     TaskProcurement[] — one per task, ordered by task id
  */
@@ -73,6 +74,12 @@ export function taskProcurementBody(row) {
     opened_at: iso(row.created_at),
     submission_deadline: iso(row.submission_deadline),
     root_task_ids: [...(row.root_task_ids ?? [])],
+    excluded_task_ids: [...(row.excluded_task_ids ?? [])],
+    published_at: iso(row.published_at),
+    closed_at: iso(row.closed_at),
+    awarded_at: iso(row.awarded_at),
+    cancelled_at: iso(row.cancelled_at),
+    cancel_reason: row.status === 'cancelled' ? (row.cancel_reason ?? null) : null,
     invited_count: invited,
     submitted_count: submitted,
     awarded_to: awarded ? { org_id: row.awarded_org_id ?? null, name: row.awarded_name } : null,

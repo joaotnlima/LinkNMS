@@ -14,6 +14,7 @@ import {
   reserveRfpModel, completeRfpModel, removeRfpModel, rfpModelViewUrl, rfpModelViewUrlByToken,
 } from '../application/use-cases.mjs';
 import { listTaskProcurement } from '../application/task-procurement.mjs';
+import { removeRecipient } from '../application/recipients.mjs';
 
 /**
  * @param {{ store: object, storage: object, contractingAward: Function,
@@ -102,6 +103,10 @@ export function registerTendering(router, { store, storage, documentsStore, cont
   router.register('GET', '/rfps/{rfpId}/invite-email:preview', 'previewInviteEmail', ({ viewer, params, query }) =>
     previewInviteEmail({ viewer, store, linkBaseUrl: baseUrl(), rfpId: params.rfpId, query }));
 
+  // Take a queued bidder off a DRAFT (PRD-02 T-6) — nothing was sent yet.
+  router.register('DELETE', '/rfps/{rfpId}/recipients/{recipientId}', 'removeRecipient', ({ viewer, params }) =>
+    removeRecipient({ viewer, store, rfpId: params.rfpId, recipientId: params.recipientId }));
+
   // Rotate a recipient's leaked/forwarded personal link: mint a fresh token,
   // kill the old (gap S1, LINA-373). Issuer-only; the token is in the response
   // ONCE, never the path.
@@ -110,7 +115,7 @@ export function registerTendering(router, { store, storage, documentsStore, cont
       reissueRecipientLink({ viewer, store, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId, recipientId: params.recipientId }));
 
   router.register('POST', '/rfps/{rfpId}:publish', 'publishRfp', ({ viewer, params }) =>
-    publishRfp({ viewer, store, rfpId: params.rfpId }));
+    publishRfp({ viewer, store, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId }));
 
   router.register('POST', '/rfps/{rfpId}/addenda', 'addAddendum', ({ viewer, params, body }) =>
     addAddendum({ viewer, store, rfpId: params.rfpId, body }));
@@ -118,8 +123,8 @@ export function registerTendering(router, { store, storage, documentsStore, cont
   router.register('POST', '/rfps/{rfpId}:close', 'closeRfp', ({ viewer, params }) =>
     closeRfp({ viewer, store, rfpId: params.rfpId }));
 
-  router.register('POST', '/rfps/{rfpId}:cancel', 'cancelRfp', ({ viewer, params }) =>
-    cancelRfp({ viewer, store, rfpId: params.rfpId }));
+  router.register('POST', '/rfps/{rfpId}:cancel', 'cancelRfp', ({ viewer, params, body }) =>
+    cancelRfp({ viewer, store, rfpId: params.rfpId, body }));
 
   router.register('GET', '/marketplace/rfps', 'browseOpenRfps', ({ viewer, query }) =>
     browseOpenRfps({ viewer, store, query }));

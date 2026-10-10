@@ -97,7 +97,9 @@ describe('GET /projects/{projectId}/task-procurement', () => {
     assert.deepEqual(byTask[T_PLUMB], {
       task_id: T_PLUMB, rfp_id: RFP_PLUMB, title: 'Canalização + Eletricidade', status: 'published',
       opened_at: '2026-11-01T09:00:00Z', submission_deadline: '2027-01-15T17:00:00Z',
-      root_task_ids: [T_PLUMB, T_ELEC], invited_count: 4, submitted_count: 2, awarded_to: null,
+      root_task_ids: [T_PLUMB, T_ELEC], excluded_task_ids: [],
+      published_at: null, closed_at: null, awarded_at: null, cancelled_at: null, cancel_reason: null,
+      invited_count: 4, submitted_count: 2, awarded_to: null,
     });
     // A co-root of the same RFP carries the same tender.
     assert.equal(byTask[T_ELEC].rfp_id, RFP_PLUMB);

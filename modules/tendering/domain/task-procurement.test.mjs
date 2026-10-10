@@ -69,8 +69,25 @@ describe('taskProcurement', () => {
     assert.deepEqual(items[0], {
       task_id: T1, rfp_id: R2, title: 'Canalização', status: 'published',
       opened_at: '2026-12-01T09:00:00Z', submission_deadline: '2027-01-15T17:00:00Z',
-      root_task_ids: [T1, T2], invited_count: 3, submitted_count: 2, awarded_to: null,
+      root_task_ids: [T1, T2], excluded_task_ids: [],
+      published_at: null, closed_at: null, awarded_at: null, cancelled_at: null,
+      cancel_reason: null,
+      invited_count: 3, submitted_count: 2, awarded_to: null,
     });
+  });
+
+  test('PRD-02: lifecycle stamps, exclusions and a cancelled tender\'s reason ride along', () => {
+    const [item] = taskProcurement([row({
+      status: 'cancelled', excluded_task_ids: [T2], published_at: '2026-12-02T10:00:00Z',
+      cancelled_at: '2026-12-05T10:00:00Z', cancel_reason: 'Owner changed the roof design',
+    })]);
+    assert.deepEqual(item.excluded_task_ids, [T2]);
+    assert.equal(item.published_at, '2026-12-02T10:00:00Z');
+    assert.equal(item.cancelled_at, '2026-12-05T10:00:00Z');
+    assert.equal(item.cancel_reason, 'Owner changed the roof design');
+    // A reason is only ever reported for the cancelled state.
+    const [live] = taskProcurement([row({ cancel_reason: 'stale' })]);
+    assert.equal(live.cancel_reason, null);
   });
 
   test('an awarded tender names its winner; an off-platform winner has a null org', () => {

@@ -30,10 +30,10 @@ function fakeStore() {
   const rfp = {
     id: RFP, project_id: PROJECT, issuer_org_id: OWNER_ORG, level: 'owner',
     title: 'Canalização', scope_text: 'Tubagem PEX', submission_deadline: FUTURE,
-    visibility: 'invite_only', status: 'draft', version: 1,
+    visibility: 'invite_only', status: 'published', version: 1,
   };
   return {
-    marked,
+    marked, rfp,
     async getPersonByClerkId(id) { return id === 'user_me' ? { id: ME, email: 'me@x.pt' } : null; },
     async getRfp(id) { return id === RFP ? rfp : null; },
     async addRecipients({ recipients }) {
@@ -51,6 +51,19 @@ function fakeStore() {
       return rfpId === RFP && recipientId === REC
         ? { id: REC, rfp_id: RFP, org_id: BIDDER_ORG, email: 'maia@hidro.pt', lane_status: 'invited' }
         : null;
+    },
+    async recipientCount() { return 1; },
+    async publishRfp({ to }) {
+      // The store mints the link for each still-queued recipient in the
+      // publish transaction and hands back the raw tokens once.
+      rfp.status = to;
+      return {
+        rfp,
+        links: [{
+          recipient: { id: REC, org_id: null, email: 'queued@bidder.pt', status: 'queued', sent_at: null, opened_at: null },
+          token: TOKEN_NEW,
+        }],
+      };
     },
     async reissueRecipientLink({ recipientId }) {
       return {
@@ -129,6 +142,39 @@ describe('invite-email dispatch (LINA-412)', () => {
     // Not marked sent (stays queued for a later re-issue), but the invite stands.
     assert.equal(store.marked.length, 0);
     assert.equal(res.body.items[0].status, 'queued');
+  });
+
+  describe('a draft stays private until it is sent (PRD-02 T-6/T-7)', () => {
+    beforeEach(() => { store.rfp.status = 'draft'; });
+
+    test('addRecipients on a draft queues: no email, no token', async () => {
+      const res = await dispatch('POST', `/rfps/${RFP}/recipients`, viewer(), {
+        recipients: [{ email: 'bidder@example.pt' }],
+      });
+      assert.equal(res.status, 201);
+      assert.equal(mail.sent.length, 0);
+      assert.equal(res.body.items[0].status, 'queued');
+      assert.equal(res.body.items[0].token, undefined);
+      assert.equal(store.marked.length, 0);
+    });
+
+    test('publish mints the link and emails each queued recipient', async () => {
+      const res = await dispatch('POST', `/rfps/${RFP}:publish`, viewer());
+      assert.equal(res.status, 200);
+      assert.equal(res.body.status, 'published');
+      assert.equal(mail.sent.length, 1);
+      assert.equal(mail.sent[0].to, 'queued@bidder.pt');
+      assert.ok(mail.sent[0].html.includes(`${BASE}/rfp/${TOKEN_NEW}`));
+      assert.deepEqual(store.marked, [{ rfpId: RFP, recipientId: REC, messageId: 'mem-1' }]);
+      // The publish response never carries a token.
+      assert.ok(!JSON.stringify(res.body).includes(TOKEN_NEW));
+    });
+
+    test('a draft has no live link to re-issue → 409, nothing sent', async () => {
+      const res = await dispatch('POST', `/rfps/${RFP}/recipients/${REC}:reissue`, viewer());
+      assert.equal(res.status, 409);
+      assert.equal(mail.sent.length, 0);
+    });
   });
 
   describe('invite-email:preview', () => {

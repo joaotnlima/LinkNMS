@@ -36,6 +36,11 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 | `reputation.review.published` | Reputation | Directory | — |
 | `billing.subscription.changed` | Billing | IAM cache | — |
 
+**`tendering.rfp.cancelled` data (PRD-02 T-19):** `rfp_id, project_id, reason?` — the issuer's optional one-line reason.
+**`tendering.rfp.published` (PRD-02 T-7):** the personal links of the recipients queued on the draft are minted in the same
+transaction (ledger payload `links_minted`); the individual emails leave after commit. Removing a queued recipient from a draft is
+ledgered as `tendering.rfp.recipient_removed` (audit only, no outbox event — nothing was ever sent).
+
 **`tendering.rfp.awarded` data (D-43):** `rfp_id, proposal_id, contract_id, root_task_ids[], supplier_org_id, start, duration_wd` —
 the winning proposal's start (`summary_start`) and duration (`summary_duration_wd`), `null` when the bid carries none. Planning
 takes the awarded branch's baseline v1 (reason `award`) from these facts alone; it never reads `tendering.*`.

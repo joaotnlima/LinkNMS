@@ -28,6 +28,15 @@ export function rfpBody(row) {
     package_version: row.package_version,
     status: row.status,
     ...(row.awarded_proposal_id ? { awarded_proposal_id: row.awarded_proposal_id } : {}),
+    // PRD-02: the package's left-out rows (T-3) and the lifecycle stamps the
+    // panel's stepper prints under each step (T-10), plus the cancel reason (T-19).
+    excluded_task_ids: row.excluded_task_ids ?? [],
+    created_at: iso(row.created_at),
+    published_at: iso(row.published_at),
+    closed_at: iso(row.closed_at),
+    awarded_at: iso(row.awarded_at),
+    cancelled_at: iso(row.cancelled_at),
+    ...(row.cancel_reason ? { cancel_reason: row.cancel_reason } : {}),
     version: row.version,
   };
 }

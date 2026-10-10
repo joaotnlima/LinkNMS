@@ -97,11 +97,14 @@ holidays are resolved from a shared `platform.holiday(date, scope: national|muni
 | package_version | int | incremented by each addendum |
 | status | text | `draft` · `published` · `closed` · `awarded` · `cancelled` |
 | awarded_proposal_id | uuid | nullable |
+| excluded_task_ids | uuid[] | descendants of the roots left out of the package with their sub-trees (PRD-02 T-3; 0013) |
+| created_at, published_at, closed_at, awarded_at, cancelled_at | timestamptz | lifecycle stamps, set by the transition that enters each state (PRD-02 T-10; 0013) |
+| cancel_reason | text | optional one-line reason, ≤ 500 (PRD-02 T-19; 0013) |
 
 **rfp_root** — `PK(rfp_id, task_id)`: the plan rows being tendered; the package is their subtrees.
 **rfp_package_row**: snapshot of each packaged row at publish/addendum — `rfp_id, package_version, task_id, parent_task_id, name, scope_text, duration_wd?, position`.
 **rfp_item** (packaged cost lines, **no prices**): `rfp_id, package_version, task_id, code, description, unit, quantity, material_spec, specialty`.
-**rfp_recipient**: `rfp_id, org_id?, email, token_hash, email_message_id, status (queued/sent/opened/declined/proposal_submitted/bounced), sent_at, opened_at` — **one individual email per row** (D-29).
+**rfp_recipient**: `rfp_id, org_id?, email, token_hash, email_message_id, status (queued/sent/opened/declined/proposal_submitted/bounced), sent_at, opened_at` — **one individual email per row** (D-29). On a draft the row is only queued (its `token_hash` belongs to a token nobody holds); publish mints the real link per queued row and a queued row may be removed while the RFP is a draft (PRD-02 T-6/T-7).
 **rfp_addendum**: `rfp_id, package_version, summary, published_at`.
 **project.operating_model** is derived (D-35): prime only ⇒ turnkey · direct only ⇒ direct · both ⇒ hybrid.
 **clarification**: `rfp_id, asked_by_org_id (never exposed to other bidders), question, answer, answered_at, status (open/answered)`.
