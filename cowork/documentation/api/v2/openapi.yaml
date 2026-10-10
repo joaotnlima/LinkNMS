@@ -7802,6 +7802,317 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /documents/{documentId}/markups:
+    parameters:
+    - name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Documents
+      operationId: listDocumentMarkups
+      summary: The markup layer of a drawing — every markup of every version (PRD-06 V-1, V-8)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** readers of the document''s scope (V6)
+
+
+        Markups are a layer kept on the record; the PDF / DWG bytes are never changed. Each markup is pinned to the
+        version it was saved in (`version_no`) and to a page (PDF, `"1"`, `"2"`…) or a layout (DWG/DXF, its name).
+        A viewer of version *n* shows the markups with `version_no ≤ n`. Ordered by `version_no`, then creation.'
+      x-relationship: readers of the scope
+      parameters:
+      - $ref: '#/components/parameters/documentId'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Markup'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /documents/{documentId}/markups:save:
+    parameters:
+    - name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Documents
+      operationId: saveDocumentMarkups
+      summary: Save new markups — appends a "markups only" version (same bytes, same sha256) (PRD-06 V-3, V-5, V-6, V-16)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant reading the document — project, location and task files only
+
+
+        Saving is "save = new version": one call appends `document_version` *n+1* with `change_kind: markup_only`,
+        `base_version_no: n`, the SAME `storage_key`, mime, size and `sha256` as *n* (no byte copy) and advances
+        `current_version` — then writes the markups with `version_no = n+1`. `base_version_no` must be the current
+        version (409 `version_conflict` otherwise: a newer file was uploaded since the viewer opened it). Geometry is in
+        sheet units (PDF user-space points of the page at scale 1, or the DWG preview''s SVG units) and is validated per
+        kind. Markup ids are client-generated: replaying the same ids answers the saved markups (201); an id used for
+        another markup answers 409. Ledgered as `documents.markups.saved` (sha256 of the unchanged bytes, scope
+        `project`); no outbox event — a markup-only version neither notifies task owners nor re-opens a deliverable
+        review (the bytes did not change).'
+      x-relationship: project.participant ∧ readers of the scope
+      parameters:
+      - $ref: '#/components/parameters/documentId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkupSave'
+      responses:
+        '201':
+          description: The document (new current version) and the saved markups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarkupSaveResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /markups/{markupId}:close:
+    parameters:
+    - name: markupId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Documents
+      operationId: closeMarkup
+      summary: Close a markup (open → closed) (PRD-06 V-8)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** the markup''s author org, or an editor of the document''s scope
+
+
+        The state of a markup is record-side: closing it writes no new version. Ledgered as `documents.markup.closed`
+        (audit only). Closing a closed markup answers it unchanged.'
+      x-relationship: markup author org ∨ edit scope of the document
+      parameters:
+      - $ref: '#/components/parameters/markupId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Markup'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /markups/{markupId}:reopen:
+    parameters:
+    - name: markupId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Documents
+      operationId: reopenMarkup
+      summary: Re-open a closed markup (PRD-06 V-8)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** the markup''s author org, or an editor of the document''s scope
+
+
+        Ledgered as `documents.markup.reopened` (audit only).'
+      x-relationship: markup author org ∨ edit scope of the document
+      parameters:
+      - $ref: '#/components/parameters/markupId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Markup'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /markups/{markupId}:link:
+    parameters:
+    - name: markupId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Documents
+      operationId: linkMarkup
+      summary: Point a markup at the question or the issue it became (PRD-06 V-8)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** the markup''s author org, which must also be the org that asked the question /
+        raised the issue
+
+
+        A markup becomes a **question to a named party** through `createComment` (`kind: question`,
+        `addressee_org_id`) on the document''s thread, or an **issue on the task** through `raiseNonConformity`
+        (`task_id`) — the existing Collaboration and Quality aggregates, with their own notifications. This call then
+        records the link on the markup, checked through the Collaboration question port and the Quality
+        non-conformity port (same project, raised by the viewer''s org). Many markups — on PDF pages and DWG layouts —
+        may point at the same issue. Ledgered as `documents.markup.linked` (audit only).'
+      x-relationship: markup author org
+      parameters:
+      - $ref: '#/components/parameters/markupId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkupLink'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Markup'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /document-versions/{versionId}:view-url:
+    parameters:
+    - name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      tags:
+      - Documents
+      operationId: getDocumentViewUrl
+      summary: A short-lived inline URL for rendering a version in the browser (PRD-06 V-4)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** readers of the scope (V6)
+
+
+        Same V6 check as `downloadDocument`, but answers JSON with a presigned **inline** GET (a few minutes) so the
+        client-side PDF renderer can fetch the bytes. Only proven versions.'
+      x-relationship: readers of the scope
+      parameters:
+      - $ref: '#/components/parameters/versionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ViewUrl'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /document-versions/{versionId}/preview:
+    parameters:
+    - name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      tags:
+      - Documents
+      operationId: getDocumentPreview
+      summary: The server-side preview of a DWG / DXF version — layouts, layers, warnings (PRD-06 V-11..V-17, D-49)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** readers of the scope (V6)
+
+
+        A DWG or DXF is converted after its upload is proven (the documents module consumes its own
+        `documents.version.uploaded`; the converter is a port — LibreDWG in production when configured, D-49). The
+        preview is keyed by the bytes (sha256), so a markup-only version shows the preview of the version it copies.
+        `status` is `pending` until the conversion ran, `ready` with one SVG per layout (each with a short-lived
+        inline `view_url`), or `unavailable` with a `reason` (`converter_not_configured`, `unsupported_version`,
+        `conversion_failed`, `conversion_timeout`, `empty_drawing`, `preview_too_large`) — the file is then download
+        only. `layers` lists the file''s layers when the converter provides them (toggling them is the viewer''s own
+        view); `warnings` lists what the conversion substituted or could not resolve (missing xrefs, fonts). The .dwg
+        itself is never changed. Any other file type answers `status: ready` with no layouts (it renders as-is).'
+      x-relationship: readers of the scope
+      parameters:
+      - $ref: '#/components/parameters/versionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentPreview'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /threads/{objectType}/{objectId}/comments:
     parameters:
     - name: objectType
@@ -9282,6 +9593,13 @@ components:
         type: string
     objectId:
       name: objectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    markupId:
+      name: markupId
       in: path
       required: true
       schema:
@@ -12386,6 +12704,10 @@ components:
           $ref: '#/components/schemas/FileType'
         preview_status:
           $ref: '#/components/schemas/PreviewStatus'
+        preview_reason:
+          type: string
+          description: 'Why a DWG / DXF has no preview (`preview_status: unavailable`, PRD-06 V-14) — e.g.
+            `converter_not_configured`, `unsupported_version`, `conversion_failed`. Absent otherwise.'
         share_with_ancestors: *id002
         current_version:
           type: integer
@@ -12472,13 +12794,239 @@ components:
       - other
     PreviewStatus:
       type: string
-      description: 'Document-level preview state (PRD-05 F-7, wired for PRD-06): `ready` (viewable / no preview needed),
-        `pending` (a DWG waits for its server-side conversion, D-49), `unavailable` (no preview — download only).
-        `pending` is set for DWG uploads; every other type is `ready`.'
+      description: 'Preview state (PRD-05 F-7, PRD-06 V-11, V-14, V-17): `ready` (viewable / no preview needed),
+        `pending` (a DWG or DXF waits for its server-side conversion, D-49 — "Making preview…"), `unavailable` (the
+        conversion failed or no converter is configured: no preview, download only; the reason rides on
+        `preview_reason`). `pending` is set for DWG and DXF uploads; every other type is `ready`.'
       enum:
       - ready
       - pending
       - unavailable
+    MarkupKind:
+      type: string
+      description: '`cloud` (two opposite corners), `arrow` (tail, head — "arrow + note", needs `text`), `text` (one
+        anchor point, needs `text`), `measure` (two points; the length shows only once the sheet is calibrated, V-6),
+        `calibration` (two points on a known dimension + `geometry.length_mm`; the latest calibration of a page sets
+        its scale).'
+      enum:
+      - cloud
+      - arrow
+      - text
+      - measure
+      - calibration
+    MarkupGeometry:
+      type: object
+      description: 'Points in sheet units — PDF user-space points of the page at scale 1, or the DWG preview''s SVG units —
+        so a length is isotropic and resolution-independent. `cloud`, `arrow`, `measure`, `calibration`: exactly 2
+        points; `text`: exactly 1. Every coordinate finite, |v| ≤ 1e9. `length_mm` (calibration only): the real length
+        of the measured dimension, > 0.'
+      properties:
+        points:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items:
+              type: number
+        length_mm:
+          type: number
+          exclusiveMinimum: 0
+      required:
+      - points
+    MarkupState:
+      type: string
+      enum:
+      - open
+      - closed
+    MarkupDraft:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: client-generated (UUIDv7) — the idempotency key of this markup
+        page_or_layout:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: PDF page number as text (`"1"`), or the DWG/DXF layout name
+        kind:
+          $ref: '#/components/schemas/MarkupKind'
+        geometry:
+          $ref: '#/components/schemas/MarkupGeometry'
+        text:
+          type: string
+          maxLength: 2000
+      required:
+      - id
+      - page_or_layout
+      - kind
+      - geometry
+    MarkupSave:
+      type: object
+      properties:
+        base_version_no:
+          type: integer
+          minimum: 1
+          description: the version the markups were drawn on — must be the current one
+        markups:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/MarkupDraft'
+        note:
+          type: string
+          maxLength: 2000
+          description: optional change note of the new version (the history labels it "markups only" either way)
+      required:
+      - base_version_no
+      - markups
+    Markup:
+      type: object
+      properties:
+        id: *id001
+        document_id: *id001
+        version_no:
+          type: integer
+        page_or_layout:
+          type: string
+        kind:
+          $ref: '#/components/schemas/MarkupKind'
+        geometry:
+          $ref: '#/components/schemas/MarkupGeometry'
+        text:
+          type: string
+        author:
+          $ref: '#/components/schemas/Actor'
+        created_at: *id004
+        state:
+          $ref: '#/components/schemas/MarkupState'
+        closed_at: *id004
+        question_id:
+          type: string
+          format: uuid
+          description: the Collaboration question this markup became (absent when none)
+        nonconformity_id:
+          type: string
+          format: uuid
+          description: the Quality issue (non-conformity) this markup points at (absent when none)
+      required:
+      - id
+      - document_id
+      - version_no
+      - page_or_layout
+      - kind
+      - geometry
+      - author
+      - created_at
+      - state
+    MarkupSaveResult:
+      type: object
+      properties:
+        document:
+          $ref: '#/components/schemas/Document'
+        markups:
+          type: array
+          items:
+            $ref: '#/components/schemas/Markup'
+      required:
+      - document
+      - markups
+    MarkupLink:
+      type: object
+      description: exactly one of the two
+      properties:
+        question_id:
+          type: string
+          format: uuid
+        nonconformity_id:
+          type: string
+          format: uuid
+    ViewUrl:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        expires_at: *id004
+      required:
+      - url
+      - expires_at
+    DocumentPreview:
+      type: object
+      properties:
+        document_id: *id001
+        version_no:
+          type: integer
+        file_type:
+          $ref: '#/components/schemas/FileType'
+        status:
+          $ref: '#/components/schemas/PreviewStatus'
+        reason:
+          type: string
+          description: "why there is no preview (`status: unavailable`)"
+        layouts:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              name:
+                type: string
+              width:
+                type: number
+              height:
+                type: number
+              view_url:
+                type: string
+                format: uri
+              expires_at: *id004
+            required:
+            - index
+            - name
+            - view_url
+        layers:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              color:
+                type: string
+                description: CSS colour when the converter knows it
+              on:
+                type: boolean
+                description: the layer's own on/off state in the file
+              count:
+                type: integer
+                description: entities on the layer in the preview (absent when unknown)
+            required:
+            - name
+            - 'on'
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              detail:
+                type: string
+            required:
+            - code
+      required:
+      - document_id
+      - version_no
+      - status
+      - layouts
+      - layers
+      - warnings
     VersionChangeKind:
       type: string
       enum:

@@ -32,7 +32,7 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 | `planning.deliverable.submitted`, `.approved`, `.changes_requested` | Planning | Notifications (submitted → client side of the task; decided → submitter + assignee org) | ● (sha256) |
 | `quality.verification.accepted`, `.rejected` | Quality | Planning, Contracting (measurable qty), Reputation | ● |
 | `quality.nonconformity.*` | Quality | Contracting (reception guard), Notifications | ● |
-| `documents.version.uploaded` | Documents | Feed, Planning (re-submits a deliverable the document was submitted for, PRD-05 F-15), Notifications (owners of the tasks linking the file, F-11) | ● (sha256) |
+| `documents.version.uploaded` | Documents | Feed, Planning (re-submits a deliverable the document was submitted for, PRD-05 F-15), Notifications (owners of the tasks linking the file, F-11), Documents (DWG/DXF preview conversion, PRD-06 V-11) | ● (sha256) |
 | `collaboration.question.opened`, `.answered`, `.resolved` | Collaboration | Notifications, Reputation (answer time) | ● |
 | `collaboration.minute.acknowledged` | Collaboration | Feed | ● |
 | `reputation.review.published` | Reputation | Directory | — |
@@ -61,6 +61,16 @@ task + RFP + title), D-39/D-48.
 **`documents.version.uploaded` data (PRD-05):** `document_id, version_no, scope_type, scope_id, kind, title, sha256, mime, note,
 linked_task_ids[]` (the tasks linking the document at that moment). `documents.link.added` / `.removed` are ledger-only (scope
 `project`), no outbox event.
+
+**Markups and DWG previews (PRD-06).** Saving markups appends a `markup_only` document version (same bytes, same
+sha256) and is ledgered as `documents.markups.saved` (data `document_id, version_no, base_version_no, sha256,
+markup_ids[]`, scope `project`) — **no outbox event**: the bytes did not change, so no "new version" notification and no
+deliverable re-review (PRD-05 F-11/F-15 consumers stay quiet). Closing, re-opening and linking a markup to the question or
+issue it became are ledger-only (`documents.markup.closed` / `.reopened` / `.linked`). The question and the issue are the
+existing `collaboration.question.opened` and `quality.nonconformity.raised`, notified as before. Documents **consumes its own
+`documents.version.uploaded`** for DWG/DXF versions: the conversion job (DwgConverter port, D-49) writes the preview
+artefacts and sets `preview_status` `ready` / `unavailable` (+ reason) — derived state, not ledgered. Idempotent: the
+preview is keyed by (document, sha256); a replay finds it and only re-mirrors the status.
 
 **`planning.deliverable.*` data (PRD-05 F-13..F-15):** `deliverable_id, task_id, title, submission_id, document_id, version_no,
 sha256, submitted_by_org_id`; `.approved` / `.changes_requested` add `decided_by_org_id, decided_by_person_id, comment?`. Scope

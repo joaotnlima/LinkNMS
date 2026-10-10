@@ -2,6 +2,24 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-10 — 2D drawings: PDF / DWG viewer, markup layer and DWG preview (PRD-06 V-1..V-17; additive)
+
+- **New (Documents):** `listDocumentMarkups` — `GET /documents/{documentId}/markups`; `saveDocumentMarkups` —
+  `POST /documents/{documentId}/markups:save` `{base_version_no, markups[], note?}` → `{document, markups[]}`: appends a
+  `markup_only` version that reuses the base version's `storage_key` and `sha256` (no byte copy), 409 when
+  `base_version_no` is not current; `closeMarkup` / `reopenMarkup` — `POST /markups/{markupId}:close` · `:reopen`;
+  `linkMarkup` — `POST /markups/{markupId}:link` `{question_id | nonconformity_id}` (the markup became a Collaboration
+  question or a Quality issue); `getDocumentViewUrl` — `GET /document-versions/{versionId}:view-url` (inline presigned GET
+  for the client-side PDF renderer); `getDocumentPreview` — `GET /document-versions/{versionId}/preview` (DWG/DXF layouts as
+  SVG with inline URLs, layers, warnings, or `unavailable` + `reason`).
+- New schemas `Markup`, `MarkupDraft`, `MarkupSave`, `MarkupSaveResult`, `MarkupLink`, `MarkupKind`, `MarkupGeometry`,
+  `MarkupState`, `ViewUrl`, `DocumentPreview`; parameter `markupId`.
+- `Document` gains `preview_reason`; `PreviewStatus` now also covers DXF (`pending` on upload) and `unavailable` is set by
+  the conversion job (reason on `preview_reason`).
+- Events: none on the outbox. Ledger-only: `documents.markups.saved` (sha256), `documents.markup.closed` / `.reopened` /
+  `.linked`. Documents consumes its own `documents.version.uploaded` for the DWG/DXF conversion (doc 10).
+- Migration `db/v2/0018_documents_markup_preview.sql`.
+
 ## 2026-10-10 — Task files, project files and deliverables (PRD-05 F-1..F-19; additive)
 
 - **New (Documents):** `listTaskDocuments` — `GET /tasks/{taskId}/documents` (`TaskDocument` = `Document` + `role`,

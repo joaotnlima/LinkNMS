@@ -133,6 +133,11 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Link project files to a task (never a copy; optionally on every sub-task) / remove a link | edit scope contains the task | `POST /tasks/{id}/document-links` · `DELETE /tasks/{id}/document-links/{documentId}` |
 | Project files (search, filter by type, tasks using each file) | participant | `GET /projects/{id}/documents?q=&type=` |
 | Download | readers of scope | `GET /document-versions/{id}:download` |
+| View a version in the browser (inline URL for the PDF renderer) | readers of scope | `GET /document-versions/{id}:view-url` |
+| DWG / DXF preview (layouts as SVG, layers, warnings, or download-only with the reason) | readers of scope | `GET /document-versions/{id}/preview` |
+| Markup layer of a drawing (every version) | readers of scope | `GET /documents/{id}/markups` |
+| Save markups — a "markups only" version, same bytes and sha256 | participant reading the file | `POST /documents/{id}/markups:save` |
+| Close / re-open a markup; point it at the question or issue it became | markup author (close: or scope editor) | `POST /markups/{id}:close` · `:reopen` · `:link` |
 
 ## Collaboration
 | Use case | Actor | Endpoint |

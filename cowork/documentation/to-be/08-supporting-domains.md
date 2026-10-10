@@ -30,6 +30,20 @@ documents, optionally linked to tasks; may spawn non-conformities.
   and the D-48 `done` gate); Documents only holds the bytes. Reviewers are the *client side* of the task: an organisation
   whose edit scope contains the row (owner, or a client up the branch's contract chain — so the GC may approve its sub's
   deliverables on the owner's behalf), never the task's assignee and never the organisation that submitted the version.
+- **Drawings: markup layer and previews (PRD-06).** LinkNMS never authors drawings: "edit" on a PDF or DWG is a
+  **markup layer on the record** (`documents.markup` — cloud, arrow + note, text, measure, calibration; pinned to a page or
+  layout and to the version it was saved in; open/closed; optionally pointing at the Collaboration question or the Quality
+  issue it became). Saving markups appends a `markup_only` version that reuses the base version's storage key and sha256 —
+  the bytes are provably unchanged. PDFs render client-side (pdf.js); measurements show units only after the sheet is
+  calibrated. DWG/DXF are converted server-side after upload through the **DwgConverter port** (application layer): the
+  default adapter (`DWG_CONVERTER` unset or `none`) converts nothing and marks the file `unavailable`
+  (`converter_not_configured`, download only); `DWG_CONVERTER=libredwg` shells out to the LibreDWG CLI (`dwg2SVG`,
+  `dwgread -O JSON`, `dxf2dwg` for DXF) found in `LIBREDWG_BIN_DIR` (or `PATH`). Preview SVGs are derived objects with their
+  own storage keys (`v2/documents/{id}/previews/{sha256}/{n}.svg`), keyed by the bytes.
+  **Deployment requirement (D-49):** LibreDWG is **GPL-3.0** and is **not** bundled in any image or package of this repo.
+  Installing it next to the server process (and enabling `DWG_CONVERTER=libredwg`) waits for the **legal check** D-49 asks
+  for; until then DWG/DXF files are download-only. The serverless app runtime cannot run a CLI — the conversion consumer
+  has to run where the binaries are (a worker draining the outbox).
 
 ## Collaboration
 
