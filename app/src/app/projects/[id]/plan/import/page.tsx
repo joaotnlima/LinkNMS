@@ -1,13 +1,12 @@
-// `/plan/import` is retired as a route (LINA-281, ADR-0023 §4). The import wizard
-// folded into the single `/plan` accordion: it now renders inline in the
-// Execution section via `?compose=import`. This shell survives only to
-// 307-redirect any existing in-app link or bookmark to that in-page action — the
-// wizard itself lives in ./PlanImportWizard, still imported by the plan page.
+// `/plan/import` is retired as a route (LINA-281, ADR-0023 §4). There is no
+// import wizard in the app any more — nothing imports one, and `/plan` reads no
+// `?compose=` flag — so this shell only redirects an old link or bookmark to the
+// plan itself (PRD-01 C-1/C-2). Spreadsheet import returns with PRD-09.
 import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PlanImportRedirect({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  redirect(`/projects/${id}/plan?compose=import`);
+  redirect(`/projects/${id}/plan`);
 }
