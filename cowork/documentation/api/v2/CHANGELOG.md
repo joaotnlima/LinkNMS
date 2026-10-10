@@ -2,6 +2,21 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-10 — Per-task procurement projection (PRD-01 G-2/G-3, additive)
+
+- **One Tendering read** replaces the plan's client-side N+1 composition (`/me/rfps` + one
+  `/tasks/{id}/proposal-lanes` per tendered row):
+  - `listTaskProcurement` — `GET /projects/{projectId}/task-procurement` (authed; relationship
+    **project.participant**, items scoped to RFPs the viewer's org **issued**). One item per
+    tendered root task: the governing RFP (awarded wins, else newest live, a cancelled one only when
+    the row has no other), `status`, `opened_at`, `submission_deadline`, `root_task_ids`,
+    `invited_count`, `submitted_count` (submitted · shortlisted · awarded lanes) and `awarded_to`
+    (`{org_id, name}` | null).
+  - Counts are of the **governing RFP's** lanes only (the per-task lanes read mixes every RFP ever
+    rooted on the row). No money on the wire (D-06/D-07). Not paginated — bounded by the project's
+    tenders.
+- No schema migration — a read over `tendering.rfp`, `rfp_root`, `proposal`, `rfp_recipient`.
+
 ## 2026-10-05 — Self-serve summary bid (LINA-406, additive)
 
 - **One Tendering op** lets a marketplace applicant actually price and send its bid (marketplace

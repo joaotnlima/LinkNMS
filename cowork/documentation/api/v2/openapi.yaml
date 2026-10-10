@@ -3240,6 +3240,56 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/task-procurement:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Tendering
+      operationId: listTaskProcurement
+      summary: Per-task procurement state of a project's tenders, as their issuer sees them (PRD-01 G-2/G-3)
+      description: 'The read model behind the plan''s Tender column and the Gantt procurement band:
+        ONE item per tendered root task, carrying the governing RFP of that row (an awarded tender
+        wins; otherwise the newest live one; a cancelled tender only when the row has no other), its
+        lifecycle status, when it opened, when bids are due, how many bidders it went to, how many
+        bids have landed (submitted, shortlisted or awarded) and who won. Only RFPs the viewer''s
+        active organisation ISSUED are included — a participant that issued nothing gets an empty
+        list, a bidder never sees another org''s tender here (V8). Never carries prices (D-06/D-07):
+        counts and the winner''s name only. Bounded by the project''s tenders, so not paginated.
+
+
+        **Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant; items: issuer'
+      x-relationship: 'project.participant; items: issuer'
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaskProcurement'
+                required:
+                - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /rfp-links/{token}:
     parameters:
     - name: token
@@ -9868,6 +9918,76 @@ components:
       - id
       - status
       - submission_deadline
+    TaskProcurement:
+      type: object
+      description: >-
+        One tendered root task's procurement state for the plan (PRD-01 G-2/G-3,
+        LINA-413), projected for the RFP's issuer. Raw lifecycle + counts; the
+        grid folds them into its chip words. No money.
+      properties:
+        task_id:
+          allOf:
+          - *id001
+          description: The tendered root task (the plan row's key).
+        rfp_id: *id001
+        title:
+          type: string
+          description: The RFP title — what a covered descendant's `↳ {RFP}` marker prints.
+        status:
+          type: string
+          enum:
+          - draft
+          - published
+          - closed
+          - awarded
+          - cancelled
+        opened_at:
+          type: string
+          format: date-time
+          description: When the tender was opened (the draft's creation).
+        submission_deadline:
+          type: string
+          format: date-time
+          description: Bids due by this instant.
+        root_task_ids:
+          type: array
+          description: Every root task the governing RFP covers (their subtrees are its scope).
+          items: *id001
+        invited_count:
+          type: integer
+          minimum: 0
+          description: Bidders the tender went to — every lane, whatever its state.
+        submitted_count:
+          type: integer
+          minimum: 0
+          description: Lanes whose bid has landed (submitted, shortlisted or awarded).
+        awarded_to:
+          type: object
+          nullable: true
+          description: The winning bidder once awarded; null otherwise.
+          properties:
+            org_id:
+              type: string
+              format: uuid
+              nullable: true
+              description: Null for an off-platform (emailed) bidder that has no org yet.
+            name:
+              type: string
+              description: The bidder org's legal name, else the invited email.
+          required:
+          - org_id
+          - name
+      required:
+      - task_id
+      - rfp_id
+      - title
+      - status
+      - opened_at
+      - submission_deadline
+      - root_task_ids
+      - invited_count
+      - submitted_count
+      - awarded_to
     Proposal:
       type: object
       properties:

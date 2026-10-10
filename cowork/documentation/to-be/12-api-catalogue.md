@@ -80,6 +80,7 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Browse open RFPs matching me | SP, GC | `GET /marketplace/rfps?specialty=&municipality=` |
 | My RFP inbox (invited + applied) | SP, GC | `GET /me/rfps` |
 | Ask / answer clarification | bidder / issuer | `POST /rfps/{id}/clarifications` · `POST /clarifications/{id}:answer` |
+| Per-task procurement state of a project (Tender column + Gantt band: governing RFP, status, opened / bids due, invited & landed counts, winner — no prices) | issuer (participant; only RFPs it issued) | `GET /projects/{id}/task-procurement` |
 | Proposal lanes under a tendered row, with pre-computed comparison (price, duration, dates, missing lines, docs, status, link) | issuer: all lanes · bidder: own lane | `GET /tasks/{id}/proposal-lanes` |
 | Build my proposal plan in my lane (rows, durations/dates, links, prices, docs) | bidder | `GET /proposals/{id}` · `POST /proposals/{id}/rows` · `PATCH /proposal-rows/{id}` · `PUT /proposals/{id}/lines` · `POST /proposals/{id}:submit` · `:withdraw` |
 | Record an answer received by email (PDFs + total, duration, conditions) | issuer | `POST /proposals/{id}:record-offline` |
