@@ -86,7 +86,8 @@ Covers the full to-be surface from [02](./02-domain-map.md) / [12](./12-api-cata
 | `/rfps/{token}/submitted` | post-submission confirmation |
 | `/invitations/{token}` | invitation landing (preview + accept form; POST accepts) |
 | `/sign-in`, `/sign-up` | auth doors (`?next=` bounce param stays) |
-| `/pricing` | plans/tiers (Billing, public) |
+| `/pricing` | plans/tiers — redirects to the landing pricing section; the marketing site owns pricing (PRD-12 N-11) |
+| `/share/{token}` | what a share link's holder sees, no account: the shared documents only, read-only, each access logged; `/share/{token}/{documentId}` opens (`?disposition=inline`) or downloads one; expired/revoked say so (PRD-12 N-12, flow D21) |
 
 Note: `/invitations/{token}` replaces `/invitations/{token}/accept` — the landing *is* the
 accept screen; the verb segment adds nothing (accepting stays a POST).
@@ -103,6 +104,7 @@ accept screen; the verb segment adds nothing (accepting stays a POST).
 | `/settings/organization/profile` | edit the public Directory profile (what `/companies/{slug}` shows) |
 | `/settings/billing` | subscription, entitlements, invoices |
 | `/notifications` | notification center (Collaboration) |
+| `/questions` | questions for me — addressed to my organisation on every build, `?topic=&status=` (PRD-12 N-7) |
 | `/requests` | the company inbox (PRD-04 X-9, X-10, D-47): `?tab=for-you` (default) requests for you · `?tab=near` open requests near you |
 | `/requests/{rfpId}` | one request: the package, price and send in-app (X-11), clarifications |
 
@@ -127,11 +129,12 @@ accept screen; the verb segment adds nothing (accepting stays a POST).
 | `/projects/{id}/contracts/{id}/change-orders/{id}` | CO detail — replaces top-level `/change-orders/{id}` |
 | `/projects/{id}/contracts/{id}/measurements` | measurements (autos de medição) |
 | `/projects/{id}/contracts/{id}/payments` | payments record |
-| `/projects/{id}/quality` | verifications, non-conformities, inspections (Quality) |
+| `/projects/{id}/quality` | verifications, non-conformities, inspections (Quality); `?status=` filters, `?nc=` focuses one (PRD-12 N-3, N-4) |
 | `/projects/{id}/documents` | files, versions, photos (Documents); `?folder=`/`?type=` filter |
+| `/projects/{id}/documents/share` | the owner's share links: create, state and use, revoke, `?link=` access log (Project, PRD-12 N-12) |
 | `/projects/{id}/model` | the build's shared IFC model (Documents, PRD-07): `?task=` isolates a task's elements, `?version=` opens a version, `?tab=versions` the history; record-side edits only (D-45) |
 | `/projects/{id}/site` | the daily log by day (Planning, PRD-10 E-9): `?date=` opens a day; `/site/log` the phone-first capture (E-7, E-8; no offline, D-14); `/site/calendar` who is on site when, with overlaps (E-10, E-11), `?from=&to=` |
-| `/projects/{id}/questions` | threads / Q&A / meeting minutes (Collaboration) |
+| `/projects/{id}/questions` | threads / Q&A / meeting minutes (Collaboration); `?tab=addressed\|asked\|minutes`, `?q=` focuses one question (PRD-12 N-5, N-6) |
 | `/projects/{id}/history` | the scoped ledger view (Record) — absorbs `/record` + `/audit` + `/decisions` |
 
 Deliberate non-routes: money never appears in a path; sub-tabs of a screen (record tabs,
