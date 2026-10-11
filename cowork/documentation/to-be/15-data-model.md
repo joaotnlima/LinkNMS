@@ -76,7 +76,14 @@ rule can be seen applied.
 | capacity | text | `owner` · `prime_contractor` · `direct_contractor` · `subcontractor` · `consultant` |
 | source | text | `contract` (with `contract_id`) · `invitation` |
 | contract_id | uuid | nullable |
+| invite_capacity | text | on `invitation`: `design` · `inspection` · `safety` · `contractor` (0025, PRD-09) · `other` |
+| specialty_code | text | the trade an invited party joined for (directory taxonomy code, 0025) |
 | status | text | `active` · `ended` |
+
+**project_invitation** (0001, 0025) — `id, project_id, invited_by_org_id, email, org_id (on accept), capacity (design ·
+inspection · safety · contractor · other), specialty_code?, invitee_name?, scope_note?, token_hash (the token is never
+stored), status (pending · accepted · revoked · expired), expires_at, created_at`. A `contractor` invite is presence
+before any contract — edit scope still comes only from a contract (D-33).
 
 **project_calendar** — `PK(project_id)`: `work_days smallint[]` (ISO weekday), `closures daterange[]`;
 holidays are resolved from a shared `platform.holiday(date, scope: national|municipality_code)` table.
@@ -222,6 +229,11 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 | acceptance_criteria | text | quality |
 | last_changed_by_person_id, last_changed_at, last_change_cause | | cause: `direct` · `propagated:<task_id>` · `template` · `import` |
 | deleted_at | timestamptz | soft delete — removed rows stay visible in the change view |
+
+**schedule_import** (0001, 0024, PRD-09) — `id, project_id, org_id (the importing org), target_parent_id (unused while
+imports go into an empty plan only), filename, file_bytes, sheet_name, sheets jsonb ([{name, rows: text[][]}] — the cell text
+read once at upload; the bytes are not kept), column_mapping jsonb (field → column index), status (uploaded · mapped ·
+previewed · confirmed · failed), result jsonb (counts), confirmed_at (set ⇔ confirmed), imported_by_person_id, created_at`.
 
 **task_field_change** — append-only, one row per applied field delta (D-26)
 | Column | Type | Notes |

@@ -40,8 +40,9 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Manage buildings/units | OW | `POST /projects/{id}/locations` · `PATCH/DELETE /locations/{id}` |
 | My portfolio of projects (with status, variance, open questions) | ANY | `GET /projects?role=&status=` |
 | Project overview (owner control view: baseline/forecast/actual, cost if visible, open items) | participant | `GET /projects/{id}/overview` |
-| Participants on the build | participant | `GET /projects/{id}/participants` |
-| Invite a consultant (no priced contract) | OW, GC | `POST /projects/{id}/invitations` · `POST /project-invitations/{token}:accept` |
+| Participants on the build: organisation, capacity, trade, staffed people (PRD-09 O-3) | participant | `GET /projects/{id}/participants` |
+| Invite a party — PartyInvite: name, email, role (contractor before any contract, consultant, inspector, HSE), trade, scope note (PRD-09 O-4) | OW, GC | `POST /projects/{id}/invitations` · `POST /project-invitations/{token}:accept` |
+| The invitations my org sent on this build and their state (PRD-09 O-3) | participant (own org's only) | `GET /projects/{id}/invitations` |
 | Cancel / close project | OW | `POST /projects/{id}:cancel` · `:close` |
 
 ## Planning & Execution (the plan / WBS) — behaviour in [05](./05-planning-and-execution.md)
@@ -73,7 +74,7 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Project calendar (work days, holidays, closures) | owner/GC edit, participants read | `GET/PUT /projects/{id}/calendar` |
 | Planning settings (mobilisation lead for the award-by date, default 5 wd) | owner/GC edit, participants read | `GET/PUT /projects/{id}/planning-settings` |
 | What tendering some rows means for the plan: covered / left-out rows (and why), work window, critical path, award-by date and working days from bids-due (PRD-02) | participant | `GET /projects/{id}/schedule/tender-window?task_ids=&include=&bids_due=` |
-| Import plan from Excel (under a row) | edit scope contains the target parent | `POST /projects/{id}/schedule-imports` → `:map` → `:preview` → `:confirm` |
+| Import plan from Excel into an empty plan (PRD-09 O-6..O-12; parsed server-side, exceljs) | edit scope contains the plan root | `POST /projects/{id}/schedule-imports` (multipart `.xlsx`) → `POST /schedule-imports/{id}:map` (live 10-row sample) → `:preview` (WBS tree, counts, warnings) → `:confirm` (batch create + `planning.plan.imported`) · `GET /schedule-imports/{id}` |
 | Template library: browse by construction type / phase / scope (personal, org, public, LinkNMS) | ANY | `GET /plan-templates?construction_type=&phase=&scope=` · `GET /plan-templates/{id}` |
 | Save the plan or a selected subtree as a template (structure + links only) | any participant (reading is enough) | `POST /plan-templates {root_task_ids[], scope, construction_type, phase_tags}` |
 | Share / unshare, edit, delete a template | template owner | `PATCH /plan-templates/{id}` · `DELETE /plan-templates/{id}` |
@@ -164,6 +165,7 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Meeting minutes | participant | `POST /projects/{id}/minutes` · `:circulate` · `:acknowledge` |
 | Activity feed | participant | `GET /projects/{id}/activity?cursor=` |
 | Notifications (deep link in `object_ref.url`, `unread_count` for the bell) & preferences | ANY | `GET /me/notifications?unread=&category=&cursor=&limit=` · `POST /notifications:mark-read` · `GET`/`PUT /me/notification-preferences` |
+| What's waiting for me — unread notifications by category, optionally on one build (PRD-09 O-2) | ANY | `GET /me/notification-summary?project_id=` |
 
 ## Record
 | Use case | Actor | Endpoint |

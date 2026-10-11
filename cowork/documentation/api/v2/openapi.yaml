@@ -1489,7 +1489,13 @@ paths:
         **Relationship (LinkNMS):** project.participant
 
 
-        **MCP tool:** `project_status`'
+        **MCP tool:** `project_status`
+
+
+        The build home''s four pillars (PRD-09 O-1). Project composes the answer from the owning modules''
+        published query ports, never their tables: Planning (`plan`, `end_date`, `open_variations`, `health`),
+        Contracting (`cost` — the viewer''s client-side contracts, D-38), Quality (`pending_verifications`,
+        `open_nonconformities`) and Collaboration (`open_questions`).'
       x-relationship: project.participant
       x-mcp-tool: project_status
       x-mcp-mode: read
@@ -1721,11 +1727,49 @@ paths:
       schema:
         type: string
         format: uuid
+    get:
+      tags:
+      - Project
+      operationId: listProjectInvitations
+      summary: The invitations my organisation sent on this build, with their state
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant — only the invitations the viewer''s OWN organisation
+        sent (the invited addresses are the inviter''s business). PRD-09 O-3: the participants page shows the
+        invite state (pending / accepted / expired / revoked). Newest first; never a token.'
+      x-relationship: project.participant
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ProjectInvitation'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     post:
       tags:
       - Project
       operationId: inviteToProject
-      summary: Invite a consultant / inspector / HSE (no priced contract)
+      summary: Invite a party (contractor before any contract, consultant, inspector, HSE) — PartyInvite
       description: '**Clerk permission:** `org:projects:staff`
 
 
@@ -3883,11 +3927,21 @@ paths:
       tags:
       - Planning
       operationId: uploadScheduleImport
-      summary: Upload an Excel plan under a row
+      summary: Upload an Excel plan (.xlsx) — read it into sheets and columns
       description: '**Clerk permission:** `org:plan:edit`
 
 
-        **Relationship (LinkNMS):** edit scope ∋ target parent'
+        **Relationship (LinkNMS):** edit scope ∋ target parent (the plan root: the owner, or the creator of an
+        unclaimed build — D-33)
+
+
+        PRD-09 O-6 (flow 01 screen 8). The workbook is read server-side (planning infra, exceljs) into its
+        sheets'' cell text; the bytes are not kept. Only `.xlsx` (Office Open XML) is accepted, at most 10 MB —
+        anything else is a 422 on `file`. The answer carries every sheet with its data-row count, the first
+        sheet that has data as `sheet`, its columns (header + samples) and a SUGGESTED mapping from the
+        headers, which the mapper shows for the person to confirm (nothing is applied silently). An empty or
+        header-only sheet answers `rows: 0` so the dropzone explains itself. `plan_exists` warns early when
+        the plan already has rows (O-9).'
       x-clerk-permission: org:plan:edit
       x-relationship: edit scope ∋ target parent
       parameters:
@@ -3906,7 +3960,9 @@ paths:
                 parent_task_id:
                   type: string
                   format: uuid
-                  description: Row the imported subtree lands under; absent = plan root. Must be inside the actor's edit scope.
+                  description: 'Row the imported subtree lands under; absent = plan root. Must be inside the
+                    actor''s edit scope. Not accepted yet (422): v1 imports into an EMPTY plan only (PRD-09 O-9,
+                    flows/01); the diff/merge re-import is the follow-up that will use it.'
               required:
               - file
       responses:
@@ -3940,11 +3996,17 @@ paths:
       tags:
       - Planning
       operationId: mapScheduleImport
-      summary: Map columns
+      summary: Choose the sheet and map columns — answers a live preview of the first 10 rows
       description: '**Clerk permission:** `org:plan:edit`
 
 
-        **Relationship (LinkNMS):** none'
+        **Relationship (LinkNMS):** the importing organisation (others: 404)
+
+
+        PRD-09 O-7 (screen 9). Saves the sheet and the mapping and answers `columns`, `sample` (the first 10
+        parsed rows with their per-row warnings), `missing_required` and the warning count. A missing required
+        mapping (Action, Start, End-or-Duration) is NOT an error here — it is reported in `missing_required`,
+        and only `:preview` / `:confirm` refuse it. Two fields on one column, or a column out of range, is 422.'
       x-clerk-permission: org:plan:edit
       parameters:
       - $ref: '#/components/parameters/importId'
@@ -3953,7 +4015,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ScheduleImport'
+              $ref: '#/components/schemas/ScheduleImportMapping'
       responses:
         '200':
           description: OK
@@ -3985,11 +4047,16 @@ paths:
       tags:
       - Planning
       operationId: previewScheduleImport
-      summary: Preview parsed rows + warnings
+      summary: Preview the WBS tree the import will write, with counts and warnings
       description: '**Clerk permission:** `org:plan:edit`
 
 
-        **Relationship (LinkNMS):** none'
+        **Relationship (LinkNMS):** the importing organisation (others: 404)
+
+
+        PRD-09 O-8 (screen 10). Answers `tree` (actions → sub-actions with dates, trade, the specialty it maps
+        to and their dependencies), `counts` and every `warning`. Per-row problems are warnings, never blockers.
+        422 while a required mapping is missing.'
       x-clerk-permission: org:plan:edit
       parameters:
       - $ref: '#/components/parameters/importId'
@@ -4024,11 +4091,20 @@ paths:
       tags:
       - Planning
       operationId: confirmScheduleImport
-      summary: Write the rows (cause=import)
+      summary: Write the rows into the empty plan, stamp the record, tell the owner
       description: '**Clerk permission:** `org:plan:edit`
 
 
-        **Relationship (LinkNMS):** none'
+        **Relationship (LinkNMS):** the importing organisation ∧ edit scope ∋ the plan root
+
+
+        PRD-09 O-9, O-12. Writes the previewed tree through the plan''s structural batch (`create_rows` +
+        end→start links, the same path `applySchedule` takes) in ONE plan transaction, and in it the ledger
+        entry and the outbox event `planning.plan.imported` (actions, sub-actions, links, warnings, who) — the
+        notification centre tells the owner. 409 `invalid_transition` with `reason: plan_not_empty` when the
+        plan already has rows (import into an empty plan only; the diff re-import is a follow-up), and when the
+        import was already confirmed. 422 while a required mapping is missing. A dependency that would close a
+        cycle is dropped with a warning.'
       x-clerk-permission: org:plan:edit
       parameters:
       - $ref: '#/components/parameters/importId'
@@ -4052,6 +4128,36 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /schedule-imports/{importId}:
+    parameters:
+    - name: importId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Planning
+      operationId: getScheduleImport
+      summary: An import as it stands (resume the mapper; the "plan imported" stamp after confirm)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** the importing organisation ∧ project.participant (others: 404)'
+      parameters:
+      - $ref: '#/components/parameters/importId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleImport'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /me/plan-template:
     get:
       tags:
@@ -9631,6 +9737,39 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /me/notification-summary:
+    get:
+      tags:
+      - Collaboration
+      operationId: getNotificationSummary
+      summary: What's waiting for me — my unread notifications counted by category, optionally on one build
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** none — only the caller''s own notifications.
+
+
+        PRD-09 O-2: the build home''s "What''s waiting for you". One read: per category with unread rows, the
+        count and the newest unread item (its title and deep link), newest category first. `project_id`
+        narrows to notifications about that build.'
+      parameters:
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSummary'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /me/notification-preferences:
     get:
       tags:
@@ -11607,6 +11746,33 @@ components:
       properties:
         project:
           $ref: '#/components/schemas/Project'
+        plan:
+          type: object
+          description: 'PRD-09 O-1: the plan at a glance. `rows` = 0 is an empty plan (the build home then
+            offers the Excel import, O-9).'
+          properties:
+            rows:
+              type: integer
+              minimum: 0
+            top_level:
+              type: integer
+              minimum: 0
+            start:
+              type: string
+              format: date
+              nullable: true
+          required: [rows, top_level, start]
+        open_nonconformities:
+          type: object
+          description: Open non-conformities by kind (status open, assigned, fixed or rejected_fix).
+          properties:
+            quality:
+              type: integer
+              minimum: 0
+            safety:
+              type: integer
+              minimum: 0
+          required: [quality, safety]
         end_date:
           type: object
           properties:
@@ -11621,7 +11787,9 @@ components:
               $ref: '#/components/schemas/Money'
             current:
               $ref: '#/components/schemas/Money'
-          description: Absent for viewers without org:money:view
+          description: 'Absent for viewers without org:money:view, and when the viewer''s organisation is the
+            client of no signed contract. Cost side only (D-38): the contracts the viewer''s org is the CLIENT of.
+            `baseline` = the BoQ lines as signed (excluding change-order additions), `current` = the live BoQ.'
         open_variations:
           type: integer
         open_questions:
@@ -11677,7 +11845,25 @@ components:
           - design
           - inspection
           - safety
+          - contractor
           - other
+        specialty_code:
+          type: string
+          description: 'PRD-09 O-3: the trade the organisation was invited for (directory taxonomy), when
+            the invitation named one.'
+        specialty_name:
+          type: string
+          description: The taxonomy label of `specialty_code` (EN), read through the directory's port.
+        people:
+          type: array
+          description: 'PRD-09 O-3: the organisation''s people staffed on this build (identity staffing).'
+          items:
+            type: object
+            properties:
+              person_id: *id001
+              name:
+                type: string
+            required: [person_id, name]
     ProjectInvitation:
       type: object
       properties:
@@ -11692,15 +11878,41 @@ components:
         email:
           type: string
           format: email
+        name:
+          type: string
+          maxLength: 200
+          description: 'PRD-09 O-4 (PartyInvite): who is invited, as the inviter names them ("Nuno Ferreira —
+            Ferreira Construção"). Optional.'
         capacity:
           type: string
+          description: 'The role on the build. `contractor` (PRD-09 O-4) is a general or specialty contractor
+            invited before any contract: it joins by invitation, reads the build and gains edit scope only through
+            a contract (D-33, D-35). `specialty_code` names the trade; none = general contractor.'
           enum:
           - design
           - inspection
           - safety
+          - contractor
           - other
+        specialty_code:
+          type: string
+          description: A directory taxonomy code (GET /specialties), checked through the directory's port.
+        specialty_name:
+          type: string
+          readOnly: true
+          description: The taxonomy label of `specialty_code` (EN).
+        scope_note:
+          type: string
+          maxLength: 1000
+          description: 'PRD-09 O-4: what the invitee is asked to do ("Whole-house build per the signed
+            contract"). Shown on the accept landing.'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
         status:
           type: string
+          description: '`expired` is answered for a pending invitation past `expires_at`.'
           enum:
           - pending
           - accepted
@@ -11728,7 +11940,18 @@ components:
           - design
           - inspection
           - safety
+          - contractor
           - other
+        specialty_code:
+          type: string
+          description: 'PRD-09 O-5: the trade the invitation names, so the landing says "join as {specialty}".'
+        specialty_name:
+          type: string
+        invitee_name:
+          type: string
+          description: The name the inviter gave the invitee (PartyInvite).
+        scope_note:
+          type: string
     Calendar:
       type: object
       properties:
@@ -13022,10 +13245,90 @@ components:
             $ref: '#/components/schemas/PlanTemplatePhase'
       required:
       - body
+    ScheduleImportField:
+      type: string
+      description: 'The import''s target fields (flows/01 Excel contract). Required: `action`, `start`, and
+        `end` or `duration` (working days).'
+      enum:
+      - action
+      - sub_action
+      - start
+      - end
+      - duration
+      - trade
+      - dependency
+    ScheduleImportMapping:
+      type: object
+      description: The sheet and, per field, the 0-based column index it reads (absent = not imported).
+      properties:
+        sheet:
+          type: string
+        mapping:
+          type: object
+          properties:
+            action: {type: integer, minimum: 0}
+            sub_action: {type: integer, minimum: 0}
+            start: {type: integer, minimum: 0}
+            end: {type: integer, minimum: 0}
+            duration: {type: integer, minimum: 0}
+            trade: {type: integer, minimum: 0}
+            dependency: {type: integer, minimum: 0}
+      required: [sheet, mapping]
+    ScheduleImportWarning:
+      type: object
+      properties:
+        row:
+          type: integer
+          description: The sheet row number (1-based, as Excel shows it).
+        field:
+          $ref: '#/components/schemas/ScheduleImportField'
+        code:
+          type: string
+          enum: [bad_date, end_before_start, no_end, no_start, unknown_dependency, self_dependency, dependency_cycle, no_action, bad_duration]
+        message:
+          type: string
+      required: [row, code, message]
+    ScheduleImportRow:
+      type: object
+      description: One parsed sheet row.
+      properties:
+        row: {type: integer}
+        action: {type: string, nullable: true}
+        sub_action: {type: string, nullable: true}
+        start: {type: string, format: date, nullable: true}
+        finish: {type: string, format: date, nullable: true}
+        duration_wd: {type: integer, nullable: true}
+        trade: {type: string, nullable: true}
+        specialty_code: {type: string, nullable: true, description: 'O-11: the taxonomy code the trade matched, if any.'}
+        dependency: {type: string, nullable: true}
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleImportWarning'
+    ScheduleImportNode:
+      type: object
+      description: A row of the WBS the import will write — an action (with `children`) or a sub-action.
+      properties:
+        key: {type: string, description: 'Stable within the import (`a{n}` / `a{n}.{m}`).'}
+        row: {type: integer}
+        name: {type: string}
+        start: {type: string, format: date, nullable: true}
+        finish: {type: string, format: date, nullable: true}
+        trade: {type: string, nullable: true}
+        specialty_code: {type: string, nullable: true}
+        depends_on:
+          type: array
+          items: {type: string}
+          description: Keys of the rows this one starts after (end→start links).
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleImportNode'
     ScheduleImport:
       type: object
       properties:
         id: *id001
+        project_id: *id001
         status:
           type: string
           enum:
@@ -13034,15 +13337,28 @@ components:
           - previewed
           - confirmed
           - failed
+        filename:
+          type: string
         sheets:
           type: array
           items:
-            type: string
+            type: object
+            properties:
+              name: {type: string}
+              rows: {type: integer, description: Data rows below the header (0 = empty or header-only).}
+              columns: {type: integer}
+            required: [name, rows, columns]
+        sheet:
+          type: string
+          nullable: true
+          description: The sheet the mapper runs against.
         columns:
           type: array
           items:
             type: object
             properties:
+              index:
+                type: integer
               header:
                 type: string
               samples:
@@ -13051,19 +13367,55 @@ components:
                   type: string
         mapping:
           type: object
+          description: The saved mapping (field → column index), or the suggestion from the headers until the
+            person maps (`mapping_suggested` true).
+        mapping_suggested:
+          type: boolean
+        missing_required:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleImportField'
+        sample:
+          type: array
+          description: The first 10 parsed rows (on `:map` and later).
+          items:
+            $ref: '#/components/schemas/ScheduleImportRow'
+        tree:
+          type: array
+          description: The WBS to be written (on `:preview` and later).
+          items:
+            $ref: '#/components/schemas/ScheduleImportNode'
+        counts:
+          type: object
+          properties:
+            rows: {type: integer}
+            actions: {type: integer}
+            sub_actions: {type: integer}
+            links: {type: integer}
+            trades: {type: integer}
+            warnings: {type: integer}
         preview:
           type: array
+          description: Deprecated — the earlier draft of this contract; never answered. See `tree`.
+          deprecated: true
           items:
             $ref: '#/components/schemas/TaskCreate'
         warnings:
           type: array
           items:
-            type: object
-            properties:
-              row:
-                type: integer
-              message:
-                type: string
+            $ref: '#/components/schemas/ScheduleImportWarning'
+        plan_exists:
+          type: boolean
+          description: The plan already has rows — confirm will answer 409 plan_not_empty (O-9).
+        imported_by:
+          type: object
+          properties:
+            org_id: *id001
+            org_name: {type: string}
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
     Rfp:
       type: object
       properties:
@@ -15111,7 +15463,8 @@ components:
         (bidders); `variations` the 15-minute change digest (owner and client of the row); `invitations`
         project invitations accepted (inviter); `questions`, `quality` collaboration and quality items; `files`
         deliverables submitted (client side of the task) / approved / sent back (assignee), and a new version of a
-        file linked to a task (the task owners, PRD-05 F-11).'
+        file linked to a task (the task owners, PRD-05 F-11); `plan` the plan was imported into the build (the
+        owner, PRD-09 O-12).'
       enum:
       - bids
       - tendering
@@ -15120,6 +15473,31 @@ components:
       - questions
       - quality
       - files
+      - plan
+    NotificationSummary:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        total_unread:
+          type: integer
+          minimum: 0
+        categories:
+          type: array
+          items:
+            type: object
+            properties:
+              category:
+                $ref: '#/components/schemas/NotificationCategory'
+              unread_count:
+                type: integer
+                minimum: 1
+              latest:
+                $ref: '#/components/schemas/Notification'
+            required: [category, unread_count, latest]
+      required: [project_id, total_unread, categories]
     Notification:
       type: object
       properties:

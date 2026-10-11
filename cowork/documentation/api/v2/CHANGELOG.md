@@ -2,6 +2,26 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-11 — Bootstrap a build: overview, participants, Excel import (PRD-09 O-1..O-14)
+
+- **`getProjectOverview` is filled** (O-1): `end_date`, `open_variations`, `health` from Planning's overview port, `cost`
+  (cost side, D-38) from Contracting's, `pending_verifications` from Quality's, `open_questions` from Collaboration's.
+  New additive fields `plan` (`rows`, `top_level`, `start`) and `open_nonconformities` (`quality`, `safety`).
+- **New:** `getNotificationSummary` — `GET /me/notification-summary?project_id=` (O-2): unread notifications by category
+  with the newest of each. `NotificationCategory` gains `plan`.
+- **Participants** (O-3, O-4): `Participant` gains `specialty_code`, `specialty_name`, `people[]` (staffed). New
+  `listProjectInvitations` — `GET /projects/{id}/invitations` (the invitations the viewer's org sent, with state).
+  `ProjectInvitation` gains `name`, `scope_note`, `specialty_code` / `specialty_name`, `created_at`, and the capacity
+  `contractor` (a party invited before any contract). `InvitationPreview` gains `specialty_code`, `specialty_name`,
+  `invitee_name`, `scope_note` (O-5: the landing names the real role).
+- **Excel import, implemented** (O-6..O-12): `uploadScheduleImport` (multipart `.xlsx`, ≤ 10 MB) answers sheets, columns
+  and a suggested mapping; `mapScheduleImport` takes `ScheduleImportMapping` (sheet + field → column) and answers a live
+  10-row `sample` and `missing_required`; `previewScheduleImport` answers the WBS `tree`, `counts` and warnings;
+  `confirmScheduleImport` writes into an EMPTY plan only (409 `plan_not_empty`) and publishes `planning.plan.imported`.
+  New `getScheduleImport`. `ScheduleImport.preview` is deprecated (never answered); `parent_task_id` is refused until the
+  diff re-import exists.
+- Migrations `db/v2/0024_planning_schedule_import.sql`, `db/v2/0025_project_party_invite.sql`.
+
 ## 2026-10-11 — Connecting the RFP and the directory: ask to bid, company inbox (PRD-04 X-1..X-13, D-47)
 
 - **BREAKING (meaning) — `applyToOpenRfp`** (`POST /rfps/{rfpId}:apply`) is now **ask to bid** (D-47 amends D-40 Slice 1):

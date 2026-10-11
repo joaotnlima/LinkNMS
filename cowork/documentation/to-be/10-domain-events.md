@@ -32,6 +32,7 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 | `planning.link.added`, `.changed`, `.removed` | Planning | SSE | ● |
 | `planning.progress.reported` | Planning | Quality (on done), Contracting (activation), Directory (tasks finished on the planned date, PRD-03 R-11), Feed, SSE | ● |
 | `planning.baseline.taken` | Planning | Feed | ● |
+| `planning.plan.imported` (PRD-09 O-12) | Planning | Notifications (the owner) | ● |
 | `planning.deliverable.submitted`, `.approved`, `.changes_requested` | Planning | Notifications (submitted → client side of the task; decided → submitter + assignee org) | ● (sha256) |
 | `quality.verification.accepted`, `.rejected` | Quality | Planning, Contracting (measurable qty), Reputation | ● |
 | `quality.nonconformity.*` | Quality | Contracting (reception guard), Notifications | ● |
@@ -110,6 +111,11 @@ Creating, editing, removing and seeding deliverables is ledger-only (`planning.d
 Ledgered events store their `data` as the ledger payload with the event's `scope`; the ledger is
 written by the producing module inside its transaction, the outbox row in the same transaction.
 
+**`planning.plan.imported` data (PRD-09 O-12):** `import_id, filename, sheet, actions, sub_actions, links, warnings,
+imported_by_org_id, imported_by_org_name, owner_org_id` — scope `project`. Written in the confirm's plan transaction with the
+rows (the structural batch's own `planning.task.moved` entry stays the row-level audit); the ledger payload carries the
+same counts, which is the record's "Plan imported by {GC}, {n} actions, {m} sub-actions" stamp (flow 01 screen 11).
+
 **`project.invitation.accepted` data (PRD-12 N-1):** `invitation_id, org_id, invited_by_org_id, invite_capacity` — scope
 `project`. Published in the acceptance transaction (it was ledger-only before PRD-12).
 
@@ -133,6 +139,7 @@ injected at the composition root (`app/src/server/v2/dispatcher.ts`):
 | `planning.deliverable.submitted` | `files` | the client side of the task: orgs whose edit scope contains the row (owner, clients up the branch chain), minus the assignee and the submitter | planning `deliverableAudience` | `/projects/{p}/plan?task={t}&tab=files` |
 | `planning.deliverable.approved`, `.changes_requested` | `files` | the submitter org and the task's assignee org (never the decider) | planning `deliverableAudience` | `/projects/{p}/plan?task={t}&tab=files` |
 | `documents.version.uploaded` (with `linked_task_ids`) | `files` | the owner of every linking task — its effective assignee org, else the project owner — minus the uploader | planning `taskOwners` | `/projects/{p}/plan?task={t}&tab=files` |
+| `planning.plan.imported` | `plan` | the project owner (`data.owner_org_id`), never the importing org | — (on the event) | `/projects/{p}/plan` |
 | `documents.model.edited` | `files` | the model's author (not when it saved itself) + the owner of every task whose elements changed (effective assignee org, else the project owner) — never the editing org | planning `taskOwners` | `/projects/{p}/model?version={n}` |
 
 People inside a recipient org come from the identity port `projectAudience(projectId, orgId)` (staffed on the
