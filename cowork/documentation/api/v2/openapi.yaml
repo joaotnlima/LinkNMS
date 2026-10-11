@@ -2254,6 +2254,16 @@ paths:
         required: false
         schema:
           type: string
+      - name: baseline
+        in: query
+        required: false
+        description: 'PRD-10 E-1: compare against this baseline (an id from `listBaselines`). The rows it covers
+          draw their `baseline`, segments and `baseline_delta_wd` from it; every other row keeps its branch''s
+          current baseline. The answer names it in `compared_to`. An id that is not a baseline of this project
+          is 404. Read-only: nothing is re-baselined.'
+        schema:
+          type: string
+          format: uuid
       responses:
         '200':
           description: OK
@@ -2856,6 +2866,22 @@ paths:
         **D-48 gate:** `done` is refused with 409 `invalid_transition` (`reason: deliverables_pending`,
         `pending_deliverable_ids[]`) while a required deliverable of the task is not approved (see
         `listTaskDeliverables`).
+
+
+        **Start out of sequence (PRD-10 E-5, D-48 — warn and record, D-23):** starting a task that has not
+        started yet (`in_progress`, `blocked` or `done` on a task whose latest status is `not_started`) while a
+        predecessor it waits on is not there yet is refused with 409 `invalid_transition` (`reason:
+        predecessors_open`, `waiting_on[]` — each predecessor with its state) unless the report carries an
+        `override_reason`. With one, the report is accepted and records the override (`out_of_sequence`: the
+        reason and the predecessors as they stood), in the ledger entry and on the `planning.progress.reported`
+        event. A task waits on the predecessors of its links into its **start**: a link from the predecessor''s
+        end needs it closed (done, verified or an actual finish); a link from its start needs it started.
+
+
+        **Acceptance criteria (PRD-10 E-6):** `done` may carry `criteria_met` — the criteria of the task''s
+        checklist (`acceptance_checklist`) that were met. The report records the whole checklist with `met`
+        per criterion (`acceptance`); a criterion not on the checklist is 422. For design tasks the acceptance
+        is the deliverables gate above (PRD-05).
 
 
         **MCP tool:** `report_progress`'
@@ -3780,12 +3806,22 @@ paths:
       tags:
       - Planning
       operationId: listBaselines
-      summary: Baselines per branch
+      summary: Baselines per branch — the plan header's baseline selector (PRD-10 E-1)
       description: '**Clerk permission:** none beyond an authenticated session
 
 
-        **Relationship (LinkNMS):** project.participant'
+        **Relationship (LinkNMS):** project.participant
+
+
+        D-24: a baseline is a label on a branch, so every branch (contract) has its own v1, v2, … Newest first;
+        each with why (`reason`: award, contract_signed, change_order), when, who took it (absent for baselines
+        taken before this was recorded) and the branch it labels (`root_task_ids`, `branch_name`). `is_current`
+        marks the version the plan compares against by default. `root` keeps the baselines whose branch contains
+        that row. Time is visible to every participant (doc 04 V1); no money travels here. Bounded per build:
+        `next_cursor` is always null.'
       x-relationship: project.participant
+      x-mcp-tool: list_baselines
+      x-mcp-mode: read
       parameters:
       - $ref: '#/components/parameters/projectId'
       - name: root
@@ -3884,12 +3920,29 @@ paths:
       tags:
       - Planning
       operationId: getSiteCalendar
-      summary: Who is on site when (overlaps)
+      summary: Who is on site when, by organisation and location, and where two trades overlap (PRD-10 E-10, E-11)
       description: '**Clerk permission:** none beyond an authenticated session
 
 
-        **Relationship (LinkNMS):** project.participant'
+        **Relationship (LinkNMS):** project.participant
+
+
+        Derived from the plan, never stored: every dated leaf row (task or milestone with a span) puts its effective
+        assignee organisation (D-33 inheritance) on site on each **working day** of its span (project calendar),
+        at its location — its own `location_id`, else its nearest ancestor''s. Done/verified rows are on site
+        only up to their actual finish. Rows with no assignee are left out (`unassigned_count`); rows with no
+        location are listed under `location_id: null` and never overlap.
+
+
+        **Overlap (E-11):** two rows of different organisations at the same location on the same working day.
+        Consecutive days of the same pair are one overlap (`from`..`to`, `days`), naming both rows.
+
+
+        Window: `from`/`to` (`YYYY-MM-DD`), default today .. today + 90 days, at most 366 days (422 beyond).
+        Bounded by the window; not paginated.'
       x-relationship: project.participant
+      x-mcp-tool: get_site_calendar
+      x-mcp-mode: read
       parameters:
       - $ref: '#/components/parameters/projectId'
       - name: from
@@ -3897,18 +3950,251 @@ paths:
         required: false
         schema:
           type: string
+          format: date
       - name: to
         in: query
         required: false
         schema:
           type: string
+          format: date
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Schedule'
+                $ref: '#/components/schemas/SiteCalendar'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /projects/{projectId}/daily-logs:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Planning
+      operationId: listDailyLogs
+      summary: The site's daily log, one line per day (PRD-10 E-9)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        Days that have entries in the window, newest first: organisations on site and total headcount (the
+        latest presence entry per organisation), weather, and counts of work, issues and photos. Window
+        `from`/`to` (default the last 30 days, at most 366). Bounded by the window; `next_cursor` is always null.'
+      x-relationship: project.participant
+      x-mcp-tool: list_daily_logs
+      x-mcp-mode: read
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/DailyLogDay'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/daily-logs/{date}:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: date
+      in: path
+      required: true
+      schema:
+        type: string
+        format: date
+    get:
+      tags:
+      - Planning
+      operationId: getDailyLog
+      summary: One day on site — who, headcount, weather, work against tasks, issues, photos (PRD-10 E-7, E-9)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        A day with no entries answers 200 with empty sections (the capture page opens on it). `on_site` and
+        `weather` are the latest entry per organisation / of the day — a correction is a newer entry; every entry
+        stays in `entries` (append-only, D-23: shown, not rewritten).'
+      x-relationship: project.participant
+      x-mcp-tool: get_daily_log
+      x-mcp-mode: read
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyLog'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/daily-logs/{date}/entries:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: date
+      in: path
+      required: true
+      schema:
+        type: string
+        format: date
+    post:
+      tags:
+      - Planning
+      operationId: addDailyLogEntries
+      summary: Record what happened on site that day — one atomic capture of up to 50 entries (PRD-10 E-7, E-8)
+      description: '**Clerk permission:** `org:progress:report`
+
+
+        **Relationship (LinkNMS):** project.participant; a `work` entry needs edit scope ∋ the task (D-33, as
+        `reportProgress`); `presence` names an organisation of the build (owner, a contract party or an assignee
+        of the plan).
+
+
+        Append-only and attributed (person, organisation, recorded_at). The date is the site day, today or
+        earlier (never the future). Photos are `documents` of this project with `kind = photo`, uploaded first
+        through the documents upload flow (`createDocument` → PUT → `completeUpload`); the entry tags a completed
+        version to a task and/or a location. Idempotent per entry `id` (a replayed id with the same content is
+        absorbed; with different content 409). One ledger entry and one `planning.daily_log.recorded` event per
+        capture. No offline capture (D-14).'
+      x-clerk-permission: org:progress:report
+      x-relationship: project.participant
+      x-mcp-tool: add_daily_log_entries
+      x-mcp-mode: write-confirm
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entries:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items:
+                    $ref: '#/components/schemas/DailyLogEntryCreate'
+              required:
+              - entries
+      responses:
+        '201':
+          description: Recorded — the day as it now stands
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyLog'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /tasks/{taskId}/daily-log-entries:
+    parameters:
+    - name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Planning
+      operationId: listTaskDailyLogEntries
+      summary: What the daily log says about a task — work, issues and photos tagged to it, newest first (PRD-10 E-9)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        Bounded (at most the last 200 entries); `next_cursor` is always null.'
+      x-relationship: project.participant
+      x-mcp-tool: list_task_daily_log
+      x-mcp-mode: read
+      parameters:
+      - $ref: '#/components/parameters/taskId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/DailyLogEntry'
+                  required:
+                  - items
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -12219,6 +12505,21 @@ components:
         is_critical: *id002
         acceptance_criteria:
           type: string
+          description: 'One criterion per line (PRD-10 E-6). Baselined and tracked as scope like the scope text
+            (doc 05 §5–6).'
+        acceptance_checklist:
+          type: array
+          description: 'PRD-10 E-6, on `getTask`: `acceptance_criteria` as a checklist (one item per non-empty
+            line, list markers removed). Absent when there are none.'
+          items:
+            type: string
+        waiting_on:
+          type: array
+          description: 'PRD-10 E-5, on `getTask`: what the task waits on before it starts — each predecessor
+            linked into its start, with its state and whether it is there yet. Absent when nothing is linked into
+            its start.'
+          items:
+            $ref: '#/components/schemas/WaitingOn'
         can_edit: *id002
         editor_is_assignee: *id002
         cost:
@@ -12567,6 +12868,18 @@ components:
               type: integer
             unseen:
               type: integer
+        compared_to:
+          type: object
+          description: 'PRD-10 E-1: present when `?baseline=` chose a baseline — the rows of its branch are
+            drawn against it.'
+          properties:
+            baseline_id: *id001
+            contract_id: *id001
+            version:
+              type: integer
+            reason:
+              type: string
+            taken_at: *id004
         stream_cursor:
           type: string
     Handover:
@@ -12687,6 +13000,27 @@ components:
         photo_document_ids:
           type: array
           items: *id001
+        out_of_sequence:
+          type: object
+          description: 'PRD-10 E-5: present when the task was started before what it waits on — the reason given
+            and the predecessors as they stood.'
+          properties:
+            reason:
+              type: string
+            waiting_on:
+              type: array
+              items:
+                $ref: '#/components/schemas/WaitingOn'
+        acceptance:
+          type: array
+          description: 'PRD-10 E-6: on `done`, the task''s checklist with which criteria were met.'
+          items:
+            type: object
+            properties:
+              criterion:
+                type: string
+              met:
+                type: boolean
         reported_by:
           $ref: '#/components/schemas/Actor'
         on_behalf_of_org_id: *id001
@@ -12711,6 +13045,19 @@ components:
           type: array
           items: *id001
         actual_finish: *id003
+        override_reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: 'PRD-10 E-5: why the task starts before what it waits on. Required (409 otherwise) only
+            then; recorded on the report and in the ledger.'
+        criteria_met:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+          description: 'PRD-10 E-6: with `done`, the checklist criteria (verbatim, from `acceptance_checklist`)
+            that were met; the rest are recorded as not met.'
       required:
       - status
       description: '''verified'' is written by Quality, never reported. `done` on a leaf with no actual finish
@@ -13065,6 +13412,226 @@ components:
           type: string
         note:
           type: string
+    WaitingOn:
+      type: object
+      description: 'PRD-10 E-5: one predecessor a task waits on to start.'
+      properties:
+        task_id: *id001
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+          - not_started
+          - in_progress
+          - blocked
+          - done
+          - verified
+        needs:
+          type: string
+          enum:
+          - finished
+          - started
+          description: '`finished` for a link from the predecessor''s end, `started` for one from its start'
+        met:
+          type: boolean
+        link_id: *id001
+      required:
+      - task_id
+      - name
+      - status
+      - needs
+      - met
+    SiteCalendar:
+      type: object
+      description: 'PRD-10 E-10/E-11: who is on site when, derived from the plan (see getSiteCalendar).'
+      properties:
+        project_id: *id001
+        from: *id003
+        to: *id003
+        presence:
+          type: array
+          description: One line per row on site in the window, ordered by start
+          items:
+            type: object
+            properties:
+              task_id: *id001
+              task_name:
+                type: string
+              org_id: *id001
+              org_name:
+                type: string
+              location_id:
+                oneOf:
+                - *id001
+                - type: 'null'
+              location_name:
+                type: string
+              from: *id003
+              to: *id003
+              days:
+                type: array
+                description: The working days of the span inside the window
+                items: *id003
+        overlaps:
+          type: array
+          items:
+            type: object
+            properties:
+              location_id: *id001
+              location_name:
+                type: string
+              from: *id003
+              to: *id003
+              days:
+                type: integer
+              tasks:
+                type: array
+                minItems: 2
+                maxItems: 2
+                items:
+                  type: object
+                  properties:
+                    task_id: *id001
+                    task_name:
+                      type: string
+                    org_id: *id001
+                    org_name:
+                      type: string
+        unassigned_count:
+          type: integer
+      required:
+      - project_id
+      - from
+      - to
+      - presence
+      - overlaps
+    DailyLogEntryCreate:
+      type: object
+      description: 'One thing that happened on site that day (PRD-10 E-7). Fields by kind — presence: `org_id`,
+        `headcount`; weather: `weather` (+ `temperature_c`); work: `task_id`, `note` (+ `percent`); issue: `note`
+        (+ `task_id`, `location_id`); photo: `document_id` (+ `task_id`, `location_id`, `note` as caption).'
+      properties:
+        id: *id001
+        kind:
+          type: string
+          enum:
+          - presence
+          - weather
+          - work
+          - issue
+          - photo
+        org_id: *id001
+        headcount:
+          type: integer
+          minimum: 0
+          maximum: 999
+        weather:
+          type: string
+          enum:
+          - sunny
+          - cloudy
+          - rain
+          - heavy_rain
+          - wind
+          - frost
+          - snow
+          - heat
+        temperature_c:
+          type: integer
+          minimum: -30
+          maximum: 50
+        task_id: *id001
+        location_id: *id001
+        document_id: *id001
+        percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        note:
+          type: string
+          maxLength: 2000
+      required:
+      - id
+      - kind
+    DailyLogEntry:
+      allOf:
+      - $ref: '#/components/schemas/DailyLogEntryCreate'
+      - type: object
+        properties:
+          date: *id003
+          task_name:
+            type: string
+          location_name:
+            type: string
+          org_name:
+            type: string
+          version_no:
+            type: integer
+            description: photo — the document version the entry was tagged on
+          recorded_by:
+            $ref: '#/components/schemas/Actor'
+          recorded_by_org_name:
+            type: string
+          recorded_at: *id004
+    DailyLog:
+      type: object
+      properties:
+        project_id: *id001
+        date: *id003
+        on_site:
+          type: array
+          description: The latest presence entry per organisation
+          items:
+            $ref: '#/components/schemas/DailyLogEntry'
+        headcount_total:
+          type: integer
+        weather:
+          $ref: '#/components/schemas/DailyLogEntry'
+        work:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyLogEntry'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyLogEntry'
+        photos:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyLogEntry'
+        entries:
+          type: array
+          description: Every entry of the day, in the order recorded
+          items:
+            $ref: '#/components/schemas/DailyLogEntry'
+      required:
+      - project_id
+      - date
+      - on_site
+      - headcount_total
+      - work
+      - issues
+      - photos
+      - entries
+    DailyLogDay:
+      type: object
+      properties:
+        date: *id003
+        org_count:
+          type: integer
+        headcount_total:
+          type: integer
+        weather:
+          type: string
+        work_count:
+          type: integer
+        issue_count:
+          type: integer
+        photo_count:
+          type: integer
+      required:
+      - date
     Baseline:
       type: object
       properties:
@@ -13075,13 +13642,35 @@ components:
         reason:
           type: string
           enum:
+          - award
           - contract_signed
           - change_order
         change_order_id: *id001
         root_task_ids:
           type: array
           items: *id001
+        branch_name:
+          type: string
+          description: The names of the branch's root rows, joined (`·`)
+        row_count:
+          type: integer
+          description: Rows the snapshot holds
+        is_current:
+          type: boolean
+          description: The latest version of its branch — what the plan compares against by default
+        taken_by:
+          $ref: '#/components/schemas/Actor'
+        taken_by_org_name:
+          type: string
         taken_at: *id004
+      required:
+      - id
+      - contract_id
+      - version
+      - reason
+      - root_task_ids
+      - is_current
+      - taken_at
     PlanTemplate:
       type: object
       properties:

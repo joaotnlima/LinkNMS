@@ -31,7 +31,8 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 | `planning.edit.overwritten` | Planning | Notifications (overwritten author) | — |
 | `planning.link.added`, `.changed`, `.removed` | Planning | SSE | ● |
 | `planning.progress.reported` | Planning | Quality (on done), Contracting (activation), Directory (tasks finished on the planned date, PRD-03 R-11), Feed, SSE | ● |
-| `planning.baseline.taken` | Planning | Feed | ● |
+| `planning.baseline.taken` | Planning | Feed, Project (the first one activates the execution phase, PRD-10 E-13) | ● |
+| `planning.daily_log.recorded` (PRD-10 E-7) | Planning | Feed | ● |
 | `planning.plan.imported` (PRD-09 O-12) | Planning | Notifications (the owner) | ● |
 | `planning.deliverable.submitted`, `.approved`, `.changes_requested` | Planning | Notifications (submitted → client side of the task; decided → submitter + assignee org) | ● (sha256) |
 | `quality.verification.accepted`, `.rejected` | Quality | Planning, Contracting (measurable qty), Reputation | ● |
@@ -110,6 +111,18 @@ Creating, editing, removing and seeding deliverables is ledger-only (`planning.d
 
 Ledgered events store their `data` as the ledger payload with the event's `scope`; the ledger is
 written by the producing module inside its transaction, the outbox row in the same transaction.
+
+**`planning.progress.reported` (PRD-10 E-5, E-6):** a start before the task's predecessors are there carries
+`out_of_sequence: {reason, waiting_on: [{task_id, name, status, needs}]}` (the D-48 override, also in the ledger payload); a `done`
+carries `acceptance: [{criterion, met}]` when the task has a checklist (Quality's verification snapshot).
+
+**`planning.daily_log.recorded` data (PRD-10 E-7):** `date, entry_ids[], kinds{kind: count}, task_ids[]` (the rows the capture
+tagged), scope `project`. One per capture (`addDailyLogEntries`), written with the entries; the ledger payload carries the same
+plus each photo's `document_id` and `version_no`. Headcounts, notes and weather stay in `planning.daily_log_entry`.
+
+**`planning.baseline.taken` → Project (PRD-10 E-13):** the first baseline of a build moves its `execution` phase
+`pending → active` (the procurement phase stays active: tendering goes on specialty by specialty, D-43). A projection of the
+ledgered baseline, not ledgered itself; idempotent (only a `pending` phase moves).
 
 **`planning.plan.imported` data (PRD-09 O-12):** `import_id, filename, sheet, actions, sub_actions, links, warnings,
 imported_by_org_id, imported_by_org_name, owner_org_id` — scope `project`. Written in the confirm's plan transaction with the

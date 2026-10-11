@@ -48,7 +48,7 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 ## Planning & Execution (the plan / WBS) — behaviour in [05](./05-planning-and-execution.md)
 | Use case | Actor | Endpoint |
 |---|---|---|
-| Load the plan: tree, links, dates, segments, `can_edit` per row for the viewer, (baseline / current / extension / actual), cost roll-up per viewer, health | participant | `GET /projects/{id}/schedule?root=&depth=&assignee=&location=&status=` |
+| Load the plan: tree, links, dates, segments, `can_edit` per row for the viewer, (baseline / current / extension / actual), cost roll-up per viewer, health; `baseline=` draws a chosen baseline's branch against it (PRD-10 E-1) | participant | `GET /projects/{id}/schedule?root=&depth=&assignee=&location=&status=&baseline=` |
 | Create a row (task / milestone) under a parent — assignee inherited from the branch | edit scope contains the parent (D-33) | `POST /projects/{id}/tasks` (client `id`) |
 | Commit a change to one row (name, dates, duration, assignee, description, dating mode) — delta + propagation; response flags `editor_is_assignee` | edit scope contains the row | `PATCH /tasks/{id}` |
 | Move / indent / outdent / delete a subtree, paste rows | edit scope contains every affected row and the target parent | `POST /projects/{id}/schedule:apply` |
@@ -56,8 +56,8 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Preview a drag before committing (resulting lag, rows that would move by propagation, new project finish, delta vs baseline, who is notified — PRD-13 S-10) | edit scope contains the row | `POST /tasks/{id}:preview-move {start?, finish?}` |
 | Cost lines on a row (qty, unit, unit price, material spec) | contract party / row editor | `POST /tasks/{id}/cost-lines` · `PATCH /cost-lines/{id}` · `DELETE /cost-lines/{id}` |
 | Record the actual date of an external row (licence issued) | edit scope contains the row | `POST /tasks/{id}:record-actual {finish}` |
-| Task detail (fields, history of every delta, variations, progress, questions, documents) | participant | `GET /tasks/{id}` |
-| Report progress (with photos) — `done` refused while a required deliverable is unapproved (D-48) | edit scope contains the row (attributed) | `POST /tasks/{id}/progress` |
+| Task detail (fields, history of every delta, variations, progress, questions, documents; what it waits on to start and its acceptance checklist — PRD-10 E-5, E-6) | participant | `GET /tasks/{id}` |
+| Report progress (with photos) — `done` refused while a required deliverable is unapproved (D-48); starting before its predecessors needs `override_reason`, recorded (E-5); `done` records `criteria_met` (E-6) | edit scope contains the row (attributed) | `POST /tasks/{id}/progress` |
 | Deliverables of a task: state, x of n approved, done gate, what the viewer may do (PRD-05) | participant | `GET /tasks/{id}/deliverables` · `GET /projects/{id}/deliverables` |
 | Add / edit / remove a required deliverable | client side of the task (edit scope ∋ row, not the assignee) | `POST /tasks/{id}/deliverables` · `PATCH /deliverables/{id}` · `DELETE /deliverables/{id}` |
 | Submit a file version against a deliverable (with a note) | the task's assignee org | `POST /deliverables/{id}:submit {document_id, version_no?, note?}` |
@@ -68,9 +68,11 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Question a variation (opens a question to the responsible party) | participant | `POST /variations/{id}:question` |
 | Formalise variations as a change order (optional) | contract party | `POST /contracts/{id}/change-orders {from_variation_ids[]}` |
 | Plan health (undated, unassigned, open external, sequence warnings, uncosted) | participant | `GET /projects/{id}/schedule/health?root=` |
-| Baselines of a branch | participant | `GET /projects/{id}/baselines?root=` |
+| Baselines per branch — the plan header's selector: version, why, when, who (PRD-10 E-1) | participant | `GET /projects/{id}/baselines?root=` |
 | My rows (this week, late, extended) | ANY | `GET /me/tasks?window=week&state=extended` |
-| Site presence calendar | participant | `GET /projects/{id}/site-calendar?from=&to=` |
+| Site presence calendar: who is on site when by organisation and location, derived from the plan, with overlaps of two trades at one location on one day (PRD-10 E-10, E-11) | participant | `GET /projects/{id}/site-calendar?from=&to=` |
+| Daily log: record a day on site — presence + headcount, weather, work against tasks, issues, photos tagged to tasks / locations (PRD-10 E-7, E-8) | participant with `org:progress:report` (work: edit scope ∋ task) | `POST /projects/{id}/daily-logs/{date}/entries` |
+| Daily log: the days, one day, and what it says about a task (PRD-10 E-9) | participant | `GET /projects/{id}/daily-logs?from=&to=` · `GET /projects/{id}/daily-logs/{date}` · `GET /tasks/{id}/daily-log-entries` |
 | Project calendar (work days, holidays, closures) | owner/GC edit, participants read | `GET/PUT /projects/{id}/calendar` |
 | Planning settings (mobilisation lead for the award-by date, default 5 wd) | owner/GC edit, participants read | `GET/PUT /projects/{id}/planning-settings` |
 | What tendering some rows means for the plan: covered / left-out rows (and why), work window, critical path, award-by date and working days from bids-due (PRD-02) | participant | `GET /projects/{id}/schedule/tender-window?task_ids=&include=&bids_due=` |
