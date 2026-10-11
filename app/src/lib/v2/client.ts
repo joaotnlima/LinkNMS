@@ -93,6 +93,20 @@ export interface V2Request {
    * caller on a members-only route is a 401 BEFORE dispatch, never a leak.
    */
   allowAnonymous?: boolean;
+  /**
+   * A multipart upload (PRD-09: the Excel import). In process the router gets
+   * exactly what the /api/v2 route's multipart translation gives it — strings,
+   * and each file as {filename, content_type, size, bytes}; over HTTP it is sent
+   * as real multipart/form-data. Mutually exclusive with `body`.
+   */
+  multipart?: Record<string, string | V2File>;
+}
+
+/** One file of a multipart request. */
+export interface V2File {
+  filename: string;
+  contentType: string;
+  bytes: Uint8Array;
 }
 
 // The problem body shape, exactly as platform/errors.mjs builds it.
@@ -150,8 +164,8 @@ async function callInProcess(req: V2Request): Promise<{ status: number; body: un
     path: req.path,
     viewer,
     query: normaliseQuery(req.query),
-    body: req.body ?? null,
-    rawBody: req.body === undefined ? null : JSON.stringify(req.body),
+    body: req.multipart ? multipartInProcess(req.multipart) : (req.body ?? null),
+    rawBody: req.multipart || req.body === undefined ? null : JSON.stringify(req.body),
     headers,
   });
 
@@ -162,6 +176,16 @@ async function callInProcess(req: V2Request): Promise<{ status: number; body: un
     after(() => dispatchOutbox());
   }
   return { status: result.status, body: result.body };
+}
+
+function multipartInProcess(parts: Record<string, string | V2File>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(parts)) {
+    out[k] = typeof v === 'string'
+      ? v
+      : { filename: v.filename, content_type: v.contentType, size: v.bytes.byteLength, bytes: Buffer.from(v.bytes) };
+  }
+  return out;
 }
 
 function normaliseQuery(query?: V2Request['query']): Record<string, string> {
@@ -176,6 +200,21 @@ function normaliseQuery(query?: V2Request['query']): Record<string, string> {
 
 async function callHttp(req: V2Request): Promise<{ status: number; body: unknown }> {
   const jar = await cookies();
+  if (req.multipart) {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(req.multipart)) {
+      if (typeof v === 'string') form.set(k, v);
+      else form.set(k, new Blob([Buffer.from(v.bytes)], { type: v.contentType }), v.filename);
+    }
+    const res = await fetch(`${API_BASE}/api/v2${req.path}${queryString(req.query)}`, {
+      method: req.method,
+      headers: { accept: 'application/json', cookie: jar.toString() },
+      body: form,
+      cache: 'no-store',
+    });
+    const text = await res.text();
+    return { status: res.status, body: text ? safeJson(text) : undefined };
+  }
   const hasBody = req.body !== undefined && req.method !== 'GET';
   const res = await fetch(`${API_BASE}/api/v2${req.path}${queryString(req.query)}`, {
     method: req.method,

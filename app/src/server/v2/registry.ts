@@ -15,6 +15,10 @@ import { createContractingStore } from '@modules/contracting/infra/pg-store.mjs'
 import { registerPlanning } from '@modules/planning/http/register.mjs';
 import { createPlanningStore } from '@modules/planning/infra/pg-store.mjs';
 import { createPlanningTaskPort } from '@modules/planning/application/task-port.mjs';
+import { createPlanningOverviewPort } from '@modules/planning/application/overview-port.mjs';
+import { xlsxWorkbooks } from '@modules/planning/infra/xlsx-reader.mjs';
+import { createCostPort } from '@modules/contracting/application/cost-port.mjs';
+import { createQualityFactsPort } from '@modules/quality/application/project-facts-port.mjs';
 import { registerQuality } from '@modules/quality/http/register.mjs';
 import { createQualityStore } from '@modules/quality/infra/pg-store.mjs';
 import { createNonConformityPort } from '@modules/quality/application/nonconformity-port.mjs';
@@ -122,8 +126,21 @@ export function getRouter() {
   // Phase 2 — Project (brief, lifecycle, locations, participants,
   // invitations, calendar, share links).
   const projectStore = createProjectStore(getPool());
+  // PRD-09 O-1: the build home reads the owning modules' published query
+  // ports (plan facts, client-side cost, quality facts, open questions) —
+  // never their tables. O-4/O-5: an invitation's trade is checked and named
+  // through the directory's taxonomy port.
+  const directoryStore = createDirectoryStore(getPool());
+  const planningStore = createPlanningStore(getPool());
   registerProject(router, {
     store: projectStore,
+    specialties: createSpecialtyPort(directoryStore),
+    facts: {
+      planning: createPlanningOverviewPort(planningStore),
+      contracting: createCostPort(createContractingStore(getPool())),
+      quality: createQualityFactsPort(createQualityStore(getPool())),
+      questions: createQuestionPort(createCollaborationStore(getPool())),
+    },
     shareBaseUrl: () =>
       process.env.NEXT_PUBLIC_APP_URL
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://portal.linknms.com'),
@@ -140,7 +157,6 @@ export function getRouter() {
   // is a documents.document; tendering owns the RFP authorization, documents
   // owns persistence), and Record reuses the same instance for its export.
   const documentsStore = createDocumentsStore(getPool());
-  const planningStore = createPlanningStore(getPool());
 
   // Phases 4 + 5 — Planning: the WBS plan (rows, links, working-day
   // propagation, D-26 deltas, D-33 edit scope, baseline binding on
@@ -149,11 +165,13 @@ export function getRouter() {
   // Templates and imports land with later phases.
   // PRD-03 R-2: a row's specialty_code is checked through the directory's
   // taxonomy port (planning never reads directory.*).
-  const directoryStore = createDirectoryStore(getPool());
+  // PRD-09 O-6..O-11: the Excel import reads .xlsx through the exceljs reader
+  // (planning infra) and maps the Trade column through the same taxonomy port.
   registerPlanning(router, {
     store: planningStore,
     documents: createDocumentsPort(documentsStore),
     specialties: createSpecialtyPort(directoryStore),
+    workbooks: xlsxWorkbooks,
   });
 
   // Phase 5 — Quality (verification, non-conformities, inspections).

@@ -32,6 +32,14 @@ const nextConfig = {
   // tickets) — same shape, same treatment.
   serverExternalPackages: ['pg', 'exceljs', '@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner'],
 
+  // PRD-09 O-6: the Excel plan upload goes through a server action (the v2
+  // client is server-only), carrying the workbook in the action body. Next's
+  // default action body limit is 1 MB; the import accepts up to 10 MB (flows/01
+  // dropzone), validated again by the planning module.
+  experimental: {
+    serverActions: { bodySizeLimit: '11mb' },
+  },
+
   // `services/ledger/db.mjs` does `import pg from 'pg'`, and webpack resolves a
   // bare specifier from the IMPORTING file's directory — <repo>/services/…,
   // which has no node_modules of its own and never will: Vercel's Root Directory

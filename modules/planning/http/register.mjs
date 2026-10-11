@@ -175,6 +175,8 @@ export function registerPlanning(router, { store, documents, specialties, workbo
     savePlanTemplate({ viewer, store, body }));
 }
 
+/** @type {{ read: (bytes: Uint8Array) => Promise<{sheets: Array<{name: string, rows: string[][]}>}> }} */
 const NO_WORKBOOKS = Object.freeze({
-  async read() { throw new Error('no workbook reader wired'); },
+  /** @param {Uint8Array} _bytes */
+  async read(_bytes) { throw new Error('no workbook reader wired'); },
 });

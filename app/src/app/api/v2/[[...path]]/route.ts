@@ -47,7 +47,22 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path?: s
 
   let body: unknown = null;
   let rawBody: string | null = null;
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
+  const contentType = req.headers.get('content-type') ?? '';
+  if (req.method === 'POST' && contentType.toLowerCase().startsWith('multipart/form-data')) {
+    // A file upload (PRD-09: the Excel import, `uploadScheduleImport`). Pure
+    // translation, no rule: string fields stay strings, a file becomes
+    // {filename, content_type, size, bytes}. The handler validates type and
+    // size; this edge only refuses what it will not hold in memory.
+    const declared = Number(req.headers.get('content-length') ?? 0);
+    if (declared > MAX_MULTIPART_BYTES) {
+      return respond(problemResponse('validation_failed', 'the upload is larger than the API accepts'));
+    }
+    try {
+      body = await multipartBody(await req.formData());
+    } catch {
+      return respond(problemResponse('validation_failed', 'request body is not valid multipart/form-data'));
+    }
+  } else if (req.method !== 'GET' && req.method !== 'HEAD') {
     rawBody = await req.text();
     if (rawBody) {
       try {
@@ -78,6 +93,26 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path?: s
     after(() => dispatchOutbox());
   }
   return respond(result);
+}
+
+// 10 MB file (the import's own limit) + form overhead.
+const MAX_MULTIPART_BYTES = 11 * 1024 * 1024;
+
+async function multipartBody(form: FormData): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of form.entries()) {
+    if (typeof value === 'string') {
+      out[key] = value;
+    } else {
+      out[key] = {
+        filename: value.name,
+        content_type: value.type || 'application/octet-stream',
+        size: value.size,
+        bytes: Buffer.from(await value.arrayBuffer()),
+      };
+    }
+  }
+  return out;
 }
 
 function respond(res: { status: number; body: unknown; headers: Record<string, string> }) {

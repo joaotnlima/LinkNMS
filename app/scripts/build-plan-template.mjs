@@ -9,8 +9,12 @@
 // would only ever run with the package hand-resolved.
 //
 // ── WHY THIS IS GENERATED AND NOT A CHECKED-IN BINARY ────────────────────────
-// The template's only job is to be a file the frozen parser accepts on the first
-// try. That makes it a DERIVATIVE of services/schedule/plan-import-parser.mjs,
+// PRD-09: the parser is now the planning module's
+// (modules/planning/domain/schedule-import*.mjs, read by infra/xlsx-reader.mjs),
+// and modules/planning/infra/xlsx-reader.test.mjs proves this template parses
+// under the suggested mapping with no warning — so the two cannot drift apart.
+// Historically the template was derived from the retired
+// services/schedule/plan-import-parser.mjs —
 // not an independent artefact: the date format the parser accepts (a real date
 // cell or literal YYYY-MM-DD — nothing coerced), the two-level Action /
 // Sub-action rule (§6), and the `R{row}` dependency token format are all rules
