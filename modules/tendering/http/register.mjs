@@ -6,13 +6,19 @@ import {
   createRfp, getRfp, updateRfp, addRecipients, listRecipients, previewInviteEmail,
   reissueRecipientLink, publishRfp,
   addAddendum, closeRfp, cancelRfp, browseOpenRfps, applyToOpenRfp, listMyRfps,
-  askClarification, answerClarification, listProposalLanes, getProposal,
+  askClarification, askClarificationByToken, answerClarification, listProposalLanes, getProposal,
   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
   submitOwnBid, getComparison, shortlistProposal, awardRfp,
   getRfpByToken, submitProposalByToken,
   reserveProposalDocumentByToken, completeProposalDocumentByToken, downloadProposalDocument,
-  reserveRfpModel, completeRfpModel, removeRfpModel, rfpModelViewUrl, rfpModelViewUrlByToken,
+  reserveRfpModel, completeRfpModel, removeRfpModel, rfpModelViewUrl, rfpModelViewUrlByToken, attachRfpModel,
 } from '../application/use-cases.mjs';
+import { listTaskProcurement } from '../application/task-procurement.mjs';
+import { listProjectRfps } from '../application/project-rfps.mjs';
+import { listAskCandidates } from '../application/ask-candidates.mjs';
+import { removeRecipient } from '../application/recipients.mjs';
+import { listBidRequests, approveBidRequest, declineBidRequest } from '../application/bid-requests.mjs';
+import { listRequestsForMe, listOpenRequests, declineRfpInvitation } from '../application/company-inbox.mjs';
 
 /**
  * @param {{ store: object, storage: object, contractingAward: Function,
@@ -28,8 +34,17 @@ import {
  *   documentsStore — the Documents module's store (LINA-409 / doc 24): the RFP
  *     BIM model is a documents.document; tendering owns the RFP authorization
  *     and delegates the model's persistence to this injected store.
+ *   directory — the directory's published company port (PRD-04): a profile's
+ *     contact for an invite, proof lines, a company's bidding profile.
+ *   builds — the project module's build port (`factsOf`): build name,
+ *     municipality and point for the inbox and distances.
+ *   orgs — identity's organisation port (`namesOf`): a winner's name.
+ *   planning — planning's task port (`tasksOf`): the rows "Ask for a
+ *     proposal" offers (PRD-04 X-6).
  */
-export function registerTendering(router, { store, storage, documentsStore, contractingAward, mailSender, linkBaseUrl } = {}) {
+export function registerTendering(router, {
+  store, storage, documentsStore, contractingAward, mailSender, linkBaseUrl, directory, builds, orgs, planning,
+} = {}) {
   // The link origin may be supplied as a thunk (env read deferred to request
   // time, as the project module's shareBaseUrl is); resolve it per call.
   const baseUrl = () => (typeof linkBaseUrl === 'function' ? linkBaseUrl() : linkBaseUrl);
@@ -48,6 +63,11 @@ export function registerTendering(router, { store, storage, documentsStore, cont
   router.register('POST', '/rfp-links/{token}/proposal', 'submitProposalByToken', ({ params, body }) =>
     submitProposalByToken({ store, token: params.token, body }));
 
+  // A link-only bidder asks a question (PRD-08 H-6) — security: [], the token
+  // is the authority; refused after the questions deadline (H-9).
+  router.register('POST', '/rfp-links/{token}/clarifications', 'askClarificationByToken', ({ params, body, headers }) =>
+    askClarificationByToken({ store, token: params.token, body, idempotencyKey: headers['idempotency-key'] ?? null }));
+
   // Token-scoped portfolio-image upload (LINA-370) — also security: [], the
   // token is the authority. Reserve a presigned PUT, then prove the bytes.
   router.register('POST', '/rfp-links/{token}/documents', 'reserveProposalDocumentByToken', ({ params, body }) =>
@@ -64,6 +84,22 @@ export function registerTendering(router, { store, storage, documentsStore, cont
   router.register('POST', '/projects/{projectId}/rfps', 'createRfp', ({ viewer, params, body, headers }) =>
     createRfp({ viewer, store, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] }));
 
+  // The plan's per-task procurement projection (PRD-01 G-2/G-3): one read for
+  // the Tender column + Gantt band, issuer-scoped, no money.
+  // The tendering home (PRD-08 H-1): every RFP the viewer can see on the
+  // project, with covered tasks, bids due, n/m in and open questions — one read.
+  router.register('GET', '/projects/{projectId}/rfps', 'listProjectRfps', ({ viewer, params, query }) =>
+    listProjectRfps({ viewer, store, orgs, projectId: params.projectId, query }));
+
+  // PRD-04 X-6: "Ask for a proposal" — the build's rows for one company, ranked
+  // on its specialties, each with where the company would land (planning's
+  // task port + the directory's company port + tendering's own tenders).
+  router.register('GET', '/projects/{projectId}/ask-candidates', 'listAskCandidates', ({ viewer, params, query }) =>
+    listAskCandidates({ viewer, store, planning, directory, projectId: params.projectId, query }));
+
+  router.register('GET', '/projects/{projectId}/task-procurement', 'listTaskProcurement', ({ viewer, params, query }) =>
+    listTaskProcurement({ viewer, store, orgs, projectId: params.projectId, query }));
+
   router.register('GET', '/rfps/{rfpId}', 'getRfp', ({ viewer, params }) =>
     getRfp({ viewer, store, documentsStore, rfpId: params.rfpId }));
 
@@ -72,6 +108,9 @@ export function registerTendering(router, { store, storage, documentsStore, cont
   // module document; tendering owns the gate, documentsStore owns persistence.
   router.register('POST', '/rfps/{rfpId}/model', 'reserveRfpModel', ({ viewer, params, body }) =>
     reserveRfpModel({ viewer, store, documentsStore, storage, rfpId: params.rfpId, body }));
+
+  router.register('PUT', '/rfps/{rfpId}/model', 'attachRfpModel', ({ viewer, params, body }) =>
+    attachRfpModel({ viewer, store, documentsStore, rfpId: params.rfpId, body }));
 
   router.register('POST', '/rfps/{rfpId}/model/{documentId}:complete', 'completeRfpModel', ({ viewer, params }) =>
     completeRfpModel({ viewer, store, documentsStore, storage, rfpId: params.rfpId, documentId: params.documentId }));
@@ -86,7 +125,7 @@ export function registerTendering(router, { store, storage, documentsStore, cont
     updateRfp({ viewer, store, rfpId: params.rfpId, body, ifMatch: headers['if-match'] }));
 
   router.register('POST', '/rfps/{rfpId}/recipients', 'addRecipients', ({ viewer, params, body }) =>
-    addRecipients({ viewer, store, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId, body }));
+    addRecipients({ viewer, store, directory, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId, body }));
 
   router.register('GET', '/rfps/{rfpId}/recipients', 'listRecipients', ({ viewer, params, query }) =>
     listRecipients({ viewer, store, rfpId: params.rfpId, query }));
@@ -96,6 +135,10 @@ export function registerTendering(router, { store, storage, documentsStore, cont
   router.register('GET', '/rfps/{rfpId}/invite-email:preview', 'previewInviteEmail', ({ viewer, params, query }) =>
     previewInviteEmail({ viewer, store, linkBaseUrl: baseUrl(), rfpId: params.rfpId, query }));
 
+  // Take a queued bidder off a DRAFT (PRD-02 T-6) — nothing was sent yet.
+  router.register('DELETE', '/rfps/{rfpId}/recipients/{recipientId}', 'removeRecipient', ({ viewer, params }) =>
+    removeRecipient({ viewer, store, rfpId: params.rfpId, recipientId: params.recipientId }));
+
   // Rotate a recipient's leaked/forwarded personal link: mint a fresh token,
   // kill the old (gap S1, LINA-373). Issuer-only; the token is in the response
   // ONCE, never the path.
@@ -104,7 +147,7 @@ export function registerTendering(router, { store, storage, documentsStore, cont
       reissueRecipientLink({ viewer, store, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId, recipientId: params.recipientId }));
 
   router.register('POST', '/rfps/{rfpId}:publish', 'publishRfp', ({ viewer, params }) =>
-    publishRfp({ viewer, store, rfpId: params.rfpId }));
+    publishRfp({ viewer, store, builds, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId }));
 
   router.register('POST', '/rfps/{rfpId}/addenda', 'addAddendum', ({ viewer, params, body }) =>
     addAddendum({ viewer, store, rfpId: params.rfpId, body }));
@@ -112,25 +155,48 @@ export function registerTendering(router, { store, storage, documentsStore, cont
   router.register('POST', '/rfps/{rfpId}:close', 'closeRfp', ({ viewer, params }) =>
     closeRfp({ viewer, store, rfpId: params.rfpId }));
 
-  router.register('POST', '/rfps/{rfpId}:cancel', 'cancelRfp', ({ viewer, params }) =>
-    cancelRfp({ viewer, store, rfpId: params.rfpId }));
+  router.register('POST', '/rfps/{rfpId}:cancel', 'cancelRfp', ({ viewer, params, body }) =>
+    cancelRfp({ viewer, store, rfpId: params.rfpId, body }));
 
   router.register('GET', '/marketplace/rfps', 'browseOpenRfps', ({ viewer, query }) =>
     browseOpenRfps({ viewer, store, query }));
 
-  // Self-serve apply: a bidder claims its own lane on an open RFP it found in
-  // the marketplace (LINA-406). The authed proposal endpoints take it from here.
-  router.register('POST', '/rfps/{rfpId}:apply', 'applyToOpenRfp', ({ viewer, params }) =>
-    applyToOpenRfp({ viewer, store, rfpId: params.rfpId }));
+  // Ask to bid on a listed RFP (D-47, PRD-04 X-13): a PENDING request, never
+  // a lane. The issuer approves (lane + link) or declines.
+  router.register('POST', '/rfps/{rfpId}:apply', 'applyToOpenRfp', ({ viewer, params, headers }) =>
+    applyToOpenRfp({ viewer, store, rfpId: params.rfpId, idempotencyKey: headers['idempotency-key'] ?? null }));
+
+  router.register('GET', '/rfps/{rfpId}/bid-requests', 'listBidRequests', ({ viewer, params, query }) =>
+    listBidRequests({ viewer, store, directory, builds, rfpId: params.rfpId, query }));
+
+  router.register('POST', '/bid-requests/{bidRequestId}:approve', 'approveBidRequest', ({ viewer, params, headers }) =>
+    approveBidRequest({
+      viewer, store, directory, builds, mailSender, linkBaseUrl: baseUrl(), bidRequestId: params.bidRequestId,
+      idempotencyKey: headers['idempotency-key'] ?? null,
+    }));
+
+  router.register('POST', '/bid-requests/{bidRequestId}:decline', 'declineBidRequest', ({ viewer, params, headers }) =>
+    declineBidRequest({ viewer, store, bidRequestId: params.bidRequestId, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('GET', '/me/rfps', 'listMyRfps', ({ viewer, query }) =>
     listMyRfps({ viewer, store, query }));
+
+  // The company inbox (PRD-04 X-9, X-10): requests for you, open requests near
+  // you, and declining an invitation.
+  router.register('GET', '/me/rfp-requests', 'listRequestsForMe', ({ viewer, query }) =>
+    listRequestsForMe({ viewer, store, builds, query }));
+
+  router.register('GET', '/me/open-requests', 'listOpenRequests', ({ viewer, query }) =>
+    listOpenRequests({ viewer, store, directory, builds, query }));
+
+  router.register('POST', '/rfps/{rfpId}/invitation:decline', 'declineRfpInvitation', ({ viewer, params, headers }) =>
+    declineRfpInvitation({ viewer, store, builds, rfpId: params.rfpId, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('POST', '/rfps/{rfpId}/clarifications', 'askClarification', ({ viewer, params, body }) =>
     askClarification({ viewer, store, rfpId: params.rfpId, body }));
 
   router.register('POST', '/clarifications/{clarificationId}:answer', 'answerClarification', ({ viewer, params, body }) =>
-    answerClarification({ viewer, store, clarificationId: params.clarificationId, body }));
+    answerClarification({ viewer, store, builds, mailSender, clarificationId: params.clarificationId, body }));
 
   router.register('GET', '/tasks/{taskId}/proposal-lanes', 'listProposalLanes', ({ viewer, params, query }) =>
     listProposalLanes({ viewer, store, taskId: params.taskId, query }));

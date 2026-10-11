@@ -88,6 +88,8 @@ describe('identity over the v2 router', () => {
     assert.equal(res.body.org_role, 'admin');
     assert.deepEqual(res.body.permissions, ['org:members:manage', 'org:projects:staff']);
     assert.deepEqual(res.body.pending_project_invitations, []);
+    assert.deepEqual(res.body.assignable_roles, ['admin', 'manager', 'site_lead', 'finance', 'member'],
+      'a contractor hands out the contractor role set (doc 16 §4)');
   });
 
   test('GET /me before the mirror caught up → 404 problem, retryable', async () => {

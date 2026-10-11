@@ -37,8 +37,11 @@ export function minuteTransition(status, action) {
   return { ok: true, to };
 }
 
-/** Wire body (schema Comment). Tombstones keep the slot, never the words. */
-export function commentBody(row) {
+/**
+ * Wire body (schema Comment). Tombstones keep the slot, never the words.
+ * `actions` (a question's next step for the viewer) only when projected.
+ */
+export function commentBody(row, actions = undefined) {
   const deleted = row.deleted_at != null;
   return {
     id: row.id,
@@ -53,13 +56,19 @@ export function commentBody(row) {
     ...(row.attachment_document_ids?.length ? { attachment_ids: row.attachment_document_ids } : {}),
     created_at: row.created_at,
     deleted,
+    ...(row.project_id ? { project_id: row.project_id } : {}),
+    ...(row.topic ? { topic: row.topic } : {}),
+    ...(row.decision ? { decision: row.decision } : {}),
+    ...(actions ? { actions } : {}),
   };
 }
 
-/** Wire body (schema MeetingMinute). */
-export function minuteBody(row, items = [], acks = []) {
+/** Wire body (schema MeetingMinute). `actions` only when projected for a viewer. */
+export function minuteBody(row, items = [], acks = [], actions = undefined) {
   return {
     id: row.id,
+    ...(row.project_id ? { project_id: row.project_id } : {}),
+    ...(row.created_by_org_id ? { created_by_org_id: row.created_by_org_id } : {}),
     date: dateOnly(row.date),
     attendees: row.attendees,
     items: items.map((i) => ({
@@ -70,16 +79,24 @@ export function minuteBody(row, items = [], acks = []) {
     })),
     status: row.status,
     acks: acks.map((a) => ({ org_id: a.org_id, person_id: a.person_id, at: a.at })),
+    ...(actions ? { actions } : {}),
   };
 }
 
-/** Wire body (schema Notification). */
+/**
+ * Wire body (schema Notification). `object_ref.url` is always present: rows
+ * written before PRD-12 carried none, so they fall back to their project, or
+ * to the notification centre itself. `event_ids` (digest dedupe) is internal.
+ */
 export function notificationBody(row) {
+  const { event_ids: _internal, ...ref } = row.object_ref ?? {};
+  const url = ref.url
+    ?? (ref.project_id ? `/projects/${ref.project_id}` : ref.type === 'project' && ref.id ? `/projects/${ref.id}` : '/notifications');
   return {
     id: row.id,
     category: row.category,
     title: row.title,
-    object_ref: row.object_ref,
+    object_ref: { ...ref, url },
     created_at: row.created_at,
     read_at: row.read_at ?? null,
   };

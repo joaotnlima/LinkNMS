@@ -199,16 +199,17 @@ export function signOffControls(
   };
 }
 
-/** Number of leaf + task rows a plan carries — the "is there anything to sign off" test. */
+/** A task row, as far as counting needs it: any depth of children (PRD-01 G-1). */
+interface CountableTask { children?: CountableTask[] }
+
+/** Number of task rows a plan carries, at every level — the "is there anything to sign off" test. */
 export function countPlanTasks(
-  phases: Array<{ tasks?: Array<{ children?: unknown[] }> }> | null | undefined,
+  phases: Array<{ tasks?: CountableTask[] }> | null | undefined,
 ): number {
+  const count = (t: CountableTask): number => 1 + (t.children ?? []).reduce((n, c) => n + count(c), 0);
   let n = 0;
   for (const p of phases ?? []) {
-    for (const t of p.tasks ?? []) {
-      n += 1;
-      n += (t.children ?? []).length;
-    }
+    for (const t of p.tasks ?? []) n += count(t);
   }
   return n;
 }

@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 
 import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { publishEvent } from '../../../platform/outbox.mjs';
+import { qualityListQueries } from './pg-queries.mjs';
 
 export function createQualityStore(pool) {
   async function tx(fn) {
@@ -189,6 +190,22 @@ export function createQualityStore(pool) {
       };
     },
 
+    /** The build home's quality facts (PRD-09 O-1) — application/project-facts-port.mjs. */
+    async projectQualityFacts(projectId, taskIds = []) {
+      // The build's rows come from planning's task port (taskIds) — no read of planning.*.
+      const { rows } = await pool.query(
+        `SELECT
+           (SELECT count(*)::int FROM quality.verification_request vr
+             WHERE vr.task_id = ANY($2::uuid[]) AND vr.status = 'pending') AS pending_verifications,
+           (SELECT count(*)::int FROM quality.nonconformity
+             WHERE project_id = $1 AND kind = 'quality' AND status <> 'closed') AS open_quality,
+           (SELECT count(*)::int FROM quality.nonconformity
+             WHERE project_id = $1 AND kind = 'safety' AND status <> 'closed') AS open_safety`,
+        [projectId, taskIds],
+      );
+      return rows[0];
+    },
+
     async getNonConformity(nonconformityId) {
       const { rows } = await pool.query('SELECT * FROM quality.nonconformity WHERE id = $1', [nonconformityId]);
       return rows[0] ?? null;
@@ -246,17 +263,17 @@ export function createQualityStore(pool) {
       });
     },
 
-    async createNonConformity({ id, projectId, taskId, contractId, kind, severity, description,
+    async createNonConformity({ id, projectId, taskId, contractId, locationId = null, kind, severity, description,
       photoDocumentIds, assignedToOrgId, raisedByOrgId, raisedByPersonId, actor }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `INSERT INTO quality.nonconformity
              (id, project_id, task_id, contract_id, kind, raised_by_org_id, raised_by_person_id,
-              assigned_to_org_id, severity, description, photo_document_ids)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+              assigned_to_org_id, severity, description, photo_document_ids, location_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
            RETURNING *`,
           [id, projectId, taskId, contractId, kind, raisedByOrgId, raisedByPersonId,
-            assignedToOrgId, severity, description, photoDocumentIds],
+            assignedToOrgId, severity, description, photoDocumentIds, locationId],
         );
         await appendAuditEvent(client, {
           projectId,
@@ -267,8 +284,9 @@ export function createQualityStore(pool) {
           object: { type: 'nonconformity', id },
           payload: {
             kind, severity,
-            task_id: taskId, contract_id: contractId,
+            task_id: taskId, contract_id: contractId, location_id: locationId,
             assigned_to_org_id: assignedToOrgId,
+            photo_document_ids: photoDocumentIds,
           },
           channel: actor.channel,
         });
@@ -280,11 +298,14 @@ export function createQualityStore(pool) {
           actor: { person_id: actor.personId, org_id: actor.orgId },
           scope: { type: 'project', id: projectId },
           data: {
+            nonconformity_id: id,
             project_id: projectId,
             task_id: taskId,
             contract_id: contractId,
+            location_id: locationId,
             kind, severity,
             assigned_to_org_id: assignedToOrgId,
+            raised_by_org_id: raisedByOrgId,
             status: 'open',
           },
         });
@@ -299,10 +320,12 @@ export function createQualityStore(pool) {
           `UPDATE quality.nonconformity
               SET status = $3,
                   assigned_to_org_id = coalesce($4, assigned_to_org_id),
-                  closed_by_org_id = coalesce($5, closed_by_org_id)
+                  closed_by_org_id = coalesce($5, closed_by_org_id),
+                  status_changed_at = now(),
+                  last_note = $6
             WHERE id = $1 AND status = $2
             RETURNING *`,
-          [nonconformityId, from, to, set.assignedToOrgId ?? null, set.closedByOrgId ?? null],
+          [nonconformityId, from, to, set.assignedToOrgId ?? null, set.closedByOrgId ?? null, note ?? null],
         );
         if (!rows.length) return null;
         const nc = rows[0];
@@ -328,11 +351,16 @@ export function createQualityStore(pool) {
           actor: { person_id: actor.personId, org_id: actor.orgId },
           scope: { type: 'project', id: projectId },
           data: {
+            nonconformity_id: nonconformityId,
             project_id: projectId,
             task_id: nc.task_id,
             contract_id: nc.contract_id,
+            location_id: nc.location_id ?? null,
+            kind: nc.kind,
+            severity: nc.severity,
             status: nc.status,
             assigned_to_org_id: nc.assigned_to_org_id,
+            raised_by_org_id: nc.raised_by_org_id,
             note: note ?? null,
           },
         });
@@ -341,14 +369,14 @@ export function createQualityStore(pool) {
     },
 
     /** Ledger only — doc 10 lists no outbox event for inspections. */
-    async createInspection({ id, projectId, inspectorOrgId, kind, date, checklist, findings, taskIds, actor }) {
+    async createInspection({ id, projectId, inspectorOrgId, kind, date, checklist, findings, taskIds, locationIds = [], actor }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `INSERT INTO quality.inspection
-             (id, project_id, inspector_org_id, kind, date, checklist, findings, task_ids)
-           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8)
+             (id, project_id, inspector_org_id, kind, date, checklist, findings, task_ids, location_ids)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)
            RETURNING *`,
-          [id, projectId, inspectorOrgId, kind, date, JSON.stringify(checklist), findings, taskIds],
+          [id, projectId, inspectorOrgId, kind, date, JSON.stringify(checklist), findings, taskIds, locationIds],
         );
         await appendAuditEvent(client, {
           projectId,
@@ -357,7 +385,7 @@ export function createQualityStore(pool) {
           type: 'quality.inspection.recorded',
           scope: { type: 'project', id: projectId },
           object: { type: 'inspection', id },
-          payload: { kind, date, task_ids: taskIds, checklist_items: checklist.length },
+          payload: { kind, date, task_ids: taskIds, location_ids: locationIds, checklist_items: checklist.length },
           channel: actor.channel,
         });
         return rows[0];
@@ -395,5 +423,8 @@ export function createQualityStore(pool) {
         return loadVerification(client, id);
       });
     },
+
+    // PRD-12 N-3, N-4: the build's lists.
+    ...qualityListQueries(pool),
   };
 }

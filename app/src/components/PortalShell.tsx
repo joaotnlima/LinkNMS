@@ -24,6 +24,7 @@
 import Link from 'next/link';
 
 import { AccountMenu } from './AccountMenu';
+import { NotificationBell } from './NotificationBell';
 import './portal-shell.css';
 
 const NEW_BUILD_HREF = '/projects/new';
@@ -35,7 +36,8 @@ export type BuildRef = { id: string; name: string; href?: string };
 
 // The build-scoped nav sections, in rail order. `section` selects which is
 // highlighted in BUILD mode; PORTFOLIO mode passes none.
-export type BuildSection = 'overview' | 'plan' | 'schedule' | 'money' | 'history' | 'documents';
+export type BuildSection = 'overview' | 'plan' | 'participants' | 'schedule' | 'money' | 'history' | 'documents' | 'model'
+  | 'quality' | 'questions';
 
 // Section → the route it opens, relative to the build. `documents` has no
 // surface yet (kept dimmed, never a link — a tab that 404s is worse than one
@@ -48,6 +50,9 @@ function sectionHref(buildId: string, s: BuildSection): string | null {
       return `/projects/${buildId}`;
     case 'plan':
       return `/projects/${buildId}/plan`;
+    case 'participants':
+      // PRD-09 O-3: parties, roles, invitations (absorbs v1 /invite).
+      return `/projects/${buildId}/participants`;
     case 'schedule':
       return `/projects/${buildId}/record`;
     case 'money':
@@ -55,17 +60,31 @@ function sectionHref(buildId: string, s: BuildSection): string | null {
     case 'history':
       return `/projects/${buildId}/audit`;
     case 'documents':
-      return null;
+      // PRD-05 F-19: the project files page.
+      return `/projects/${buildId}/documents`;
+    case 'model':
+      // PRD-07 M-1: the build's shared IFC model.
+      return `/projects/${buildId}/model`;
+    case 'quality':
+      // PRD-12 N-3, N-4: non-conformities, inspections, verifications.
+      return `/projects/${buildId}/quality`;
+    case 'questions':
+      // PRD-12 N-5, N-6: questions and meeting minutes.
+      return `/projects/${buildId}/questions`;
   }
 }
 
 const SECTION_LABEL: Record<BuildSection, string> = {
   overview: 'Overview',
   plan: 'Plan',
+  participants: 'Participants',
   schedule: 'Schedule',
   money: 'Money',
   history: 'History',
   documents: 'Documents',
+  model: 'Model',
+  quality: 'Quality',
+  questions: 'Questions',
 };
 
 export function PortalShell({
@@ -138,12 +157,18 @@ export function PortalShell({
             </span>
           )}
 
-          {/* Cross-build, org-scoped: the open marketplace (LINA-406). A plain
-              link in both modes — it is not a build section, it is where a company
-              discovers tendering work it was never emailed about. */}
-          <Link className="psh-nav-item" href="/marketplace">
+          {/* Cross-build, org-scoped: the company inbox (PRD-04 X-9/X-10, D-47 —
+              it replaced the marketplace). A plain link in both modes — it is not
+              a build section, it is where a company finds the requests made to it
+              and the open requests it can ask to bid on. */}
+          <Link className="psh-nav-item" href="/requests">
             <StoreIcon />
-            Marketplace
+            Requests
+          </Link>
+          {/* PRD-12 N-7: questions addressed to my organisation, every build. */}
+          <Link className="psh-nav-item" href="/questions">
+            <ChatIcon />
+            Questions for me
           </Link>
 
           <span className="psh-nav-group">This build</span>
@@ -211,6 +236,8 @@ export function PortalShell({
             </Link>
           )}
 
+          {/* PRD-12 N-1: the bell with the unread count, in both modes. */}
+          <NotificationBell />
           <AccountMenu displayName={user.displayName} roleLabel={user.roleLabel} variant="bar" />
         </header>
 
@@ -304,22 +331,14 @@ function BuildSwitcher({ active, builds }: { active: BuildRef; builds: BuildRef[
 /* The live "THIS BUILD" nav (BUILD mode). Overview + Plan + Documents. The
    Schedule / Money / History sub-items were pulled from the rail (LINA-306) —
    their pages still exist and their breadcrumbs still work, they are just no
-   longer linked here. `section` highlights the current one; Documents stays
-   dimmed until a documents surface exists. */
+   longer linked here. `section` highlights the current one. Documents links
+   the project files page since PRD-05 (F-19). */
 function BuildNav({ buildId, section }: { buildId: string; section?: BuildSection }) {
   const item = (s: BuildSection, icon: React.ReactNode) => {
     const href = sectionHref(buildId, s);
     const active = section === s;
     const cls = `psh-nav-item${active ? ' is-active' : ''}`;
-    if (href == null) {
-      // Documents — no surface yet.
-      return (
-        <span className={`${cls} is-dim`} title="No documents surface yet">
-          {icon}
-          {SECTION_LABEL[s]}
-        </span>
-      );
-    }
+    if (href == null) return null;
     return (
       <Link className={cls} href={href} aria-current={active ? 'page' : undefined}>
         {icon}
@@ -332,7 +351,11 @@ function BuildNav({ buildId, section }: { buildId: string; section?: BuildSectio
     <>
       {item('overview', <HouseIcon />)}
       {item('plan', <CalendarIcon />)}
+      {item('participants', <PeopleIcon />)}
       {item('documents', <FolderIcon />)}
+      {item('model', <CubeIcon />)}
+      {item('quality', <ShieldIcon />)}
+      {item('questions', <ChatIcon />)}
     </>
   );
 }
@@ -347,6 +370,24 @@ function HouseMark() {
     <svg viewBox="0 0 24 24" role="presentation">
       <path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
       <path d="M9 21v-6h6v6" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return <svg viewBox="0 0 24 24" role="presentation"><path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z" /><path d="m8.5 12 2.5 2.5 4.5-5" /></svg>;
+}
+
+function ChatIcon() {
+  return <svg viewBox="0 0 24 24" role="presentation"><path d="M4 5h16v11H9l-5 4z" /><path d="M8 9h8M8 12h5" /></svg>;
+}
+
+function PeopleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" role="presentation">
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5" />
+      <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.9.7 3.2 2.4 3.5 5.2" />
     </svg>
   );
 }
@@ -391,6 +432,15 @@ function FolderIcon() {
   return (
     <svg viewBox="0 0 24 24" role="presentation">
       <path d="M3.5 6.5a1 1 0 0 1 1-1h4l2 2.5h8a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1z" />
+    </svg>
+  );
+}
+
+function CubeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" role="presentation">
+      <path d="M12 3.5 20 8v8l-8 4.5L4 16V8z" />
+      <path d="M4 8l8 4.5L20 8M12 12.5V20.5" />
     </svg>
   );
 }

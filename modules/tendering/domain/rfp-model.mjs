@@ -2,8 +2,8 @@
 // may attach as the building model priced in a (design) RFP, plus the wire body
 // the three read surfaces render. No I/O.
 //
-// The model is persisted as a Documents-module document (`scope_type='rfp'`,
-// `kind='bim'`) — no schema change (doc 24 decision 2). Authorization and the
+// The model is the BUILD's Documents-module document (`scope_type='project'`,
+// `kind='bim'`, `is_project_model`) that the RFP references (PRD-07 §5). Authorization and the
 // token surface live in the tendering use-cases (decision 3); this file only
 // bounds what bytes may enter and shapes what leaves.
 //
@@ -13,10 +13,15 @@
 // extension, not the mime (the sha256 pinned into the presigned PUT makes the
 // declared bytes unforgeable regardless).
 
+import { MAX_UPLOAD_BYTES } from '../../../platform/uploads.mjs';
+
 const SHA256 = /^[0-9a-f]{64}$/i;
 
-/** 100 MB — doc 24 decision 6. The viewer shows a "large model" notice >50 MB. */
-export const MAX_MODEL_BYTES = 100 * 1024 * 1024;
+/**
+ * 100 MB — doc 24 decision 6, unified with every other document upload (D-49,
+ * PRD-05 F-6): one platform cap. The viewer shows a "large model" notice >50 MB.
+ */
+export const MAX_MODEL_BYTES = MAX_UPLOAD_BYTES;
 
 /** Advisory client-side threshold; not enforced server-side. */
 export const LARGE_MODEL_BYTES = 50 * 1024 * 1024;
@@ -53,17 +58,26 @@ export function validateModelFile(file) {
 /**
  * The model descriptor the RFP package projection carries so the three surfaces
  * (owner inbox, public token form, marketplace composer) can render the viewer
- * without a second round trip. `fileName` is the document title (we store the
- * uploaded name as the title for bim documents); the version carries the proven
- * bytes' facts. `doc` is a Documents-module document row + its current version.
+ * without a second round trip. Since PRD-07 the document is the BUILD's model;
+ * `version` is the version this RFP shows — the pinned one, or the current —
+ * and `pinned` says which. `file_name` is the document title (the uploaded name).
  */
-export function modelBody(doc, version) {
+export function modelBody(doc, version, { pinned = false } = {}) {
+  const sizeBytes = version ? Number(version.size_bytes) : 0;
   return {
-    documentId: doc.id,
-    version: doc.current_version,
-    fileName: doc.title,
+    document_id: doc.id,
+    version: version?.version_no ?? doc.current_version,
+    file_name: doc.title,
     mime: version?.mime ?? MODEL_MIME,
-    sizeBytes: version ? Number(version.size_bytes) : 0,
+    size_bytes: sizeBytes,
     sha256: version?.sha256 ?? null,
+    pinned,
+    current_version: doc.current_version,
+    // Deprecated camelCase twins (api/v2 CHANGELOG 2026-10-11): kept until the
+    // deprecation window of versioning-and-deprecation.md closes.
+    documentId: doc.id,
+    fileName: doc.title,
+    sizeBytes,
+    currentVersion: doc.current_version,
   };
 }

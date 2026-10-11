@@ -33,21 +33,26 @@
 // a link to a build one cannot see is a 404 here, not a leak or a crash — the
 // same answer the v2 workspace API gives.
 //
-// PARTIES ARE EMPTY ON v2, like every v2 plan surface (`V2PlanGridReadOnly`,
-// `/plan`): the v1 member directory is not one of this cut's reads, so owner
-// resolves to a neutral avatar and authoring does not assign (v2 inherits from
-// the branch, D-33). It lights up once the v2 assignee model is threaded through.
+// SAME PROPS AS `/plan` (PRD-01 P-5). The authoring branch mounts the editor
+// with exactly the reads `/plan` does — assignable parties, live stage ids, the
+// progress door, AND the tendering bridge (`canStartTender`, `procurement`,
+// `tenderInitialRfps`/`tenderTasks`/`tenderHasActiveOrg`). It used to pass none
+// of the tender props, so a task reached by permalink showed no Tender tab, no
+// Tender chips and no procurement band. The read-only (baselined) branch keeps
+// the neutral owner avatar: it has no party directory to name an org with.
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 
 import { isSignedIn } from '@/lib/api';
 import { PortalShell } from '@/components/PortalShell';
 import { buildShellContextV2 } from '@/lib/v2/shell';
-import { getPlanGrid } from '@/lib/v2/planning';
+import { getPlanGrid, getAssignableParties } from '@/lib/v2/planning';
 import { getRecordV2 } from '@/lib/v2/record';
 import { planGridToDraft } from '@/lib/v2/planning-hydrate';
-import { savePlanV2 } from '@/lib/v2/plan-write';
-import { findRowByKey, collectRowKeys } from '@/lib/v2/planning-view';
+import { savePlanV2, reportProgressV2 } from '@/lib/v2/plan-write';
+import { findRowByKey, collectRowKeys, collectRowOptions } from '@/lib/v2/planning-view';
+import { getProcurementWindows, getMyRfps } from '@/lib/v2/tendering';
+import { viewerCanIssueTenders, viewerHasActiveOrg } from '@/lib/v2/profile';
 import { TaskWorkspace } from '@/components/TaskWorkspace';
 import { TradeChip, UnassignedAvatar } from '@/components/PartyAvatar';
 import { formatDate } from '@/lib/format';
@@ -86,6 +91,17 @@ export default async function TaskPermalinkPage({
   const authoring = !grid.isBaselined;
 
   if (authoring) {
+    // The same tendering + party reads `/plan` makes (P-5), all fail-closed
+    // (empty map / list / false), so a viewer who cannot tender still lands on
+    // the editor — just without the tender affordances.
+    const [parties, canStartTender, procurement, myRfps, tenderHasActiveOrg] = await Promise.all([
+      getAssignableParties(id),
+      viewerCanIssueTenders(),
+      getProcurementWindows(id),
+      getMyRfps(),
+      viewerHasActiveOrg(),
+    ]);
+    const serverRowKeys = collectRowKeys(grid.rows);
     return (
       <PortalShell
         user={shell.user}
@@ -97,15 +113,22 @@ export default async function TaskPermalinkPage({
           projectId={id}
           initialPhases={planGridToDraft(grid)}
           // Same v2 autosave the `/plan` editor uses (incremental diff →
-          // schedule:apply + task PATCHes + link create/delete). No parties: v2
-          // authoring inherits assignment from the branch (D-33).
+          // schedule:apply + task PATCHes + link create/delete).
           saveV2={savePlanV2.bind(null, id)}
-          parties={[]}
+          reportProgressV2={reportProgressV2}
+          parties={parties}
           // Every grid row is server-held in v2, so the whole tree is "saved" —
-          // this is what lets the permalinked task open its workspace on mount.
-          savedStageKeys={collectRowKeys(grid.rows)}
+          // this is what lets the permalinked task open its workspace on mount,
+          // and (id = key in v2) makes each hydrated leaf's status settable.
+          savedStageKeys={serverRowKeys}
+          initialStageIds={Object.fromEntries(serverRowKeys.map((k) => [k, k]))}
           openStageKey={stageKey}
-          procurementHref={`/projects/${id}/plan/procurement`}
+          procurementHref={`/projects/${id}/tendering`}
+          canStartTender={canStartTender}
+          procurement={procurement}
+          tenderInitialRfps={myRfps.filter((r) => r.project_id === id)}
+          tenderTasks={collectRowOptions(grid.rows)}
+          tenderHasActiveOrg={tenderHasActiveOrg}
         />
       </PortalShell>
     );

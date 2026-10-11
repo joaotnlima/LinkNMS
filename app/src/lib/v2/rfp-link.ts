@@ -13,6 +13,7 @@ import 'server-only';
 
 import { v2, V2Error } from './client';
 import type { BidBody, ProposalEcho, RfpLinkView } from './rfp-link-view';
+import type { V2Clarification } from './tendering-view';
 
 const base = (token: string) => `/rfp-links/${encodeURIComponent(token)}`;
 
@@ -216,5 +217,37 @@ function uploadBannerFor(e: V2Error): string {
       return e.detail || 'That file was not accepted. Check the type and size and try again.';
     default:
       return e.detail || 'That file did not upload. Try again.';
+  }
+}
+
+// ── Clarifications from the link (PRD-08 H-6) ────────────────────────────────
+
+export type AskResult =
+  | { ok: true; clarification: V2Clarification }
+  | { ok: false; code: string; message: string };
+
+/**
+ * POST /rfp-links/{token}/clarifications — a link-only bidder asks. The server
+ * refuses after the questions deadline (409); the form renders the refusal.
+ */
+export async function askClarificationByToken(token: string, id: string, question: string): Promise<AskResult> {
+  try {
+    const clarification = await v2<V2Clarification>({
+      method: 'POST',
+      path: `${base(token)}/clarifications`,
+      body: { id, question },
+      allowAnonymous: true,
+    });
+    return { ok: true, clarification };
+  } catch (e) {
+    if (e instanceof V2Error) {
+      const message = e.code === 'invalid_transition'
+        ? (e.detail || 'Questions are closed for this request.')
+        : e.code === 'not_found'
+          ? 'This link is not valid. Ask whoever invited you to send a new one.'
+          : (e.detail || 'Your question did not send. Try again.');
+      return { ok: false, code: e.code, message };
+    }
+    return { ok: false, code: 'internal', message: 'Your question did not send. Try again.' };
   }
 }

@@ -61,6 +61,7 @@ rule can be seen applied.
 | created_by_org_id | uuid | |
 | name, address | text | |
 | municipality_code | text | INE/DICOFRE code — drives marketplace matching and holiday calendar |
+| location_lat, location_lng | numeric(8,5) | the build's point, both or neither (0020, PRD-03 R-3) — "companies near this build" |
 | typology | text | e.g. `T3` |
 | gross_area_m2 | numeric(10,2) | |
 | indicative_budget_cents | bigint | the brief; never contractual |
@@ -75,10 +76,20 @@ rule can be seen applied.
 | capacity | text | `owner` · `prime_contractor` · `direct_contractor` · `subcontractor` · `consultant` |
 | source | text | `contract` (with `contract_id`) · `invitation` |
 | contract_id | uuid | nullable |
+| invite_capacity | text | on `invitation`: `design` · `inspection` · `safety` · `contractor` (0025, PRD-09) · `other` |
+| specialty_code | text | the trade an invited party joined for (directory taxonomy code, 0025) |
 | status | text | `active` · `ended` |
+
+**project_invitation** (0001, 0025) — `id, project_id, invited_by_org_id, email, org_id (on accept), capacity (design ·
+inspection · safety · contractor · other), specialty_code?, invitee_name?, scope_note?, token_hash (the token is never
+stored), status (pending · accepted · revoked · expired), expires_at, created_at`. A `contractor` invite is presence
+before any contract — edit scope still comes only from a contract (D-33).
 
 **project_calendar** — `PK(project_id)`: `work_days smallint[]` (ISO weekday), `closures daterange[]`;
 holidays are resolved from a shared `platform.holiday(date, scope: national|municipality_code)` table.
+
+**share_link** — `project_id, created_by_person_id, audience, document_ids uuid[], task_ids uuid[], token_hash (sha256, UNIQUE; the token is never stored), expires_at, revoked_at?, created_at (0029), revoked_by_person_id? (0029, CHECK ⇒ revoked_at)`. The scope is frozen at creation: a trigger refuses any UPDATE but the one revocation, and every DELETE (0029, gap S1).
+**share_link_access** (0029, PRD-12 N-12) — `id, share_link_id (FK), project_id, at, action (view/download), document_id? (CHECK ⇔ download), ip?, user_agent?` — append-only (`record.forbid_mutation`); every access the public surface served. Address and user agent stay here (owner-only read), never in the ledger.
 
 ### `tendering`
 
@@ -91,20 +102,28 @@ holidays are resolved from a shared `platform.holiday(date, scope: national|muni
 | purpose | text | `design` (pre-construction, a service) · `execution` (built work, a BoQ) — D-39 |
 | mode | text | `light` (fee + portfolio + references + PDF, no BoQ) · `detailed` (priced BoQ); a `design` RFP is always `light` |
 | title, scope_text | text | |
-| specialties | text[] | specialty codes |
-| visibility | text | `invite_only` · `open` |
+| specialties | text[] | the package rows' free-text specialty labels |
+| specialty_codes | text[] | the package rows' taxonomy codes (planning `task.specialty_code`, PRD-03 R-2) — what open requests are matched on (PRD-04; 0023) |
+| listed | boolean | "also list it as an open request" (D-47, PRD-04 X-3; 0023): companies with a matching specialty and service area see it and can **ask to bid** |
+| visibility | text | **deprecated** by `listed` (0023): kept in step with it by the `rfp_sync_listed` trigger (`open` ⇔ `listed`), because it is in the v2 contract and billing's open-listing usage counts it |
 | questions_deadline, submission_deadline | timestamptz | |
 | package_version | int | incremented by each addendum |
 | status | text | `draft` · `published` · `closed` · `awarded` · `cancelled` |
 | awarded_proposal_id | uuid | nullable |
+| excluded_task_ids | uuid[] | descendants of the roots left out of the package with their sub-trees (PRD-02 T-3; 0013) |
+| created_at, published_at, closed_at, awarded_at, cancelled_at | timestamptz | lifecycle stamps, set by the transition that enters each state (PRD-02 T-10; 0013) |
+| cancel_reason | text | optional one-line reason, ≤ 500 (PRD-02 T-19; 0013) |
+| model_document_id, model_version_no | uuid, int | the build's model this RFP shows (PRD-07 §5; 0018_tendering_rfp_model): a `documents.document` id (no FK) and a pinned version, or NULL = follows the current version |
+| listing_lat, listing_lng, listing_municipality_code | numeric(8,5), numeric(8,5), text | the build's point and municipality as the project build port answered them at publication — what "open requests near you" matches on in SQL with `tendering.distance_km()` (PRD-04 X-10; 0030) |
 
 **rfp_root** — `PK(rfp_id, task_id)`: the plan rows being tendered; the package is their subtrees.
 **rfp_package_row**: snapshot of each packaged row at publish/addendum — `rfp_id, package_version, task_id, parent_task_id, name, scope_text, duration_wd?, position`.
 **rfp_item** (packaged cost lines, **no prices**): `rfp_id, package_version, task_id, code, description, unit, quantity, material_spec, specialty`.
-**rfp_recipient**: `rfp_id, org_id?, email, token_hash, email_message_id, status (queued/sent/opened/declined/proposal_submitted/bounced), sent_at, opened_at` — **one individual email per row** (D-29).
+**rfp_recipient**: `rfp_id, org_id?, email, token_hash, email_message_id, status (queued/sent/opened/declined/proposal_submitted/bounced), sent_at, opened_at, source (directory/email/asked_to_bid), company_name?, created_at` — **one individual email per row** (D-29). `source` says where the bidder came from (PRD-04 §3; 0023): added from the directory, typed by the issuer, or an approved request to bid. The PRD's `company_id` **is** `org_id` (a directory profile is keyed by its organisation): empty for an address no organisation holds, back-filled on every past invite to that address when its unclaimed profile is claimed (`directory.profile.claimed`). `company_name` snapshots the directory name when added from it. A company may decline its invite while its lane is untouched (status `declined`, PRD-04 X-9). On a draft the row is only queued (its `token_hash` belongs to a token nobody holds); publish mints the real link per queued row and a queued row may be removed while the RFP is a draft (PRD-02 T-6/T-7).
 **rfp_addendum**: `rfp_id, package_version, summary, published_at`.
+**bid_request** (D-47, PRD-04 X-13; 0023): `id, rfp_id, org_id, status (pending/approved/declined), requested_by_person_id, requested_at, decided_by_person_id?, decided_at?, recipient_id?` — `UNIQUE(rfp_id, org_id)` (asking again answers the same request); decided ⇔ `decided_*` set; approved ⇔ `recipient_id` set (the invite approval created, or the prior e-mail invite to the org's address it adopted). A request never creates a lane by itself.
 **project.operating_model** is derived (D-35): prime only ⇒ turnkey · direct only ⇒ direct · both ⇒ hybrid.
-**clarification**: `rfp_id, asked_by_org_id (never exposed to other bidders), question, answer, answered_at, status (open/answered)`.
+**clarification**: `rfp_id, asked_by_org_id?, asked_by_recipient_id? (the personal-link asker, PRD-08 H-6; at least one asker — CHECK), question (1–4000), answer, answered_at, asked_at, status (open/answered)` — the asker is never on the wire (only `mine` to the asker itself); answers are public to every bidder; asking is refused once `rfp.questions_deadline` has passed (0015).
 
 **proposal** — one per recipient (the **lane**, D-36), `UNIQUE(rfp_id, recipient_id)`
 | Column | Type | Notes |
@@ -198,7 +217,8 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 | position | text | fractional index among siblings (concurrent reorders never collide) |
 | kind | text | `task` · `summary` · `milestone` — `summary` is **derived** (has children) |
 | name, description | text | |
-| specialty | text | catalogue code |
+| specialty | text | free-text label shown on the row (suggestions: `user_specialty`) |
+| specialty_code | text | optional directory taxonomy code (0021, PRD-03 R-2); checked through the directory specialty port, no FK |
 | location_id | uuid | |
 | contract_id | uuid | set when the branch is awarded/signed; **not shown as a column** (D-27) |
 | assignee_org_id, assignee_person_id | uuid | |
@@ -210,9 +230,14 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 | actual_start, actual_finish | date | **derived** from progress; `external` rows record `actual_finish` explicitly |
 | baseline_start, baseline_finish | date | **derived** from the latest `baseline_task` (materialised) |
 | schedule_state | text | **derived**: `planned` · `on_baseline` · `extended` · `sequence_warning` |
-| acceptance_criteria | text | quality |
+| acceptance_criteria | text | quality — one criterion per line, read as the task's checklist (PRD-10 E-6) |
 | last_changed_by_person_id, last_changed_at, last_change_cause | | cause: `direct` · `propagated:<task_id>` · `template` · `import` |
 | deleted_at | timestamptz | soft delete — removed rows stay visible in the change view |
+
+**schedule_import** (0001, 0024, PRD-09) — `id, project_id, org_id (the importing org), target_parent_id (unused while
+imports go into an empty plan only), filename, file_bytes, sheet_name, sheets jsonb ([{name, rows: text[][]}] — the cell text
+read once at upload; the bytes are not kept), column_mapping jsonb (field → column index), status (uploaded · mapped ·
+previewed · confirmed · failed), result jsonb (counts), confirmed_at (set ⇔ confirmed), imported_by_person_id, created_at`.
 
 **task_field_change** — append-only, one row per applied field delta (D-26)
 | Column | Type | Notes |
@@ -233,7 +258,7 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 | lag_wd | int | default 0, may be negative |
 | created_by_org_id, created_by_person_id | uuid | must have the successor in edit scope (D-33) |
 
-**baseline** — `UNIQUE(root_task_id, version)`: `project_id, root_task_id (the baselined branch), contract_id, version, reason (contract_signed/change_order), change_order_id?, taken_at`.
+**baseline** — `UNIQUE(root_task_id, version)`: `project_id, root_task_id (the baselined branch), contract_id, version, reason (award/contract_signed/change_order — `award` since D-43, migration 0012), change_order_id?, taken_by_person_id?, taken_by_org_id? (0026, PRD-10 E-1 — who took it; back-filled from the ledger), taken_at`.
 **baseline_task** — `PK(baseline_id, task_id)`: `start, finish, duration_wd, name, scope_text, acceptance_criteria` (immutable snapshot: time, scope, quality).
 **baseline_cost_line** — `PK(baseline_id, boq_item_id)`: `quantity, unit_price_cents, material_spec` (cost snapshot; commercial visibility applies).
 
@@ -246,7 +271,8 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 | baseline_value, current_value | jsonb | e.g. `{"finish": "2026-09-11"}` vs `{"finish": "2026-09-25"}` |
 | delta | jsonb | e.g. `{"finish_wd": 10}`, `{"amount_cents": 246000}` |
 | first_changed_at, last_changed_at, last_changed_by_org_id | | |
-| cause | text | `direct` · `propagated` (+ `cause_task_id`) |
+| cause | text | `direct` · `propagated` (+ `cause_task_id`) · `closed_late` (closed with an actual finish past the baseline, PRD-13 §5; 0012) |
+| reason | text | optional "why" of the latest direct change, ≤ 500 chars (PRD-13 S-11; 0012) |
 | status | text | `open` · `acknowledged` · `formalised` · `closed` |
 | change_order_id | uuid | when formalised |
 
@@ -264,8 +290,30 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 | photo_document_ids | uuid[] | |
 | reported_by_org_id, reported_by_person_id | uuid | `verified` rows are written on behalf of the verifier |
 | reported_at | timestamptz | |
+| override_reason, waiting_on | text, jsonb | 0026, PRD-10 E-5 (D-48): a start ahead of the task's predecessors — the reason (1–500) and the predecessors as they stood (`[{task_id, name, status, needs}]`); both or neither |
+| acceptance | jsonb | 0026, PRD-10 E-6: on `done` only — the task's checklist with `met` per criterion (`[{criterion, met}]`) |
 
 `task.status` = status of the latest row (derived, never a column).
+
+**daily_log_entry** (0026, PRD-10 E-7..E-9) — the site diary; append-only (trigger). One row per thing recorded for a site day:
+`id (client UUID, idempotent), project_id, log_date (≤ today), kind (presence · weather · work · issue · photo), org_id + headcount
+(presence, 0–999), weather (sunny/cloudy/rain/heavy_rain/wind/frost/snow/heat) + temperature_c (weather), task_id → task (work —
+edit scope ∋ task; optional tag on issue/photo), location_id (bare ref to project.location; tag on issue/photo), document_id +
+version_no (photo — a completed `documents.document` of kind `photo`, by id, no FK), percent (work), note (≤ 2000; required on an
+issue), recorded_by_person_id, recorded_by_org_id, recorded_at`. CHECKs bind each kind to its fields. A day reads the latest
+presence per organisation (0 = not on site) and the latest weather; corrections are newer rows.
+
+**deliverable** (0017, PRD-05, D-48) — what a task must hand over. Owned by Planning because it is the task's acceptance
+artefact and the `done` gate is a planning invariant; the file itself stays a `documents.document` (referenced by id, no FK).
+`project_id, task_id → task, title (1–300), required bool (default true), due date?, source_rfp_id? (seeded from a design award;
+UNIQUE(task_id, source_rfp_id, title) where set), position, created_by_org_id, created_by_person_id, created_at, deleted_at`.
+**deliverable_submission** (0017) — append-only, the decision written once (trigger): `deliverable_id → deliverable, seq
+(UNIQUE per deliverable), document_id, version_no, sha256 (64), file_title, mime, note?, submitted_by_person_id,
+submitted_by_org_id, submitted_at, status (submitted/approved/changes_requested/superseded), decided_by_person_id,
+decided_by_org_id (CHECK ≠ submitted_by_org_id), decided_at, decision_comment` — CHECK decided ⇔ status approved/changes_requested.
+A deliverable's state is its latest submission's (`not_yet` when none).
+
+**project_setting** (0014): `project_id PK, mobilisation_lead_wd smallint (0–60, default 5), updated_at, updated_by_person_id` — absent row ⇒ defaults. The award-by date of a tender = the covered rows' planned start − `mobilisation_lead_wd` on the project calendar (PRD-02 §5, `getTenderWindow`).
 
 **plan_template** (D-30): `scope (personal/org/public/library), owner_person_id?, owner_org_id?, name, description, construction_type (detached_house/terraced/renovation/allotment/…), phase_tags text[], created_from_task_id?, uses_count`.
 **plan_template_row**: `template_id, row_key, parent_row_key, position, kind (task/summary/milestone), name, specialty` — **no dates, durations, assignees or prices**.
@@ -273,23 +321,41 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 
 ### `quality`
 **verification_request**: `task_id, requested_by_org_id, criteria_snapshot, status (pending/accepted/rejected), decided_by_org_id (CHECK ≠ requested_by_org_id), decided_by_person_id, reason, decided_at`.
-**nonconformity**: `project_id, task_id?, contract_id?, raised_by_org_id, assigned_to_org_id, severity (minor/major/critical), description, status (open/assigned/fixed/closed/rejected_fix)`.
-**inspection**: `project_id, inspector_org_id, date, checklist jsonb, findings text, task_ids uuid[]`.
+**nonconformity**: `project_id, task_id?, contract_id?, raised_by_org_id, assigned_to_org_id, severity (minor/major/critical), description, status (open/assigned/fixed/closed/rejected_fix)`; 0027 (PRD-12 N-3): `location_id?` (bare ref to project.location), `raised_at`, `status_changed_at?`, `last_note?` (the latest transition's note; the ledger keeps every one).
+**inspection**: `project_id, inspector_org_id, date, checklist jsonb, findings text, task_ids uuid[]`; 0027 (N-4): `location_ids uuid[]`, `recorded_at`.
 
 ### `documents`
 **document**: `scope_type, scope_id, kind (drawing/bim/photo/spec/contract_doc/invoice/other), title, share_with_ancestors bool, current_version int`.
-**document_version** — append-only, `UNIQUE(document_id, version_no)`: `storage_key, mime, size_bytes, sha256, uploaded_by_person_id, uploaded_by_org_id`.
+**document_version** — append-only, `UNIQUE(document_id, version_no)`: `storage_key, mime, size_bytes, sha256, uploaded_by_person_id, uploaded_by_org_id`, and since 0016 `note text?` (≤ 2000), `base_version_no int?`, `change_kind (upload/markup_only/edit/restore, default upload)` for PRD-06/07 (`restore` since 0019, CHECK: has its `base_version_no`).
+`document.preview_status` (0016): `ready/pending/unavailable`, default `ready`; `pending` for a DWG (server-side conversion, D-49, PRD-06). Size cap 100 MB for every kind (D-49, in code).
+**document_link** (0016, PRD-05) — `PK(document_id, task_id)`: `project_id, role (reference/deliverable), inherited bool, inherited_from_task_id? (CHECK inherited ⇔ set), linked_by_person_id, linked_by_org_id, linked_at`. One project file linked to many tasks — never a copy. `share_with_ancestors` was evaluated for "also on sub-tasks" and does not fit: it widens a *contract* document to the client chain (V3), not a file to sub-tasks.
+**document.is_project_model** (0019, PRD-07) — THE model of a build: a project-scoped `bim` document (CHECK), at most one live per project (partial unique index). Its author is the org whose upload is v1; only the author uploads later `.ifc` versions (M-9). A record-side save appends a `document_version` with `change_kind = edit` (or `restore`) that re-points the bytes of the current (or restored) version — nothing is written into the IFC (D-45).
+**element_link** (0019, PRD-07) — `id, project_id, document_id, global_id (IFC GlobalId, 22 chars), task_id (no FK), added_in_version (FK → document_version), removed_in_version?, created_by_person_id, created_by_org_id, created_at, removed_by_person_id?, removed_by_org_id?, removed_at? (CHECK removed ⇔ removed_at; removed > added)` — an element linked to a plan row, versioned with the model: the record at version N is added ≤ N < removed; live = never removed (`UNIQUE(document_id, global_id, task_id) WHERE removed_in_version IS NULL`). Rows are never deleted. Keyed by GlobalId, so links survive a re-upload.
+**element_pin** (0019, PRD-07) — `id, project_id, document_id, version_no (FK → document_version), global_ids text[1..200], task_ids uuid[≤20], text, state (open/closed; CHECK closed ⇔ closed_in_version), author_person_id, author_org_id, created_at, closed_in_version?, closed_by_org_id?, closed_at?` — an issue pinned on model elements, naming the tasks it concerns. Record-side, never deleted.
+**model_upload** (0031, PRD-07 M-18) — `PK(document_id, version_no)` (FK → document_version): `global_ids text[]` (the new .ifc's element GlobalIds, extracted by the client and sent with the reservation — the server does not download and parse the file), and, filled when the upload completes, `unmatched_global_ids text[]` (recorded elements — live links, pins — missing from the file), `regenerated` (shares < 10% of elements with the previous upload), `shared_count`, `recorded_count`, `checked_at` (CHECK checked ⇔ regenerated set). Read back as `ProjectModel.upload_check`.
+**markup** (0018, PRD-06) — `id, document_id, project_id, version_no (FK → document_version), page_or_layout, kind (cloud/arrow/text/measure/calibration), geometry jsonb (validated in the domain: points in sheet units, length_mm on a calibration), text?, author_person_id, author_org_id, created_at, state (open/closed; CHECK closed ⇔ closed_at), closed_at?, closed_by_person_id?, closed_by_org_id?, question_id?, nonconformity_id?` — the markup layer of a drawing; the bytes are never changed. Not append-only (state and links are record-side), every change ledgered. Saving markups appends a `document_version` with `change_kind = markup_only` that reuses the base version's `storage_key` + `sha256` (CHECK: a markup_only row has its `base_version_no`); the append-only trigger only guards UPDATE/DELETE, so the INSERT is allowed.
+`document.preview_reason` (0018): why a DWG/DXF has no preview (`preview_status = unavailable`). **preview** (0018) — `PK(document_id, sha256)`: `status (ready/unavailable), reason? (CHECK ⇔ unavailable), converter, layers jsonb[], warnings jsonb[], converted_at` — the server-side conversion keyed by the bytes, so a markups-only version shares its base's preview. **preview_layout** — `PK(document_id, sha256, layout_index)`: `name, storage_key (derived object), mime, size_bytes, sha256_svg, width?, height?`.
 
 ### `collaboration`
 **thread** — `UNIQUE(object_type, object_id)`: `project_id?`.
-**comment**: `thread_id, author_person_id, author_org_id, kind (note/question/answer), body, mentions uuid[], attachment_document_ids uuid[] (0005), addressee_org_id (questions), question_status (open/answered/resolved), answers_comment_id, edited_until, deleted_at`.
+**comment**: `thread_id, author_person_id, author_org_id, kind (note/question/answer), body, mentions uuid[], attachment_document_ids uuid[] (0005), addressee_org_id (questions), question_status (open/answered/resolved), answers_comment_id, edited_until, deleted_at`; 0028 (PRD-12 N-5): `topic (clarification/design_change/scope_gap; CHECK set ⇔ question)`, `decision? (approved/rejected; CHECK only on an answered design_change)`.
 **meeting_minute**: `project_id, date, attendees uuid[] (orgs), status (draft/circulated/acknowledged), created_by_org_id?, created_by_person_id? (0005 — circulate is author-only)`; **minute_item**: `minute_id, text, owner_org_id, due_date, object_type?, object_id?`; **minute_ack**: `minute_id, org_id, person_id, at`.
 **notification**: `person_id, event_id, category, title, object_ref, read_at` — `UNIQUE(person_id, event_id) WHERE event_id IS NOT NULL` (0005: at-least-once outbox dedupe; digest rows aggregate a window under the first event's id). **notification_preference**: `person_id, category, channel, enabled`.
 
 ### `directory`
-**organization_profile** — `PK(org_id)`: `display_name, description, logo_document_id, specialties text[], tags text[], service_areas text[] (municipality/district codes), team_size_band, founded_year, declared_nif, declared_impic_number, declared_impic_class, declared_insurance, listed bool, completeness smallint (derived, materialised)`.
-**portfolio_entry**: `org_id, source (platform/declared), contract_id?, title, municipality_code, typology, specialties, start_date, end_date, variance_wd?, photo_document_ids, owner_consent bool`.
-**specialty** (catalogue): `code PK, name_pt, name_en, parent_code`.
+Owned by Directory; event-fed, no cross-schema reads (0022, PRD-03).
+**specialty** (taxonomy, seeded): `code PK (also the public slug), name_pt, name_en, parent_code (two levels), position, impic_ref` — `impic_ref` is reference metadata (IMPIC alvará category/sub-category), **unverified**, never proof.
+**organization_profile** — `PK(org_id)`: `slug UNIQUE (minted from display_name, numeric suffix on collision, frozen — to-be/20 §5.2), display_name, kind?, claimed, contact_email? (unclaimed only; CHECK claimed ∨ contact_email), description, logo_document_id, specialties text[] (taxonomy codes), tags text[], service_areas text[] (municipality/district codes), base_municipality_code?, base_lat?, base_lng? (both or neither), service_radius_km? (1–300), team_size_band, founded_year, available_from? (stated), declared_nif, declared_impic_number, declared_impic_class, declared_insurance (all stated — D-17/D-46), listed, completeness (derived, materialised; never used to order), created_at, updated_at, version`. An unclaimed profile's `org_id` is a directory-minted subject id until a claim re-keys it to the claimant org.
+**portfolio_entry**: `org_id, source (platform/declared), contract_id?, title, municipality_code, typology, specialties, start_date, end_date, variance_wd?, photo_document_ids, owner_consent bool, created_at`.
+**profile_claim**: `id, profile_org_id (FK, ON UPDATE CASCADE), claimant_org_id, claimant_person_id, token_hash UNIQUE (sha256), sent_to, created_at, expires_at (7 days), accepted_at?` — the e-mailed single-use link proves control of the profile's e-mail.
+**portfolio_consent** — `PK(project_id)`: `owner_org_id, show_on_profiles, build_name? (snapshot at consent; required when shown), note?, decided_by_person_id, decided_at`. No row = no consent.
+**record_contract** — `PK(contract_id)`: `project_id, kind, client_org_id, supplier_org_id, status (signed/active/provisionally_received/closed/terminated), signed_at, finished_at?` — from `contracting.contract.*`.
+**record_task** — `PK(task_id)`: `project_id, contract_id?, assignee_org_id, baseline_finish?, actual_finish?, reported_at` — a task finished (`done`/`verified`); on time ⇔ `actual_finish ≤ baseline_finish`.
+**record_change_order** — `PK(change_order_id)`: `contract_id, status (submitted/approved/rejected/withdrawn), updated_at`.
+**record_proposal** — `PK(proposal_id)`: `rfp_id, bidder_org_id?, submitted_at?, awarded_at?` (listing stats).
+**consumed_event** — `PK(event_id)`: `type, consumed_at` (consumer dedupe).
+**listing_stat** — `PK(org_id, day, kind)`: `kind (search_impression/profile_view), count`.
+**distance_km(lat1, lng1, lat2, lng2)** — haversine in SQL (no earthdistance/PostGIS).
 
 ### `reputation`
 **review** — `UNIQUE(reviewer_org_id, subject_org_id, anchor_type, anchor_id)`: `anchor_type (contract/subcontract_work), anchor_id, rating_quality, rating_schedule, rating_communication, rating_payment?, body, status (submitted/published), published_at, reply_body, replied_at`.

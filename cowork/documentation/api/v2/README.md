@@ -11,7 +11,7 @@ Every endpoint in `cowork/documentation/to-be/12-api-catalogue.md` is here, grou
 
 | Extension | Meaning |
 |---|---|
-| `x-clerk-permission` | Custom Clerk permission the person needs in the active org (to-be/16 §5) |
+| `x-clerk-permission` | Custom Clerk permission the person needs in the active org (to-be/16 §5); `none` = no custom permission — an authenticated session (with the relationship in `x-relationship`), or, with `security: []`, a public or link-token operation |
 | `x-relationship` | Relationship LinkNMS checks on the object (to-be/04, 05 §12) |
 | `x-mcp-tool` / `x-mcp-mode` | Name of the MCP tool that exposes it; `read` or `write-confirm` (to-be/19) |
 | `x-human-only` | Never exposed to agents: signing, publishing, approving, verifying, paying |

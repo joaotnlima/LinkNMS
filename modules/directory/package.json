@@ -1,0 +1,13 @@
+{
+  "name": "@linknms/directory",
+  "private": true,
+  "version": "0.1.0",
+  "description": "v2 directory module: specialty taxonomy, public company search near a build ranked only from platform-verified clients (D-46), public profiles with the event-fed 'On the record' read model, unclaimed profiles + claim by e-mail, the company-side editor (PRD-03)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test domain/*.test.mjs application/*.test.mjs infra/*.test.mjs http/*.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  }
+}

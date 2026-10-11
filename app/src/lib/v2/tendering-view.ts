@@ -26,6 +26,8 @@
 //     the server's comparison projection; this file formats them, it never
 //     derives a total or a ranking. The issuer ranks bids, we do not.
 
+import { formatCents } from '../format.ts';
+
 // ── Wire shapes (subset), verbatim against modules/tendering/domain/wire.mjs
 // and cowork/documentation/api/v2/openapi.yaml. Restated locally, the same
 // discipline as `record-view.ts`: a drift in the module's projection lands as a
@@ -49,7 +51,11 @@ export type RecipientStatus =
 
 export type Channel = 'platform' | 'email';
 
+/** Deprecated by `listed` (D-47, PRD-04) — still on the wire, in step with it. */
 export type RfpVisibility = 'invite_only' | 'open';
+
+/** Where a bidder came from (PRD-04 §3). */
+export type RecipientSource = 'directory' | 'email' | 'asked_to_bid';
 
 export type RfpLevel = 'owner' | 'sub';
 
@@ -79,14 +85,18 @@ export interface V2PackageRow {
   position: number;
 }
 
-/** An attached BIM model (packageBody.models, LINA-409 / doc 24 §RfpModel). */
+/** The build's model as this RFP shows it (packageBody.models, LINA-409 / doc 24, PRD-07 §5). */
 export interface V2Model {
-  documentId: string;
+  document_id: string;
   version: number;
-  fileName: string;
+  file_name: string;
   mime: string;
-  sizeBytes: number;
+  size_bytes: number;
   sha256?: string | null;
+  /** PRD-07: true when the RFP is pinned to `version`; false when it follows the build model's current version. */
+  pinned?: boolean;
+  /** PRD-07: the build model's current version. */
+  current_version?: number;
 }
 
 export interface V2Package {
@@ -94,6 +104,20 @@ export interface V2Package {
   items: V2PackageItem[];
   /** Attached 3D models (Phase 1 surfaces models[0]); [] when none. */
   models: V2Model[];
+}
+
+/**
+ * #/components/schemas/Clarification (PRD-08). The asker is never on the wire;
+ * `mine` says only that the viewer asked it.
+ */
+export interface V2Clarification {
+  id: string;
+  question: string;
+  answer?: string;
+  status: 'open' | 'answered';
+  answered_at?: string;
+  asked_at?: string;
+  mine?: boolean;
 }
 
 /** #/components/schemas/Rfp (rfpBody). `package` is present only on getRfp. */
@@ -109,14 +133,32 @@ export interface V2Rfp {
   title: string;
   scope_text?: string;
   specialties: string[];
+  /** Deprecated — `listed` says the same (D-47). */
   visibility: RfpVisibility;
+  /** PRD-04 X-3: also listed as an open request companies can ask to bid on. */
+  listed?: boolean;
+  /** PRD-04: the package's taxonomy codes (what open requests match on). */
+  specialty_codes?: string[];
   questions_deadline?: string;
   submission_deadline?: string;
   package_version: number;
   status: RfpStatus;
   awarded_proposal_id?: string;
+  /** PRD-02 T-3: descendants of the roots left out of the package. */
+  excluded_task_ids?: string[];
+  /** PRD-02 T-10: lifecycle stamps (absent until the step happened). */
+  created_at?: string;
+  published_at?: string;
+  closed_at?: string;
+  awarded_at?: string;
+  cancelled_at?: string;
+  /** PRD-02 T-19: the issuer's reason, when cancelled with one. */
+  cancel_reason?: string;
   version: number;
   package?: V2Package;
+  /** getRfp only (PRD-08): the questions this viewer may read, and whether asking is open. */
+  clarifications?: V2Clarification[];
+  questions_open?: boolean;
 }
 
 /** #/components/schemas/Recipient — issuer only. `token` returned ONCE on add. */
@@ -124,6 +166,10 @@ export interface V2Recipient {
   id: string;
   org_id?: string;
   email: string;
+  /** PRD-04 §3 (absent on an older server → email). */
+  source?: RecipientSource;
+  /** The directory name, when added from the directory. */
+  company_name?: string;
   status: RecipientStatus;
   sent_at?: string;
   opened_at?: string;
@@ -141,6 +187,10 @@ export interface V2ProposalLane {
   duration_wd?: number;
   start?: string;
   finish?: string;
+  /** Until when the bid holds (PRD-02 T-14). */
+  validity_until?: string;
+  /** The RFP this lane answers (a re-tendered task has lanes of several). */
+  rfp_id?: string;
   missing_lines: number;
   variant_lines: number;
   document_count: number;
@@ -177,12 +227,8 @@ export interface V2Comparison {
  */
 export function formatMoney(m: V2Money | null | undefined): string {
   if (!m || !Number.isFinite(m.amount_cents)) return '—';
-  const sign = m.amount_cents < 0 ? '-' : '';
-  const abs = Math.abs(m.amount_cents);
-  const symbol = m.currency === 'EUR' ? '€' : `${m.currency} `;
-  return `${sign}${symbol}${(abs / 100).toLocaleString('en-US', {
-    minimumFractionDigits: 0, maximumFractionDigits: 0,
-  })}`;
+  // The one shared formatter (lib/format.ts) — a bid and a budget read alike.
+  return formatCents(m.amount_cents, { currency: m.currency });
 }
 
 /**
@@ -295,12 +341,16 @@ export interface RfpDraftInput {
   title: string;
   scopeText: string;
   rootTaskIds: string[];
-  submissionDeadline: string; // ISO date-time
+  /** ISO date-time; omitted → the server's default (14 days out, 18:00 Lisbon). */
+  submissionDeadline?: string;
   questionsDeadline?: string;
-  visibility: RfpVisibility;
+  /** PRD-04 X-3: also list it as an open request (replaces visibility = open). */
+  listed: boolean;
   /** D-39. Omit for the as-is execution tender; `design` pins the RFP light. */
   purpose?: RfpPurpose;
   mode?: RfpMode;
+  /** PRD-02 T-3: rows inside the roots' sub-trees left out of the package. */
+  excludedTaskIds?: string[];
 }
 
 /**

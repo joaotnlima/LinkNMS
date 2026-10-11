@@ -63,13 +63,13 @@ export const CREATOR_ROLE_COPY: Readonly<
 > = Object.freeze({
   owner: {
     label: 'Owner',
-    desc: "I'm having this built. I create the project and invite my contractor to run the day-to-day, while I keep full visibility.",
+    desc: "I'm having this built. I create the build, bring in the plan (or invite my contractor to), and keep full visibility.",
     tag: 'Follows & approves',
     continueLabel: 'Continue as owner',
   },
   counterparty: {
     label: 'General contractor',
-    desc: 'I run the build day-to-day — schedule, trades and budget. I set up the plan and invite the owner to follow along.',
+    desc: 'I run the build day-to-day. I set it up for its owner, who claims it by signing in with the email I give; until then I drive the brief and the plan.',
     tag: 'Runs the timeline',
     continueLabel: 'Continue as general contractor',
   },
@@ -79,11 +79,29 @@ export const CREATOR_ROLE_COPY: Readonly<
  * The Basics screen's lede. It must read for a GC creator too (LINA-227) — the
  * screen no longer assumes the creator is the owner. Keyed by the creator role
  * the D2 screen chose and carried forward as `?as=`.
+ *
+ * PRD-09 O-14: it promises only the steps that exist. Creation is one step; the
+ * build's page then offers the Excel import and the participants page the
+ * invitations. There is no operating-model step (D-35: the contract shape is
+ * derived from what is tendered and awarded).
  */
 export const BASICS_LEDE: Readonly<Record<CreatorRole, string>> = Object.freeze({
-  owner: "You're setting up a build you own. Next you'll choose how it's run, then invite your contractor.",
-  counterparty: "You're setting up a build you'll run. Next you'll choose how it's run, then invite the homeowner to follow along.",
+  owner: "You're setting up a build you own. Next, on the build's page, bring in the plan from Excel or invite your contractor to.",
+  counterparty: "You're setting up a build you'll run for its owner. Give their email: they claim the build when they sign in with it. Then bring in your plan from Excel.",
 });
+
+// ── Creator role → the v2 model (PRD-09 O-13) ────────────────────────────────
+//
+// The v2 model has exactly one place for "who is creating this build": a
+// supplier creating it for an owner sends `on_behalf_of_owner_email` (doc 14
+// Q4) — the build is an unowned draft the owner claims, and the creator drives
+// the brief and the plan until then. So the GC path asks for the owner's email
+// and sends it; the owner path sends nothing extra. The other two questions the
+// v1 wizard asked are GONE, because the to-be model has no field for them and
+// should not: "expected start" is the plan's first date (D-24, the plan is
+// composed over time), and "do you already have a signed contractor?" is
+// derived — the contract shape follows from what is tendered and awarded (D-35)
+// and the baseline is taken at award (D-43).
 
 /** The three models, in the pen's segmented-control order (screen 03). */
 export const OPERATING_MODELS: readonly OperatingModel[] = Object.freeze([
@@ -244,52 +262,6 @@ export const BUILD_TYPES = Object.freeze([
 ] as const);
 
 export type BuildType = (typeof BUILD_TYPES)[number]['value'];
-
-// ── Basics: expected start (LINA-219) ────────────────────────────────────────
-//
-// The pen draws Expected start as a MONTH picker showing "March 2026", not a
-// free-form date field: the owner is stating the month they expect work to begin,
-// a target and not a commitment, so day-precision would be false precision. The
-// stored value stays "YYYY-MM" — the same shape the column already held when this
-// was a native month input — so the change is the control, not the data.
-//
-// Pure and now-injected (never an argless `new Date()` in a shared module) so the
-// list is testable: given a fixed "now", the options are deterministic.
-
-const MONTH_NAMES = Object.freeze([
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]);
-
-/** Two zero-padded digits for a 1-based month, e.g. 3 → "03". */
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : String(n);
-}
-
-/**
- * The next `count` months starting from `now`'s month, as `{ value, label }`
- * where value is "YYYY-MM" and label is "March 2026". 18 by default — a year and
- * a half is long enough for a not-yet-started build without turning the picker
- * into a scroll.
- */
-export function expectedStartOptions(
-  now: Date,
-  count = 18,
-): ReadonlyArray<{ value: string; label: string }> {
-  const out: { value: string; label: string }[] = [];
-  const year0 = now.getFullYear();
-  const month0 = now.getMonth(); // 0-based
-  for (let i = 0; i < count; i += 1) {
-    const total = month0 + i;
-    const year = year0 + Math.floor(total / 12);
-    const month = total % 12; // 0-based
-    out.push({
-      value: `${year}-${pad2(month + 1)}`,
-      label: `${MONTH_NAMES[month]} ${year}`,
-    });
-  }
-  return Object.freeze(out);
-}
 
 /** The label an owner reads for a stored build-type slug; the slug itself as a
  *  fallback so an old value that predates a list change never renders blank. */

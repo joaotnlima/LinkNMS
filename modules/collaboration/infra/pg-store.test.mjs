@@ -20,11 +20,21 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
 import { createCollaborationStore } from './pg-store.mjs';
+import { createQuestionPort } from '../application/question-port.mjs';
 import { collaborationConsumers } from '../application/consumers.mjs';
+// The owning modules' published audience ports (PRD-12 N-1), wired exactly as
+// the composition root wires them — this suite proves the end-to-end path.
+import { createIdentityAudience } from '../../identity/application/audience.mjs';
+import { createIdentityStore } from '../../identity/infra/pg-store.mjs';
+import { createPlanningAudience } from '../../planning/application/audience.mjs';
+import { createPlanningStore } from '../../planning/infra/pg-store.mjs';
+import { createTenderingAudience } from '../../tendering/application/audience.mjs';
+import { createTenderingStore } from '../../tendering/infra/pg-store.mjs';
 import {
   createComment, answerQuestion, resolveQuestion, listMyQuestions,
   createMinute, circulateMinute, acknowledgeMinute, listActivity,
-  listNotifications, markNotificationsRead, putNotificationPreferences,
+  listNotifications, markNotificationsRead, putNotificationPreferences, getNotificationPreferences,
+  getNotificationSummary,
 } from '../application/use-cases.mjs';
 import { dispatchPending, publishEvent } from '../../../platform/outbox.mjs';
 
@@ -60,8 +70,25 @@ function variationEvent(over = {}) {
   };
 }
 
+/** A REAL planning.variation row behind the event (planning's port reads it). */
+async function recordedVariation(pool) {
+  const evt = variationEvent();
+  await pool.query(
+    `INSERT INTO planning.variation (id, project_id, task_id, kind, scope_type, scope_id, delta, cause,
+       first_changed_at, last_changed_at, last_changed_by_org_id, status)
+     VALUES ($1, $2, $3, 'time', 'project', $2, '{"finish_wd": 1}', 'direct', now(), now(), $4, 'closed')`,
+    [evt.data.variation_id, PROJECT, TASK, GC_ORG],
+  );
+  return evt;
+}
+
+function capturingMail() {
+  const sent = [];
+  return { sent, send: async (m) => { sent.push(m); return { id: `m${sent.length}` }; } };
+}
+
 describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
-  let pg, admin, pool, store, consumers;
+  let pg, admin, pool, store, consumers, mail;
 
   before(async () => {
     ({ default: pg } = await import('pg'));
@@ -113,8 +140,19 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
        VALUES ($1, $2, 2, 'aa', 'Reboco WC', $3)`,
       [TASK, PROJECT, PRIME],
     );
+    await pool.query(
+      `INSERT INTO identity.org_membership (org_id, person_id, org_role) VALUES ($1, $2, 'admin'), ($3, $4, 'admin')`,
+      [OWNER_ORG, OWNER_PERSON, GC_ORG, GC_PERSON],
+    );
     store = createCollaborationStore(pool);
-    consumers = collaborationConsumers(store);
+    mail = capturingMail();
+    consumers = collaborationConsumers(store, {
+      identity: createIdentityAudience(createIdentityStore(pool)),
+      planning: createPlanningAudience(createPlanningStore(pool)),
+      tendering: createTenderingAudience(createTenderingStore(pool)),
+      mail: { sender: mail, baseUrl: 'https://portal.test' },
+      logger: { error: () => {} },
+    });
   });
 
   after(async () => {
@@ -189,7 +227,7 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
   });
 
   test('digest: three variations in the window fold into ONE unread notification', async () => {
-    const events = [variationEvent(), variationEvent(), variationEvent()];
+    const events = [await recordedVariation(pool), await recordedVariation(pool), await recordedVariation(pool)];
     for (const evt of events) await publishEvent(pool, evt);
     await dispatchPending(pool, consumers);
     // Redelivery of the whole batch is absorbed by event_ids in object_ref.
@@ -204,10 +242,18 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(rows[0].object_ref.count, 3);
     assert.match(rows[0].title, /^3 variations/);
     assert.equal(rows[0].read_at, null);
+    assert.equal(rows[0].object_ref.url, `/projects/${PROJECT}/plan`);
+    // Owner + client of the row (the owner here) — the GC changed its own plan.
+    const { rows: gcRows } = await pool.query(
+      `SELECT 1 FROM collaboration.notification WHERE person_id = $1 AND category = 'variations'`, [GC_PERSON],
+    );
+    assert.equal(gcRows.length, 0);
+    // Only the row that OPENED the window was mailed, once.
+    assert.equal(mail.sent.filter((m) => m.to === 'silva@casa.pt' && /variation/.test(m.subject)).length, 1);
 
     // Reading the digest closes the window: the next variation opens a new one.
     await markNotificationsRead({ viewer: owner(), store, body: { ids: [rows[0].id] } });
-    await publishEvent(pool, variationEvent());
+    await publishEvent(pool, await recordedVariation(pool));
     await dispatchPending(pool, consumers);
     const { rows: after } = await pool.query(
       `SELECT count(*)::int AS n FROM collaboration.notification WHERE person_id = $1 AND category = 'variations'`,
@@ -222,14 +268,18 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
       body: { items: [{ category: 'variations', channel: 'in_app', enabled: false }] },
     });
     assert.equal(saved.status, 200);
-    assert.equal(saved.body.items.length, 1);
+    assert.equal(saved.body.items.length, 16, 'the full effective set answers');
+    assert.equal(saved.body.items.find((p) => p.category === 'variations' && p.channel === 'in_app').enabled, false);
+    await assert.rejects(putNotificationPreferences({
+      viewer: gc(), store, body: { items: [{ category: 'gossip', channel: 'email', enabled: true }] },
+    }), (e) => e.problem?.code === 'validation_failed' && Boolean(e.problem.errors?.items));
 
     // GC subscribes to time variations — but its person disabled the category.
     await pool.query(
       `INSERT INTO collaboration.variation_subscription (project_id, org_id, kinds) VALUES ($1, $2, '{time}')`,
       [PROJECT, GC_ORG],
     );
-    await publishEvent(pool, variationEvent());
+    await publishEvent(pool, await recordedVariation(pool));
     await dispatchPending(pool, consumers);
     const { rows } = await pool.query(
       `SELECT count(*)::int AS n FROM collaboration.notification WHERE person_id = $1 AND category = 'variations'`,
@@ -331,5 +381,195 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
       }),
       /Not found/i,
     );
+  });
+
+  // ── PRD-12 N-1: tendering + invitation events, deep links, e-mail ─────────
+  describe('notification centre (PRD-12 N-1, N-2)', () => {
+    const RFP = randomUUID();
+    const RECIPIENT = randomUUID();
+    const PROPOSAL = randomUUID();
+    const tenderEvent = (type, data, scope = { type: 'project', id: PROJECT }) => ({
+      event_id: randomUUID(), type, project_id: PROJECT,
+      actor: { person_id: null, org_id: null }, scope, data,
+    });
+
+    before(async () => {
+      await pool.query(`UPDATE platform.outbox SET dispatched_at = now() WHERE dispatched_at IS NULL`);
+      await pool.query(
+        `INSERT INTO tendering.rfp (id, project_id, issuer_org_id, level, title, status, submission_deadline)
+         VALUES ($1, $2, $3, 'owner', 'Telhado', 'published', now() + interval '14 days')`,
+        [RFP, PROJECT, OWNER_ORG],
+      );
+      await pool.query('INSERT INTO tendering.rfp_root (rfp_id, task_id) VALUES ($1, $2)', [RFP, TASK]);
+      await pool.query(
+        `INSERT INTO tendering.rfp_recipient (id, rfp_id, org_id, email, token_hash)
+         VALUES ($1, $2, $3, 'douro@gc.pt', $4)`,
+        [RECIPIENT, RFP, GC_ORG, 'b'.repeat(64)],
+      );
+      await pool.query(
+        `INSERT INTO tendering.proposal (id, rfp_id, recipient_id, bidder_org_id, status)
+         VALUES ($1, $2, $3, $4, 'submitted')`,
+        [PROPOSAL, RFP, RECIPIENT, GC_ORG],
+      );
+    });
+
+    test('bids in: the issuer is told, deep-linked to the Tender tab of the task, mailed once', async () => {
+      const evt = tenderEvent('tendering.proposal.submitted',
+        { rfp_id: RFP, proposal_id: PROPOSAL, bidder_org_id: GC_ORG, revision: 1 },
+        { type: 'rfp_private', id: PROPOSAL });
+      await publishEvent(pool, evt);
+      await dispatchPending(pool, consumers);
+      await pool.query('UPDATE platform.outbox SET dispatched_at = NULL WHERE event_id = $1', [evt.event_id]);
+      await dispatchPending(pool, consumers); // redelivery: no second row, no second mail
+
+      const inbox = await listNotifications({ viewer: owner(), store, query: { category: 'bids' } });
+      assert.equal(inbox.body.items.length, 1);
+      const n = inbox.body.items[0];
+      assert.equal(n.read_at, null);
+      assert.equal(n.object_ref.url, `/projects/${PROJECT}/plan?task=${TASK}&tab=tender`);
+      assert.match(n.title, /Telhado/);
+      assert.ok(inbox.body.unread_count >= 1);
+      const mails = mail.sent.filter((m) => m.to === 'silva@casa.pt' && /bid/.test(m.subject));
+      assert.equal(mails.length, 1);
+      assert.match(mails[0].text, new RegExp(`https://portal.test/projects/${PROJECT}/plan\\?task=${TASK}&tab=tender`));
+      // The bidder is never told about its own bid.
+      const gcBids = await listNotifications({ viewer: gc(), store, query: { category: 'bids' } });
+      assert.equal(gcBids.body.items.length, 0);
+    });
+
+    test('clarification answered → bidder orgs only (V8), linked to the clarifications tab', async () => {
+      await publishEvent(pool, tenderEvent('tendering.clarification.answered', { rfp_id: RFP, clarification_id: randomUUID() }));
+      await dispatchPending(pool, consumers);
+      const gcInbox = await listNotifications({ viewer: gc(), store, query: { category: 'tendering' } });
+      assert.equal(gcInbox.body.items.length, 1);
+      assert.equal(gcInbox.body.items[0].object_ref.url, `/projects/${PROJECT}/tendering/rfps/${RFP}?tab=clarifications`);
+      const ownerInbox = await listNotifications({ viewer: owner(), store, query: { category: 'tendering' } });
+      assert.equal(ownerInbox.body.items.length, 0, 'the issuer answered it — not told');
+    });
+
+    test('award → the winning bidder hears it won', async () => {
+      await publishEvent(pool, tenderEvent('tendering.rfp.awarded', { rfp_id: RFP, proposal_id: PROPOSAL, contract_id: randomUUID() }));
+      await dispatchPending(pool, consumers);
+      const gcInbox = await listNotifications({ viewer: gc(), store, query: { category: 'tendering' } });
+      assert.ok(gcInbox.body.items.some((n) => /You were awarded/.test(n.title)));
+    });
+
+    test('e-mail off for a category keeps the in-app row and stops the mail', async () => {
+      await putNotificationPreferences({
+        viewer: gc(), store, body: { items: [{ category: 'tendering', channel: 'email', enabled: false }] },
+      });
+      const before = mail.sent.length;
+      await publishEvent(pool, tenderEvent('tendering.rfp.cancelled', { rfp_id: RFP, reason: null }));
+      await dispatchPending(pool, consumers);
+      const gcInbox = await listNotifications({ viewer: gc(), store, query: { category: 'tendering' } });
+      assert.ok(gcInbox.body.items.some((n) => /cancelled/.test(n.title)));
+      assert.equal(mail.sent.length, before, 'no mail after opting out');
+      const prefs = await getNotificationPreferences({ viewer: gc(), store });
+      assert.equal(prefs.body.items.length, 16);
+      assert.equal(prefs.body.items.find((p) => p.category === 'tendering' && p.channel === 'email').enabled, false);
+      assert.equal(prefs.body.items.find((p) => p.category === 'bids' && p.channel === 'email').enabled, true);
+    });
+
+    test('invitation accepted → the inviter org; mark all read zeroes the bell', async () => {
+      await publishEvent(pool, tenderEvent('project.invitation.accepted', {
+        invitation_id: randomUUID(), org_id: STRANGER_ORG, invited_by_org_id: OWNER_ORG, invite_capacity: 'inspection',
+      }));
+      await dispatchPending(pool, consumers);
+      const inbox = await listNotifications({ viewer: owner(), store, query: { category: 'invitations' } });
+      assert.equal(inbox.body.items.length, 1);
+      assert.equal(inbox.body.items[0].object_ref.url, `/projects/${PROJECT}`);
+
+      await markNotificationsRead({ viewer: owner(), store, body: { all: true } });
+      const after = await listNotifications({ viewer: owner(), store, query: { limit: '1' } });
+      assert.equal(after.body.unread_count, 0);
+      await assert.rejects(
+        listNotifications({ viewer: owner(), store, query: { category: 'gossip' } }),
+        (e) => e.problem?.code === 'validation_failed' && Boolean(e.problem.errors?.category));
+    });
+  });
+
+  describe('files: deliverables and new versions (PRD-05 F-11, F-13..F-15)', () => {
+    const DELIVERABLE = randomUUID();
+    const DOC = randomUUID();
+    const evt = (type, data, orgId) => ({
+      event_id: randomUUID(), type, project_id: PROJECT,
+      actor: { person_id: null, org_id: orgId }, scope: { type: 'project', id: PROJECT }, data,
+    });
+
+    before(async () => {
+      await pool.query(`UPDATE platform.outbox SET dispatched_at = now() WHERE dispatched_at IS NULL`);
+      await pool.query(
+        `INSERT INTO planning.deliverable (id, project_id, task_id, title) VALUES ($1, $2, $3, 'As-built gutter layout')`,
+        [DELIVERABLE, PROJECT, TASK],
+      );
+    });
+
+    test('submitted → the client side (owner), never the submitting GC; decided → the submitter', async () => {
+      const data = { deliverable_id: DELIVERABLE, task_id: TASK, submitted_by_org_id: GC_ORG, document_id: DOC, version_no: 1 };
+      await publishEvent(pool, evt('planning.deliverable.submitted', data, GC_ORG));
+      await dispatchPending(pool, consumers);
+      const ownerInbox = await listNotifications({ viewer: owner(), store, query: { category: 'files' } });
+      assert.equal(ownerInbox.body.items.length, 1);
+      assert.match(ownerInbox.body.items[0].title, /submitted for your review/);
+      assert.equal(ownerInbox.body.items[0].object_ref.url, `/projects/${PROJECT}/plan?task=${TASK}&tab=files`);
+      const gcInbox = await listNotifications({ viewer: gc(), store, query: { category: 'files' } });
+      assert.equal(gcInbox.body.items.length, 0);
+
+      await publishEvent(pool, evt('planning.deliverable.approved', { ...data, decided_by_org_id: OWNER_ORG }, OWNER_ORG));
+      await dispatchPending(pool, consumers);
+      const gcAfter = await listNotifications({ viewer: gc(), store, query: { category: 'files' } });
+      assert.deepEqual(gcAfter.body.items.map((n) => n.title), ['“As-built gutter layout” was approved']);
+      const ownerAfter = await listNotifications({ viewer: owner(), store, query: { category: 'files' } });
+      assert.equal(ownerAfter.body.items.length, 1, 'the decider is not told about its own decision');
+    });
+
+    test('a new version of a linked file → the owners of the linking tasks, minus the uploader', async () => {
+      await publishEvent(pool, evt('documents.version.uploaded', {
+        document_id: DOC, version_no: 2, title: 'A-301 Roof plan', linked_task_ids: [TASK],
+      }, GC_ORG));
+      await publishEvent(pool, evt('documents.version.uploaded', {
+        document_id: DOC, version_no: 1, title: 'A-301 Roof plan', linked_task_ids: [TASK],
+      }, GC_ORG));
+      await dispatchPending(pool, consumers);
+      const ownerInbox = await listNotifications({ viewer: owner(), store, query: { category: 'files' } });
+      const versions = ownerInbox.body.items.filter((n) => /new version/.test(n.title));
+      assert.equal(versions.length, 1, 'v1 is an upload, not a new version');
+      assert.match(versions[0].title, /\(v2\)/);
+      const gcInbox = await listNotifications({ viewer: gc(), store, query: { category: 'files' } });
+      assert.equal(gcInbox.body.items.some((n) => /new version/.test(n.title)), false);
+    });
+  });
+
+  describe('the plan is in, and what is waiting (PRD-09 O-2, O-12)', () => {
+    test('plan imported → the owner, never the importer; the summary counts unread by category on the build', async () => {
+      await pool.query(`UPDATE platform.outbox SET dispatched_at = now() WHERE dispatched_at IS NULL`);
+      await publishEvent(pool, {
+        event_id: randomUUID(), type: 'planning.plan.imported', project_id: PROJECT,
+        actor: { person_id: null, org_id: GC_ORG }, scope: { type: 'project', id: PROJECT },
+        data: { import_id: randomUUID(), actions: 6, sub_actions: 14, links: 5, warnings: 2,
+          imported_by_org_id: GC_ORG, imported_by_org_name: 'Ferreira Construção', owner_org_id: OWNER_ORG },
+      });
+      await dispatchPending(pool, consumers);
+      const ownerInbox = await listNotifications({ viewer: owner(), store, query: { category: 'plan' } });
+      assert.deepEqual(ownerInbox.body.items.map((n) => n.title), ['Plan imported by Ferreira Construção: 6 actions, 14 sub-actions']);
+      assert.equal(ownerInbox.body.items[0].object_ref.url, `/projects/${PROJECT}/plan`);
+      const gcInbox = await listNotifications({ viewer: gc(), store, query: { category: 'plan' } });
+      assert.equal(gcInbox.body.items.length, 0);
+
+      const summary = await getNotificationSummary({ viewer: owner(), store, query: { project_id: PROJECT } });
+      const plan = summary.body.categories.find((c) => c.category === 'plan');
+      assert.equal(plan.unread_count, 1);
+      assert.match(plan.latest.title, /Plan imported/);
+      assert.equal(summary.body.total_unread, summary.body.categories.reduce((n, c) => n + c.unread_count, 0));
+      const elsewhere = await getNotificationSummary({ viewer: owner(), store, query: { project_id: randomUUID() } });
+      assert.deepEqual([elsewhere.body.total_unread, elsewhere.body.categories], [0, []]);
+      await assert.rejects(getNotificationSummary({ viewer: owner(), store, query: { project_id: 'x' } }),
+        (e) => e.problem?.code === 'validation_failed');
+      // O-1: the build home's open-question count through the question port.
+      const { rows: [{ n }] } = await pool.query(
+        `SELECT count(*)::int AS n FROM collaboration.comment c JOIN collaboration.thread t ON t.id = c.thread_id
+          WHERE t.project_id = $1 AND c.kind = 'question' AND c.question_status = 'open' AND c.deleted_at IS NULL`, [PROJECT]);
+      assert.equal(await createQuestionPort(store).openQuestionCount(PROJECT), n);
+    });
   });
 });

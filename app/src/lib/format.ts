@@ -2,28 +2,42 @@
 // format for display — never compute budget/status here.
 import type { Role } from './types';
 
-export function money(cents: number): string {
+/**
+ * THE money formatter (one for the whole app). LinkNMS builds are priced in
+ * euros (Portugal first), so a figure prints with `€` — "€180,000" — exactly as
+ * the tendering surfaces always did (tendering-view `formatMoney`, rfp-link
+ * `formatEuro`, which now delegate here). Grouping is the English comma style
+ * the rest of the UI copy is written in, so a budget and a bid read the same
+ * wherever they appear. A non-EUR currency prints its ISO code ("USD 50").
+ * Negative amounts keep a leading '-'.
+ */
+export function formatCents(
+  cents: number,
+  { currency = 'EUR', fractionDigits = 0 }: { currency?: string; fractionDigits?: number } = {},
+): string {
   const sign = cents < 0 ? '-' : '';
   const abs = Math.abs(cents);
-  return `${sign}$${(abs / 100).toLocaleString('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+  const symbol = currency === 'EUR' ? '€' : `${currency} `;
+  return `${sign}${symbol}${(abs / 100).toLocaleString('en-US', {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   })}`;
 }
 
+/** Whole euros — "€250,000". */
+export function money(cents: number): string {
+  return formatCents(cents);
+}
+
+/** Euros and cents — "€250,000.00". */
 export function moneyPrecise(cents: number): string {
-  const sign = cents < 0 ? '-' : '';
-  const abs = Math.abs(cents);
-  return `${sign}$${(abs / 100).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return formatCents(cents, { fractionDigits: 2 });
 }
 
 export function delta(cents: number): { text: string; dir: 'up' | 'down' | 'flat' } {
   if (cents > 0) return { text: `+${money(cents)}`, dir: 'up' };
   if (cents < 0) return { text: `−${money(-cents)}`, dir: 'down' };
-  return { text: '$0', dir: 'flat' };
+  return { text: money(0), dir: 'flat' };
 }
 
 export function formatDate(iso: string): string {
@@ -70,7 +84,7 @@ export function parseAmountToCents(
 ): number {
   // Spaces, a currency sign and thousands separators are how people actually
   // type money; everything past that must be exact.
-  const cleaned = raw.trim().replace(/[\s,]/g, '').replace(/^([-+]?)\$/, '$1');
+  const cleaned = raw.trim().replace(/[\s,]/g, '').replace(/^([-+]?)[$€]/, '$1');
   const pattern = allowNegative ? /^[-+]?\d+(\.\d{1,2})?$/ : /^\+?\d+(\.\d{1,2})?$/;
   if (!pattern.test(cleaned)) {
     throw new Error(

@@ -1,8 +1,7 @@
 // Unit tests for the v2 plan-grid hydration seam (LINA-320, S3).
 //
 // The rules worth pinning: the nested StageRow tree hydrates into the editor's
-// 3-level phase/task/subtask draft; a row below a subtask is DROPPED at the
-// depth-3 cap; `null` trade/dates normalise to the empty string the editor uses;
+// up-to-5-level draft (PRD-01 G-1); a row below level 5 is DROPPED at the cap; `null` trade/dates normalise to the empty string the editor uses;
 // the org-as-party id passes through; typed links re-attach per successor and an
 // edge to an un-rendered (dropped/absent) predecessor is DROPPED, not drawn; and
 // the status meter is carried ONLY on a baselined plan (all-grey on a draft,
@@ -12,7 +11,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planGridToDraft } from './planning-hydrate.ts';
+import { planGridToDraft, HYDRATE_MAX_DEPTH } from './planning-hydrate.ts';
+import { MAX_DEPTH, toWire } from '../plan-authoring.ts';
+
+// A single branch `levels` deep (phase = level 1), ids l1..lN.
+const branch = (levels) => {
+  let node = null;
+  for (let l = levels; l >= 1; l -= 1) node = row({ id: `l${l}`, name: `L${l}`, children: node ? [node] : [] });
+  return node;
+};
 
 const row = (over = {}) => ({
   id: 'r1', key: 'r1', name: 'Row', trade: null, assigneePartyId: null,
@@ -24,7 +31,7 @@ const view = (over = {}) => ({
   projectId: 'proj', rows: [], isBaselined: false, dependenciesBySuccessor: {}, ...over,
 });
 
-test('phases/tasks/subtasks: the tree hydrates into the 3-level draft', () => {
+test('phases/tasks/subtasks: the tree hydrates into the nested draft', () => {
   const v = view({
     rows: [row({
       id: 'p1', name: 'Phase', children: [
@@ -43,19 +50,19 @@ test('phases/tasks/subtasks: the tree hydrates into the 3-level draft', () => {
   assert.equal(task.children[0].name, 'Sub');
 });
 
-test('depth-3 cap: a row below a subtask is dropped', () => {
-  const v = view({
-    rows: [row({
-      id: 'p1', children: [
-        row({ id: 't1', children: [
-          row({ id: 's1', children: [row({ id: 'x1', name: 'Too deep' })] }),
-        ] }),
-      ],
-    })],
-  });
-  const sub = planGridToDraft(v)[0].tasks[0].children[0];
-  assert.equal(sub.key, 's1');
-  assert.deepEqual(sub.children, []); // the 4th level never reaches the editor
+test('the hydrate cap is the editor cap', () => {
+  assert.equal(HYDRATE_MAX_DEPTH, MAX_DEPTH);
+});
+
+test('levels 4 and 5 hydrate (no longer dropped); level 6 is dropped at the cap', () => {
+  const [phase] = planGridToDraft(view({ rows: [branch(6)] }));
+  const l4 = phase.tasks[0].children[0].children[0];
+  assert.equal(l4.key, 'l4');
+  const l5 = l4.children[0];
+  assert.equal(l5.key, 'l5');
+  assert.deepEqual(l5.children, []); // the 6th level never reaches the editor
+  // And a 5-level plan saves without a too_deep refusal.
+  assert.doesNotThrow(() => toWire(planGridToDraft(view({ rows: [branch(5)] }))));
 });
 
 test('null trade/dates normalise to the empty string the editor uses', () => {
@@ -109,18 +116,14 @@ test('an edge to an un-rendered predecessor is dropped, not drawn dangling', () 
   assert.deepEqual(task.dependsOn, [{ on: 'p1', type: 'ends_with' }]);
 });
 
-test('a dep pointing past the depth-3 cap is dropped', () => {
+test('a dep pointing past the level-5 cap is dropped; one at level 5 survives', () => {
   const v = view({
-    rows: [row({
-      id: 'p1', children: [row({
-        id: 't1', children: [row({ id: 's1', children: [row({ id: 'x1' })] })],
-      })],
-    })],
-    // s1 depends on x1, which is dropped at the depth cap and never rendered.
-    dependenciesBySuccessor: { s1: [{ on: 'x1', type: 'starts_after' }] },
+    rows: [branch(6)],
+    // l3 depends on l6 (dropped at the cap) and on l5 (rendered).
+    dependenciesBySuccessor: { l3: [{ on: 'l6', type: 'starts_after' }, { on: 'l5', type: 'ends_with' }] },
   });
-  const sub = planGridToDraft(v)[0].tasks[0].children[0];
-  assert.deepEqual(sub.dependsOn, []);
+  const l3 = planGridToDraft(v)[0].tasks[0].children[0];
+  assert.deepEqual(l3.dependsOn, [{ on: 'l5', type: 'ends_with' }]);
 });
 
 test('reported status round-trips on a draft as well as a baselined plan (LINA-404)', () => {
@@ -144,4 +147,13 @@ test('an unreported row stays status-less so the meter is all-grey by default (A
 
 test('an empty plan hydrates to an empty draft (the fail-closed / no-plan state)', () => {
   assert.deepEqual(planGridToDraft(view()), []);
+});
+
+test('the server critical path (is_critical → isCritical) rides onto phases and tasks; unmarked rows carry nothing', () => {
+  const [phase] = planGridToDraft(view({
+    rows: [row({ id: 'p1', isCritical: true, children: [row({ id: 't1', isCritical: true }), row({ id: 't2' })] })],
+  }));
+  assert.equal(phase.isCritical, true);
+  assert.equal(phase.tasks[0].isCritical, true);
+  assert.equal('isCritical' in phase.tasks[1], false);
 });

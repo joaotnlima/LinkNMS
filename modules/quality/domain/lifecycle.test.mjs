@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   verificationTransition, nonConformityTransition,
-  verificationBody, nonConformityBody, inspectionBody,
+  verificationBody, nonConformityBody, inspectionBody, nonConformityActions,
 } from './lifecycle.mjs';
 
 describe('verification_request state machine', () => {
@@ -102,5 +102,38 @@ describe('wire projections (§6.5: absent, never null)', () => {
     assert.equal(body.date, '2026-09-25');
     assert.equal('findings' in body && body.findings !== undefined, false);
     assert.deepEqual(body.task_ids, ['t1']);
+  });
+});
+
+describe('viewer actions on a non-conformity (PRD-12 N-3)', () => {
+  const nc = (status, over = {}) => ({ status, raised_by_org_id: 'R', assigned_to_org_id: 'A', ...over });
+
+  test('only the raiser closes or rejects a fix — never the fixer, never the chain', () => {
+    assert.deepEqual(nonConformityActions(nc('fixed'), { orgId: 'R' }), ['close', 'reject_fix']);
+    assert.deepEqual(nonConformityActions(nc('fixed'), { orgId: 'A' }), []);
+    assert.deepEqual(nonConformityActions(nc('fixed'), { orgId: 'C', inChain: true }), []);
+  });
+
+  test('assign: raiser or client chain; fix: the assignee, again after a rejected fix', () => {
+    assert.deepEqual(nonConformityActions(nc('open'), { orgId: 'C', inChain: true }), ['assign']);
+    assert.deepEqual(nonConformityActions(nc('open'), { orgId: 'X' }), []);
+    assert.deepEqual(nonConformityActions(nc('rejected_fix'), { orgId: 'A' }), ['fix']);
+    assert.deepEqual(nonConformityActions(nc('rejected_fix'), { orgId: 'R' }), ['assign']);
+    assert.deepEqual(nonConformityActions(nc('closed'), { orgId: 'R' }), []);
+  });
+
+  test('permissions narrow what is offered', () => {
+    const has = (p) => p === 'org:progress:report';
+    assert.deepEqual(nonConformityActions(nc('fixed'), { orgId: 'R', has }), []);
+    assert.deepEqual(nonConformityActions(nc('assigned'), { orgId: 'A', has }), ['fix']);
+  });
+
+  test('body: location and step note when present, absent otherwise; actions only when projected', () => {
+    const b = nonConformityBody({ id: 'n', status: 'open', raised_by_person_id: 'p', raised_by_org_id: 'R', raised_at: new Date('2026-10-11T00:00:00Z') });
+    assert.equal(b.location_id, undefined);
+    assert.equal(b.last_note, undefined);
+    assert.equal(b.actions, undefined);
+    assert.equal(b.raised_at, '2026-10-11T00:00:00.000Z');
+    assert.deepEqual(nonConformityBody({ status: 'open', location_id: 'L' }, []).actions, []);
   });
 });

@@ -15,6 +15,8 @@ import { randomUUID } from 'node:crypto';
 
 import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { publishEvent } from '../../../platform/outbox.mjs';
+import { notificationQueries } from './pg-notifications.mjs';
+import { questionQueries } from './pg-questions.mjs';
 
 export function createCollaborationStore(pool) {
   async function tx(fn) {
@@ -156,30 +158,31 @@ export function createCollaborationStore(pool) {
       return rows.length > 0;
     },
 
-    /** Consumer target resolution: who at this org works this project. */
-    async staffedPersons(projectId, orgId) {
+    /**
+     * The project's variation subscriptions (doc 08) — collaboration's own
+     * table. WHO a variation concerns comes from planning's audience port and
+     * WHICH PEOPLE from identity's; this only narrows / extends by kind.
+     */
+    async variationSubscriptions(projectId) {
       const { rows } = await pool.query(
-        'SELECT person_id FROM identity.project_staffing WHERE project_id = $1 AND org_id = $2',
-        [projectId, orgId],
+        'SELECT org_id, kinds FROM collaboration.variation_subscription WHERE project_id = $1',
+        [projectId],
       );
-      return rows.map((r) => r.person_id);
-    },
-
-    async ownerOrgOf(projectId) {
-      const { rows } = await pool.query('SELECT owner_org_id FROM project.project WHERE id = $1', [projectId]);
-      return rows[0]?.owner_org_id ?? null;
-    },
-
-    /** Orgs subscribed to variations of this kind (plus caller adds owner). */
-    async variationSubscribers(projectId, kind) {
-      const { rows } = await pool.query(
-        'SELECT org_id FROM collaboration.variation_subscription WHERE project_id = $1 AND $2 = ANY(kinds)',
-        [projectId, kind],
-      );
-      return rows.map((r) => r.org_id);
+      return rows;
     },
 
     // ── comments & questions ───────────────────────────────────────────────
+    /** Open questions on a build (PRD-09 O-1) — application/question-port.mjs. */
+    async countOpenQuestions(projectId) {
+      const { rows } = await pool.query(
+        `SELECT count(*)::int AS n
+           FROM collaboration.comment c JOIN collaboration.thread t ON t.id = c.thread_id
+          WHERE t.project_id = $1 AND c.kind = 'question' AND c.question_status = 'open' AND c.deleted_at IS NULL`,
+        [projectId],
+      );
+      return rows[0].n;
+    },
+
     async getComment(commentId) {
       const { rows } = await pool.query(
         `SELECT c.*, t.object_type, t.object_id, t.project_id
@@ -192,7 +195,7 @@ export function createCollaborationStore(pool) {
 
     async listComments({ objectType, objectId, cursor, limit }) {
       const { rows } = await pool.query(
-        `SELECT c.*, t.object_type, t.object_id
+        `SELECT c.*, t.object_type, t.object_id, t.project_id
            FROM collaboration.comment c JOIN collaboration.thread t ON t.id = c.thread_id
           WHERE t.object_type = $1 AND t.object_id = $2
             AND ($3::uuid IS NULL OR c.id > $3)
@@ -204,21 +207,7 @@ export function createCollaborationStore(pool) {
       return { items: page, nextCursor: rows.length > limit ? page[page.length - 1].id : null };
     },
 
-    /** The addressee's question queue (D-13: the owner's dispute channel). */
-    async listMyQuestions({ orgId, status, cursor, limit }) {
-      const { rows } = await pool.query(
-        `SELECT c.*, t.object_type, t.object_id
-           FROM collaboration.comment c JOIN collaboration.thread t ON t.id = c.thread_id
-          WHERE c.kind = 'question' AND c.addressee_org_id = $1
-            AND ($2::text IS NULL OR c.question_status = $2)
-            AND ($3::uuid IS NULL OR c.id > $3)
-          ORDER BY c.created_at, c.id
-          LIMIT $4`,
-        [orgId, status, cursor, limit + 1],
-      );
-      const page = rows.slice(0, limit);
-      return { items: page, nextCursor: rows.length > limit ? page[page.length - 1].id : null };
-    },
+    // listMyQuestions, listProjectQuestions, listMinutes: ./pg-questions.mjs (PRD-12).
 
     /**
      * Note: plain insert. Question: + ledger `collaboration.question.opened`
@@ -226,7 +215,7 @@ export function createCollaborationStore(pool) {
      * UNIQUE(object_type, object_id) makes racers converge.
      */
     async createComment({ id, objectType, objectId, projectId, kind, body, mentions,
-      attachmentDocumentIds, addresseeOrgId, actor }) {
+      attachmentDocumentIds, addresseeOrgId, topic = null, actor }) {
       return tx(async (client) => {
         const { rows: [thread] } = await client.query(
           `INSERT INTO collaboration.thread (id, project_id, object_type, object_id)
@@ -239,11 +228,11 @@ export function createCollaborationStore(pool) {
         const { rows } = await client.query(
           `INSERT INTO collaboration.comment
              (id, thread_id, author_person_id, author_org_id, kind, body, mentions,
-              attachment_document_ids, addressee_org_id, question_status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+              attachment_document_ids, addressee_org_id, question_status, topic)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
            RETURNING *`,
           [id, thread.id, actor.personId, actor.orgId, kind, body, mentions,
-            attachmentDocumentIds, addresseeOrgId, isQuestion ? 'open' : null],
+            attachmentDocumentIds, addresseeOrgId, isQuestion ? 'open' : null, isQuestion ? (topic ?? 'clarification') : null],
         );
         const comment = { ...rows[0], object_type: objectType, object_id: objectId };
         if (isQuestion && projectId) {
@@ -254,7 +243,7 @@ export function createCollaborationStore(pool) {
             type: 'collaboration.question.opened',
             scope: { type: 'project', id: projectId },
             object: { type: 'comment', id },
-            payload: { object_type: objectType, object_id: objectId, addressee_org_id: addresseeOrgId },
+            payload: { object_type: objectType, object_id: objectId, addressee_org_id: addresseeOrgId, topic: comment.topic },
             channel: actor.channel,
           });
           await publishEvent(client, {
@@ -269,6 +258,7 @@ export function createCollaborationStore(pool) {
               object_id: objectId,
               addressee_org_id: addresseeOrgId,
               asker_org_id: actor.orgId,
+              topic: comment.topic,
             },
           });
         }
@@ -280,13 +270,15 @@ export function createCollaborationStore(pool) {
      * Answer = the answer comment + the question's open → answered move in
      * ONE transaction; null when the question raced away from `open`.
      */
-    async answerQuestion({ questionId, answerId, body, mentions, attachmentDocumentIds, projectId, actor }) {
+    async answerQuestion({ questionId, answerId, body, mentions, attachmentDocumentIds, decision = null, topic = null,
+      projectId, actor }) {
       return tx(async (client) => {
+        // A design change's decision is kept on the QUESTION (0028).
         const { rows: moved } = await client.query(
-          `UPDATE collaboration.comment SET question_status = 'answered'
+          `UPDATE collaboration.comment SET question_status = 'answered', decision = $2
             WHERE id = $1 AND kind = 'question' AND question_status = 'open'
             RETURNING thread_id, addressee_org_id, author_org_id, author_person_id`,
-          [questionId],
+          [questionId, decision],
         );
         if (!moved.length) return null;
         const q = moved[0];
@@ -310,7 +302,7 @@ export function createCollaborationStore(pool) {
             type: 'collaboration.question.answered',
             scope: { type: 'project', id: projectId },
             object: { type: 'comment', id: questionId },
-            payload: { answer_comment_id: answerId },
+            payload: { answer_comment_id: answerId, ...(decision ? { decision } : {}) },
             channel: actor.channel,
           });
           await publishEvent(client, {
@@ -324,6 +316,8 @@ export function createCollaborationStore(pool) {
               answer_comment_id: answerId,
               asker_org_id: q.author_org_id,
               asker_person_id: q.author_person_id,
+              topic,
+              ...(decision ? { decision } : {}),
             },
           });
         }
@@ -499,135 +493,9 @@ export function createCollaborationStore(pool) {
       };
     },
 
-    // ── notifications ──────────────────────────────────────────────────────
-    /** Newest first; composite keyset (created_at, id) — ids are random. */
-    async listNotifications({ personId, unread, cursor, limit }) {
-      const [cursorAt, cursorId] = cursor ? cursor.split('~') : [null, null];
-      const { rows } = await pool.query(
-        `SELECT * FROM collaboration.notification
-          WHERE person_id = $1
-            AND ($2::boolean IS NOT TRUE OR read_at IS NULL)
-            AND ($3::timestamptz IS NULL OR (created_at, id) < ($3, $4::uuid))
-          ORDER BY created_at DESC, id DESC
-          LIMIT $5`,
-        [personId, unread, cursorAt, cursorId ?? null, limit + 1],
-      );
-      const page = rows.slice(0, limit);
-      const last = page[page.length - 1];
-      return {
-        items: page,
-        nextCursor: rows.length > limit ? `${last.created_at.toISOString()}~${last.id}` : null,
-      };
-    },
-
-    async markNotificationsRead({ personId, ids, all }) {
-      if (all) {
-        await pool.query(
-          'UPDATE collaboration.notification SET read_at = now() WHERE person_id = $1 AND read_at IS NULL',
-          [personId],
-        );
-        return;
-      }
-      await pool.query(
-        `UPDATE collaboration.notification SET read_at = now()
-          WHERE person_id = $1 AND id = ANY($2::uuid[]) AND read_at IS NULL`,
-        [personId, ids],
-      );
-    },
-
-    async listPreferences(personId) {
-      const { rows } = await pool.query(
-        'SELECT category, channel, enabled FROM collaboration.notification_preference WHERE person_id = $1 ORDER BY category, channel',
-        [personId],
-      );
-      return rows;
-    },
-
-    async putPreferences({ personId, items }) {
-      return tx(async (client) => {
-        for (const p of items) {
-          await client.query(
-            `INSERT INTO collaboration.notification_preference (person_id, category, channel, enabled)
-             VALUES ($1,$2,$3,$4)
-             ON CONFLICT (person_id, category, channel) DO UPDATE SET enabled = EXCLUDED.enabled`,
-            [personId, p.category, p.channel, p.enabled],
-          );
-        }
-        const { rows } = await client.query(
-          'SELECT category, channel, enabled FROM collaboration.notification_preference WHERE person_id = $1 ORDER BY category, channel',
-          [personId],
-        );
-        return rows;
-      });
-    },
-
-    /**
-     * Consumer write: one notification per person for one event. The 0005
-     * partial unique index (person_id, event_id) absorbs at-least-once
-     * delivery; a person who disabled the category's in_app channel is
-     * skipped (default is enabled — doc 08).
-     */
-    async notifyPersons({ personIds, category, title, objectRef, eventId }) {
-      for (const personId of [...new Set(personIds)]) {
-        await pool.query(
-          `INSERT INTO collaboration.notification (id, person_id, event_id, category, title, object_ref)
-           SELECT $1, $2, $3, $4, $5, $6::jsonb
-            WHERE NOT EXISTS (
-              SELECT 1 FROM collaboration.notification_preference np
-               WHERE np.person_id = $2 AND np.category = $4 AND np.channel = 'in_app' AND np.enabled = false)
-           ON CONFLICT (person_id, event_id) WHERE event_id IS NOT NULL DO NOTHING`,
-          [randomUUID(), personId, eventId, category, title, JSON.stringify(objectRef)],
-        );
-      }
-    },
-
-    /**
-     * The 15-minute variation digest (doc 10): one UNREAD `variations` row
-     * per person per project per window. The first event of a window creates
-     * the row (its event_id becomes the dedupe key); every further event
-     * inside the window updates count + title in place. `event_ids` in
-     * object_ref absorbs replays of already-folded events.
-     */
-    async digestVariation({ personIds, projectId, eventId, windowMinutes = 15 }) {
-      for (const personId of [...new Set(personIds)]) {
-        await tx(async (client) => {
-          const { rows: open } = await client.query(
-            `SELECT id, object_ref FROM collaboration.notification
-              WHERE person_id = $1 AND category = 'variations' AND read_at IS NULL
-                AND object_ref->>'id' = $2::text
-                AND created_at > now() - make_interval(mins => $3)
-              ORDER BY created_at DESC LIMIT 1
-              FOR UPDATE`,
-            [personId, projectId, windowMinutes],
-          );
-          if (open.length) {
-            const ref = open[0].object_ref;
-            const seen = ref.event_ids ?? [];
-            if (seen.includes(eventId)) return; // replay of a folded event
-            const count = (ref.count ?? 1) + 1;
-            await client.query(
-              `UPDATE collaboration.notification
-                  SET title = $2, object_ref = $3::jsonb
-                WHERE id = $1`,
-              [open[0].id,
-                `${count} variations recorded on this build`,
-                JSON.stringify({ ...ref, count, event_ids: [...seen, eventId] })],
-            );
-            return;
-          }
-          await client.query(
-            `INSERT INTO collaboration.notification (id, person_id, event_id, category, title, object_ref)
-             SELECT $1, $2, $3, 'variations', $4, $5::jsonb
-              WHERE NOT EXISTS (
-                SELECT 1 FROM collaboration.notification_preference np
-                 WHERE np.person_id = $2 AND np.category = 'variations' AND np.channel = 'in_app' AND np.enabled = false)
-             ON CONFLICT (person_id, event_id) WHERE event_id IS NOT NULL DO NOTHING`,
-            [randomUUID(), personId, eventId,
-              'A variation was recorded on this build',
-              JSON.stringify({ type: 'project', id: projectId, count: 1, event_ids: [eventId] })],
-          );
-        });
-      }
-    },
+    // Notifications, preferences and the variation digest (PRD-12) —
+    // infra/pg-notifications.mjs, spread so callers still see ONE store.
+    ...notificationQueries(pool, tx),
+    ...questionQueries(pool),
   };
 }

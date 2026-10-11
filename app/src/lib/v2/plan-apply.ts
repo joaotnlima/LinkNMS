@@ -60,6 +60,8 @@ export interface V2CreateRowSpec {
   name: string;
   kind?: 'task' | 'milestone' | 'summary';
   specialty?: string;
+  /** PRD-03 R-2: the directory taxonomy code picked with the label. */
+  specialty_code?: string;
   description?: string;
   dating_mode?: 'dated' | 'undated';
   start?: string | null;
@@ -171,6 +173,7 @@ export function authoredToCreateBatch(
       dating_mode: start ? 'dated' : 'undated',
     };
     if (node.trade) spec.specialty = node.trade;
+    if (node.tradeCode) spec.specialty_code = node.tradeCode;
     if (node.description) spec.description = node.description;
     if (start !== undefined) spec.start = start;
     if (finish !== undefined) spec.finish = finish;

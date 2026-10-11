@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 
 import { createPlanningStore } from './pg-store.mjs';
 import { planningConsumers } from '../application/consumers.mjs';
+import { createPlanningAudience } from '../application/audience.mjs';
 import {
   createTask, updateTask, reportProgress, listVariations, getVariation,
   createCostLine, getSchedule,
@@ -56,7 +57,7 @@ describe('phase-5 planning over Postgres (v2 migrations)', { skip }, () => {
     await admin.query(`DROP DATABASE IF EXISTS ${DB}`);
     await admin.query(`CREATE DATABASE ${DB}`);
     pool = new pg.Pool({ connectionString: url.replace(/\/[^/]*$/, `/${DB}`), max: 3 });
-    for (const f of ['0001_schema.sql', '0002_platform_idempotency.sql', '0003_project_claim.sql', '0004_contracting_contract_root.sql', '0008_project_phases_signoff.sql']) {
+    for (const f of ['0001_schema.sql', '0002_platform_idempotency.sql', '0003_project_claim.sql', '0004_contracting_contract_root.sql', '0008_project_phases_signoff.sql', '0012_planning_baseline_changes.sql', '0017_planning_deliverables.sql', '0021_planning_task_specialty_code.sql', '0026_planning_execution.sql']) {
       await pool.query(readFileSync(join(ROOT, 'db', 'v2', f), 'utf8'));
     }
     await pool.query(
@@ -158,6 +159,16 @@ describe('phase-5 planning over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(digests[0].sent_at, null); // ruling 14: e-mail is a later phase
   });
 
+  test('PRD-12 N-1: the variation audience port names owner + client of the row, never the supplier', async () => {
+    const { rows: open } = await pool.query('SELECT id FROM planning.variation WHERE task_id = $1', [TASK_A]);
+    const a = await createPlanningAudience(store).variationAudience(open[0].id);
+    assert.equal(a.project_id, PROJECT);
+    assert.equal(a.task_id, TASK_A);
+    assert.equal(a.kind, 'time');
+    assert.deepEqual(a.org_ids, [OWNER_ORG], 'owner is the prime client here — once; the GC is not told about itself');
+    assert.equal(await createPlanningAudience(store).variationAudience(randomUUID()), null);
+  });
+
   test('the change-order consumer re-baselines from time entries, idempotently', async () => {
     const { rows: open } = await pool.query('SELECT id FROM planning.variation WHERE task_id = $1', [TASK_A]);
     const variationId = open[0].id;
@@ -226,6 +237,12 @@ describe('phase-5 planning over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(evts.length, 1);
     assert.equal(evts[0].data.status, 'done');
     assert.equal(evts[0].data.task_name, 'Fundações');
+    // PRD-03: the directory's on-record facts ride on the done report — never an amount.
+    assert.equal(evts[0].data.contract_id, CONTRACT);
+    assert.equal(evts[0].data.assignee_org_id, GC_ORG); // no assignee: the branch supplier
+    assert.match(evts[0].data.baseline_finish, /^\d{4}-\d{2}-\d{2}$/);
+    assert.match(evts[0].data.actual_finish, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(!Object.keys(evts[0].data).some((k) => k.includes('cents')));
 
     const accepted = () => ({
       event_id: randomUUID(), type: 'quality.verification.accepted', version: 1,

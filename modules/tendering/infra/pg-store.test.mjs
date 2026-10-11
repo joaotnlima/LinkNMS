@@ -294,6 +294,24 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(new Set(ids).size, ids.length, 'no duplicate rows');
   });
 
+  test('taskProcurementOfProject: one query, issuer-only, lane histogram, no prices (PRD-01 G-2)', async () => {
+    const { items: rows } = await store.taskProcurementOfProject(PROJECT, OWNER_ORG);
+    // Two tenders root on this row (the plumbing RFP + the design RFP above):
+    // one (task, RFP) pair each — the domain picks the governing one.
+    assert.equal(rows.length, 2);
+    assert.ok(rows.every((r) => r.task_id === ROOT_TASK));
+    const row = rows.find((r) => r.id === RFP);
+    assert.equal(row.task_id, ROOT_TASK);
+    assert.equal(row.id, RFP);
+    assert.equal(row.title, 'Canalização — Casa Silva');
+    assert.deepEqual(row.root_task_ids, [ROOT_TASK]);
+    assert.deepEqual(row.lane_counts, { submitted: 1, invited: 1 });
+    assert.equal(row.awarded_recipient_name, null);
+    assert.ok(!Object.keys(row).some((k) => /cents|price|total/.test(k)), 'no money on the read model');
+    // A bidder on the tender is not its issuer: nothing here for it (V8).
+    assert.deepEqual(await store.taskProcurementOfProject(PROJECT, BIDDER_ORG), { items: [], nextTaskId: null });
+  });
+
   test('§6.4 hard case: a failing award transaction leaves NOTHING behind', async () => {
     await store.transitionRfp({
       rfpId: RFP, from: 'published', to: 'closed',
@@ -345,6 +363,15 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
       [PROJECT],
     );
     assert.deepEqual(ledger.map((l) => l.type), ['contracting.contract.created', 'tendering.rfp.awarded']);
+  });
+
+  test('taskProcurementOfProject after award: the winner is named, declined lane still counted', async () => {
+    const row = (await store.taskProcurementOfProject(PROJECT, OWNER_ORG)).items.find((r) => r.id === RFP);
+    assert.equal(row.status, 'awarded');
+    assert.deepEqual(row.lane_counts, { awarded: 1, declined: 1 });
+    assert.equal(row.awarded_org_id, BIDDER_ORG);
+    // The org's name comes from identity's port in the use case; the row carries the invite's own.
+    assert.ok(row.awarded_recipient_name);
   });
 
   test('D-36: at SIGNATURE the winner’s plan is copied under the tendered row and baselined', async () => {

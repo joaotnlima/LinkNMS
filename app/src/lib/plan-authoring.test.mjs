@@ -3,7 +3,8 @@
 // The screen is copy + layout; these seams are the logic:
 //   1. the seeded skeleton matches the pen (names only — no dates, no sub-tasks);
 //   2. the pure draft ops add / rename / reorder / remove without mutating;
-//   3. `toWire` enforces the depth contract (three levels, never four — LINA-243),
+//   3. `toWire` enforces the depth contract (MAX_DEPTH = 5 levels — PRD-01 G-1,
+//      was three under LINA-243),
 //      drops empty phases, refuses a nameless one, and normalises blank dates to
 //      null — exactly what the server re-validates, so the author sees the refusal
 //      beside the field.
@@ -27,6 +28,9 @@ import {
   // The third level (LINA-243).
   addSubtask, renameSubtask, setSubtaskDate, setSubtaskDates, setSubtaskDescription, removeSubtask,
   moveSubtask, reorderSubtask, subtaskCount,
+  // Path-addressed ops + the 5-level cap (PRD-01 G-1).
+  MAX_DEPTH, addChildAt, canAddChildAt, renameAt, setDatesAt, removeAt, reorderAt, taskAtPath, pathOfKey,
+  promoteAt, demoteAt, canDemoteAt, breakdownOf,
   // Owner + specialty (LINA-235/246).
   setAssignee, setTrade, stageMeta,
   // Child-status meter + WBS promote/demote (LINA-259).
@@ -685,18 +689,107 @@ test('toWire: a task emits its sub-tasks as children, blanks dropped, nameless r
   ]), (e) => e instanceof PlanAuthorError && e.code === 'invalid_name');
 });
 
-test('toWire: a FOURTH level is refused here, with the server’s own too_deep', () => {
+// A chain of nested tasks under one phase, `depth` levels in total (phase = 1).
+function chain(depth) {
+  let node = null;
+  for (let level = depth; level >= 2; level -= 1) {
+    node = {
+      key: `n${level}`, name: `Level ${level}`, start: '', end: '', description: '', dependsOn: [],
+      assigneePartyId: null, trade: '', children: node ? [node] : [],
+    };
+  }
+  return [{ key: 'p1', name: 'Phase A', dependsOn: [], assigneePartyId: null, trade: '', tasks: node ? [node] : [] }];
+}
+
+test('toWire: a SIXTH level is refused here with too_deep; five serialise recursively (PRD-01 G-1)', () => {
+  assert.equal(MAX_DEPTH, 5);
   // No editor op can build this — it is the belt to the braces, so a draft that
   // somehow nests deeper is refused before the round-trip rather than by the API.
-  assert.throws(() => toWire([
-    { key: 'p1', name: 'Phase A', dependsOn: [], tasks: [
-      { key: 't1', name: 'Framing', start: '', end: '', description: '', dependsOn: [], children: [
-        { key: 's1', name: 'Order the rebar', start: '', end: '', description: '', dependsOn: [], children: [
-          { key: 'x1', name: 'Too deep', start: '', end: '', description: '', dependsOn: [], children: [] },
-        ] },
-      ] },
-    ] },
-  ]), (e) => e instanceof PlanAuthorError && e.code === 'too_deep');
+  assert.throws(() => toWire(chain(6)), (e) => e instanceof PlanAuthorError && e.code === 'too_deep');
+  const wire = toWire(chain(5));
+  let n = wire[0];
+  for (let level = 2; level <= 5; level += 1) {
+    assert.equal(n.children.length, 1);
+    n = n.children[0];
+    assert.equal(n.name, `Level ${level}`);
+  }
+  assert.equal(n.children, undefined, 'a leaf omits children, as on a two-level plan');
+});
+
+test('a 5-level plan round-trips: toWire → hydrateDraft → toWire loses no row (PRD-01 G-1)', () => {
+  const asNodes = (nodes) => nodes.map((n) => ({
+    id: n.key, key: n.key, name: n.name, plannedStartDate: n.plannedStartDate ?? null,
+    plannedEndDate: n.plannedEndDate ?? null,
+    dependencies: n.dependsOn.map((d) => ({ on: d.key, type: d.type })),
+    children: asNodes(n.children ?? []),
+  }));
+  let phases = chain(5);
+  phases = setDependsOn(phases, 'n5', [{ on: 'n2', type: 'starts_with' }]);
+  const first = toWire(phases);
+  const back = hydrateDraft(asNodes(first));
+  assert.deepEqual(toWire(back), first);
+  assert.deepEqual(planNodes(back).map((x) => x.outline), ['1', '1.1', '1.1.1', '1.1.1.1', '1.1.1.1.1']);
+  assert.deepEqual(planNodes(back).map((x) => x.level), [1, 2, 3, 4, 5]);
+});
+
+test('path ops: add / rename / date / remove / reorder at level 5, and nothing past it', () => {
+  let phases = chain(4);
+  const p4 = pathOfKey(phases, 'n4');
+  assert.deepEqual(p4, [0, 0, 0, 0]);
+  assert.equal(canAddChildAt(p4), true);
+  phases = addChildAt(phases, p4);
+  phases = addChildAt(phases, p4);
+  const leafPath = [...p4, 1];
+  phases = renameAt(phases, leafPath, 'Deep B');
+  phases = setDatesAt(phases, leafPath, '2027-01-04', '2027-01-08');
+  assert.equal(taskAtPath(phases, leafPath).name, 'Deep B');
+  assert.equal(taskAtPath(phases, leafPath).end, '2027-01-08');
+  // Level 5 is the floor: no child may be added under it.
+  assert.equal(canAddChildAt(leafPath), false);
+  assert.equal(addChildAt(phases, leafPath), phases);
+  // Reorder within the level-4 parent, then remove one.
+  phases = reorderAt(phases, p4, 1, 0);
+  assert.equal(taskAtPath(phases, [...p4, 0]).name, 'Deep B');
+  phases = removeAt(phases, [...p4, 0]);
+  assert.equal(taskAtPath(phases, p4).children.length, 1);
+  assert.equal(subtaskCount(phases), 3);
+});
+
+test('promote/demote at every level respect MAX_DEPTH and carry the subtree', () => {
+  let phases = chain(4); // 1 > 1.1 > 1.1.1 > 1.1.1.1
+  phases = addChildAt(phases, [0]); // a second task, 1.2
+  const second = [0, 1];
+  // 1.2 indents under 1.1 → level 3; its subtree (none) fits.
+  assert.equal(canDemoteAt(phases, second), true);
+  let out = demoteAt(phases, second);
+  assert.equal(taskAtPath(out, [0, 0, 1]).key, taskAtPath(phases, second).key);
+  // 1.1.1 (with a child) can promote to level 2, carrying 1.1.1.1 with it.
+  out = promoteAt(phases, [0, 0, 0]);
+  assert.equal(taskAtPath(out, [0, 1]).key, 'n3');
+  assert.equal(taskAtPath(out, [0, 1, 0]).key, 'n4');
+  // A whole 4-level-deep subtree cannot indent past level 5.
+  let deep = chain(5);
+  deep = addChildAt(deep, [0]);
+  deep = renameAt(deep, [0, 1], 'Sibling');
+  // Moving the 1.1 subtree (height 3) under a sibling would put its leaf at level 6.
+  deep = reorderAt(deep, [0], 1, 0);
+  assert.equal(canDemoteAt(deep, [0, 1]), false);
+  assert.equal(demoteAt(deep, [0, 1]), deep);
+  assert.doesNotThrow(() => toWire(out));
+});
+
+test('roll-up and group shift reach every level (PRD-01 G-1)', () => {
+  let phases = chain(5);
+  phases = setDatesAt(phases, [0, 0, 0, 0, 0], '2027-02-01', '2027-02-05');
+  const rolled = enforceParentRollup(phases);
+  for (const path of [[0, 0], [0, 0, 0], [0, 0, 0, 0]]) {
+    assert.equal(taskAtPath(rolled, path).start, '2027-02-01');
+    assert.equal(taskAtPath(rolled, path).end, '2027-02-05');
+  }
+  const shifted = shiftGroup(rolled, 'n2', 3);
+  assert.equal(taskAtPath(shifted, [0, 0, 0, 0, 0]).start, '2027-02-04');
+  assert.equal(breakdownOf(taskAtPath(rolled, [0, 0])).count, 3);
+  assert.deepEqual(breakdownOf(rolled[0]), { count: 4, levels: 4 });
 });
 
 test('hydrateDraft: grandchildren come back as sub-tasks, with their edges re-keyed', () => {
@@ -723,14 +816,20 @@ test('hydrateDraft: grandchildren come back as sub-tasks, with their edges re-ke
   assert.deepEqual(wire[0].children[0].children[0].dependsOn,
     [{ key: wire[0].children[1].key, type: 'starts_with' }]);
 
-  // A server tree deeper than three levels cannot be edited here — the extra
-  // level is dropped rather than carried into a save the server would refuse.
+  // A server tree deeper than MAX_DEPTH (5) cannot be edited here — the extra
+  // level is dropped rather than carried into a save toWire would refuse. Level
+  // 4 and 5 now survive (PRD-01 G-1; they used to be dropped below level 3).
   const tooDeep = hydrateDraft([
     { id: 'h1', name: 'P', children: [
-      { id: 'h2', name: 'T', children: [{ id: 'h3', name: 'S', children: [{ id: 'h4', name: 'X' }] }] },
+      { id: 'h2', name: 'T', children: [{ id: 'h3', name: 'S', children: [
+        { id: 'h4', name: 'X', children: [{ id: 'h5', name: 'Y', children: [{ id: 'h6', name: 'Z' }] }] },
+      ] }] },
     ] },
   ]);
-  assert.deepEqual(tooDeep[0].tasks[0].children[0].children, []);
+  const l4 = tooDeep[0].tasks[0].children[0].children[0];
+  assert.equal(l4.name, 'X');
+  assert.equal(l4.children[0].name, 'Y');
+  assert.deepEqual(l4.children[0].children, [], 'level 6 is dropped');
   assert.doesNotThrow(() => toWire(tooDeep));
 });
 
@@ -929,7 +1028,7 @@ test('demoteNode: an L2 task nests under its preceding sibling as an L3 sub-task
   assert.equal(wire[0].children[0].children[0].name, 'B');
 });
 
-test('demoteNode: the guards — first sibling, a task with children, and an L3 sub are all no-ops', () => {
+test('demoteNode: the guards — first sibling is a no-op; a task with children and an L3 sub now indent (cap 5)', () => {
   let phases = [emptyPhase('Phase')];
   phases = addTask(phases, 0); // A
   phases = renameTask(phases, 0, 0, 'A');
@@ -940,9 +1039,11 @@ test('demoteNode: the guards — first sibling, a task with children, and an L3 
 
   // First sibling A has nothing to nest under.
   assert.equal(demoteNode(phases, 0, 0), phases);
-  // B has a child — demoting it would create a fourth level.
-  assert.equal(demoteNode(phases, 0, 1), phases);
-  // An L3 sub-task cannot demote further.
+  // B has a child — under the 5-level cap it may now indent, subtree and all.
+  const out = demoteNode(phases, 0, 1);
+  assert.equal(out[0].tasks[0].children[0].name, 'B');
+  assert.equal(out[0].tasks[0].children[0].children[0].name, 'B.1');
+  // B.1 is the FIRST child of B — nothing to nest under, so still a no-op.
   assert.equal(demoteNode(phases, 0, 1, 0), phases);
 });
 
@@ -1233,108 +1334,22 @@ test('enforceDependencies: pure — the input tree is never mutated', () => {
 });
 
 // ── Critical path overlay (LINA-404) ─────────────────────────────────────────
-// The toggle dims every bar and lights the chain whose dates set the project's
-// finish. The logic is `criticalPathKeys`: pure CPM (zero total float) over the
-// draft's dates + typed links.
+// The toggle dims every bar and lights the rows the SERVER marked critical
+// (`Task.is_critical`, planning domain/critical-path.mjs — its tests hold the
+// rule); `criticalPathKeys` only collects those keys from the hydrated draft.
 
-test('criticalPathKeys: lights the finish-driving chain, leaves slack stages dark', () => {
-  // A → B is the long chain that ends the project (Mar 20); C → D runs parallel
-  // and finishes early (Mar 9), so both carry slack and stay dark.
-  const phases = [{
-    key: 'p1', name: 'Phase', dependsOn: [], assigneePartyId: null, trade: null,
-    tasks: [
-      { key: 'a', name: 'A', start: '2026-03-01', end: '2026-03-10', dependsOn: [], children: [] },
-      { key: 'b', name: 'B', start: '2026-03-11', end: '2026-03-20',
-        dependsOn: [{ on: 'a', type: 'starts_after' }], children: [] },
-      { key: 'c', name: 'C', start: '2026-03-01', end: '2026-03-05', dependsOn: [], children: [] },
-      { key: 'd', name: 'D', start: '2026-03-06', end: '2026-03-09',
-        dependsOn: [{ on: 'c', type: 'starts_after' }], children: [] },
-    ],
-  }];
-  const crit = criticalPathKeys(phases);
-  assert.ok(crit.has('a'), 'A is on the critical path');
-  assert.ok(crit.has('b'), 'B is on the critical path');
-  assert.ok(!crit.has('c'), 'C has slack — not critical');
-  assert.ok(!crit.has('d'), 'D has slack — not critical');
-});
-
-test('criticalPathKeys: ends_with keeps the shorter leg critical to the shared finish', () => {
-  // B finishes WITH A (both end Mar 20). A is the long leg; because B is pinned
-  // to A's finish, both land on the path to the project end.
-  const phases = [{
-    key: 'p1', name: 'Phase', dependsOn: [], tasks: [
-      { key: 'a', name: 'A', start: '2026-03-01', end: '2026-03-20', dependsOn: [], children: [] },
-      { key: 'b', name: 'B', start: '2026-03-15', end: '2026-03-20',
-        dependsOn: [{ on: 'a', type: 'ends_with' }], children: [] },
-    ],
-  }];
-  const crit = criticalPathKeys(phases);
-  assert.ok(crit.has('a') && crit.has('b'), 'both ends_with legs reach the finish');
-});
-
-test('criticalPathKeys: an undated plan lights nothing', () => {
-  const phases = [{
-    key: 'p1', name: 'P', dependsOn: [], tasks: [
-      { key: 't1', name: 'T1', start: '', end: '', dependsOn: [], children: [] },
-    ],
-  }];
-  assert.equal(criticalPathKeys(phases).size, 0);
-});
-
-test('criticalPathKeys: a working-day gap (Sun finish → Wed start) is NOT slack', () => {
-  // The driver finishes Sun Nov 1; its dependent starts Wed Nov 4 (the next working
-  // day across the weekend). The chain is tight — a weekend is not float. The old
-  // calendar-day float read this 3-day gap as 2 days of slack and dropped the
-  // driver from the path (LINA-404 regression).
-  const phases = [{
-    key: 'p1', name: 'P', dependsOn: [], tasks: [
-      { key: 'a', name: 'A', start: '2026-10-25', end: '2026-11-01', dependsOn: [], children: [] },
-      { key: 'b', name: 'B', start: '2026-11-04', end: '2026-11-10',
-        dependsOn: [{ on: 'a', type: 'starts_after' }], children: [] },
-    ],
-  }];
-  const crit = criticalPathKeys(phases);
-  assert.ok(crit.has('a') && crit.has('b'), 'both legs of the working-day-gapped chain are critical');
-});
-
-test('criticalPathKeys: lights summary parents + the driving chain, dark the early sibling (founder)', () => {
-  // The founder's plan (video 2026-10-03): phase P1 with two summary tasks. The
-  // critical path is "1.1 (1.1.2 plus 1.1.1) and then 1.2 (1.2.1 plus 1.2.2)" — the
-  // summary bars 1.1 / 1.2 light because the work inside them drives the finish; the
-  // early-finishing sibling 1.1.3 and its parent-free self stay dark.
-  const phases = [{
-    key: 'p1', name: '1 · Pre-Construction', dependsOn: [], tasks: [
-      { key: 't11', name: '1.1 Planning', start: '2026-10-06', end: '2026-10-21', dependsOn: [], children: [
-        { key: 's112', name: 'test2', start: '2026-10-06', end: '2026-10-16', dependsOn: [], children: [] },
-        { key: 's111', name: 'test', start: '2026-10-17', end: '2026-10-21',
-          dependsOn: [{ on: 's112', type: 'starts_after' }], children: [] },
-        { key: 's113', name: 'test', start: '2026-10-06', end: '2026-10-16', dependsOn: [], children: [] },
-      ] },
-      { key: 't12', name: '1.2 Design', start: '2026-10-25', end: '2026-11-10',
-        dependsOn: [{ on: 't11', type: 'starts_after' }], children: [
-        { key: 's121', name: 'test', start: '2026-10-25', end: '2026-11-01', dependsOn: [], children: [] },
-        { key: 's122', name: 'test2', start: '2026-11-04', end: '2026-11-10',
-          dependsOn: [{ on: 's121', type: 'starts_after' }], children: [] },
-      ] },
-    ],
-  }];
-  const crit = criticalPathKeys(phases);
-  for (const k of ['s112', 's111', 's121', 's122', 't11', 't12', 'p1']) {
-    assert.ok(crit.has(k), `${k} is on the critical path`);
-  }
-  assert.ok(!crit.has('s113'), '1.1.3 finishes early and drives nothing — dark');
-});
-
-test('criticalPathKeys: a cyclic graph bails to an empty set rather than guess', () => {
-  const phases = [{
-    key: 'p1', name: 'P', dependsOn: [], tasks: [
-      { key: 't1', name: 'T1', start: '2026-03-01', end: '2026-03-05',
-        dependsOn: [{ on: 't2', type: 'starts_after' }], children: [] },
-      { key: 't2', name: 'T2', start: '2026-03-06', end: '2026-03-10',
-        dependsOn: [{ on: 't1', type: 'starts_after' }], children: [] },
-    ],
-  }];
-  assert.equal(criticalPathKeys(phases).size, 0);
+test('criticalPathKeys: the keys the server marked, phases and nested tasks alike; none marked → empty', () => {
+  const task = (key, isCritical, children = []) => ({
+    key, name: key, start: '', end: '', description: '', dependsOn: [], assigneePartyId: null, trade: '', children,
+    ...(isCritical ? { isCritical: true } : {}),
+  });
+  const phases = [
+    { key: 'p1', name: 'P1', dependsOn: [], assigneePartyId: null, trade: '', isCritical: true,
+      tasks: [task('a', true, [task('a1', true), task('a2', false)]), task('b', false)] },
+    { key: 'p2', name: 'P2', dependsOn: [], assigneePartyId: null, trade: '', tasks: [task('c', false)] },
+  ];
+  assert.deepEqual([...criticalPathKeys(phases)].sort(), ['a', 'a1', 'p1']);
+  assert.equal(criticalPathKeys([{ ...phases[1] }]).size, 0);
 });
 
 // ── Parent end-date roll-up (LINA-404, founder's ask) ─────────────────────────

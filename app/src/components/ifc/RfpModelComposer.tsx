@@ -1,10 +1,12 @@
 'use client';
 
-// The owner's attach / replace / remove control for the RFP's BIM model
-// (LINA-409 / doc 24). Lives in the draft composer — the model can only change
-// while the RFP is a draft (the BE refuses otherwise), so this never renders
-// once published. One model per RFP (Phase 1): attaching a second replaces the
-// first as a new version.
+// The issuer's control for the model a tender shows (LINA-409 / doc 24, PRD-07
+// §5). Lives in the draft composer — the attachment can only change while the
+// RFP is a draft (the BE refuses otherwise). Since PRD-07 the model is the
+// BUILD's: attach it (following its current version or pinned to one), or
+// upload it here when the build has none yet (the issuer becomes its author);
+// "Replace" uploads a new version of the build's model — the server lets only
+// the model's author do that. Remove detaches; the build keeps its model.
 //
 // ── BUNDLE DISCIPLINE (same as PortfolioUpload) ───────────────────────────────
 // A client island. The two JSON steps (reserve, complete) cross to the server
@@ -18,6 +20,7 @@ import {
   reserveRfpModelAction,
   completeRfpModelAction,
   removeRfpModelAction,
+  attachRfpModelAction,
 } from '../procurement-actions';
 import { digestSha256, putToTicket } from '@/lib/v2/upload-client';
 import type { V2Model } from '@/lib/v2/tendering-view';
@@ -41,9 +44,10 @@ function humanSize(bytes: number): string {
 }
 
 export default function RfpModelComposer({
-  rfpId, model, disabled = false,
+  rfpId, projectId, model, disabled = false,
 }: {
   rfpId: string;
+  projectId: string;
   /** The currently-attached model from the RFP package projection, or null. */
   model: V2Model | null;
   disabled?: boolean;
@@ -58,7 +62,7 @@ export default function RfpModelComposer({
 
   // Re-sync when the package projection resolves (package loads async after the
   // composer first paints) or a different RFP mounts this control.
-  useEffect(() => { setCurrent(model); }, [model?.documentId, model?.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setCurrent(model); }, [model?.document_id, model?.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pick = () => { setError(null); inputRef.current?.click(); };
 
@@ -92,12 +96,14 @@ export default function RfpModelComposer({
       if (!done.ok) { setError(done.message); return; }
 
       setCurrent({
-        documentId: reserved.data.documentId,
+        document_id: reserved.data.documentId,
         version: reserved.data.version,
-        fileName: file.name,
+        file_name: file.name,
         mime: MODEL_MIME,
-        sizeBytes: file.size,
+        size_bytes: file.size,
         sha256: hex,
+        pinned: false,
+        current_version: reserved.data.version,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That model did not upload. Try again.');
@@ -106,11 +112,21 @@ export default function RfpModelComposer({
     }
   };
 
+  const attach = async (documentId: string | null, versionNo: number | null) => {
+    setBusy(true);
+    setError(null);
+    const res = await attachRfpModelAction(rfpId, projectId, documentId, versionNo);
+    setBusy(false);
+    if (!res.ok) { setError(res.message); return; }
+    if (!res.data) { setError('This build has no model yet — upload it below.'); return; }
+    setCurrent(res.data);
+  };
+
   const remove = async () => {
     if (!current) return;
     setBusy(true);
     setError(null);
-    const res = await removeRfpModelAction(rfpId, current.documentId);
+    const res = await removeRfpModelAction(rfpId, current.document_id);
     setBusy(false);
     if (!res.ok) { setError(res.message); return; }
     setCurrent(null);
@@ -120,8 +136,8 @@ export default function RfpModelComposer({
     <div className="prc-field">
       <span className="prc-label">3D model (IFC)</span>
       <p className="prc-quiet">
-        Attach the building model bidders view before pricing — read-only, in the browser, no desktop
-        BIM needed. IFC only, up to 100 MB.
+        The build’s model, shown to bidders before pricing — read-only, in the browser, no desktop BIM
+        needed. Every task works from the same file; only its author uploads a new version. IFC only, up to 100 MB.
       </p>
 
       <input
@@ -140,23 +156,30 @@ export default function RfpModelComposer({
               {busy ? 'Working…' : 'Replace'}
             </button>
             <button type="button" className="btn" onClick={remove} disabled={disabled || busy}>
-              Remove
+              Remove from this tender
+            </button>
+            <button type="button" className="btn" disabled={disabled || busy}
+              onClick={() => attach(current.document_id, current.pinned ? null : current.version)}>
+              {current.pinned ? `Pinned to v${current.version} — follow the current version` : `Follows the current version (v${current.version}) — pin it`}
             </button>
           </div>
           <div style={{ marginTop: 10 }}>
             <OwnerModelViewer
-              key={`${current.documentId}:${current.version}`}
+              key={`${current.document_id}:${current.version}`}
               rfpId={rfpId}
-              documentId={current.documentId}
-              fileName={current.fileName}
-              sizeBytes={current.sizeBytes}
+              documentId={current.document_id}
+              fileName={current.file_name}
+              sizeBytes={current.size_bytes}
             />
           </div>
         </>
       ) : (
         <div className="prc-row">
+          <button type="button" className="btn" onClick={() => attach(null, null)} disabled={disabled || busy}>
+            Attach the build’s model
+          </button>
           <button type="button" className="btn" onClick={pick} disabled={disabled || busy}>
-            {busy ? 'Uploading…' : 'Attach .ifc model'}
+            {busy ? 'Uploading…' : 'Upload .ifc model'}
           </button>
         </div>
       )}

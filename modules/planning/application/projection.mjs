@@ -5,8 +5,13 @@
 import { makeCalendar, durationWd } from '../domain/calendar.mjs';
 import { inEditScope, effectiveAssignee } from '../domain/scope.mjs';
 import { effectiveSpans } from '../domain/propagation.mjs';
+import { criticalTaskIds } from '../domain/critical-path.mjs';
 import { variationVisibleTo } from '../domain/variations.mjs';
 import { lineAmountCents } from '../domain/cost-lines.mjs';
+import {
+  segmentsOf, overrunPicture, baselineFinishes, handoverOf,
+} from '../domain/slippage.mjs';
+import { workingDaysDelta } from '../domain/calendar.mjs';
 
 /** children index — a row with children renders as a summary (doc 05 §2). */
 export function childCounts(tasks) {
@@ -15,26 +20,6 @@ export function childCounts(tasks) {
     if (t.parentId) counts.set(t.parentId, (counts.get(t.parentId) ?? 0) + 1);
   }
   return counts;
-}
-
-export function segmentsOf(task, span, today) {
-  const segments = [];
-  if (task.baselineStart && task.baselineFinish) {
-    segments.push({ kind: 'baseline', from: task.baselineStart, to: task.baselineFinish });
-    if (span.start && span.start > task.baselineStart) {
-      segments.push({ kind: 'delay_start', from: task.baselineStart, to: span.start });
-    }
-  }
-  if (span.start && span.finish) {
-    segments.push({ kind: 'current', from: span.start, to: span.finish });
-    if (task.baselineFinish && span.finish > task.baselineFinish) {
-      segments.push({ kind: 'extension', from: task.baselineFinish, to: span.finish });
-    }
-  }
-  if (task.actualStart) {
-    segments.push({ kind: 'actual', from: task.actualStart, to: task.actualFinish ?? today });
-  }
-  return segments;
 }
 
 /**
@@ -56,6 +41,7 @@ export function taskBody(task, ctx) {
     name: task.name,
     description: task.description ?? undefined,
     specialty: task.specialty ?? undefined,
+    specialty_code: task.specialtyCode ?? undefined,
     location_id: task.locationId ?? undefined,
     assignee: assignee
       ? {
@@ -71,12 +57,23 @@ export function taskBody(task, ctx) {
     duration_wd: task.durationWd ?? undefined,
     actual_start: task.actualStart,
     actual_finish: task.actualFinish,
-    baseline: task.baselineStart
-      ? { start: task.baselineStart, finish: task.baselineFinish, version: task.baselineVersion ?? 1 }
-      : null,
-    segments: segmentsOf(task, span, ctx.today),
+    baseline: task.baselineStart ? baselineField(task, ctx) : null,
+    segments: segmentsOf({
+      task,
+      span,
+      status: ctx.statuses?.get(task.id),
+      isLeaf: !hasKids,
+      overrunning: ctx.overrun.overrunIds.has(task.id),
+      projected: ctx.overrun.projected.get(task.id) ?? null,
+      timeVariation: timeVariationOf(task.id, ctx),
+      today: ctx.today,
+      calendar: ctx.calendar,
+    }),
+    ...slipFields(task, span, hasKids, ctx),
     schedule_state: task.scheduleState,
     status: ctx.statuses?.get(task.id) ?? 'not_started',
+    // The server's critical-path rule (domain/critical-path.mjs) — the grid's overlay reads it.
+    is_critical: ctx.criticalIds ? ctx.criticalIds.has(task.id) : false,
     acceptance_criteria: task.acceptanceCriteria ?? undefined,
     can_edit: canEdit,
     editor_is_assignee: assignee ? assignee.orgId === ctx.viewerOrgId : undefined,
@@ -160,6 +157,51 @@ function costField(taskId, ctx) {
   };
 }
 
+function baselineField(task, ctx) {
+  // PRD-10 E-1: a row drawn against a chosen baseline is labelled by it.
+  const meta = task.comparedMeta ?? ctx.baselineMeta?.get(task.branchContractId ?? task.contractId);
+  return {
+    start: task.baselineStart,
+    finish: task.baselineFinish,
+    version: meta?.version ?? task.baselineVersion ?? 1,
+    ...(meta?.reason ? { reason: meta.reason } : {}),
+    ...(meta?.takenAt ? { taken_at: iso(meta.takenAt) } : {}),
+  };
+}
+
+/** PRD-13 S-5 / S-9 / D-44: vs-baseline delta, overrun and projected push. */
+function slipFields(task, span, hasKids, ctx) {
+  const out = {};
+  const baseFinish = ctx.baselineFinishById.get(task.id);
+  const effFinish = ctx.overrun.spans.get(task.id)?.finish ?? span.finish;
+  if (baseFinish && effFinish) out.baseline_delta_wd = workingDaysDelta(ctx.calendar, baseFinish, effFinish);
+  if (!hasKids && ctx.overrun.overrunIds.has(task.id) && span.finish) {
+    out.overrun_wd = workingDaysDelta(ctx.calendar, span.finish, ctx.today);
+  }
+  const projected = ctx.overrun.projected.get(task.id);
+  if (projected) {
+    out.projected = { start: projected.start, finish: projected.finish, cause_task_id: projected.causeTaskId };
+  }
+  return out;
+}
+
+function timeVariationOf(taskId, ctx) {
+  return (ctx.variationsByTask?.get(taskId) ?? []).find(
+    (v) => v.kind === 'time' && ['open', 'acknowledged'].includes(v.status),
+  ) ?? null;
+}
+
+/** The plan's handover picture (PRD-13 S-6) from a projection context. */
+export function handoverBody(ctx) {
+  return handoverOf({
+    tasks: ctx.tasks,
+    spans: ctx.spans,
+    projectedSpans: ctx.overrun.spans,
+    baselineFinishById: ctx.baselineFinishById,
+    calendar: ctx.calendar,
+  });
+}
+
 function openVariationsField(taskId, ctx) {
   if (!ctx.variationsByTask) return {};
   const open = (ctx.variationsByTask.get(taskId) ?? []).filter(
@@ -169,8 +211,28 @@ function openVariationsField(taskId, ctx) {
   return open.length ? { open_variations: open.length } : {};
 }
 
+/**
+ * The viewer's side of a variation (PRD-13 S-13/S-14): seen = the viewer's org
+ * acknowledged it AFTER its latest change (a reopened change is unseen again);
+ * can_acknowledge mirrors acknowledgeVariation's guard (enforced there anyway).
+ * `who` = {viewerOrgId, ownerOrgId, contracts, mayAcknowledge}.
+ */
+export function variationViewerFields(v, who) {
+  if (!who) return {};
+  const changedAt = Date.parse(iso(v.lastChangedAt) ?? '') || 0;
+  const seen = (v.acks ?? []).some(
+    (a) => a.orgId === who.viewerOrgId && (Date.parse(iso(a.acknowledgedAt) ?? '') || 0) >= changedAt,
+  );
+  const isOwner = who.viewerOrgId === who.ownerOrgId;
+  const isScopeClient = v.scopeType === 'contract'
+    && who.contracts?.get(v.scopeId)?.clientOrgId === who.viewerOrgId;
+  const canAck = Boolean(who.mayAcknowledge) && (isOwner || isScopeClient)
+    && !['formalised', 'closed'].includes(v.status);
+  return { seen_by_viewer: seen, can_acknowledge: canAck };
+}
+
 /** api/v2 Variation — history derived at read time (ruling 12). */
-export function variationBody(v, { taskName, history = [] } = {}) {
+export function variationBody(v, { taskName, history = [], who = null } = {}) {
   return {
     id: v.id,
     task_id: v.taskId,
@@ -181,7 +243,10 @@ export function variationBody(v, { taskName, history = [] } = {}) {
     delta: v.delta,
     cause: v.cause,
     cause_task_id: v.causeTaskId ?? undefined,
+    reason: v.reason ?? undefined,
     last_changed_by: { org_id: v.lastChangedByOrgId },
+    changed_by_org_name: who?.orgNames?.get(v.lastChangedByOrgId) ?? undefined,
+    ...variationViewerFields(v, who),
     first_changed_at: iso(v.firstChangedAt),
     last_changed_at: iso(v.lastChangedAt),
     status: v.status,
@@ -248,10 +313,25 @@ export function projectionCtx(snapshot, viewerOrgId, today) {
     list.push(v);
     variationsByTask.set(v.taskId, list);
   }
+  const counts = childCounts(snapshot.tasks);
+  const calendar = makeCalendar(snapshot.calendarRaw ?? {});
+  let critical = null;
   return {
     tasks: snapshot.tasks,
-    counts: childCounts(snapshot.tasks),
+    counts,
     spans: effectiveSpans(snapshot.tasks),
+    calendar,
+    // The critical rows (domain/critical-path.mjs), computed on first read.
+    get criticalIds() {
+      if (!critical) critical = criticalTaskIds({ tasks: snapshot.tasks, links: snapshot.links ?? [], calendar });
+      return critical;
+    },
+    overrun: overrunPicture({
+      tasks: snapshot.tasks, links: snapshot.links ?? [], calendar,
+      statuses: snapshot.statuses, counts, today,
+    }),
+    baselineFinishById: baselineFinishes(snapshot.tasks, counts),
+    baselineMeta: snapshot.baselineMeta,
     world: { ownerOrgId: snapshot.ownerOrgId, contracts: snapshot.contracts },
     statuses: snapshot.statuses,
     orgNames: snapshot.orgNames,

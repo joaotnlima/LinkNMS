@@ -15,6 +15,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
+import { createCostPort } from '../application/cost-port.mjs';
 import { createContractingStore } from './pg-store.mjs';
 import { createProjectStore } from '../../project/infra/pg-store.mjs';
 import { projectConsumers } from '../../project/application/consumers.mjs';
@@ -209,6 +210,17 @@ describe('contracting store over Postgres (v2 migrations)', { skip }, () => {
     // …and the live value roll-up reads the non-superseded lines.
     const found = await store.getContract(signed[0].id);
     assert.equal(Number(found.valueCents), 120 * 2500);
+  });
+
+  test('PRD-09 O-1: the cost port answers the client side of signed contracts, money-gated', async () => {
+    const port = createCostPort(store);
+    const v = (orgId, perms = ['org:money:view']) => ({ orgId, has: (p) => perms.includes(p) });
+    const cost = await port.costFor({ viewer: v(OWNER_ORG), projectId: PROJECT });
+    assert.ok(cost.contracts >= 1);
+    assert.equal(cost.current_cents, cost.baseline_cents); // no change order yet
+    assert.ok(cost.current_cents >= 120 * 2500);
+    assert.equal(await port.costFor({ viewer: v(OWNER_ORG, []), projectId: PROJECT }), null);
+    assert.equal(await port.costFor({ viewer: v(randomUUID()), projectId: PROJECT }), null, 'client of nothing → absent');
   });
 
   test('updateDraft: stale version answers null; fresh version bumps and re-roots', async () => {

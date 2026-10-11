@@ -1,0 +1,164 @@
+/* PRD-13 — changes against the baseline in the plan (design 3b · B6–B8, planb/slip.css).
+   Clay = --status-pending-change; every clay segment also carries a label (S-4). */
+
+/* ── The bar overlays (SlipBar.tsx) ─────────────────────────────────────────── */
+.slp-ghost {
+  position: absolute; top: 6px; height: 22px; box-sizing: border-box;
+  border: 1.5px dashed var(--plan-baseline-line); border-radius: 6px; pointer-events: none;
+}
+.slp-ghost.is-hatch {
+  border-color: var(--status-pending-change-line);
+  background: repeating-linear-gradient(135deg, transparent 0 4px,
+    color-mix(in srgb, var(--status-pending-change) 22%, transparent) 4px 6px);
+}
+.slp-ext {
+  position: absolute; top: 9px; height: 16px; box-sizing: border-box; z-index: 1;
+  background: var(--status-pending-change); border: 1px solid var(--status-pending-change);
+  border-radius: 0 6px 6px 0; pointer-events: none;
+}
+.slp-ext.is-over {
+  background: repeating-linear-gradient(135deg, var(--status-pending-change) 0 5px,
+    color-mix(in srgb, var(--status-pending-change) 55%, var(--paper)) 5px 9px);
+  border-right: 0; border-radius: 0;
+}
+.slp-ext.is-over::after {
+  content: ''; position: absolute; right: -7px; top: 0;
+  border-left: 7px solid var(--status-pending-change);
+  border-top: 7px solid transparent; border-bottom: 7px solid transparent;
+}
+.slp-proj {
+  position: absolute; top: 9px; height: 16px; box-sizing: border-box; z-index: 1;
+  border: 1.5px dashed var(--status-pending-change); border-left: 0; border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--status-pending-change) 10%, transparent); pointer-events: none;
+}
+.pgt-track.is-sub .slp-ghost { top: 5px; height: 18px; }
+.pgt-track.is-sub .slp-ext, .pgt-track.is-sub .slp-proj { top: 8px; height: 12px; }
+.pgt-track.is-sub .slp-ext.is-over::after { border-top-width: 6px; border-bottom-width: 6px; }
+.slp-tag {
+  position: absolute; top: 9px; z-index: 1; padding-left: 10px; white-space: nowrap; pointer-events: none;
+  font-size: 11px; font-weight: 650; line-height: 16px; color: var(--status-pending-change-fg);
+}
+.slp-tag.is-ok { color: var(--success-fg); }
+.pgt-track.is-sub .slp-tag { top: 6px; }
+
+/* ── vs baseline column (S-5) ───────────────────────────────────────────────── */
+.slp-dlt { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
+.slp-dlt.is-up { color: var(--status-pending-change-fg); }
+.slp-dlt.is-down { color: var(--success-fg); }
+.slp-dlt.is-zero, .slp-dlt.is-none { color: var(--muted); font-weight: 500; }
+.pgd-row > .slp-dlt { display: flex; align-items: center; padding: 0 8px; }
+
+/* ── "Late or extended" filter (S-7) ───────────────────────────────────────── */
+.pgd-ftoggle.is-clay.is-on {
+  color: var(--status-pending-change-fg); background: var(--status-pending-change-muted);
+  border-color: var(--status-pending-change-line);
+}
+
+/* ── Legend (S-8) ──────────────────────────────────────────────────────────── */
+.slp-legend {
+  display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center;
+  margin: var(--s2, 8px) 0; font-size: 12px; color: var(--muted);
+}
+.slp-legend span { display: inline-flex; align-items: center; }
+.slp-lg { display: inline-block; width: 26px; height: 10px; border-radius: 3px; margin-right: 6px; box-sizing: border-box; }
+.slp-lg.is-planned { background: color-mix(in srgb, var(--plan-baseline) 20%, var(--paper)); border: 1px solid var(--plan-baseline); }
+.slp-lg.is-ext { background: var(--status-pending-change); }
+.slp-lg.is-over {
+  background: repeating-linear-gradient(135deg, var(--status-pending-change) 0 4px,
+    color-mix(in srgb, var(--status-pending-change) 55%, var(--paper)) 4px 7px);
+}
+.slp-lg.is-proj { border: 1.5px dashed var(--status-pending-change); }
+.slp-lg.is-ghost { border: 1.5px dashed var(--plan-baseline-line); }
+.slp-lg.is-done { background: var(--plan-closed-muted); border: 1px solid var(--plan-closed); }
+.slp-legend-note { font-style: italic; }
+
+/* ── Header (S-6) ──────────────────────────────────────────────────────────── */
+.slp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 var(--s2, 8px); }
+.slp-fin {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 6px 10px; border-radius: 8px;
+  background: var(--sunken); border: 1px solid var(--outline); color: var(--fg);
+}
+.slp-fin.is-up {
+  background: var(--status-pending-change-muted); border-color: var(--status-pending-change-line);
+  color: var(--status-pending-change-fg);
+}
+.slp-fin.is-down { color: var(--success-fg); }
+.slp-chg {
+  font: inherit; font-size: 13px; display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 8px; border: 1px solid var(--outline); background: var(--paper);
+  color: var(--fg); cursor: pointer;
+}
+.slp-chg:hover:not(:disabled) { background: var(--sunken); }
+.slp-chg:disabled { cursor: default; }
+.slp-new {
+  font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+  background: var(--status-pending-change); color: var(--paper);
+}
+
+/* ── Change lists (S-13, S-15) ─────────────────────────────────────────────── */
+.slp-vlist { list-style: none; margin: 0; padding: 0; }
+.slp-vchg {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--outline); font-size: 13px;
+}
+.slp-vchg:last-child { border-bottom: 0; }
+.slp-vdot { width: 10px; height: 10px; border-radius: 50%; background: var(--status-pending-change); margin-top: 4px; }
+.slp-vdot.is-seen { background: var(--outline); }
+.slp-vbody > p { margin: 0 0 2px; }
+.slp-vwhat { color: var(--fg); }
+.slp-vmeta { color: var(--muted); font-size: 12px; }
+.slp-vacts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.slp-btn {
+  font: inherit; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 6px;
+  border: 1px solid var(--outline); background: var(--paper); color: var(--fg); cursor: pointer;
+}
+.slp-btn:hover:not(:disabled) { background: var(--sunken); }
+.slp-btn:disabled { opacity: 0.55; cursor: default; }
+.slp-btn.is-primary { background: var(--fg); color: var(--paper); border-color: var(--fg); }
+.slp-btn.is-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--fg) 85%, var(--paper)); }
+.slp-btn.is-link { border-color: transparent; background: transparent; text-decoration: underline; }
+.slp-ask { margin-top: 6px; }
+.slp-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 8px 0 4px; }
+.slp-why {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 6px 8px;
+  border: 1px solid var(--outline); border-radius: 6px; background: var(--paper); color: var(--fg);
+}
+.slp-note { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+
+/* ── The Changes panel (S-15) ──────────────────────────────────────────────── */
+.slp-panel { display: flex; flex-direction: column; }
+.slp-panel .slp-vlist { flex: 1 1 auto; overflow: auto; }
+.slp-filters { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.slp-chip {
+  font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--outline); background: var(--paper); color: var(--fg);
+}
+.slp-chip.is-on { background: var(--fg); color: var(--paper); border-color: var(--fg); }
+.slp-net {
+  font-size: 13px; padding: 8px 10px; border-radius: 8px; margin: 4px 0 8px;
+  background: var(--status-pending-change-muted); border: 1px solid var(--status-pending-change-line);
+  color: var(--status-pending-change-fg);
+}
+.slp-foot {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding-top: 10px; margin-top: 8px; border-top: 1px solid var(--outline); font-size: 12px; color: var(--muted);
+}
+
+/* ── The task panel block (S-10..S-14) ─────────────────────────────────────── */
+.slp-task { margin: var(--s3, 12px) 0; padding-top: var(--s3, 12px); border-top: 1px solid var(--outline); }
+.slp-h { font-size: 13px; font-weight: 700; margin: 14px 0 4px; }
+.slp-bvn { display: grid; grid-template-columns: 92px 1fr; gap: 6px 12px; margin: 0 0 8px; font-size: 13px; }
+.slp-bvn dt { color: var(--muted); font-weight: 600; }
+.slp-bvn dd { margin: 0; }
+.slp-over {
+  padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; font-size: 13px;
+  background: var(--status-pending-change-muted); border: 1px solid var(--status-pending-change-line);
+}
+.slp-over p { margin: 0 0 4px; }
+.slp-edit { margin-top: 8px; }
+.slp-before {
+  margin: 10px 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;
+  border: 1px solid var(--status-pending-change-line); background: color-mix(in srgb, var(--status-pending-change-muted) 60%, var(--paper));
+}
+.slp-before p { margin: 0 0 4px; }
+.slp-confirm { display: block; font-size: 12px; margin: 6px 0; }

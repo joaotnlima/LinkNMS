@@ -2,7 +2,7 @@
 // (LINA-320, S3 of the UI cutover, doc 22 §3). This is the third and final pure
 // brick of the plan cutover, sitting between the read adapter (`planning-view.ts`,
 // which turns the flat v2 WBS into the grid's nested `StageRow` tree) and the
-// authoring editor (`PlanBuildEditor`/`PlanGrid`, which render the 3-level
+// authoring editor (`PlanBuildEditor`/`PlanGrid`, which render the up-to-5-level
 // `PhaseDraft[]` model from `plan-authoring.ts`). It runs under `node --test`
 // with no session, exactly like its two siblings.
 //
@@ -16,17 +16,18 @@
 // would mean re-inventing the v1 shape only to re-flatten it. So this converter
 // maps `StageRow` → `PhaseDraft` directly, and makes three deliberate calls:
 //
-//  1. DEPTH-3 CAP, SAME AS v1. The editor renders exactly phase → task → subtask
-//     (LINA-238/243, `too_deep` past depth 2). A v2 WBS can nest deeper; anything
-//     below a subtask is DROPPED here rather than carried into a save the server
-//     would refuse — the identical tolerance `hydrateDraft` applies below a
-//     subtask.
+//  1. DEPTH CAP = MAX_DEPTH (5), SAME AS `hydrateDraft`. The editor renders phase
+//     → task → sub-tasks down to level 5 (ADR-0019 as lifted by PRD-01 G-1; it
+//     was 3 until then, which silently DROPPED level-4+ rows on load). A v2 WBS
+//     can nest to 10 (D-25); anything below level 5 is still dropped here rather
+//     than carried into a save `toWire` would refuse — the identical tolerance
+//     `hydrateDraft` applies.
 //
 //  2. LINKS RE-ATTACH BY SUCCESSOR ID = KEY. `dependenciesBySuccessor` is keyed
 //     by the successor row id, which is the row's editor key (v2 ids are stable,
 //     so id IS key — `planning-view.ts#toStageRows`). Each edge's `on` is a
 //     predecessor id, already the predecessor's key. An edge whose predecessor
-//     is not a row we RENDER (dropped past depth 3, or absent) is dropped, not
+//     is not a row we RENDER (dropped past level 5, or absent) is dropped, not
 //     drawn dangling — the same discipline `toWire`/`hydrateDraft` apply.
 //
 //  3. REPORTED STATUS ROUND-TRIPS (LINA-404). The grid's child-count meter reads
@@ -65,18 +66,26 @@ import type { PlanGridView, StageRow } from './planning-view';
 import type { DepEdge, PhaseDraft, TaskDraft } from '@/lib/plan-authoring';
 
 /**
- * The set of row keys the editor will actually RENDER — every row down to the
- * subtask level (depth 2), phases included. A dependency whose predecessor is not
- * in this set cannot be drawn, so it is dropped rather than left dangling.
+ * The editor's outline cap — mirrors `MAX_DEPTH` in `plan-authoring.ts` (kept as
+ * a literal here because this module is imported type-only from there, so it
+ * runs under `node --test` without the `@/` alias). The planning-hydrate test
+ * pins the two together.
+ */
+export const HYDRATE_MAX_DEPTH = 5;
+
+/**
+ * The set of row keys the editor will actually RENDER — every row down to level
+ * HYDRATE_MAX_DEPTH, phases (level 1) included. A dependency whose predecessor is
+ * not in this set cannot be drawn, so it is dropped rather than left dangling.
  */
 function renderedKeys(rows: StageRow[]): Set<string> {
   const keys = new Set<string>();
-  const walk = (row: StageRow, depth: number): void => {
+  const walk = (row: StageRow, level: number): void => {
     keys.add(row.id);
-    if (depth >= 2) return; // subtask is the deepest rendered row
-    for (const child of row.children) walk(child, depth + 1);
+    if (level >= HYDRATE_MAX_DEPTH) return; // the deepest rendered row
+    for (const child of row.children) walk(child, level + 1);
   };
-  for (const row of rows) walk(row, 0);
+  for (const row of rows) walk(row, 1);
   return keys;
 }
 
@@ -103,7 +112,7 @@ function depsFor(
 }
 
 /**
- * One `StageRow` → one `TaskDraft`, at task (deep) or subtask level. The row id is
+ * One `StageRow` → one `TaskDraft`, at `level` (2 = task, 3..5 sub-tasks). The row id is
  * the editor key (v2 ids are stable — `planning-view.ts`). `trade`/`start`/`end`
  * normalise `null` to the empty string the editor uses for "not set".
  *
@@ -119,7 +128,7 @@ function depsFor(
  */
 function toTaskDraft(
   row: StageRow,
-  deep: boolean,
+  level: number,
   bySuccessor: PlanGridView['dependenciesBySuccessor'],
   rendered: Set<string>,
 ): TaskDraft {
@@ -132,22 +141,26 @@ function toTaskDraft(
     dependsOn: depsFor(row.id, bySuccessor, rendered),
     assigneePartyId: row.assigneePartyId,
     trade: row.trade ?? '',
+    ...(row.tradeCode ? { tradeCode: row.tradeCode } : {}),
     // Carry a MEANINGFUL reported status (draft or baselined) so a progress report
     // the owner made survives a page reload (LINA-404). `not_started` is the default
     // and stays un-carried, so an untouched plan is status-less and reads all-grey
     // exactly as before (ADR-0019) — `nodeStatus` reports a missing status as
     // not_started regardless, so nothing is lost by omitting it.
     ...(row.status && row.status !== 'not_started' ? { status: row.status } : {}),
-    // Subtasks are the depth cap — a task's children hydrate, a subtask's are
-    // dropped (the editor has no row for them, and a save would be `too_deep`).
-    children: deep ? row.children.map((s) => toTaskDraft(s, false, bySuccessor, rendered)) : [],
+    ...(row.isCritical ? { isCritical: true } : {}),
+    // Level HYDRATE_MAX_DEPTH is the cap — anything below it is dropped (the
+    // editor has no row for it, and a save would be `too_deep`).
+    children: level < HYDRATE_MAX_DEPTH
+      ? row.children.map((s) => toTaskDraft(s, level + 1, bySuccessor, rendered))
+      : [],
   };
 }
 
 /**
  * A v2 plan grid view → the editor's `PhaseDraft[]`. Top-level rows become
- * phases; their children become tasks; grandchildren become subtasks; anything
- * deeper is dropped at the depth-3 cap. Typed links re-attach per successor from
+ * phases; their children become tasks; deeper rows become sub-tasks down to
+ * level 5; anything deeper is dropped at that cap. Typed links re-attach per successor from
  * `dependenciesBySuccessor`, dropping any edge to an un-rendered predecessor. The
  * status meter is carried only when the plan is baselined (honest all-grey on a
  * draft, ADR-0019). Pure — no I/O, no session; the page's read (`getPlanGrid`)
@@ -161,6 +174,8 @@ export function planGridToDraft(view: PlanGridView): PhaseDraft[] {
     dependsOn: depsFor(phase.id, view.dependenciesBySuccessor, rendered),
     assigneePartyId: phase.assigneePartyId,
     trade: phase.trade ?? '',
-    tasks: phase.children.map((t) => toTaskDraft(t, true, view.dependenciesBySuccessor, rendered)),
+    ...(phase.tradeCode ? { tradeCode: phase.tradeCode } : {}),
+    ...(phase.isCritical ? { isCritical: true } : {}),
+    tasks: phase.children.map((t) => toTaskDraft(t, 2, view.dependenciesBySuccessor, rendered)),
   }));
 }

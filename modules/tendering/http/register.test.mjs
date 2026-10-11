@@ -181,14 +181,21 @@ function fakeStore() {
       ledger.push('tendering.rfp.updated');
       return next;
     },
-    async transitionRfp({ rfpId, from, to, eventType }) {
+    async transitionRfp({ rfpId, from, to, eventType, data }) {
       const r = rfps.get(rfpId);
       if (!r || r.status !== from) return null;
-      const next = { ...r, status: to, version: r.version + 1 };
+      const next = {
+        ...r, status: to, version: r.version + 1,
+        ...(to === 'cancelled' ? { cancelled_at: FUTURE, cancel_reason: data?.reason ?? null } : {}),
+      };
       rfps.set(rfpId, next);
       ledger.push(eventType);
       events.push(eventType);
       return next;
+    },
+    async publishRfp(cmd) {
+      const rfp = await this.transitionRfp(cmd);
+      return rfp ? { rfp: { ...rfp, published_at: FUTURE }, links: [] } : null;
     },
     async addAddendum({ rfpId, packageVersion }) {
       const r = rfps.get(rfpId);
@@ -249,18 +256,15 @@ function fakeStore() {
         : [];
     },
     async browseOpenRfps() { return { items: [], nextCursor: null }; },
-    async applyToOpenRfp({ rfpId, orgId }) {
-      const existing = [...lanes.values()].find((l) => l.rfp_id === rfpId && l.bidder_org_id === orgId);
-      if (existing) return { proposalId: existing.id, created: false };
-      const newLane = lane2({
-        id: NEW_ID, recipient_id: NEW_ID, bidder_org_id: orgId, status: 'invited',
-        email: 'sul@electrica.pt', bidder_name: null, version: 1,
-        summary_total_cents: null, missing_lines: 1, has_plan: false,
-      });
-      lanes.set(NEW_ID, newLane);
-      docs.set(NEW_ID, { rows: [], links: [], lines: [] });
-      events.push('tendering.rfp.applied');
-      return { proposalId: NEW_ID, created: true };
+    // Ask to bid (D-47): a pending request per (rfp, org), never a lane.
+    bidRequests: new Map(),
+    async createBidRequest({ id, rfpId, orgId }) {
+      const existing = [...this.bidRequests.values()].find((r) => r.rfp_id === rfpId && r.org_id === orgId);
+      if (existing) return { request: existing, created: false };
+      const request = { id, rfp_id: rfpId, org_id: orgId, status: 'pending', requested_at: '2026-12-02T10:00:00Z', decided_at: null };
+      this.bidRequests.set(id, request);
+      events.push('tendering.bid_request.requested');
+      return { request, created: true };
     },
     async listMyRfps(orgId) {
       return {
@@ -338,7 +342,8 @@ function fakeStore() {
       events.push('tendering.proposal.submitted');
       return withRfpFacts(next);
     },
-    async awardRfp({ rfpId, from, winnerProposalId, declineProposalIds, createContract }) {
+    async awardRfp({ rfpId, from, winnerProposalId, declineProposalIds, createContract, planFacts }) {
+      this.awardPlanFacts = planFacts;
       const r = rfps.get(rfpId);
       if (!r || r.status !== from) return null;
       rfps.set(rfpId, { ...r, status: 'awarded', awarded_proposal_id: winnerProposalId });
@@ -402,6 +407,14 @@ describe('tendering over the /api/v2 router', () => {
       assert.equal(res.body.level, 'owner');
       assert.equal(res.body.status, 'draft');
       assert.ok(store.ledger.includes('tendering.rfp.created'));
+    });
+
+    test('without a bids-due date the server sets its default (14 days out, 18:00 Lisbon)', async () => {
+      const { submission_deadline: _omit, ...bare } = create;
+      const res = await dispatch('POST', `/projects/${PROJECT}/rfps`, viewer(OWNER_ORG), bare);
+      assert.equal(res.status, 201);
+      const days = (Date.parse(res.body.submission_deadline) - Date.now()) / 86400000;
+      assert.ok(days > 13 && days < 15.5, `${res.body.submission_deadline}`);
     });
 
     test('without org:tendering:issue → 403', async () => {
@@ -471,12 +484,22 @@ describe('tendering over the /api/v2 router', () => {
   });
 
   describe('recipients', () => {
-    test('addRecipients returns the personal token ONCE', async () => {
+    test('addRecipients on a published RFP returns the personal token ONCE', async () => {
       const res = await dispatch('POST', `/rfps/${RFP}/recipients`, viewer(OWNER_ORG), {
         recipients: [{ email: 'novo@sub.pt' }],
       });
       assert.equal(res.status, 201);
       assert.equal(res.body.items[0].token, 'raw-token-0');
+    });
+
+    test('addRecipients on a DRAFT only queues: no token leaves the server (T-6/T-7)', async () => {
+      store.rfps.set(RFP, baseRfp({ status: 'draft' }));
+      const res = await dispatch('POST', `/rfps/${RFP}/recipients`, viewer(OWNER_ORG), {
+        recipients: [{ email: 'novo@sub.pt' }],
+      });
+      assert.equal(res.status, 201);
+      assert.equal(res.body.items[0].status, 'queued');
+      assert.equal(res.body.items[0].token, undefined);
     });
 
     test('listRecipients is issuer-only: a bidder → 404', async () => {
@@ -691,6 +714,11 @@ describe('tendering over the /api/v2 router', () => {
       assert.equal(store.lanes.get(LANE1).status, 'awarded');
       assert.equal(store.lanes.get(LANE2).status, 'declined');
       assert.ok(store.events.includes('tendering.rfp.awarded'));
+      // D-43: the award event carries what planning needs for the baseline.
+      assert.deepEqual(store.awardPlanFacts.root_task_ids, [TASK]);
+      assert.equal(store.awardPlanFacts.supplier_org_id, BIDDER_ORG);
+      assert.equal(store.awardPlanFacts.start, '2027-02-01');
+      assert.equal(store.awardPlanFacts.duration_wd, 9);
     });
 
     test('published but every invitee responded → allowed', async () => {
@@ -734,37 +762,47 @@ describe('tendering over the /api/v2 router', () => {
     });
   });
 
-  describe('applyToOpenRfp (self-serve lane on an open RFP)', () => {
-    const openRfp = () => store.rfps.set(RFP, baseRfp({ visibility: 'open' }));
+  describe('applyToOpenRfp = ask to bid on a listed RFP (D-47, PRD-04 X-13)', () => {
+    const listedRfp = () => store.rfps.set(RFP, baseRfp({ visibility: 'open', listed: true }));
 
-    test('a bidder claims its own lane → 201', async () => {
-      openRfp();
+    test('a company asks → 201 pending request, and NO lane is created', async () => {
+      listedRfp();
+      const lanesBefore = store.lanes.size;
       const res = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(APPLICANT_ORG));
       assert.equal(res.status, 201);
-      assert.equal(res.body.status, 'invited');
-      assert.ok(store.events.includes('tendering.rfp.applied'));
+      assert.equal(res.body.status, 'pending');
+      assert.equal(res.body.org_id, APPLICANT_ORG);
+      assert.equal(store.lanes.size, lanesBefore);
+      assert.ok(store.events.includes('tendering.bid_request.requested'));
     });
 
-    test('re-apply returns the same lane → 200 (idempotent)', async () => {
-      openRfp();
+    test('asking again returns the same request → 200 (idempotent)', async () => {
+      listedRfp();
+      const first = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(APPLICANT_ORG));
+      const again = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(APPLICANT_ORG));
+      assert.equal(again.status, 200);
+      assert.equal(again.body.id, first.body.id);
+    });
+
+    test('an organisation already invited → 409', async () => {
+      listedRfp();
       const res = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(BIDDER_ORG));
-      assert.equal(res.status, 200);
-      assert.equal(res.body.id, LANE1);
+      assert.equal(res.status, 409);
     });
 
-    test('an invite-only RFP is not an existence oracle → 404', async () => {
+    test('an unlisted RFP is not an existence oracle → 404', async () => {
       const res = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(APPLICANT_ORG));
       assert.equal(res.status, 404);
     });
 
-    test('the issuer cannot bid on its own RFP → 422', async () => {
-      openRfp();
+    test('the issuer cannot ask on its own RFP → 422', async () => {
+      listedRfp();
       const res = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(OWNER_ORG));
       assert.equal(res.status, 422);
     });
 
     test('needs org:tendering:bid → 403', async () => {
-      openRfp();
+      listedRfp();
       const res = await dispatch('POST', `/rfps/${RFP}:apply`, viewer(APPLICANT_ORG, { perms: [] }));
       assert.equal(res.status, 403);
     });

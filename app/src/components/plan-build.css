@@ -142,6 +142,8 @@
 /* The picker lists every stage in reading order; the indent is what tells a
    sub-task apart from the task above it. */
 .pbx-dep-opt.lvl-3 { padding-left: 22px; }
+.pbx-dep-opt.lvl-4 { padding-left: 36px; }
+.pbx-dep-opt.lvl-5 { padding-left: 50px; }
 
 .pbx-drawer-under { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
 
@@ -314,6 +316,25 @@
   padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3);
   box-shadow: -8px 0 32px color-mix(in srgb, var(--fg) 18%, transparent);
 }
+
+/* The DOCKED task panel (PRD-01 P-1): pinned to the right edge at 480px (640px
+   when a step such as compare needs the room), with NO scrim — the plan beside
+   it stays visible, undimmed and interactive. The editor reserves the panel's
+   width on its own right edge (.has-panel) so no row hides beneath it. Sits
+   below the tender modal (z 70) and the move-menu, above the page. */
+.pbx-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 55;
+  width: min(480px, 100%); height: auto;
+  box-shadow: -4px 0 18px color-mix(in srgb, var(--fg) 10%, transparent);
+}
+.pbx-panel.is-wide { width: min(640px, 100%); }
+.pbx--grid.has-panel { padding-right: calc(480px + var(--s4)); }
+.pbx--grid.has-panel.is-wide { padding-right: calc(640px + var(--s4)); }
+.pbx-drawer-outline { color: var(--muted); font-weight: 600; letter-spacing: 0; }
+.pbx-drawer-chip { margin-inline-start: 0; margin-top: 6px; }
+.pbx-drawer-sched { font-size: 13px; color: var(--muted); }
+.pbx-drawer-sched.is-critical { color: var(--fg); font-weight: 600; }
+.pbx-drawer-breakdown { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 /* The in-place tendering modal (LINA-420): a large panel over the plan so the
    owner raises a tender / reviews responses without leaving the plan screen. Sits
    ABOVE the task drawer (z 70 > 60) since it is opened from it. */
@@ -345,30 +366,6 @@
 
 .pbx-drawer-status { display: flex; flex-direction: column; gap: var(--s2); }
 
-/* The task-level tendering action (LINA-420). A first-class, unmistakable entry
-   on the task — the ticket's approved design — in the --builder (tendering) hue,
-   not the plan-baseline blue the rest of the drawer uses. */
-.pbx-drawer-actions-block { display: flex; flex-direction: column; gap: 6px; margin-top: var(--s3); }
-.pbx-drawer-sectlabel {
-  margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--muted);
-}
-.pbx-tender-cta {
-  display: flex; align-items: center; gap: 12px; width: 100%; text-align: start;
-  padding: 12px 14px; border-radius: 10px; border: 1px solid var(--builder);
-  background: var(--builder); color: #fff; cursor: pointer;
-}
-.pbx-tender-cta:hover { filter: brightness(0.95); }
-.pbx-tender-cta:focus-visible { outline: 2px solid var(--builder); outline-offset: 2px; }
-.pbx-tender-cta.is-waiting {
-  background: transparent; color: var(--muted); border-style: dashed;
-  border-color: var(--outline); cursor: default; margin: 0;
-}
-.pbx-tender-cta-icon { font-size: 18px; line-height: 1; flex: 0 0 auto; }
-.pbx-tender-cta-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; }
-.pbx-tender-cta-title { font-size: 14px; font-weight: 700; }
-.pbx-tender-cta-sub { font-size: 12px; opacity: 0.9; }
-.pbx-tender-cta-go { font-size: 20px; line-height: 1; flex: 0 0 auto; }
 .pbx-status-chip {
   align-self: flex-start; padding: 3px 10px; border-radius: 999px;
   border: 1px solid var(--outline); background: var(--sunken);
@@ -387,6 +384,9 @@
 
 @media (max-width: 720px) {
   .pbx-drawer { width: 100%; border-left: none; }
+  /* On a phone the panel takes the screen; no room to reserve beside it. */
+  .pbx-panel, .pbx-panel.is-wide { width: 100%; }
+  .pbx--grid.has-panel, .pbx--grid.has-panel.is-wide { padding-right: var(--s4); }
 }
 
 /* ── The unified plan grid (LINA-248) ─────────────────────────────────────────
@@ -408,6 +408,26 @@
 }
 .pgd-grid { display: grid; grid-template-columns: minmax(560px, 46%) 1fr; position: relative; }
 .pgd-table { border-right: 1px solid var(--outline); min-width: 0; }
+
+/* Split view (PRD-01 G-6): when the table pane is narrower than its columns it
+   scrolls sideways ON ITS OWN, with the grip / ID / Task cells pinned — and the
+   timeline pane keeps its own independent horizontal scroll (.pgt-scroll). Rows
+   keep their natural minimum (--pgd-minw, set by the component). */
+.pgd-table { overflow-x: auto; overflow-y: hidden; }
+.pgd-hdr, .pgd-row, .pgd-table .pgd-addrow { min-width: var(--pgd-minw, 0); }
+.pgd-hdr > :nth-child(-n+3), .pgd-row > :nth-child(-n+3) {
+  position: sticky; z-index: 2; background: var(--pgd-rowbg, var(--paper)); align-self: stretch;
+  display: flex; align-items: center;
+}
+.pgd-hdr > :nth-child(1), .pgd-row > :nth-child(1) { left: 0; justify-content: center; }
+.pgd-hdr > :nth-child(2), .pgd-row > :nth-child(2) { left: calc(20px + var(--s2)); }
+.pgd-hdr > :nth-child(3), .pgd-row > :nth-child(3) { left: calc(20px + var(--pgd-idw, 34px) + 2 * var(--s2)); }
+.pgd-hdr { --pgd-rowbg: var(--sunken); }
+.pgd-row-phase { --pgd-rowbg: var(--sunken); }
+.pgd-row:hover { --pgd-rowbg: var(--sunken); }
+
+/* The row the docked panel is open on (PRD-01 P-1): marked, never dimmed. */
+.pgd-row.is-active { --pgd-rowbg: color-mix(in srgb, var(--plan-baseline) 9%, var(--paper)); background: var(--pgd-rowbg); box-shadow: inset 3px 0 0 var(--plan-baseline); }
 
 /* The draggable table / Gantt seam (LINA-259 ask 2). It rides the boundary the
    component positions it on (left: split px); a wider hit-strip than the 1px
@@ -536,8 +556,9 @@
 .pgd-row-phase .pgd-nametxt { color: var(--fg); text-transform: none; }
 .pgd-row-phase .pgd-id { color: var(--plan-baseline); }
 
-/* The third level indents its name, same demotion as everywhere else. */
-.pgd-row-sub .pgd-name { padding-left: 16px; font-size: 12px; color: var(--muted); }
+/* Levels 3..5 read a shade quieter; the component indents the name by level
+   (14px a step, PRD-01 G-1) so a five-level outline stays readable. */
+.pgd-row-sub .pgd-name { font-size: 12px; color: var(--muted); }
 .pgd-row-sub .pgd-id { font-size: 10px; }
 
 .pgd-id {
@@ -735,9 +756,13 @@ select.pgd-tradesel:not(:disabled) { cursor: pointer; }
   background: color-mix(in srgb, var(--pgp-tone) 12%, transparent);
   border: 1px dashed color-mix(in srgb, var(--pgp-tone) 55%, transparent);
 }
+/* Lifecycle colours (PRD-01 G-8), the SAME on the band, the Tender chip, the
+   `↳` marker and the panel: draft neutral, out for bids owner-blue, bids in
+   amber, awarded green, cancelled red. Every state also carries a word. */
 .pgp-window.is-draft     { --pgp-tone: var(--muted); }
-.pgp-window.is-tendering { --pgp-tone: var(--warn-fg); border-style: solid; }
-.pgp-window.is-bids-in   { --pgp-tone: var(--accent); border-style: solid; }
+.pgp-window.is-tendering { --pgp-tone: var(--owner); border-style: solid; }
+.pgp-window.is-bids-in   { --pgp-tone: var(--warn-fg); border-style: solid; }
+.pgp-window.is-cancelled { --pgp-tone: var(--state-danger); }
 .pgp-window.is-awarded {
   --pgp-tone: var(--success-fg, var(--success));
   border-style: solid;
@@ -765,23 +790,51 @@ select.pgd-tradesel:not(:disabled) { cursor: pointer; }
 button.pgd-tenderchip { cursor: pointer; }
 button.pgd-tenderchip:hover { background: color-mix(in srgb, var(--pgp-tone) 22%, transparent); }
 button.pgd-tenderchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.pgd-tenderchip.is-draft     { --pgp-tone: var(--muted); }
-.pgd-tenderchip.is-tendering { --pgp-tone: var(--warn-fg); }
-.pgd-tenderchip.is-bids-in   { --pgp-tone: var(--accent); }
-.pgd-tenderchip.is-awarded   { --pgp-tone: var(--success-fg, var(--success)); }
+.pgd-tenderchip.is-draft,     .pgd-tendermark.is-draft     { --pgp-tone: var(--muted); }
+.pgd-tenderchip.is-tendering, .pgd-tendermark.is-tendering { --pgp-tone: var(--owner); }
+.pgd-tenderchip.is-bids-in,   .pgd-tendermark.is-bids-in   { --pgp-tone: var(--warn-fg); }
+.pgd-tenderchip.is-awarded,   .pgd-tendermark.is-awarded   { --pgp-tone: var(--success-fg, var(--success)); }
+.pgd-tenderchip.is-cancelled, .pgd-tendermark.is-cancelled { --pgp-tone: var(--state-danger); }
+
+/* The Tender column (PRD-01 G-2/G-3). The chip ellipsises inside the fixed
+   column; the `↳ {RFP}` marker is a quieter, borderless echo in the covering
+   tender's colour; `＋ Tender` only shows on row hover (or keyboard focus). */
+.pgd-tendercol { display: flex; align-items: center; min-width: 0; }
+.pgd-tendercol .pgd-tenderchip { margin-inline-start: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.pgd-tendermark {
+  --pgp-tone: var(--muted);
+  min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; font-weight: 600; color: color-mix(in srgb, var(--pgp-tone) 85%, var(--fg));
+}
+.pgd-tenderadd {
+  opacity: 0; border: 1px dashed var(--outline); background: transparent; color: var(--plan-baseline);
+  border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.pgd-row:hover .pgd-tenderadd, .pgd-tenderadd:focus-visible { opacity: 1; }
+.pgd-tenderadd:hover { border-color: var(--plan-baseline); }
+
+/* G-5: a summary row's descendant count beside its name. */
+.pgd-desccount { flex: 0 0 auto; font-size: 11px; font-weight: 600; color: var(--muted); }
+/* Keeps the action cell aligned where a level-5 row offers no ＋. */
+.pgd-ctl-spacer { display: inline-block; width: 26px; }
+/* The Tender tab's state word picks up the lifecycle colour too (P-2/G-8). */
+.pbx-drawer-tabcount.is-tendering { color: var(--owner-fg); background: var(--owner-muted); }
+.pbx-drawer-tabcount.is-bids-in   { color: var(--warn-fg); background: var(--warn-bg); }
+.pbx-drawer-tabcount.is-awarded   { color: var(--ok-fg); background: var(--ok-bg); }
+.pbx-drawer-tabcount.is-cancelled { color: var(--state-danger-fg); background: var(--state-danger-muted); }
 
 /* The bids-due marker — a dotted vertical rule at the submission deadline, in the
    tender's "bids in" blue so it reads as the moment responses are due. */
 .pgp-bidsdue {
   position: absolute; top: 0; bottom: 0; width: 0; z-index: 1; pointer-events: none;
-  border-left: 1.5px dotted color-mix(in srgb, var(--accent) 70%, transparent);
+  border-left: 1.5px dotted color-mix(in srgb, var(--owner) 70%, transparent);
 }
 
 /* A bar whose row is actively out to tender (LINA-413): its manual dates are
    locked, so it reads as not-grabbable — no grab cursor, a faint tender wash. */
 .pgt-bar.is-tender-locked {
   cursor: default;
-  background: color-mix(in srgb, var(--warn-fg) 14%, var(--paper));
+  background: color-mix(in srgb, var(--owner) 14%, var(--paper));
   border-style: dashed;
 }
 
@@ -1081,6 +1134,7 @@ button.pgd-tenderchip:focus-visible { outline: 2px solid var(--accent); outline-
    aria-disabled and a tint alone would be unreadable to half of who needs it.
    The 3px left marker is what makes the row findable when scanning fast. */
 .pgd-row.is-pending-change {
+  --pgd-rowbg: var(--status-pending-change-muted);
   background: var(--status-pending-change-muted);
   box-shadow: inset 3px 0 0 var(--status-pending-change);
 }
@@ -1249,62 +1303,4 @@ button.pgd-tenderchip:focus-visible { outline: 2px solid var(--accent); outline-
 }
 .pbx-drawer-tab.is-active .pbx-drawer-tabcount { background: var(--owner-muted); color: var(--owner-fg); }
 
-.pbx-tender-tab { display: flex; flex-direction: column; gap: var(--s3); }
-
-/* Lifecycle wizard: four steps, the current one filled, the done ones toned. */
-.pbx-tw-steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; gap: 8px; }
-.pbx-tw-step { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.pbx-tw-step-bar { height: 3px; border-radius: 3px; background: var(--outline); }
-.pbx-tw-step.is-done .pbx-tw-step-bar { background: var(--plan-baseline-line); }
-.pbx-tw-step.is-now .pbx-tw-step-bar { background: var(--plan-baseline); }
-.pbx-tw-step-label {
-  font-size: 12px; font-weight: 600; color: var(--muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.pbx-tw-step.is-now .pbx-tw-step-label { color: var(--fg); }
-
-/* Key dates + scope, a two-column definition list. */
-.pbx-tw-meta {
-  display: grid; grid-template-columns: max-content 1fr; gap: 6px var(--s3);
-  margin: 0; align-items: baseline;
-}
-.pbx-tw-meta dt { font-size: 13px; font-weight: 600; color: var(--muted); }
-.pbx-tw-meta dd { margin: 0; font-size: 14px; color: var(--fg); }
-.pbx-tw-due { color: var(--muted); }
-
-/* Critical-path warning — this task drives the build's finish (CPM). */
-.pbx-tw-crit {
-  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px;
-  border-radius: var(--r-ctrl); background: var(--owner-muted);
-  border: 1px solid var(--plan-baseline-line); font-size: 13px; color: var(--fg);
-}
-.pbx-tw-crit-dot { color: var(--plan-baseline); line-height: 1.3; flex: 0 0 auto; }
-
-.pbx-tw-sect { display: flex; flex-direction: column; gap: 8px; }
-.pbx-tw-sect-hd { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
-.pbx-tw-link {
-  appearance: none; border: none; background: none; cursor: pointer; padding: 0;
-  color: var(--builder); font-size: 13px; font-weight: 600;
-}
-.pbx-tw-link:hover { text-decoration: underline; }
-.pbx-tw-link:focus-visible { outline: 2px solid var(--builder); outline-offset: 2px; border-radius: 3px; }
-
-.pbx-tw-bidders, .pbx-tw-proposals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.pbx-tw-bidder {
-  display: flex; align-items: center; gap: var(--s2); padding: 8px 10px;
-  border: 1px solid var(--outline); border-radius: var(--r-ctrl); background: var(--paper);
-}
-.pbx-tw-bidder-email { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.pbx-tw-bidder-amt { font-weight: 700; font-size: 13px; white-space: nowrap; }
-
-.pbx-tw-proposal {
-  display: flex; flex-direction: column; gap: 4px; padding: 10px;
-  border: 1px solid var(--outline); border-radius: var(--r-ctrl); background: var(--paper);
-}
-.pbx-tw-proposal-top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
-.pbx-tw-proposal-name { font-weight: 700; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pbx-tw-proposal-amt { font-weight: 700; font-size: 14px; white-space: nowrap; }
-.pbx-tw-proposal-sub { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
-
-.pbx-tw-err { margin: 0; color: var(--bad-fg); font-size: 13px; }
-.pbx-tw-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-top: 4px; }
+/* The Tender tab's styles live in components/tender/tender.css (PRD-02). */

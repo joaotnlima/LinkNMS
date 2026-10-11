@@ -1,0 +1,49 @@
+/* /settings — personal, organisation, billing (PRD-12 N-8..N-10). */
+.set { width: 100%; max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+.set-title { margin: 0 0 12px; font-size: 22px; font-weight: 650; }
+.set-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--outline); margin-bottom: 20px; }
+.set-tab {
+  padding: 8px 12px; margin-bottom: -1px; border-bottom: 2px solid transparent;
+  color: var(--muted); text-decoration: none; font-size: 14px;
+}
+.set-tab.is-on { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
+.set-notice {
+  margin: 0 0 16px; padding: 10px 12px; border-radius: 8px;
+  background: var(--plan-closed-muted); color: var(--success-fg); font-size: 13.5px;
+}
+.set-notice.is-error { background: var(--state-danger-muted); color: var(--state-danger-fg); }
+.set-card {
+  margin-bottom: 20px; padding: 18px; border: 1px solid var(--outline); border-radius: 10px;
+  background: var(--surface-raised);
+}
+.set-card h2 { margin: 0 0 4px; font-size: 16px; font-weight: 650; }
+.set-card > p { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; }
+.set-field { display: grid; gap: 4px; margin-bottom: 12px; font-size: 13px; }
+.set-field input, .set-field select, .set-inline select, .set-inline input {
+  padding: 8px 10px; border: 1px solid var(--outline-strong); border-radius: 8px;
+  font: inherit; font-size: 14px; background: var(--surface-raised); color: var(--ink);
+}
+.set-btn {
+  padding: 8px 14px; border: 0; border-radius: 8px; background: var(--ink); color: #fff;
+  font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.set-btn.is-quiet { background: transparent; color: var(--ink); border: 1px solid var(--outline); }
+.set-btn.is-danger { background: transparent; color: var(--danger); border: 1px solid var(--state-danger-line); }
+.set-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.set-table th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 6px 8px; }
+.set-table td { padding: 8px; border-top: 1px solid var(--line); vertical-align: middle; }
+.set-table td.is-center, .set-table th.is-center { text-align: center; }
+.set-sub { display: block; color: var(--muted); font-size: 12px; }
+.set-inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.set-row-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.set-kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 14px; font-size: 14px; }
+.set-kv dt { color: var(--muted); }
+.set-kv dd { margin: 0; }
+.set-meter { color: var(--muted); }
+.set-meter.is-full { color: var(--danger); font-weight: 600; }
+.set-link { color: var(--owner-fg); }
+@media (max-width: 600px) {
+  .set-table thead { display: none; }
+  .set-table tr { display: grid; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .set-table td { border-top: 0; padding: 0 4px; }
+}

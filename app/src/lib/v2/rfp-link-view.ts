@@ -41,7 +41,8 @@
 // the token-scoped upload route (LINA-370 BE / LINA-375 FE): the form uploads
 // each file and carries the proven ids in `document_ids`.
 
-import { parseAmountToCents } from '../format.ts';
+import { formatCents, parseAmountToCents } from '../format.ts';
+import type { V2Clarification } from './tendering-view.ts';
 
 // ── Wire shapes (modules/tendering/domain/wire.mjs) ──────────────────────────
 // Restated locally on purpose, the same discipline as the other lib/v2 views: a
@@ -68,11 +69,11 @@ export interface PackageRow {
 
 /** An attached BIM model the bidder may view before pricing (LINA-409 / doc 24). */
 export interface PackageModel {
-  documentId: string;
+  document_id: string;
   version: number;
-  fileName: string;
+  file_name: string;
   mime: string;
-  sizeBytes: number;
+  size_bytes: number;
   sha256?: string | null;
 }
 
@@ -105,6 +106,8 @@ export interface RfpLinkRfp {
   mode: RfpMode;
   /** ISO datetime; absent when the RFP set no deadline. */
   submission_deadline?: string;
+  /** PRD-08 H-9: when asking closes; absent when the issuer set none. */
+  questions_deadline?: string;
   package: { rows: PackageRow[]; items: PackageItem[]; models: PackageModel[] };
 }
 
@@ -153,6 +156,10 @@ export interface RfpLinkView {
   recipient_email: string;
   closed: boolean;
   proposal: ProposalEcho | null;
+  /** PRD-08 H-6/H-9: the server's word on whether this recipient may still ask. */
+  questions_open?: boolean;
+  /** PRD-08 H-8: every answered question (asker never shown) + this recipient's own. */
+  clarifications?: V2Clarification[];
 }
 
 // ── The submit body (wire.mjs submitProposalByToken) ─────────────────────────
@@ -359,8 +366,8 @@ export function validateBid(
 
 /** "€250,000" — whole euros, the figure the whole proposal turns on. */
 export function formatEuro(cents: number): string {
-  const euros = Math.round(cents / 100);
-  return `€${euros.toLocaleString('en-US')}`;
+  // The one shared formatter (lib/format.ts), rounded to whole euros.
+  return formatCents(Math.round(cents / 100) * 100);
 }
 
 /** Working days back into the phrase a person would say, weeks where they divide. */

@@ -1,15 +1,16 @@
-// RFP BIM model (LINA-409 / doc 24) end to end through the /api/v2 router,
-// DB-free. The model is a Documents-module document (scope_type='rfp',
-// kind='bim'); tendering owns the RFP authorization and delegates persistence
-// to an injected documents store. A stateful in-memory documents-store double +
+// RFP BIM model (LINA-409 / doc 24, PRD-07 §5) end to end through the /api/v2
+// router, DB-free. The model is the BUILD's Documents-module document
+// (scope_type='project', kind='bim', is_project_model) that the RFP references;
+// tendering owns the RFP authorization and delegates persistence to an
+// injected documents store. A stateful in-memory documents-store double +
 // the in-memory object-storage double stand in for pg-store + R2. Proves:
 //   - attach is issuer-only, draft-only, IFC-only, size-capped;
 //   - the reserve→complete handshake proves the bytes before the model exists;
 //   - getRfp / getRfpByToken project the model into package.models[];
 //   - the two view-url routes mint presigned INLINE GETs — authed (any RFP
 //     reader) and public (token is the authority);
-//   - a second attach REPLACES as a new version (one model per RFP);
-//   - remove soft-deletes (the model leaves every read; bytes/ledger untouched).
+//   - a second upload is a new version of the same build model (author only);
+//   - attachRfpModel pins a version; remove DETACHES (the build keeps its model).
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -48,15 +49,19 @@ function fakeDocumentsStore() {
       return d && !d.deleted_at ? d : null;
     },
     async getVersion(id, no) { return versions.get(`${id}.${no}`) ?? null; },
-    async createDocument({ id, projectId, scopeType, scopeId, kind, title, file, storageKey }) {
-      docs.set(id, { id, project_id: projectId, scope_type: scopeType, scope_id: scopeId, kind, title, current_version: 0, deleted_at: null, private_to_org_id: null });
-      const v = { document_id: id, version_no: 1, storage_key: storageKey, mime: file.mime, size_bytes: file.size_bytes, sha256: file.sha256.toLowerCase() };
+    async getProjectModel(projectId) {
+      return [...docs.values()].find((d) => d.project_id === projectId && d.is_project_model && !d.deleted_at) ?? null;
+    },
+    async modelAuthorOrgId(id) { return versions.get(`${id}.1`)?.uploaded_by_org_id ?? null; },
+    async createDocument({ id, projectId, scopeType, scopeId, kind, title, file, storageKey, actor, isProjectModel = false }) {
+      docs.set(id, { id, project_id: projectId, scope_type: scopeType, scope_id: scopeId, kind, title, current_version: 0, deleted_at: null, private_to_org_id: null, is_project_model: isProjectModel });
+      const v = { document_id: id, version_no: 1, storage_key: storageKey, mime: file.mime, size_bytes: file.size_bytes, sha256: file.sha256.toLowerCase(), uploaded_by_org_id: actor.orgId };
       versions.set(`${id}.1`, v);
       return v;
     },
-    async addVersion({ documentId, file, storageKeyOf }) {
+    async addVersion({ documentId, file, storageKeyOf, actor }) {
       const next = (docs.get(documentId).current_version) + 1;
-      const v = { document_id: documentId, version_no: next, storage_key: storageKeyOf(next), mime: file.mime, size_bytes: file.size_bytes, sha256: file.sha256.toLowerCase() };
+      const v = { document_id: documentId, version_no: next, storage_key: storageKeyOf(next), mime: file.mime, size_bytes: file.size_bytes, sha256: file.sha256.toLowerCase(), uploaded_by_org_id: actor.orgId };
       versions.set(`${documentId}.${next}`, v);
       return v;
     },
@@ -80,9 +85,12 @@ function fakeStore(over = {}) {
     id: RFP, project_id: PROJECT, issuer_org_id: ISSUER_ORG,
     status: over.status ?? 'draft', package_version: 1, version: 1,
     visibility: over.visibility ?? 'invite_only',
+    model_document_id: null, model_version_no: null,
   };
   return {
+    rfp,
     async getRfp(id) { return id === RFP ? rfp : null; },
+    async setRfpModel({ documentId, versionNo }) { rfp.model_document_id = documentId; rfp.model_version_no = versionNo; },
     async isRecipient(rfpId, orgId) { return orgId === RECIPIENT_ORG; },
     async isStaffed() { return true; },
     async getPersonByClerkId() { return { id: 'person_1' }; },
@@ -92,7 +100,8 @@ function fakeStore(over = {}) {
     async findRecipientByToken(raw) {
       return raw === TOKEN ? { id: REC, rfp_id: RFP, org_id: RECIPIENT_ORG, rfp_status: rfp.status, proposal_id: null,
         title: 'Design', scope_text: null, specialties: [], purpose: 'design', mode: 'light',
-        submission_deadline: null, project_name: 'Casa', project_location: null, email: 'b@x.pt' } : null;
+        submission_deadline: null, project_name: 'Casa', project_location: null, email: 'b@x.pt',
+        model_document_id: rfp.model_document_id, model_version_no: rfp.model_version_no } : null;
     },
     async getProposal() { return null; },
   };
@@ -134,6 +143,9 @@ describe('attach — POST /rfps/{id}/model', () => {
     const documentId = await attachModel(router, store, ds, storage);
     assert.equal(ds.docs.get(documentId).current_version, 1);
     assert.equal(ds.docs.get(documentId).kind, 'bim');
+    assert.equal(ds.docs.get(documentId).scope_type, 'project', 'PRD-07: the build\'s model');
+    assert.equal(ds.docs.get(documentId).is_project_model, true);
+    assert.equal(store.rfp.model_document_id, documentId, 'the RFP references it, following current');
     assert.equal(ds.docs.get(documentId).title, 'casa-silva.ifc');
   });
 
@@ -188,8 +200,10 @@ describe('projection — package.models[]', () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.package.models.length, 1);
     assert.deepEqual(res.body.package.models[0], {
-      documentId, version: 1, fileName: 'casa-silva.ifc',
-      mime: 'application/x-step', sizeBytes: 2048, sha256: SHA,
+      document_id: documentId, version: 1, file_name: 'casa-silva.ifc',
+      mime: 'application/x-step', size_bytes: 2048, sha256: SHA, pinned: false, current_version: 1,
+      // deprecated camelCase twins (audit S5)
+      documentId, fileName: 'casa-silva.ifc', sizeBytes: 2048, currentVersion: 1,
     });
   });
 
@@ -255,17 +269,47 @@ describe('replace & remove', () => {
     assert.equal(res.body.package.models[0].version, 2);
   });
 
-  test('remove soft-deletes: the model leaves every read', async () => {
+  test('remove detaches: the model leaves the RFP, the build keeps it', async () => {
     const store = fakeStore(); const ds = fakeDocumentsStore(); const storage = createInMemoryObjectStorage();
     const router = makeRouter(store, ds, storage);
     const documentId = await attachModel(router, store, ds, storage);
     const del = await call(router, 'DELETE', `/rfps/${RFP}/model/${documentId}`, { v: viewer(ISSUER_ORG) });
     assert.equal(del.status, 204);
-    assert.ok(ds.docs.get(documentId).deleted_at); // tombstoned, not destroyed
+    assert.equal(ds.docs.get(documentId).deleted_at, null, 'never deleted — it is the build\'s model');
     const rfp = await call(router, 'GET', `/rfps/${RFP}`, { v: viewer(ISSUER_ORG) });
     assert.equal(rfp.body.package.models.length, 0);
     const view = await call(router, 'GET', `/rfps/${RFP}/model/${documentId}:view-url`, { v: viewer(ISSUER_ORG) });
     assert.equal(view.status, 404);
+  });
+
+  test('PUT attaches the build model pinned to a version; bidders see that version', async () => {
+    const store = fakeStore(); const ds = fakeDocumentsStore(); const storage = createInMemoryObjectStorage();
+    const router = makeRouter(store, ds, storage);
+    const documentId = await attachModel(router, store, ds, storage);
+    await attachModel(router, store, ds, storage, { ...ifc, sha256: 'b'.repeat(64) });
+    const pin = await call(router, 'PUT', `/rfps/${RFP}/model`, { v: viewer(ISSUER_ORG), body: { document_id: documentId, version_no: 1 } });
+    assert.equal(pin.status, 200);
+    assert.deepEqual([pin.body.version, pin.body.pinned, pin.body.current_version], [1, true, 2]);
+    const link = await call(router, 'GET', `/rfp-links/${TOKEN}`);
+    assert.equal(link.body.rfp.package.models[0].version, 1);
+    const view = await call(router, 'GET', `/rfp-links/${TOKEN}/model/${documentId}:view-url`);
+    assert.match(view.body.url, new RegExp(ds.versions.get(`${documentId}.1`).storage_key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    const bad = await call(router, 'PUT', `/rfps/${RFP}/model`, { v: viewer(ISSUER_ORG), body: { document_id: documentId, version_no: 3 } });
+    assert.equal(bad.status, 422);
+    const other = await call(router, 'PUT', `/rfps/${RFP}/model`, { v: viewer(ISSUER_ORG), body: { document_id: RFP } });
+    assert.equal(other.status, 422);
+  });
+
+  test('a build model authored by another org: the issuer attaches it but cannot upload over it (M-9)', async () => {
+    const store = fakeStore(); const ds = fakeDocumentsStore(); const storage = createInMemoryObjectStorage();
+    const router = makeRouter(store, ds, storage);
+    const v = await ds.createDocument({ id: RFP.replace(/1$/, '9'), projectId: PROJECT, scopeType: 'project', scopeId: PROJECT, kind: 'bim', title: 'arch.ifc', file: ifc, storageKey: 'k/arch.ifc', actor: { orgId: STRANGER_ORG }, isProjectModel: true });
+    await ds.completeUpload({ documentId: v.document_id, versionNo: 1 });
+    const up = await call(router, 'POST', `/rfps/${RFP}/model`, { v: viewer(ISSUER_ORG), body: { file: ifc } });
+    assert.equal(up.status, 403);
+    const att = await call(router, 'PUT', `/rfps/${RFP}/model`, { v: viewer(ISSUER_ORG), body: { document_id: v.document_id } });
+    assert.equal(att.status, 200);
+    assert.equal(att.body.pinned, false);
   });
 
   test('remove on a non-existent model is 404', async () => {

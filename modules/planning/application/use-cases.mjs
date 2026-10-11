@@ -34,14 +34,22 @@ import {
   variationAction, variationVisibleTo,
 } from '../domain/variations.mjs';
 import { costLineVisibleTo, costLineBody, taskContractTotalCents } from '../domain/cost-lines.mjs';
-import { taskBody, linkBody, planHealth, projectionCtx, variationBody } from './projection.mjs';
+import {
+  taskBody, linkBody, planHealth, projectionCtx, variationBody, handoverBody,
+} from './projection.mjs';
+import { assertDeliverablesApproved } from './deliverables.mjs';
+import { assertSpecialtyCodes, onRecordFacts } from './specialty-code.mjs';
+import {
+  startOverride, acceptanceOnDone, validateRunFields, runFields, runRecordFields,
+} from './start-gate.mjs';
+import { comparedSnapshot } from './baselines.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DATING_MODES = new Set(['dated', 'undated', 'external']);
 const ANCHORS = new Set(['start', 'end']);
 const DELTA_FIELDS = new Set([
-  'name', 'description', 'kind', 'specialty', 'location_id', 'dating_mode',
+  'name', 'description', 'kind', 'specialty', 'specialty_code', 'location_id', 'dating_mode',
   'start', 'finish', 'duration_wd', 'assignee_org_id', 'assignee_person_id',
   'acceptance_criteria',
 ]);
@@ -51,7 +59,10 @@ const DELTA_FIELDS = new Set([
 /** operationId: getSchedule */
 export async function getSchedule({ viewer, store, projectId, query }) {
   await requireParticipant({ viewer, store, projectId });
-  const snapshot = await store.loadPlan(projectId);
+  // PRD-10 E-1: ?baseline= draws that baseline's branch against it.
+  const { snapshot, comparedTo } = await comparedSnapshot({
+    store, projectId, snapshot: await store.loadPlan(projectId), baselineId: query?.baseline ?? null,
+  });
   const ctx = projectionCtx(snapshot, viewer.orgId, today());
   let tasks = [...snapshot.tasks.values()];
   if (query?.root) {
@@ -78,7 +89,40 @@ export async function getSchedule({ viewer, store, projectId, query }) {
       links: snapshot.links.map(linkBody),
       calendar: snapshot.calendarRaw,
       health: planHealth(snapshot),
+      handover: handoverBody(ctx),
+      changes: await changesSummary({ viewer, store, projectId, snapshot }),
+      ...(comparedTo ? { compared_to: comparedTo } : {}),
     },
+  };
+}
+
+/**
+ * PRD-13 S-6: the header's "Changes since baseline · n (k new)". Live time and
+ * scope variations (every participant sees those, doc 04 V1); unseen counts the
+ * ones the viewer may acknowledge and has not since their latest change.
+ */
+async function changesSummary({ viewer, store, projectId, snapshot }) {
+  const rows = await store.listVariations(projectId, {});
+  const who = viewerWho(viewer, snapshot);
+  const live = rows
+    .filter((v) => ['open', 'acknowledged'].includes(v.status) && ['time', 'scope'].includes(v.kind))
+    .map((v) => variationBody(v, { who }));
+  return {
+    total: live.length,
+    unseen: live.filter((v) => v.can_acknowledge && !v.seen_by_viewer).length,
+  };
+}
+
+/** What variationBody needs to answer seen_by_viewer / can_acknowledge. */
+export function viewerWho(viewer, snapshot) {
+  return {
+    viewerOrgId: viewer.orgId,
+    ownerOrgId: snapshot.ownerOrgId,
+    contracts: snapshot.contracts,
+    // Names of the build's parties (owner, contract parties, assignees) — who
+    // changed a row is always one of them (D-33 edit scope).
+    orgNames: snapshot.orgNames,
+    mayAcknowledge: viewer.has?.('org:variations:acknowledge') ?? false,
   };
 }
 
@@ -96,6 +140,8 @@ export async function getTask({ viewer, store, taskId }) {
     status: 200,
     body: {
       ...taskBody(snapshot.tasks.get(taskId), ctx),
+      // PRD-10 E-5 / E-6: what it waits on to start, its acceptance checklist.
+      ...runFields(snapshot, snapshot.tasks.get(taskId)),
       history: history.map((h) => ({
         field: h.field,
         old_value: h.oldValue,
@@ -110,12 +156,13 @@ export async function getTask({ viewer, store, taskId }) {
         status: p.status,
         percent: p.percent ?? undefined,
         note: p.note ?? undefined,
+        ...runRecordFields(p),
         by: { person_id: p.reportedByPersonId, org_id: p.reportedByOrgId },
         at: p.reportedAt,
       })),
       variations: variations
         .filter((v) => variationVisibleTo(v, viewer.orgId, { contracts: snapshot.contracts }))
-        .map((v) => variationBody(v)),
+        .map((v) => variationBody(v, { who: viewerWho(viewer, snapshot) })),
     },
   };
 }
@@ -162,7 +209,7 @@ export async function listAssignableParties({ viewer, store, projectId }) {
 // ── row writes ─────────────────────────────────────────────────────────────
 
 /** operationId: createTask */
-export async function createTask({ viewer, store, projectId, body, idempotencyKey }) {
+export async function createTask({ viewer, store, specialties, projectId, body, idempotencyKey }) {
   const { actor } = await requireEditor({ viewer, store, projectId });
   await assertPlanEditable(store, projectId);
   const errors = {};
@@ -174,6 +221,7 @@ export async function createTask({ viewer, store, projectId, body, idempotencyKe
     if (body?.[f] != null && !ISO_DATE.test(body[f])) errors[f] = 'an ISO date';
   }
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+  await assertSpecialtyCodes(specialties, [['specialty_code', body?.specialty_code]]);
 
   return store.idempotent(
     { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'createTask', body },
@@ -199,7 +247,7 @@ export async function createTask({ viewer, store, projectId, body, idempotencyKe
 }
 
 /** operationId: updateTask — D-26 field-level delta, LWW, propagation. */
-export async function updateTask({ viewer, store, taskId, body }) {
+export async function updateTask({ viewer, store, specialties, taskId, body }) {
   const existing = await store.getTask(taskId);
   if (!existing) throw new ProblemError('not_found');
   if (existing.deletedAt) throw new ProblemError('gone', 'this row was deleted meanwhile');
@@ -210,12 +258,14 @@ export async function updateTask({ viewer, store, taskId, body }) {
     throw new ProblemError('validation_failed', null, { errors: { client_change_id: 'required (uuid)' } });
   }
   const changes = body?.changes ?? {};
+  const reason = parseReason(body?.reason);
   const unknown = Object.keys(changes).filter((f) => !DELTA_FIELDS.has(f));
   if (!Object.keys(changes).length || unknown.length) {
     throw new ProblemError('validation_failed', null, {
       errors: { changes: unknown.length ? `unknown fields: ${unknown.join(', ')}` : 'at least one field' },
     });
   }
+  if (changes.specialty_code) await assertSpecialtyCodes(specialties, [['specialty_code', changes.specialty_code.value]]);
 
   return store.withPlanTx(existing.projectId, async (plan) => {
     const task = plan.tasks.get(taskId);
@@ -252,13 +302,16 @@ export async function updateTask({ viewer, store, taskId, body }) {
     });
     const variations = await runScheduleVariations({
       plan, cal, projectId: existing.projectId, seeds: [taskId], propagated,
-      actor: actorOf(actor, viewer),
+      actor: actorOf(actor, viewer), reason,
     });
 
     await commitPlanEvent(plan, {
       projectId: existing.projectId, actor: actorOf(actor, viewer), type: 'planning.task.updated',
       objectId: taskId,
-      payload: { changes: Object.keys(changes), overwrote: overwrote.map((o) => o.field), lag_changes: lagChanges },
+      payload: {
+        changes: Object.keys(changes), overwrote: overwrote.map((o) => o.field), lag_changes: lagChanges,
+        ...(reason ? { reason } : {}),
+      },
       data: { task_id: taskId, fields: Object.keys(changes) },
     });
     if (overwrote.length) {
@@ -308,7 +361,7 @@ export async function recordActual({ viewer, store, taskId, body }) {
     });
     const variations = await runScheduleVariations({
       plan, cal, projectId: existing.projectId, seeds: [taskId], propagated,
-      actor: actorOf(actor, viewer),
+      actor: actorOf(actor, viewer), seedCause: closeCause(updated),
     });
     await commitPlanEvent(plan, {
       projectId: existing.projectId, actor: actorOf(actor, viewer), type: 'planning.task.updated',
@@ -345,26 +398,64 @@ export async function previewMove({ viewer, store, taskId, body }) {
         succStart: start, succFinish: finish, calendar: cal,
       })
     : undefined;
+  const afterFinish = projectFinish(effectiveSpans(after));
   return {
     status: 200,
     body: {
       resulting_lag_wd: lag,
-      would_move: moves.map((m) => ({ id: m.id, start: m.start, finish: m.finish })),
-      project_end_delta_wd: finishDelta(cal, before, projectFinish(effectiveSpans(after))),
+      would_move: moves.map((m) => ({
+        id: m.id, name: snapshot.tasks.get(m.id)?.name, start: m.start, finish: m.finish,
+      })),
+      project_end_delta_wd: finishDelta(cal, before, afterFinish),
+      // PRD-13 S-10 — the impact note before commit.
+      project_finish: { ...(before ? { before } : {}), ...(afterFinish ? { after: afterFinish } : {}) },
+      ...(task.baselineFinish && finish
+        ? { baseline_delta_wd: workingDaysDelta(cal, task.baselineFinish, finish) }
+        : {}),
+      notify: notifiedBy(snapshot, task),
     },
   };
 }
 
+/**
+ * Who a change to `task` is told to (doc 05 §6): the project owner and the
+ * client of the row's contract — only for a row in a baselined branch (an
+ * uncontrolled row records no variation, so nobody is notified).
+ */
+function notifiedBy(snapshot, task) {
+  if (!isControlled(task, snapshot.baselinedContractIds ?? new Set())) return [];
+  const out = [];
+  const add = (orgId, role) => {
+    if (orgId && !out.some((o) => o.org_id === orgId)) {
+      out.push({ org_id: orgId, org_name: snapshot.orgNames?.get(orgId) ?? undefined, role });
+    }
+  };
+  add(snapshot.ownerOrgId, 'owner');
+  const contract = snapshot.contracts.get(task.branchContractId ?? task.contractId);
+  add(contract?.clientOrgId, 'client');
+  return out;
+}
+
 // ── structural batch ───────────────────────────────────────────────────────
 
-/** operationId: applySchedule */
-export async function applySchedule({ viewer, store, projectId, body, idempotencyKey }) {
+/**
+ * operationId: applySchedule
+ *
+ * `hooks` lets another planning use case run INSIDE the same plan transaction
+ * (the Excel import's confirm, PRD-09 O-9/O-12): `before(plan)` may refuse
+ * before anything is written; `after(plan, out, actor)` adds its own writes
+ * (ledger, outbox, its row) before commit.
+ */
+export async function applySchedule({ viewer, store, specialties, projectId, body, idempotencyKey, hooks = {}, operationId = 'applySchedule' }) {
   const { actor } = await requireEditor({ viewer, store, projectId });
   await assertPlanEditable(store, projectId);
   const ops = body?.operations;
   if (!Array.isArray(ops) || !ops.length) {
     throw new ProblemError('validation_failed', null, { errors: { operations: 'a non-empty list' } });
   }
+  await assertSpecialtyCodes(specialties, ops.flatMap((op, i) =>
+    (['create_rows', 'paste_rows'].includes(op?.op) ? op.rows ?? [] : [])
+      .map((r, j) => [`operations[${i}].rows[${j}].specialty_code`, r?.specialty_code])));
   const dryRun = body?.dry_run === true;
 
   const run = () => store.withPlanTx(projectId, async (plan) => {
@@ -374,6 +465,7 @@ export async function applySchedule({ viewer, store, projectId, body, idempotenc
         body: { applied: true, dry_run: false, created: [], changed: [], deleted: [], links_created: [], health: planHealth(plan) },
       };
     }
+    if (hooks.before) await hooks.before(plan);
     const cal = makeCalendar(plan.calendarRaw);
     const out = { created: [], changed: [], deleted: [], links_created: [] };
     const removedRows = [];
@@ -476,6 +568,8 @@ export async function applySchedule({ viewer, store, projectId, body, idempotenc
       },
     });
 
+    if (hooks.after) await hooks.after(plan, out, me);
+
     const ctx = projectionCtx(plan, viewer.orgId, today());
     return {
       status: 200,
@@ -495,7 +589,9 @@ export async function applySchedule({ viewer, store, projectId, body, idempotenc
   }, { dryRun });
 
   if (dryRun || !idempotencyKey) return run();
-  return store.idempotent({ key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'applySchedule', body }, run);
+  // A hooked caller may name its own replay identity (the import confirm's
+  // rows carry freshly minted ids, so its body is the import id).
+  return store.idempotent({ key: idempotencyKey, caller: viewer.clerkUserId, operationId, body: hooks.idempotencyBody ?? body }, run);
 }
 
 // ── links ──────────────────────────────────────────────────────────────────
@@ -774,9 +870,10 @@ export async function listVariations({ viewer, store, projectId, query }) {
     since: query?.since ?? null,
     taskId: query?.task ?? null,
   });
+  const who = viewerWho(viewer, snapshot);
   const items = rows
     .filter((v) => variationVisibleTo(v, viewer.orgId, { contracts: snapshot.contracts }))
-    .map((v) => variationBody(v));
+    .map((v) => variationBody(v, { who }));
   return { status: 200, body: { items, next_cursor: null } };
 }
 
@@ -802,7 +899,7 @@ export async function getVariation({ viewer, store, variationId }) {
         value: { [h.field]: h.newValue },
       }));
   }
-  return { status: 200, body: variationBody(v, { history }) };
+  return { status: 200, body: variationBody(v, { history, who: viewerWho(viewer, snapshot) }) };
 }
 
 /** operationId: acknowledgeVariation — "I saw it", who/when recorded. */
@@ -826,7 +923,7 @@ export async function acknowledgeVariation({ viewer, store, variationId }) {
     throw new ProblemError('invalid_transition', `a ${v.status} variation is settled`);
   }
   const updated = await store.acknowledgeVariation({ variationId, actor: actorOf(actor, viewer) });
-  return { status: 200, body: variationBody(updated) };
+  return { status: 200, body: variationBody(updated, { who: viewerWho(viewer, snapshot) }) };
 }
 
 /** operationId: questionVariation — opens a question on the row (doc 08). */
@@ -897,9 +994,22 @@ export async function reportProgress({ viewer, store, taskId, body }) {
   if (!Array.isArray(photos) || photos.some((p) => !UUID.test(p ?? ''))) {
     errors.photo_document_ids = 'a list of document ids';
   }
+  if (body?.actual_finish != null) {
+    if (!ISO_DATE.test(body.actual_finish)) errors.actual_finish = 'an ISO date';
+    else if (body.status !== 'done') errors.actual_finish = 'actual_finish goes with done only';
+    else if (body.actual_finish > today()) errors.actual_finish = 'not in the future';
+  }
+  validateRunFields(body, errors);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+  // D-48: a task with required deliverables is done only once all are approved.
+  if (body.status === 'done') await assertDeliverablesApproved(store, taskId);
+  const current = snapshot.tasks.get(taskId) ?? task;
+  // D-48 / PRD-10 E-5: a start ahead of its predecessors needs a reason, recorded.
+  const outOfSequence = startOverride({ snapshot, task: current, nextStatus: body.status, overrideReason: body.override_reason });
+  // PRD-10 E-6: a close records which acceptance criteria were met.
+  const acceptance = acceptanceOnDone({ task: current, nextStatus: body.status, criteriaMet: body.criteria_met });
 
-  const report = await store.insertProgress({
+  const progress = {
     taskId,
     projectId: task.projectId,
     status: body.status,
@@ -909,9 +1019,59 @@ export async function reportProgress({ viewer, store, taskId, body }) {
     taskName: task.name,
     // quality opens the verification request from this snapshot on `done`
     criteria: body.status === 'done' ? (task.acceptanceCriteria ?? task.description ?? null) : null,
+    outOfSequence,
+    acceptance,
     actor: actorOf(actor, viewer),
-  });
+  };
+  // PRD-13 S-3 / S-12: `done` on a LEAF with no actual finish closes it in the
+  // same commit — actual finish (today unless given), propagation, the time
+  // variation (closed_late past the baseline) — so a late close stays drawn.
+  const isLeaf = descendantIds(snapshot.tasks, taskId).length === 0;
+  if (body.status === 'done' && isLeaf && !current.actualFinish) {
+    return closeWithProgress({
+      viewer, store, actor, taskId, progress, actualFinish: body.actual_finish ?? today(),
+    });
+  }
+  // PRD-03: a done report carries the directory's on-record facts (to-be/10).
+  if (body.status === 'done') progress.onRecord = onRecordFacts(snapshot.tasks, taskId, world(snapshot).contracts);
+  const report = await store.insertProgress(progress);
   return { status: 201, body: progressBody(report) };
+}
+
+async function closeWithProgress({ viewer, store, actor, taskId, progress, actualFinish }) {
+  return store.withPlanTx(progress.projectId, async (plan) => {
+    const task = plan.tasks.get(taskId);
+    if (!task || task.deletedAt) throw new ProblemError('gone');
+    if (!task.actualFinish) {
+      const cal = makeCalendar(plan.calendarRaw);
+      const patch = { actualFinish: actualFinish };
+      if (!task.actualStart && task.start && task.start > actualFinish) patch.actualStart = actualFinish;
+      const updated = { ...task, ...patch };
+      plan.tasks.set(taskId, updated);
+      plan.write.patchTask(taskId, { ...patch, ...changeStamp(actor, viewer, 'direct') });
+      for (const [field, value] of Object.entries(patch)) {
+        plan.write.fieldChange(fieldChangeOf({
+          taskId, field, oldValue: task[field], newValue: value,
+          actor, viewer, cause: 'direct', clientChangeId: null,
+        }));
+      }
+      const propagated = await propagateAndPersist({
+        plan, cal, seedIds: [taskId], actor: actorOf(actor, viewer), clientChangeId: null,
+      });
+      await runScheduleVariations({
+        plan, cal, projectId: progress.projectId, seeds: [taskId], propagated,
+        actor: actorOf(actor, viewer), seedCause: closeCause(updated),
+      });
+      await commitPlanEvent(plan, {
+        projectId: progress.projectId, actor: actorOf(actor, viewer), type: 'planning.task.updated',
+        objectId: taskId, payload: { actual: patch, closed_by: 'progress' },
+        data: { task_id: taskId, fields: Object.keys(patch) },
+      });
+    }
+    if (progress.status === 'done') progress.onRecord = onRecordFacts(plan.tasks, taskId, world(plan).contracts);
+    const report = await plan.write.insertProgress(progress);
+    return { status: 201, body: progressBody(report) };
+  });
 }
 
 /** operationId: listProgress */
@@ -1087,6 +1247,22 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** PRD-13 S-11: the optional "why" — trimmed, ≤ 500 chars, null when blank. */
+function parseReason(raw) {
+  if (raw == null) return null;
+  if (typeof raw !== 'string' || raw.trim().length > 500) {
+    throw new ProblemError('validation_failed', null, { errors: { reason: 'up to 500 characters' } });
+  }
+  return raw.trim() || null;
+}
+
+/** PRD-13 §5: closing past the baseline finish is a time change caused by the close. */
+function closeCause(task) {
+  return task.actualFinish && task.baselineFinish && task.actualFinish > task.baselineFinish
+    ? 'closed_late'
+    : 'direct';
+}
+
 /** authz opener for PATCH/DELETE /cost-lines/{id} — party or estimate owner. */
 async function requireCostLine({ viewer, store, costLineId }) {
   const line = await store.getCostLine(costLineId);
@@ -1169,6 +1345,7 @@ function progressBody(p) {
     percent: p.percent ?? undefined,
     note: p.note ?? undefined,
     photo_document_ids: p.photoDocumentIds ?? [],
+    ...runRecordFields(p),
     reported_by: { person_id: p.reportedByPersonId, org_id: p.reportedByOrgId },
     on_behalf_of_org_id: p.onBehalfOfOrgId ?? undefined,
     reported_at: p.reportedAt,
@@ -1179,7 +1356,7 @@ function world(plan) {
   return { ownerOrgId: plan.ownerOrgId, contracts: plan.contracts };
 }
 
-function actorOf(person, viewer) {
+export function actorOf(person, viewer) {
   return { personId: person.id, orgId: viewer.orgId, orgRole: viewer.orgRole, channel: viewer.channel };
 }
 
@@ -1192,7 +1369,7 @@ function changeStamp(actor, viewer, cause) {
   };
 }
 
-function requireActiveOrg(viewer) {
+export function requireActiveOrg(viewer) {
   if (!viewer.orgId) throw new ProblemError('forbidden', 'pick an active organisation first', { reason: 'no_active_org' });
 }
 
@@ -1207,7 +1384,7 @@ async function requireActor(store, viewer) {
 }
 
 /** relationship: project.participant (∧ staffing for non-managers). */
-async function requireParticipant({ viewer, store, projectId }) {
+export async function requireParticipant({ viewer, store, projectId }) {
   requireActiveOrg(viewer);
   const project = await store.getProject(projectId);
   if (!project) throw new ProblemError('not_found');
@@ -1325,6 +1502,7 @@ function buildRow({ plan, cal, projectId, spec, actor }) {
     name: spec.name.trim(),
     description: spec.description ?? null,
     specialty: spec.specialty ?? null,
+    specialtyCode: spec.specialty_code ?? null,
     locationId: spec.location_id ?? null,
     contractId: null,
     branchContractId: parent ? (parent.contractId ?? parent.branchContractId ?? null) : null,
@@ -1356,7 +1534,7 @@ function applyDelta({ plan, task, cal, changes, viewer, actor, clientChangeId })
   const fieldChanges = [];
   const FIELD_KEYS = {
     name: 'name', description: 'description', kind: 'kind', specialty: 'specialty',
-    location_id: 'locationId', dating_mode: 'datingMode', start: 'start', finish: 'finish',
+    specialty_code: 'specialtyCode', location_id: 'locationId', dating_mode: 'datingMode', start: 'start', finish: 'finish',
     duration_wd: 'durationWd', assignee_org_id: 'assigneeOrgId', assignee_person_id: 'assigneePersonId',
     acceptance_criteria: 'acceptanceCriteria',
   };
@@ -1448,7 +1626,7 @@ function retuneIncomingLags({ plan, cal, task, changedFields }) {
 }
 
 /** Run the engine, persist the moves and the warnings, return the moves. */
-async function propagateAndPersist({ plan, cal, seedIds, actor, clientChangeId }) {
+export async function propagateAndPersist({ plan, cal, seedIds, actor, clientChangeId }) {
   const { moves, warnings } = propagate({ tasks: plan.tasks, links: plan.links, calendar: cal, seedIds });
   for (const m of moves) {
     const before = plan.tasks.get(m.id);
@@ -1502,12 +1680,15 @@ function variationScopeOf(kind, scopeId, projectId) {
 }
 
 /** Record / refresh / reopen / close ONE (task, kind, scope) slot. */
-async function applyVariationSlot({ plan, projectId, taskId, kind, scopeType, scopeId, position, cause, causeTaskId, actor }) {
+async function applyVariationSlot({ plan, projectId, taskId, kind, scopeType, scopeId, position, cause, causeTaskId, actor, reason }) {
   const key = VARIATION_KEY(taskId, kind, scopeId);
   const existing = plan.variations?.get(key) ?? null;
   const action = variationAction({ existing, changed: position.changed });
   if (!action) return [];
   const stamp = { cause, causeTaskId: causeTaskId ?? null, lastChangedByOrgId: actor.orgId };
+  // PRD-13 S-11: the "why" of the latest DIRECT change rides on the variation;
+  // a propagated refresh keeps the reason its author gave.
+  if (reason !== undefined && cause !== 'propagated') stamp.reason = reason;
   const now = new Date().toISOString();
   let v;
   let eventType;
@@ -1540,7 +1721,7 @@ async function applyVariationSlot({ plan, projectId, taskId, kind, scopeType, sc
     type: eventType,
     scope,
     object: { type: 'variation', id: v.id },
-    payload: { task_id: taskId, kind, status: v.status, delta: v.delta, cause },
+    payload: { task_id: taskId, kind, status: v.status, delta: v.delta, cause, ...(stamp.reason ? { reason: stamp.reason } : {}) },
     channel: actor.channel ?? 'ui',
   });
   plan.write.publish({
@@ -1559,9 +1740,9 @@ async function applyVariationSlot({ plan, projectId, taskId, kind, scopeType, sc
 }
 
 /** Time + scope-text slots for every changed row (direct AND propagated). */
-async function runScheduleVariations({ plan, cal, projectId, seeds, propagated = [], actor }) {
+async function runScheduleVariations({ plan, cal, projectId, seeds, propagated = [], actor, seedCause = 'direct', reason }) {
   const targets = new Map();
-  for (const id of seeds) targets.set(id, { cause: 'direct', causeTaskId: null });
+  for (const id of seeds) targets.set(id, { cause: seedCause, causeTaskId: null, reason: reason ?? null });
   for (const m of propagated) {
     if (!targets.has(m.id)) targets.set(m.id, { cause: 'propagated', causeTaskId: m.causeTaskId });
   }
@@ -1577,7 +1758,8 @@ async function runScheduleVariations({ plan, cal, projectId, seeds, propagated =
     })));
     out.push(...(await applyVariationSlot({
       plan, projectId, taskId, kind: 'scope', scopeType: 'project', scopeId: projectId,
-      position: scopeTextPosition(task, plan.baselineText.get(taskId)), ...info, actor,
+      position: scopeTextPosition(task, plan.baselineText.get(taskId)),
+      cause: info.cause === 'closed_late' ? 'direct' : info.cause, causeTaskId: info.causeTaskId, actor,
     })));
   }
   return out;
@@ -1644,10 +1826,10 @@ async function runCostVariation({ plan, projectId, task, contractId, kind, prior
 }
 
 /** Engine results → wire bodies the VIEWER may see (V2/V5). */
-function visibleVariationBodies(results, plan, viewerOrgId) {
+function visibleVariationBodies(results, plan, viewer) {
   return results
-    .filter((v) => variationVisibleTo(v, viewerOrgId, { contracts: plan.contracts }))
-    .map((v) => variationBody(v, { taskName: plan.tasks.get(v.taskId)?.name }));
+    .filter((v) => variationVisibleTo(v, viewer.orgId, { contracts: plan.contracts }))
+    .map((v) => variationBody(v, { taskName: plan.tasks.get(v.taskId)?.name, who: viewerWho(viewer, plan) }));
 }
 
 function addLink({ plan, spec, viewer, actor }) {
@@ -1820,7 +2002,7 @@ function isMySupplier(plan, clientOrgId, supplierOrgId) {
   );
 }
 
-function fieldChangeOf({ taskId, field, oldValue, newValue, actor, viewer, cause, causeTaskId = null, clientChangeId = null }) {
+export function fieldChangeOf({ taskId, field, oldValue, newValue, actor, viewer, cause, causeTaskId = null, clientChangeId = null }) {
   return {
     taskId,
     field,
@@ -1836,7 +2018,7 @@ function fieldChangeOf({ taskId, field, oldValue, newValue, actor, viewer, cause
   };
 }
 
-async function commitPlanEvent(plan, { projectId, actor, type, objectId, objectType = 'task', payload, data }) {
+export async function commitPlanEvent(plan, { projectId, actor, type, objectId, objectType = 'task', payload, data }) {
   await plan.write.ledger({
     projectId,
     actor: { personId: actor.personId, orgId: actor.orgId, orgRole: actor.orgRole },
@@ -1878,7 +2060,7 @@ function deltaResult({ plan, viewer, task, propagated = [], overwrote = [], link
   return {
     task: taskBody(plan.tasks.get(task.id) ?? task, ctx),
     propagated: propagated.map((m) => ({ id: m.id, start: m.start, finish: m.finish, cause_task_id: m.causeTaskId })),
-    variations: visibleVariationBodies(variations, plan, viewer.orgId),
+    variations: visibleVariationBodies(variations, plan, viewer),
     overwrote,
     ...(link ? { link: linkBody(link) } : {}),
     health: planHealth(plan),
@@ -1904,7 +2086,7 @@ const SYSTEM_SPECIALTIES = [
 
 const MAX_LABEL = 120;
 
-export async function listSpecialties({ viewer, store }) {
+export async function listSpecialtyLabels({ viewer, store }) {
   if (!viewer.orgId) throw new ProblemError('unauthenticated', 'active org required');
   const orgLabels = await store.listSpecialties(viewer.orgId);
   const seen = new Set(SYSTEM_SPECIALTIES.map((s) => s.toLowerCase()));
@@ -1912,11 +2094,17 @@ export async function listSpecialties({ viewer, store }) {
     ...SYSTEM_SPECIALTIES,
     ...orgLabels.filter((l) => !seen.has(l.toLowerCase())),
   ].sort((a, b) => a.localeCompare(b));
-  return { specialties: merged.map((label) => ({ label })) };
+  // { status, body } like every handler — the bare object answered a null body
+  // through the router, so the plan picker never learned the labels.
+  const items = merged.map((label) => ({ label }));
+  // `items` is the list envelope (doc 11); `specialties` is its deprecated twin.
+  return { status: 200, body: { items, next_cursor: null, specialties: items } };
 }
 
-export async function createUserSpecialty({ viewer, store, body }) {
+export async function createSpecialtyLabel({ viewer, store, body, idempotencyKey = null }) {
   if (!viewer.orgId) throw new ProblemError('unauthenticated', 'active org required');
+  // D-34: remembering a plan label is part of editing the plan.
+  if (!viewer.has('org:plan:edit')) throw new ProblemError('forbidden', null, { reason: 'role' });
   const raw = body?.label;
   if (typeof raw !== 'string' || !raw.trim()) {
     throw new ProblemError('validation_failed', null, { errors: { label: 'required non-empty string' } });
@@ -1925,6 +2113,11 @@ export async function createUserSpecialty({ viewer, store, body }) {
   if (label.length > MAX_LABEL) {
     throw new ProblemError('validation_failed', null, { errors: { label: `must be ≤ ${MAX_LABEL} chars` } });
   }
-  const stored = await store.createUserSpecialty({ orgId: viewer.orgId, label });
-  return { specialty: { label: stored } };
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'createSpecialtyLabel', body: { label } },
+    async () => {
+      const stored = await store.createUserSpecialty({ orgId: viewer.orgId, label });
+      return { status: 200, body: { specialty: { label: stored } } };
+    },
+  );
 }

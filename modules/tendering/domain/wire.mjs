@@ -22,12 +22,24 @@ export function rfpBody(row) {
     title: row.title,
     scope_text: row.scope_text ?? undefined,
     specialties: row.specialties ?? [],
+    // `visibility` is deprecated and kept in step with `listed` (D-47, PRD-04 X-3).
     visibility: row.visibility,
+    listed: Boolean(row.listed),
+    specialty_codes: row.specialty_codes ?? [],
     questions_deadline: iso(row.questions_deadline),
     submission_deadline: iso(row.submission_deadline),
     package_version: row.package_version,
     status: row.status,
     ...(row.awarded_proposal_id ? { awarded_proposal_id: row.awarded_proposal_id } : {}),
+    // PRD-02: the package's left-out rows (T-3) and the lifecycle stamps the
+    // panel's stepper prints under each step (T-10), plus the cancel reason (T-19).
+    excluded_task_ids: row.excluded_task_ids ?? [],
+    created_at: iso(row.created_at),
+    published_at: iso(row.published_at),
+    closed_at: iso(row.closed_at),
+    awarded_at: iso(row.awarded_at),
+    cancelled_at: iso(row.cancelled_at),
+    ...(row.cancel_reason ? { cancel_reason: row.cancel_reason } : {}),
     version: row.version,
   };
 }
@@ -69,6 +81,9 @@ export function recipientBody(row, { token } = {}) {
     id: row.id,
     ...(row.org_id ? { org_id: row.org_id } : {}),
     email: row.email,
+    // Where the bidder came from (PRD-04 §3); the directory name when added from it.
+    source: row.source ?? 'email',
+    ...(row.company_name ? { company_name: row.company_name } : {}),
     status: row.status,
     sent_at: iso(row.sent_at),
     opened_at: iso(row.opened_at),
@@ -97,7 +112,10 @@ export function recipientBody(row, { token } = {}) {
  * other recipients, or any other lane (V8). `closed` is true when the RFP is no
  * longer receiving proposals, so the form can say so without a second call.
  */
-export function rfpLinkView(rfp, { pkg, project, recipientEmail, proposal, models = [], seesMoney = true }) {
+export function rfpLinkView(rfp, {
+  pkg, project, recipientEmail, proposal, models = [], seesMoney = true,
+  questionsOpen = false, clarifications = [],
+}) {
   return {
     project: {
       name: project.name,
@@ -113,23 +131,34 @@ export function rfpLinkView(rfp, { pkg, project, recipientEmail, proposal, model
       purpose: rfp.purpose,
       mode: rfp.mode,
       submission_deadline: iso(rfp.submission_deadline),
+      questions_deadline: iso(rfp.questions_deadline),
       package: packageBody(pkg.rows, pkg.items, models),
     },
     recipient_email: recipientEmail,
     closed: rfp.status !== 'published',
+    // PRD-08 H-6..H-9: whether this recipient may still ask, and the questions
+    // it may read — every answered one (public to all bidders) plus its own.
+    // Already wire-shaped (clarificationBody); the asker is never on it.
+    questions_open: Boolean(questionsOpen),
+    clarifications,
     // The bidder always sees the money on their OWN proposal (it is theirs).
     proposal: proposal ? proposalBody(proposal.row, { ...proposal.doc, seesMoney }) : null,
   };
 }
 
-/** #/components/schemas/Clarification — the asker is NEVER on the wire. */
-export function clarificationBody(row) {
+/**
+ * #/components/schemas/Clarification — the asker is NEVER on the wire. `mine`
+ * is the one viewer-relative fact (the asker reading its own question).
+ */
+export function clarificationBody(row, { mine = false } = {}) {
   return {
     id: row.id,
     question: row.question,
     answer: row.answer ?? undefined,
     status: row.status,
     answered_at: iso(row.answered_at),
+    asked_at: iso(row.asked_at),
+    mine: Boolean(mine),
   };
 }
 
@@ -152,6 +181,8 @@ export function laneBody(row, { seesMoney }) {
       ? { total: money(row.summary_total_cents) } : {}),
     duration_wd: row.summary_duration_wd ?? undefined,
     start: dateOnly(row.summary_start),
+    validity_until: dateOnly(row.validity_until),
+    rfp_id: row.rfp_id,
     missing_lines: Number(row.missing_lines ?? 0),
     variant_lines: Number(row.variant_lines ?? 0),
     document_count: (row.document_ids ?? []).length,

@@ -1,0 +1,120 @@
+/* Task files, deliverables and project files (PRD-05; boards 3c F1 TaskModel,
+   F2 DocTask, F4 AddFile). Tokens only (ADR-0009) — the board's bim.css rules
+   restated on the app's tokens, no literal colours. */
+
+.tfl { display: flex; flex-direction: column; gap: var(--s4, 16px); border-top: 1px solid var(--outline); padding-top: var(--s3, 12px); }
+.tfl-sec { display: flex; flex-direction: column; gap: 10px; }
+.tfl-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.tfl-h { margin: 0; font-size: 14px; font-weight: 700; }
+.tfl-h .tfl-note { font-weight: 500; }
+.tfl-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.tfl-err { margin: 0; color: var(--bad-fg); font-size: 12px; font-weight: 600; }
+.tfl-info {
+  display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px;
+  background: var(--owner-muted); color: var(--owner-fg); font-size: 13px; line-height: 1.45;
+}
+.tfl-card { border: 1px solid var(--outline); border-radius: var(--r-ctrl, 8px); background: var(--raised); padding: 2px 6px; }
+.tfl-bar { height: 6px; border-radius: 3px; background: var(--sunken); overflow: hidden; }
+.tfl-bar > i { display: block; height: 100%; background: var(--success); }
+
+/* a file / deliverable row: tag · name · state, meta below */
+.frow {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 10px; align-items: center;
+  padding: 9px 10px; border-bottom: 1px solid var(--line); font-size: 13px; color: inherit; text-decoration: none;
+}
+.frow:last-child { border-bottom: 0; }
+.frow > b { overflow-wrap: anywhere; font-weight: 600; }
+.frow .meta { grid-column: 2 / 4; font-size: 12px; color: var(--muted); }
+.frow.is-open { background: var(--owner-muted); border-radius: 6px; align-items: start; }
+.frow-body { grid-column: 2 / 4; display: flex; flex-direction: column; gap: 8px; color: var(--fg); }
+.frow-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.frow-actions .grow { margin-left: auto; }
+.frow a.frow-name { color: inherit; text-decoration: none; font-weight: 600; overflow-wrap: anywhere; }
+.frow a.frow-name:hover { text-decoration: underline; }
+
+.ft {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 38px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: 3px 6px; border-radius: 4px; flex: 0 0 auto; font-style: normal;
+  background: var(--sunken); color: var(--muted);
+}
+.ft.is-ifc { background: var(--owner-muted); color: var(--owner-fg); }
+.ft.is-pdf { background: var(--bad-bg); color: var(--bad-fg); }
+.ft.is-dwg, .ft.is-dxf { background: var(--warn-bg); color: var(--warn-fg); }
+
+.tfl-badge {
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  font-size: 11px; font-weight: 650; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--outline); color: var(--muted); background: var(--raised);
+}
+.tfl-badge.is-ok { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-bd); }
+.tfl-badge.is-pending { background: var(--owner-muted); color: var(--owner-fg); border-color: var(--owner-muted); }
+.tfl-badge.is-warn { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-bd); }
+
+.tfl-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.tfl-tool {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--outline);
+  border-radius: 8px; font: inherit; font-size: 12.5px; font-weight: 600; background: var(--raised); color: var(--fg); cursor: pointer;
+}
+.tfl-tool.is-on { border-color: var(--owner); background: var(--owner-muted); color: var(--owner-fg); }
+.tfl-slot { border: 1px dashed var(--outline); border-radius: 8px; padding: 10px 12px; color: var(--muted); font-size: 12px; }
+
+.tfl-input, .tfl-textarea {
+  font: inherit; font-size: 13px; color: var(--fg); background: var(--paper);
+  border: 1px solid var(--outline); border-radius: 8px; padding: 6px 10px; min-height: 34px;
+}
+.tfl-textarea { min-height: 64px; resize: vertical; line-height: 1.5; }
+.tfl-inline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tfl-inline .tfl-input { flex: 1 1 180px; }
+.btn.approve { border-color: var(--ok-bd); color: var(--ok-fg); }
+.btn.reject { border-color: var(--bad-bd); color: var(--bad-fg); }
+
+/* Add files (F4) — a dialog over the plan */
+.afd-scrim { position: fixed; inset: 0; background: rgba(22, 24, 29, .48); z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; overflow: auto; }
+.afd {
+  width: min(920px, 100%); background: var(--raised); border-radius: var(--r-overlay, 14px);
+  box-shadow: 0 16px 48px rgba(22, 24, 29, .3); display: flex; flex-direction: column; color: var(--fg);
+}
+.afd-hd { padding: 18px 24px 10px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.afd-hd h2 { margin: 0; font-size: 21px; font-weight: 650; }
+.afd-grp { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.afd-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; padding: 6px 24px 18px; }
+.afd-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.afd-side { display: flex; flex-direction: column; gap: 10px; border-left: 1px solid var(--outline); padding-left: 20px; min-width: 0; }
+.afd-drop {
+  border: 1.5px dashed var(--outline); border-radius: 10px; padding: 18px; text-align: center;
+  display: flex; flex-direction: column; gap: 4px; font-size: 13px; cursor: pointer; background: var(--paper);
+}
+.afd-drop.is-over { border-color: var(--owner); background: var(--owner-muted); }
+.afd-check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.afd-check input { accent-color: var(--owner); }
+.afd-pick { display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
+.afd-ft { padding: 14px 24px; border-top: 1px solid var(--outline); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+@media (max-width: 760px) {
+  .afd-body { grid-template-columns: 1fr; }
+  .afd-side { border-left: 0; padding-left: 0; border-top: 1px solid var(--outline); padding-top: 12px; }
+}
+
+/* Project files page (F-19) */
+.pfl { display: flex; flex-direction: column; gap: 16px; padding: 16px 0; }
+.pfl-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.pfl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pfl-table th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--outline); }
+.pfl-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.pfl-table td a { color: inherit; }
+.tfl-linkbtn { background: none; border: 0; padding: 0; font: inherit; color: var(--owner-fg); cursor: pointer; text-align: left; }
+.tfl-linkbtn:disabled { color: inherit; cursor: default; }
+.tfl-linkbtn.frow-name { font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+
+/* F-4: the shared project model card (PRD-07, board F1 TaskModel). */
+.tfl-model {
+  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--outline);
+  border-radius: 8px; color: var(--ink); text-decoration: none; background: var(--paper);
+}
+.tfl-model:hover { border-color: var(--owner); }
+.tfl-model-ic {
+  flex: none; font-size: 10px; font-weight: 700; padding: 3px 5px; border-radius: 4px;
+  background: var(--owner-muted); color: var(--owner-fg);
+}
+.tfl-model-txt { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.tfl-badge { font-size: 11px; font-weight: 600; color: var(--owner-fg); }

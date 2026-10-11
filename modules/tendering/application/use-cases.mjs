@@ -1,9 +1,11 @@
 // Tendering module use cases (phase 6) — one function per operationId:
 //   createRfp, getRfp, updateRfp, addRecipients, previewInviteEmail, listRecipients, publishRfp,
-//   addAddendum, closeRfp, cancelRfp, browseOpenRfps, applyToOpenRfp, listMyRfps,
-//   askClarification, answerClarification, listProposalLanes, getProposal,
+//   addAddendum, closeRfp, cancelRfp, browseOpenRfps, listMyRfps,
+//   askClarification(+ByToken), answerClarification, listProposalLanes, getProposal,
 //   putProposal, submitProposal, withdrawProposal, recordOfflineProposal,
 //   getComparison, shortlistProposal, awardRfp.
+// PRD-04 (D-47): applyToOpenRfp (now ask to bid) and the bid-request decisions
+// live in ./bid-requests.mjs, the company inbox in ./company-inbox.mjs.
 //
 // Authorization is the doc-16 conjunction, in order:
 //   permission (viewer.has, token-only) ∧ relationship ∧ staffing.
@@ -24,6 +26,7 @@
 // entries carry scope rfp_private (V7/V8).
 import { randomUUID } from 'node:crypto';
 
+import { awardedPlanFacts } from '../domain/award.mjs';
 import { ProblemError } from '../../../platform/errors.mjs';
 import { visibilityOf, contractBody } from '../../contracting/domain/lifecycle.mjs';
 import { rfpTransition, proposalTransition } from '../domain/lifecycle.mjs';
@@ -32,12 +35,15 @@ import {
   rfpWindowBody,
 } from '../domain/wire.mjs';
 import { comparisonMatrix, missingLineCount } from '../domain/comparison.mjs';
+import { exclusionError, prunePackage } from '../domain/package-scope.mjs';
+import { questionsOpen, visibleClarifications } from '../domain/clarifications.mjs';
 import { renderInviteEmail, PREVIEW_LINK_PLACEHOLDER_TOKEN } from '../domain/invite-email.mjs';
 import {
   validateAttachmentFile, attachmentStorageKey, uploadTicketBody, attachmentBody,
   MAX_ATTACHMENTS_PER_PROPOSAL,
 } from '../domain/attachment.mjs';
 import { validateModelFile, modelBody, MODEL_MIME } from '../domain/rfp-model.mjs';
+import { defaultSubmissionDeadline } from '../domain/deadlines.mjs';
 // Pure key-shape helper owned by the Documents domain — the BIM model is a
 // Documents-module document (doc 24 decision 2); tendering owns its auth and
 // delegates persistence to the injected documents store, so it builds the same
@@ -57,7 +63,7 @@ const ROW_KINDS = new Set(['task', 'summary', 'milestone']);
 // ── RFP lifecycle (issuer side) ─────────────────────────────────────────────
 
 /** operationId: createRfp — package = subtrees + docs + quantities, no prices. */
-export async function createRfp({ viewer, store, projectId, body, idempotencyKey }) {
+export async function createRfp({ viewer, store, projectId, body, idempotencyKey, now = new Date() }) {
   requireActiveOrg(viewer);
   if (!viewer.has('org:tendering:issue')) throw new ProblemError('forbidden', null, { reason: 'role' });
   const { project } = await requireParticipant({ viewer, store, projectId });
@@ -72,6 +78,7 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
   if (body?.visibility !== undefined && !VISIBILITIES.has(body.visibility)) {
     errors.visibility = 'invite_only or open';
   }
+  if (body?.listed !== undefined && typeof body.listed !== 'boolean') errors.listed = 'true or false';
   // Purpose / mode (D-39): design is always light (prices a service, no BoQ),
   // execution defaults to detailed (the as-is). An explicit mode is honoured
   // but may not contradict the design⇒light invariant the DB also pins.
@@ -80,7 +87,10 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
   const mode = body?.mode ?? (purpose === 'design' ? 'light' : 'detailed');
   if (!MODES.has(mode)) errors.mode = 'light or detailed';
   else if (purpose === 'design' && mode !== 'light') errors.mode = 'a design RFP is always light';
-  validateDeadlines(body, errors, { submissionRequired: true });
+  // Omitted bids-due → the server's default (domain/deadlines.mjs), never the client's.
+  const submissionDeadline = body?.submission_deadline ?? defaultSubmissionDeadline(now);
+  validateDeadlines({ ...body, submission_deadline: submissionDeadline }, errors, { submissionRequired: true });
+  validateExclusions(body, errors);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const uniqueRoots = [...new Set(roots)];
@@ -112,7 +122,8 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
     parentContractId = contract.id;
   }
 
-  const snapshot = await store.snapshotPackage(projectId, uniqueRoots);
+  const excluded = [...new Set(body?.excluded_task_ids ?? [])];
+  const snapshot = scopedSnapshot(await store.snapshotPackage(projectId, uniqueRoots), excluded);
   const actor = await requireActor(store, viewer);
   return store.idempotent({ key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'createRfp', body }, async () => {
     const created = await store.createRfp({
@@ -125,10 +136,11 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
       mode,
       title: body.title.trim(),
       scopeText: body.scope_text ?? null,
-      visibility: body.visibility ?? 'invite_only',
+      listed: listedOf(body) ?? false,
       questionsDeadline: body.questions_deadline ?? null,
-      submissionDeadline: body.submission_deadline,
+      submissionDeadline,
       rootTaskIds: uniqueRoots,
+      excludedTaskIds: excluded,
       packageRows: snapshot.rows,
       packageItems: snapshot.items,
       actor: actorOf(actor, viewer),
@@ -143,13 +155,18 @@ export async function getRfp({ viewer, store, documentsStore, rfpId }) {
   const pkg = await store.packageOf(rfpId, rfp.package_version);
   // The asker is anonymised for everyone (V8); bidders additionally only see
   // what was PUBLISHED to all of them — answered questions and their own.
-  const clarifications = (await store.clarificationsOf(rfpId))
-    .filter((c) => isIssuer || c.status === 'answered' || c.asked_by_org_id === viewer.orgId)
-    .map(clarificationBody);
-  const models = await loadRfpModels(documentsStore, rfpId);
+  const clarifications = visibleClarifications(await store.clarificationsOf(rfpId), {
+    isIssuer, asker: { orgId: viewer.orgId },
+  }).map(({ row, mine }) => clarificationBody(row, { mine }));
+  const models = await loadRfpModels(documentsStore, rfp);
   return {
     status: 200,
-    body: { ...rfpBody(rfp), package: packageBody(pkg.rows, pkg.items, models), clarifications },
+    body: {
+      ...rfpBody(rfp),
+      package: packageBody(pkg.rows, pkg.items, models),
+      clarifications,
+      questions_open: questionsOpen(rfp),
+    },
   };
 }
 
@@ -177,16 +194,24 @@ export async function getRfpByToken({ store, documentsStore, token }) {
   await store.markRecipientOpened(rec.id).catch(() => {});
   const pkg = await store.packageOf(rec.rfp_id, rec.package_version);
   const proposal = await loadOwnProposalEcho(store, rec.proposal_id);
-  const models = await loadRfpModels(documentsStore, rec.rfp_id);
+  const models = await loadRfpModels(documentsStore, rec);
+  const rfp = {
+    title: rec.title, scope_text: rec.scope_text, specialties: rec.specialties,
+    purpose: rec.purpose, mode: rec.mode, questions_deadline: rec.questions_deadline,
+    submission_deadline: rec.submission_deadline, status: rec.rfp_status,
+  };
+  // PRD-08 H-6..H-8: answered questions (public to every bidder) + this
+  // recipient's own, asker never named; and whether it may still ask.
+  const clarifications = visibleClarifications(await store.clarificationsOf(rec.rfp_id), {
+    asker: { orgId: rec.org_id ?? null, recipientId: rec.id },
+  }).map(({ row, mine }) => clarificationBody(row, { mine }));
   return {
     status: 200,
-    body: rfpLinkView(
-      { title: rec.title, scope_text: rec.scope_text, specialties: rec.specialties,
-        purpose: rec.purpose, mode: rec.mode,
-        submission_deadline: rec.submission_deadline, status: rec.rfp_status },
-      { pkg, project: { name: rec.project_name, location: rec.project_location },
-        recipientEmail: rec.email, proposal, models },
-    ),
+    body: rfpLinkView(rfp, {
+      pkg, project: { name: rec.project_name, location: rec.project_location },
+      recipientEmail: rec.email, proposal, models,
+      questionsOpen: questionsOpen(rfp), clarifications,
+    }),
   };
 }
 
@@ -402,62 +427,72 @@ export async function downloadProposalDocument({ viewer, store, storage, proposa
   return { status: 302, body: null, headers: { location: url, 'cache-control': 'no-store' } };
 }
 
-// ── RFP BIM model (LINA-409, doc 24) ────────────────────────────────────────
-// A read-only IFC 3D model attached to a (design) RFP so bidders can SEE the
-// building before pricing. The model is a Documents-module document
-// (scope_type='rfp', kind='bim') — no schema change (decision 2). Authorization
-// lives HERE (decision 3): attach/replace/remove are issuer-only on a draft;
-// the two view-url routes mint a short-TTL presigned INLINE GET after the RFP
-// read rule passes — the authed one via requireRfpRead, the public one with the
-// token as the sole authority. Tendering owns the gate; the documents store
-// owns persistence and the storage port owns bytes. Read-only always: no route
-// ever writes the model.
+// ── RFP BIM model (LINA-409, doc 24; PRD-07 §5) ─────────────────────────────
+// Since PRD-07 the model is the BUILD's: one project-scoped `bim` document
+// (documents.document.is_project_model) that every participant reads. An RFP
+// no longer owns a model — it REFERENCES the project model, following its
+// current version or pinned to one (tendering.rfp.model_document_id /
+// model_version_no). Bidders who are not participants see the model only
+// through that reference (M-7), under the RFP read rule:
+// the authed view-url via requireRfpRead, the public one with the token as the
+// sole authority. Tendering owns the gate; the documents store owns
+// persistence and the storage port owns bytes. Attaching, pinning and
+// detaching are issuer-only on a draft. Uploading the .ifc itself follows the
+// model's rule (PRD-07 M-9): the first model of a build may be put up by the
+// issuer; later versions only by the model's author.
 
-/** Completed, non-deleted BIM models of an RFP, newest facts first. Auth-free —
- *  the caller already authorized the RFP read. Phase 1 surfaces models[0]. */
-async function loadRfpModels(documentsStore, rfpId) {
-  if (!documentsStore) return [];
-  const docs = await documentsStore.listScopeDocuments({ scopeType: 'rfp', scopeId: rfpId, kind: 'bim' });
-  const out = [];
-  for (const doc of docs) {
-    const version = await documentsStore.getVersion(doc.id, doc.current_version);
-    out.push(modelBody(doc, version));
-  }
-  return out;
+/** The RFP's model descriptor(s): [] or [the referenced model at its version]. */
+async function loadRfpModels(documentsStore, rfp) {
+  if (!documentsStore || !rfp?.model_document_id) return [];
+  const doc = await documentsStore.getDocument(rfp.model_document_id);
+  if (!doc || doc.current_version < 1) return [];
+  const versionNo = rfp.model_version_no ?? doc.current_version;
+  const version = await documentsStore.getVersion(doc.id, versionNo);
+  return version ? [modelBody(doc, version, { pinned: rfp.model_version_no != null })] : [];
 }
 
-/** The model as a Documents-module document of THIS rfp, or null (existence
- *  hiding: a document id from another scope is indistinguishable from absent). */
-async function rfpModelDocument(documentsStore, rfpId, documentId) {
-  if (!UUID.test(documentId ?? '')) return null;
+/** The document + version the RFP references, when `documentId` names it; else null
+ *  (existence hiding: any other document id is indistinguishable from absent). */
+async function rfpModelVersion(documentsStore, rfp, documentId) {
+  if (!UUID.test(documentId ?? '') || rfp?.model_document_id !== documentId) return null;
   const doc = await documentsStore.getDocument(documentId);
-  if (!doc || doc.scope_type !== 'rfp' || doc.scope_id !== rfpId
-      || doc.kind !== 'bim' || doc.current_version < 1) return null;
-  return doc;
+  if (!doc || doc.kind !== 'bim' || doc.current_version < 1) return null;
+  const version = await documentsStore.getVersion(documentId, rfp.model_version_no ?? doc.current_version);
+  return version ? { doc, version } : null;
+}
+
+function requireDraftPackage(rfp, what) {
+  if (rfp.status !== 'draft') {
+    throw new ProblemError('invalid_transition', `the model can only be ${what} while the RFP is a draft`);
+  }
 }
 
 /** operationId: reserveRfpModel — POST /rfps/{rfpId}/model. Issuer, draft only.
- *  One model per RFP (Phase 1): a second attach replaces the first as a new
- *  VERSION of the same document (the byte ledger is append-only). */
+ *  Deprecated by PRD-07 (attachRfpModel): uploads the next .ifc of the BUILD's
+ *  model — its first, or a new version when the issuer is the model's author —
+ *  and `completeRfpModel` then attaches it to this RFP (following current). */
 export async function reserveRfpModel({ viewer, store, documentsStore, storage, rfpId, body }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
-  if (rfp.status !== 'draft') {
-    throw new ProblemError('invalid_transition', 'the model can only be attached while the RFP is a draft');
-  }
+  requireDraftPackage(rfp, 'attached');
   const errors = validateModelFile(body?.file);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const actor = actorOf(await requireActor(store, viewer), viewer);
   // mime is normalised — IFC carries no agreed browser mime (domain MODEL_MIME).
   const file = { name: body.file.name, mime: MODEL_MIME, size_bytes: body.file.size_bytes, sha256: body.file.sha256 };
-  const existing = await documentsStore.listScopeDocuments({ scopeType: 'rfp', scopeId: rfpId, kind: 'bim' });
+  const existing = await documentsStore.getProjectModel(rfp.project_id);
 
   let version;
-  if (existing.length) {
-    const documentId = existing[0].id;
+  if (existing) {
+    const documentId = existing.id;
+    if (existing.current_version >= 1 && (await documentsStore.modelAuthorOrgId(documentId)) !== viewer.orgId) {
+      throw new ProblemError('forbidden',
+        'only the model\'s author uploads a new .ifc — attach the build\'s model to this RFP instead', { reason: 'relationship' });
+    }
     version = await documentsStore.addVersion({
       documentId,
       file,
+      meta: { changeKind: 'upload', baseVersionNo: existing.current_version || null },
       storageKeyOf: (versionNo) => documentStorageKey({ documentId, versionNo, fileName: file.name, random: randomUUID() }),
       actor,
     });
@@ -466,11 +501,12 @@ export async function reserveRfpModel({ viewer, store, documentsStore, storage, 
     version = await documentsStore.createDocument({
       id,
       projectId: rfp.project_id,
-      scopeType: 'rfp',
-      scopeId: rfpId,
+      scopeType: 'project',
+      scopeId: rfp.project_id,
       kind: 'bim',
       title: file.name,
       shareWithAncestors: false,
+      isProjectModel: true,
       file,
       storageKey: documentStorageKey({ documentId: id, versionNo: 1, fileName: file.name, random: randomUUID() }),
       actor,
@@ -484,20 +520,18 @@ export async function reserveRfpModel({ viewer, store, documentsStore, storage, 
 }
 
 /** operationId: completeRfpModel — POST /rfps/{rfpId}/model/{documentId}:complete.
- *  Issuer. Prove the bytes arrived (size; sha256 was pinned into the PUT), then
- *  advance the version and ledger it (documents store). Returns the descriptor. */
+ *  Issuer. Prove the bytes arrived (size; sha256 was pinned into the PUT), advance
+ *  the build model's version (documents store, ledgered), then attach it to this
+ *  RFP following its current version. Returns the descriptor. */
 export async function completeRfpModel({ viewer, store, documentsStore, storage, rfpId, documentId }) {
-  await requireIssuer({ viewer, store, rfpId });
+  const { rfp } = await requireIssuer({ viewer, store, rfpId });
   if (!UUID.test(documentId ?? '')) throw new ProblemError('not_found');
   const doc = await documentsStore.getDocument(documentId);
-  if (!doc || doc.scope_type !== 'rfp' || doc.scope_id !== rfpId || doc.kind !== 'bim') {
-    throw new ProblemError('not_found');
-  }
-  // The version just reserved is current_version + 1 (createDocument reserves v1
-  // with current_version still 0; addVersion reserves max+1).
+  if (!doc || !doc.is_project_model || doc.project_id !== rfp.project_id) throw new ProblemError('not_found');
+  // The version just reserved is the one above current, uploaded by this org.
   const versionNo = doc.current_version + 1;
   const version = await documentsStore.getVersion(documentId, versionNo);
-  if (!version) throw new ProblemError('not_found');
+  if (!version || version.uploaded_by_org_id !== viewer.orgId) throw new ProblemError('not_found');
 
   const head = await storage.head({ key: version.storage_key });
   if (!head) {
@@ -512,34 +546,53 @@ export async function completeRfpModel({ viewer, store, documentsStore, storage,
   const actor = actorOf(await requireActor(store, viewer), viewer);
   const result = await documentsStore.completeUpload({ documentId, versionNo, actor });
   if (!result) throw new ProblemError('not_found');
-  return { status: 200, body: modelBody(result.doc, version) };
+  if (rfp.status === 'draft') await store.setRfpModel({ rfpId, documentId, versionNo: null });
+  return { status: 200, body: modelBody(result.doc, version, { pinned: false }) };
+}
+
+/** operationId: attachRfpModel — PUT /rfps/{rfpId}/model. Issuer, draft only.
+ *  The RFP references the build's model, following its current version
+ *  (`version_no` null) or pinned to a proven one (PRD-07 §5). */
+export async function attachRfpModel({ viewer, store, documentsStore, rfpId, body }) {
+  const { rfp } = await requireIssuer({ viewer, store, rfpId });
+  requireDraftPackage(rfp, 'attached');
+  const errors = {};
+  if (!UUID.test(body?.document_id ?? '')) errors.document_id = 'the build\'s model document id';
+  const pin = body?.version_no ?? null;
+  if (pin !== null && (!Number.isInteger(pin) || pin < 1)) errors.version_no = 'a version number, or null to follow the current version';
+  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+  const model = await documentsStore.getProjectModel(rfp.project_id);
+  if (!model || model.id !== body.document_id || model.current_version < 1) {
+    throw new ProblemError('validation_failed', null, { errors: { document_id: 'the model of this RFP\'s build' } });
+  }
+  if (pin !== null && pin > model.current_version) {
+    throw new ProblemError('validation_failed', null, { errors: { version_no: `a version from 1 to ${model.current_version}` } });
+  }
+  await store.setRfpModel({ rfpId, documentId: model.id, versionNo: pin });
+  const version = await documentsStore.getVersion(model.id, pin ?? model.current_version);
+  return { status: 200, body: modelBody(model, version, { pinned: pin !== null }) };
 }
 
 /** operationId: removeRfpModel — DELETE /rfps/{rfpId}/model/{documentId}.
- *  Issuer, draft only. SOFT delete on the document (the append-only byte ledger
- *  is never touched — doc 24 read-only invariant + the audit trail). 204. */
+ *  Issuer, draft only. DETACHES the build's model from the RFP; the model
+ *  itself stays the build's (never deleted). 204. */
 export async function removeRfpModel({ viewer, store, documentsStore, rfpId, documentId }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
-  if (rfp.status !== 'draft') {
-    throw new ProblemError('invalid_transition', 'the model can only be removed while the RFP is a draft');
-  }
-  const doc = await rfpModelDocument(documentsStore, rfpId, documentId);
-  if (!doc) throw new ProblemError('not_found');
-  await documentsStore.softDeleteDocument(documentId);
+  requireDraftPackage(rfp, 'removed');
+  if (!(await rfpModelVersion(documentsStore, rfp, documentId))) throw new ProblemError('not_found');
+  await store.setRfpModel({ rfpId, documentId: null, versionNo: null });
   return { status: 204, body: null };
 }
 
 /** operationId: rfpModelViewUrl — GET /rfps/{rfpId}/model/{documentId}:view-url.
  *  Any RFP reader (issuer or invited/open recipient). Short-TTL presigned INLINE
- *  GET so the browser can fetch()+ArrayBuffer the model into the viewer. */
+ *  GET of the version the RFP references. */
 export async function rfpModelViewUrl({ viewer, store, documentsStore, storage, rfpId, documentId }) {
-  await requireRfpRead({ viewer, store, rfpId });
-  const doc = await rfpModelDocument(documentsStore, rfpId, documentId);
-  if (!doc) throw new ProblemError('not_found');
-  const version = await documentsStore.getVersion(documentId, doc.current_version);
-  if (!version) throw new ProblemError('not_found');
+  const { rfp } = await requireRfpRead({ viewer, store, rfpId });
+  const found = await rfpModelVersion(documentsStore, rfp, documentId);
+  if (!found) throw new ProblemError('not_found');
   const { url, expiresAt } = await storage.signDownload({
-    key: version.storage_key, fileName: doc.title, disposition: 'inline',
+    key: found.version.storage_key, fileName: found.doc.title, disposition: 'inline',
   });
   return { status: 200, body: { url, expiresAt } };
 }
@@ -552,12 +605,10 @@ export async function rfpModelViewUrl({ viewer, store, documentsStore, storage, 
 export async function rfpModelViewUrlByToken({ store, documentsStore, storage, token, documentId }) {
   const rec = await store.findRecipientByToken(token ?? '');
   if (!rec) throw new ProblemError('not_found', 'this link is not valid');
-  const doc = await rfpModelDocument(documentsStore, rec.rfp_id, documentId);
-  if (!doc) throw new ProblemError('not_found');
-  const version = await documentsStore.getVersion(documentId, doc.current_version);
-  if (!version) throw new ProblemError('not_found');
+  const found = await rfpModelVersion(documentsStore, { model_document_id: rec.model_document_id, model_version_no: rec.model_version_no }, documentId);
+  if (!found) throw new ProblemError('not_found');
   const { url, expiresAt } = await storage.signDownload({
-    key: version.storage_key, fileName: doc.title, disposition: 'inline',
+    key: found.version.storage_key, fileName: found.doc.title, disposition: 'inline',
   });
   return { status: 200, body: { url, expiresAt } };
 }
@@ -572,7 +623,9 @@ export async function updateRfp({ viewer, store, rfpId, body, ifMatch }) {
   const errors = {};
   if (body?.title !== undefined && (typeof body.title !== 'string' || !body.title.trim())) errors.title = 'required';
   if (body?.visibility !== undefined && !VISIBILITIES.has(body.visibility)) errors.visibility = 'invite_only or open';
+  if (body?.listed !== undefined && typeof body.listed !== 'boolean') errors.listed = 'true or false';
   validateDeadlines(body, errors, { submissionRequired: false });
+  validateExclusions(body, errors);
   if (body?.root_task_ids !== undefined) {
     const roots = body.root_task_ids;
     if (!Array.isArray(roots) || roots.length === 0 || roots.some((t) => !UUID.test(t ?? ''))) {
@@ -581,16 +634,22 @@ export async function updateRfp({ viewer, store, rfpId, body, ifMatch }) {
   }
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
+  // The package is re-snapshotted when either its roots or its exclusions
+  // change (T-3: "Include it" / "+ Add tasks from the plan" save per step).
   let snapshot = null;
   let roots = null;
-  if (body?.root_task_ids !== undefined) {
-    roots = [...new Set(body.root_task_ids)];
+  let excluded = null;
+  if (body?.root_task_ids !== undefined || body?.excluded_task_ids !== undefined) {
+    roots = body?.root_task_ids !== undefined ? [...new Set(body.root_task_ids)] : [...rfp.root_task_ids];
+    excluded = body?.excluded_task_ids !== undefined
+      ? [...new Set(body.excluded_task_ids)]
+      : [...(rfp.excluded_task_ids ?? [])];
     const known = await store.tasksOfProject(rfp.project_id, roots);
     const missing = roots.filter((t) => !known.has(t));
     if (missing.length) {
       throw new ProblemError('validation_failed', null, { errors: { root_task_ids: `not rows of this project: ${missing.join(', ')}` } });
     }
-    snapshot = await store.snapshotPackage(rfp.project_id, roots);
+    snapshot = scopedSnapshot(await store.snapshotPackage(rfp.project_id, roots), excluded);
   }
 
   const actor = await requireActor(store, viewer);
@@ -600,11 +659,12 @@ export async function updateRfp({ viewer, store, rfpId, body, ifMatch }) {
     set: {
       title: body?.title?.trim(),
       scopeText: body?.scope_text,
-      visibility: body?.visibility,
+      listed: listedOf(body),
       questionsDeadline: body?.questions_deadline,
       submissionDeadline: body?.submission_deadline,
     },
     rootTaskIds: roots,
+    excludedTaskIds: excluded,
     packageRows: snapshot?.rows ?? null,
     packageItems: snapshot?.items ?? null,
     actor: actorOf(actor, viewer),
@@ -630,7 +690,7 @@ function secureLinkUrl(linkBaseUrl, token) {
  * the lane stays `queued` for a later re-issue to retry. Returns the (possibly
  * updated) recipient row and the message id (null when nothing was sent).
  */
-async function dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, token, reissue = false }) {
+export async function dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, token, reissue = false }) {
   if (!mailSender || !token) return { recipient, messageId: null };
   const email = renderInviteEmail({ rfp, linkUrl: secureLinkUrl(linkBaseUrl, token), reissue });
   try {
@@ -645,8 +705,15 @@ async function dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, 
   }
 }
 
-/** operationId: addRecipients — each opens a lane; one personal token each. */
-export async function addRecipients({ viewer, store, mailSender, linkBaseUrl, rfpId, body }) {
+/**
+ * operationId: addRecipients — each opens a lane; one personal token each.
+ * PRD-04 X-1/X-6: a recipient is a directory company (`company_id`, resolved
+ * through the directory's published port: a claimed profile is its
+ * organisation, an unclaimed one is invited at its e-mail), a platform
+ * organisation (`org_id`) — both source `directory` — or an address (`email`,
+ * source `email`).
+ */
+export async function addRecipients({ viewer, store, directory, mailSender, linkBaseUrl, rfpId, body }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
   if (!['draft', 'published'].includes(rfp.status)) {
     throw new ProblemError('invalid_transition', `cannot invite on a ${rfp.status} RFP`);
@@ -657,29 +724,48 @@ export async function addRecipients({ viewer, store, mailSender, linkBaseUrl, rf
   }
   const errors = {};
   list.forEach((r, i) => {
+    if (r?.company_id !== undefined) {
+      if (!UUID.test(r.company_id ?? '')) errors[`recipients[${i}].company_id`] = 'a directory profile id';
+      if (r.org_id !== undefined || r.email !== undefined) errors[`recipients[${i}]`] = 'company_id alone';
+      return;
+    }
     if (r?.org_id !== undefined && !UUID.test(r.org_id ?? '')) errors[`recipients[${i}].org_id`] = 'an organisation id';
-    if (r?.org_id === undefined && !EMAIL.test(r?.email ?? '')) errors[`recipients[${i}].email`] = 'org_id or a valid email required';
+    if (r?.org_id === undefined && !EMAIL.test(r?.email ?? '')) errors[`recipients[${i}].email`] = 'org_id, company_id or a valid email required';
     if (r?.email !== undefined && !EMAIL.test(r.email)) errors[`recipients[${i}].email`] = 'a valid email';
   });
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const resolved = [];
   for (const r of list) {
-    if (r.org_id) {
-      const org = await store.getOrganization(r.org_id);
+    let orgId = r.org_id ?? null;
+    let email = r.email ?? null;
+    let companyName = null;
+    let source = orgId ? 'directory' : 'email';
+    if (r.company_id) {
+      const company = directory ? await directory.contactOf(r.company_id) : null;
+      if (!company) {
+        throw new ProblemError('validation_failed', null, { errors: { recipients: `no listed company ${r.company_id}` } });
+      }
+      source = 'directory';
+      companyName = company.display_name;
+      if (company.claimed) orgId = company.org_id;
+      else email = company.email;
+    }
+    if (orgId) {
+      const org = await store.getOrganization(orgId);
       if (!org) {
-        throw new ProblemError('validation_failed', null, { errors: { recipients: `unknown organisation ${r.org_id}` } });
+        throw new ProblemError('validation_failed', null, { errors: { recipients: `unknown organisation ${orgId}` } });
       }
       if (org.id === rfp.issuer_org_id) {
         throw new ProblemError('validation_failed', null, { errors: { recipients: 'the issuer cannot invite itself' } });
       }
-      resolved.push({ orgId: org.id, email: r.email ?? org.billing_email ?? org.contact_email ?? null, name: org.legal_name });
-      if (!resolved[resolved.length - 1].email) {
+      email = email ?? org.billing_email ?? org.contact_email ?? null;
+      if (!email) {
         throw new ProblemError('validation_failed', null, { errors: { recipients: `organisation ${org.id} has no contact email — pass one` } });
       }
-    } else {
-      resolved.push({ orgId: null, email: r.email, name: null });
+      companyName = companyName ?? org.legal_name ?? null;
     }
+    resolved.push({ orgId, email: email.toLowerCase(), name: companyName, source, companyName });
   }
 
   const actor = await requireActor(store, viewer);
@@ -688,12 +774,18 @@ export async function addRecipients({ viewer, store, mailSender, linkBaseUrl, rf
     projectId: rfp.project_id,
     recipients: resolved,
     actor: actorOf(actor, viewer),
+    published: rfp.status === 'published',
   });
-  // Dispatch the invite email per freshly-minted link (token !== null). An
-  // existing recipient (ON CONFLICT → token null) is NOT re-sent here; use
-  // reissue for that. The token stays in the 201 body too (issuer sees it once).
+  // A DRAFT is private until it is sent (D-29, PRD-02 T-6/T-7): the recipient
+  // is only queued — nothing is emailed and no token leaves the server (the
+  // stored hash belongs to a token nobody holds; publishRfp mints the real
+  // link). On a published RFP ("invite more") dispatch the invite email per
+  // freshly-minted link (token !== null). An existing recipient (ON CONFLICT →
+  // token null) is NOT re-sent here; use reissue for that. The token stays in
+  // the 201 body too (issuer sees it once).
   const items = [];
   for (const { recipient, token } of created) {
+    if (rfp.status === 'draft') { items.push(recipientBody(recipient)); continue; }
     const out = token
       ? await dispatchInvite({ store, mailSender, linkBaseUrl, rfp, recipient, token })
       : { recipient };
@@ -741,8 +833,12 @@ export async function listRecipients({ viewer, store, rfpId, query }) {
 export async function reissueRecipientLink({ viewer, store, mailSender, linkBaseUrl, rfpId, recipientId }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
   if (!UUID.test(recipientId ?? '')) throw new ProblemError('not_found', 'no such recipient');
-  if (!['draft', 'published'].includes(rfp.status)) {
-    throw new ProblemError('invalid_transition', `cannot re-issue a link on a ${rfp.status} RFP`);
+  // A draft has no live links to rotate: they are minted at publish (T-7), and
+  // a re-issue would email a bidder about a tender that was never sent.
+  if (rfp.status !== 'published') {
+    throw new ProblemError('invalid_transition', rfp.status === 'draft'
+      ? 'the personal links are minted when the RFP is sent'
+      : `cannot re-issue a link on a ${rfp.status} RFP`);
   }
   const rec = await store.getRecipient(rfpId, recipientId);
   if (!rec) throw new ProblemError('not_found', 'no such recipient');
@@ -768,25 +864,41 @@ export async function reissueRecipientLink({ viewer, store, mailSender, linkBase
   return { status: 200, body: recipientBody(out.recipient, { token: rotated.token }) };
 }
 
-/** operationId: publishRfp — human-only; one individual email per recipient. */
-export async function publishRfp({ viewer, store, rfpId }) {
+/**
+ * operationId: publishRfp — human-only; one individual email per recipient.
+ * The personal links are minted HERE (PRD-02 T-7), in the publish transaction,
+ * for every recipient still queued from the draft; each is then emailed. A mail
+ * failure leaves that recipient queued for a re-issue — never fails the publish.
+ */
+export async function publishRfp({ viewer, store, builds = null, mailSender, linkBaseUrl, rfpId }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId, humanOnly: 'publishing an RFP' });
   const outcome = rfpTransition(rfp.status, 'publish');
   if (!outcome.ok) throw new ProblemError('invalid_transition', outcome.reason);
   const recipients = await store.recipientCount(rfpId);
-  if (recipients === 0 && rfp.visibility === 'invite_only') {
+  if (recipients === 0 && !rfp.listed) {
     throw new ProblemError('validation_failed', null, { errors: { recipients: 'invite at least one recipient before publishing' } });
   }
   const actor = await requireActor(store, viewer);
-  const updated = await store.transitionRfp({
+  // The build's point and municipality, recorded on the RFP as it is listed:
+  // "open requests near you" matches on them in SQL (0030, PRD-04 X-10).
+  const [build] = builds ? await builds.factsOf([rfp.project_id]) : [];
+  const published = await store.publishRfp({
+    listingPoint: build ? { lat: build.lat, lng: build.lng, municipality_code: build.municipality_code } : null,
     rfpId, from: rfp.status, to: outcome.to,
     eventType: 'tendering.rfp.published',
     projectId: rfp.project_id,
-    data: { visibility: rfp.visibility, submission_deadline: iso(rfp.submission_deadline), specialties: rfp.specialties ?? [] },
+    data: {
+      visibility: rfp.visibility, listed: Boolean(rfp.listed),
+      submission_deadline: iso(rfp.submission_deadline), specialties: rfp.specialties ?? [],
+      specialty_codes: rfp.specialty_codes ?? [],
+    },
     actor: actorOf(actor, viewer),
   });
-  if (!updated) throw new ProblemError('invalid_transition', 'someone moved this RFP first');
-  return { status: 200, body: rfpBody(updated) };
+  if (!published) throw new ProblemError('invalid_transition', 'someone moved this RFP first');
+  for (const { recipient, token } of published.links) {
+    await dispatchInvite({ store, mailSender, linkBaseUrl, rfp: published.rfp, recipient, token });
+  }
+  return { status: 200, body: rfpBody(published.rfp) };
 }
 
 /**
@@ -806,7 +918,9 @@ export async function addAddendum({ viewer, store, rfpId, body }) {
 
   // The package is re-snapshotted from the live plan rows (the issuer edits
   // the plan first, then issues the addendum that carries the change).
-  const snapshot = await store.snapshotPackage(rfp.project_id, rfp.root_task_ids);
+  const snapshot = scopedSnapshot(
+    await store.snapshotPackage(rfp.project_id, rfp.root_task_ids), rfp.excluded_task_ids ?? [],
+  );
   const actor = await requireActor(store, viewer);
   const updated = await store.addAddendum({
     rfpId,
@@ -827,12 +941,18 @@ export async function closeRfp({ viewer, store, rfpId }) {
   return transitionRfpOp({ viewer, store, rfpId, action: 'close', eventType: 'tendering.rfp.closed' });
 }
 
-/** operationId: cancelRfp. */
-export async function cancelRfp({ viewer, store, rfpId }) {
-  return transitionRfpOp({ viewer, store, rfpId, action: 'cancel', eventType: 'tendering.rfp.cancelled' });
+/** operationId: cancelRfp — an optional one-line reason (PRD-02 T-19). */
+export async function cancelRfp({ viewer, store, rfpId, body }) {
+  const reason = body?.reason;
+  if (reason !== undefined && reason !== null
+      && (typeof reason !== 'string' || !reason.trim() || reason.trim().length > 500)) {
+    throw new ProblemError('validation_failed', null, { errors: { reason: '1–500 characters' } });
+  }
+  const data = typeof reason === 'string' ? { reason: reason.trim() } : {};
+  return transitionRfpOp({ viewer, store, rfpId, action: 'cancel', eventType: 'tendering.rfp.cancelled', data });
 }
 
-async function transitionRfpOp({ viewer, store, rfpId, action, eventType }) {
+async function transitionRfpOp({ viewer, store, rfpId, action, eventType, data = {} }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
   const outcome = rfpTransition(rfp.status, action);
   if (!outcome.ok) throw new ProblemError('invalid_transition', outcome.reason);
@@ -841,7 +961,7 @@ async function transitionRfpOp({ viewer, store, rfpId, action, eventType }) {
     rfpId, from: rfp.status, to: outcome.to,
     eventType,
     projectId: rfp.project_id,
-    data: {},
+    data,
     actor: actorOf(actor, viewer),
   });
   if (!updated) throw new ProblemError('invalid_transition', 'someone moved this RFP first');
@@ -850,7 +970,7 @@ async function transitionRfpOp({ viewer, store, rfpId, action, eventType }) {
 
 // ── discovery (bidder side) ────────────────────────────────────────────────
 
-/** operationId: browseOpenRfps — open listing (D-15), published only. */
+/** operationId: browseOpenRfps — listed RFPs (D-15/D-47), published only. Deprecated by listOpenRequests. */
 export async function browseOpenRfps({ viewer, store, query }) {
   requireActiveOrg(viewer);
   if (!viewer.has('org:tendering:bid')) throw new ProblemError('forbidden', null, { reason: 'role' });
@@ -863,51 +983,8 @@ export async function browseOpenRfps({ viewer, store, query }) {
   return { status: 200, body: { items: items.map(rfpBody), next_cursor: nextCursor } };
 }
 
-/**
- * operationId: applyToOpenRfp — the self-serve hinge of the open marketplace
- * (D-15, LINA-406). A bidder that found an OPEN, published RFP through the
- * directory claims its OWN lane, instead of waiting for the issuer to mint one.
- * From here the authed proposal endpoints (putProposal, submitProposal) carry
- * the lane exactly as they do an invited bidder's — the only thing the invite
- * flow did that this skips is the emailed token (the applicant is signed in).
- *
- * Idempotent: the first apply creates the lane (201); re-applying returns the
- * same lane (200), so a double-click or a retry never forks a second lane. A
- * prior email-only invite for the org's address is adopted, not duplicated
- * (store, UNIQUE (rfp_id, email)). This is the `proposal.submit_open`
- * entitlement's surface; enforcement waits on billing (phase 8).
- */
-export async function applyToOpenRfp({ viewer, store, rfpId }) {
-  requireActiveOrg(viewer);
-  if (!viewer.has('org:tendering:bid')) throw new ProblemError('forbidden', null, { reason: 'role' });
-  const rfp = await store.getRfp(rfpId);
-  // 404, not 403: an invite-only or unpublished RFP must not be an existence
-  // oracle to a stranger (V8) — only an OPEN published one is discoverable.
-  if (!rfp || rfp.visibility !== 'open' || rfp.status !== 'published') {
-    throw new ProblemError('not_found');
-  }
-  if (rfp.issuer_org_id === viewer.orgId) {
-    throw new ProblemError('validation_failed', null, { errors: { rfp: 'the issuer cannot bid on its own RFP' } });
-  }
-  if (new Date(rfp.submission_deadline) < new Date()) {
-    throw new ProblemError('invalid_transition', 'the submission deadline has passed');
-  }
-  const org = await store.getOrganization(viewer.orgId);
-  const email = org?.billing_email ?? org?.contact_email ?? null;
-  if (!email) {
-    throw new ProblemError('validation_failed', null, { errors: { org: 'your organisation needs a contact email before bidding' } });
-  }
-  const actor = await requireActor(store, viewer);
-  const { proposalId, created } = await store.applyToOpenRfp({
-    rfpId, projectId: rfp.project_id, orgId: viewer.orgId, email, actor: actorOf(actor, viewer),
-  });
-  const proposal = await store.getProposal(proposalId);
-  const doc = await store.proposalDoc(proposalId);
-  return {
-    status: created ? 201 : 200,
-    body: proposalBody(proposal, { ...doc, seesMoney: viewer.has('org:money:view') }),
-  };
-}
+// operationId: applyToOpenRfp — ask to bid since D-47: ./bid-requests.mjs.
+export { applyToOpenRfp } from './bid-requests.mjs';
 
 /** operationId: listMyRfps — RFPs my org issued, was invited to, or applied to. */
 export async function listMyRfps({ viewer, store, query }) {
@@ -919,71 +996,10 @@ export async function listMyRfps({ viewer, store, query }) {
 }
 
 // ── clarifications ─────────────────────────────────────────────────────────
-
-/** operationId: askClarification — recipient only; question stays open. */
-export async function askClarification({ viewer, store, rfpId, body }) {
-  requireActiveOrg(viewer);
-  if (!viewer.has('org:tendering:bid')) throw new ProblemError('forbidden', null, { reason: 'role' });
-  const rfp = await store.getRfp(rfpId);
-  if (!rfp) throw new ProblemError('not_found');
-  if (!(await store.isRecipient(rfpId, viewer.orgId))) throw new ProblemError('not_found');
-  if (rfp.status !== 'published') {
-    throw new ProblemError('invalid_transition', 'questions are asked while the RFP is published');
-  }
-  if (rfp.questions_deadline && new Date(rfp.questions_deadline) < new Date()) {
-    throw new ProblemError('invalid_transition', 'the questions deadline has passed');
-  }
-  const errors = {};
-  if (!UUID.test(body?.id ?? '')) errors.id = 'client-generated UUIDv7 required';
-  if (typeof body?.question !== 'string' || !body.question.trim()) errors.question = 'required';
-  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
-
-  const existing = await store.getClarification(body.id);
-  if (existing) {
-    if (existing.rfp_id === rfpId && existing.asked_by_org_id === viewer.orgId) {
-      return { status: 201, body: clarificationBody(existing) };
-    }
-    throw new ProblemError('idempotency_mismatch', 'this id was already used by a different request');
-  }
-
-  const actor = await requireActor(store, viewer);
-  const created = await store.askClarification({
-    id: body.id,
-    rfpId,
-    projectId: rfp.project_id,
-    askedByOrgId: viewer.orgId,
-    question: body.question.trim(),
-    actor: actorOf(actor, viewer),
-  });
-  return { status: 201, body: clarificationBody(created) };
-}
-
-/** operationId: answerClarification — published to all bidders, asker anonymised. */
-export async function answerClarification({ viewer, store, clarificationId, body }) {
-  requireActiveOrg(viewer);
-  if (!viewer.has('org:tendering:issue')) throw new ProblemError('forbidden', null, { reason: 'role' });
-  const clarification = await store.getClarification(clarificationId);
-  if (!clarification) throw new ProblemError('not_found');
-  const rfp = await store.getRfp(clarification.rfp_id);
-  if (rfp.issuer_org_id !== viewer.orgId) throw new ProblemError('not_found');
-  await requireStaffing({ viewer, store, projectId: rfp.project_id });
-  if (clarification.status !== 'open') {
-    throw new ProblemError('invalid_transition', 'this question was already answered');
-  }
-  const answer = (body?.answer ?? '').trim();
-  if (!answer) throw new ProblemError('validation_failed', null, { errors: { answer: 'required' } });
-
-  const actor = await requireActor(store, viewer);
-  const updated = await store.answerClarification({
-    clarificationId,
-    rfpId: rfp.id,
-    projectId: rfp.project_id,
-    answer,
-    actor: actorOf(actor, viewer),
-  });
-  if (!updated) throw new ProblemError('invalid_transition', 'this question was already answered');
-  return { status: 200, body: clarificationBody(updated) };
-}
+// askClarification, askClarificationByToken, answerClarification live in
+// ./clarifications.mjs (PRD-08); re-exported here so the operation list above
+// stays the module's one index.
+export { askClarification, askClarificationByToken, answerClarification } from './clarifications.mjs';
 
 // ── proposals / lanes ──────────────────────────────────────────────────────
 
@@ -1334,6 +1350,9 @@ export async function awardRfp({ viewer, store, rfpId, body, contractingAward })
     note: typeof body?.note === 'string' && body.note.trim() ? body.note.trim() : null,
     projectId: rfp.project_id,
     actor: actorOf(actor, viewer),
+    // D-43: what planning needs to take the branch baseline at award, carried
+    // on tendering.rfp.awarded (planning never reads tendering tables).
+    planFacts: awardedPlanFacts(rfp, winner),
     // The contracting module's award port, run on the SAME client/transaction.
     createContract: (client) => contractingAward(client, {
       rfp,
@@ -1461,6 +1480,20 @@ function parseProposalDoc(body, { packageVersion }) {
   };
 }
 
+/** excluded_task_ids: an optional list of task ids (draft scope, T-3). */
+function validateExclusions(body, errors) {
+  const ex = body?.excluded_task_ids;
+  if (ex === undefined) return;
+  if (!Array.isArray(ex) || ex.some((t) => !UUID.test(t ?? ''))) errors.excluded_task_ids = 'a list of task ids';
+}
+
+/** The roots' sub-trees minus the exclusions; a bad exclusion is a 422. */
+function scopedSnapshot(snapshot, excluded) {
+  const bad = exclusionError(snapshot.rows, excluded);
+  if (bad) throw new ProblemError('validation_failed', null, { errors: { excluded_task_ids: bad } });
+  return prunePackage(snapshot, excluded);
+}
+
 function validateDeadlines(body, errors, { submissionRequired }) {
   const ts = /^\d{4}-\d{2}-\d{2}T/;
   if (submissionRequired && !ts.test(body?.submission_deadline ?? '')) {
@@ -1479,7 +1512,7 @@ function validateDeadlines(body, errors, { submissionRequired }) {
 }
 
 /** Load an RFP as issuer (with existence hiding + staffing). */
-async function requireIssuer({ viewer, store, rfpId, humanOnly = null, permission = 'org:tendering:issue' }) {
+export async function requireIssuer({ viewer, store, rfpId, humanOnly = null, permission = 'org:tendering:issue' }) {
   requireActiveOrg(viewer);
   if (humanOnly && viewer.channel === 'mcp') {
     throw new ProblemError('forbidden', `${humanOnly} is human-only`, { reason: 'human_only' });
@@ -1502,10 +1535,10 @@ async function requireRfpRead({ viewer, store, rfpId }) {
     await requireStaffing({ viewer, store, projectId: rfp.project_id });
     return { rfp, isIssuer };
   }
-  // An open published RFP is readable by any org that could bid on it (D-15);
-  // an invite-only one just by its recipients.
+  // A listed published RFP is readable by any org that could ask to bid on
+  // it (D-15/D-47); an unlisted one just by its recipients.
   const invited = await store.isRecipient(rfpId, viewer.orgId);
-  const open = rfp.visibility === 'open' && rfp.status === 'published';
+  const open = Boolean(rfp.listed) && rfp.status === 'published';
   if (!invited && !open) throw new ProblemError('not_found');
   return { rfp, isIssuer: false };
 }
@@ -1530,14 +1563,17 @@ function seesWholeOrg(viewer) {
   return viewer.orgRole === 'admin' || viewer.orgRole === 'manager';
 }
 
-async function requireActor(store, viewer) {
+export async function requireActor(store, viewer) {
   const person = await store.getPersonByClerkId(viewer.clerkUserId);
   if (!person) throw new ProblemError('version_conflict', 'your identity mirror has not caught up yet — retry');
   return person;
 }
 
-/** Participant + staffing conjunction on the RFP's project (doc 16 §4). */
-async function requireParticipant({ viewer, store, projectId }) {
+/**
+ * Participant + staffing conjunction on the RFP's project (doc 16 §4).
+ * Exported for the module's sibling queries (application/task-procurement.mjs).
+ */
+export async function requireParticipant({ viewer, store, projectId }) {
   requireActiveOrg(viewer);
   const project = await store.getProject(projectId);
   if (!project) throw new ProblemError('not_found');
@@ -1549,8 +1585,8 @@ async function requireParticipant({ viewer, store, projectId }) {
   return { project };
 }
 
-/** Staffing only (the relationship was already proven another way). */
-async function requireStaffing({ viewer, store, projectId }) {
+/** Staffing only (the relationship was already proven another way). Exported for sibling use cases. */
+export async function requireStaffing({ viewer, store, projectId }) {
   if (seesWholeOrg(viewer)) return;
   const actor = await requireActor(store, viewer);
   if (!(await store.isStaffed(projectId, viewer.orgId, actor.id))) {
@@ -1567,8 +1603,15 @@ function requireVersionMatch(ifMatch, version) {
   }
 }
 
-function actorOf(person, viewer) {
+export function actorOf(person, viewer) {
   return { personId: person.id, orgId: viewer.orgId, orgRole: viewer.orgRole, channel: viewer.channel };
+}
+
+/** `listed` wins; the deprecated `visibility` maps open → listed (D-47). */
+function listedOf(body) {
+  if (typeof body?.listed === 'boolean') return body.listed;
+  if (body?.visibility !== undefined) return body.visibility === 'open';
+  return undefined;
 }
 
 function clampLimit(raw) {

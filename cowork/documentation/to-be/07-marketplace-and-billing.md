@@ -7,8 +7,8 @@ the open-marketplace tender flow (LINA-406) with the least new surface:
 
 | Slice | Scope | State |
 |---|---|---|
-| **1 — Self-serve apply** | A bidder that discovers an `open`, published RFP through the marketplace claims its **own proposal lane** (`POST /rfps/{rfpId}:apply`), instead of waiting for the issuer to invite it by email. Idempotent (first apply `201`, re-apply `200`); a prior email-only invite for the org's address is adopted, not duplicated. From there the existing authed proposal endpoints (`putProposal`, `submitProposal`) carry the lane exactly as an invited bidder's. This is the hinge that makes "convite aberto ao marketplace" actually function — the `open` visibility flag and `GET /marketplace/rfps` browse already shipped, but nothing could *act* on them. | **BE done** (LINA-406). FE (marketplace browse page + Apply → the bidder's lane) is the next slice. |
-| **2 — Directory FE + profiles** | `OrganizationProfile` (listed), specialty catalogue, service areas, completeness score, marketplace browse/search UI, and the before/after portfolio. Lets an owner *discover* companies and a company present itself. | Designed below; not built. |
+| **1 — Self-serve apply** | A bidder that discovers an `open`, published RFP through the marketplace claims its **own proposal lane** (`POST /rfps/{rfpId}:apply`), instead of waiting for the issuer to invite it by email. Idempotent (first apply `201`, re-apply `200`); a prior email-only invite for the org's address is adopted, not duplicated. From there the existing authed proposal endpoints (`putProposal`, `submitProposal`) carry the lane exactly as an invited bidder's. This is the hinge that makes "convite aberto ao marketplace" actually function — the `open` visibility flag and `GET /marketplace/rfps` browse already shipped, but nothing could *act* on them. | **Amended by D-47 (PRD-04):** apply is now *ask to bid* — a pending bid request the issuer approves (lane + link, adopting a prior e-mail invite) or declines; `open` is `rfp.listed`; `/marketplace` redirects to the company inbox (`/requests`). |
+| **2 — Directory FE + profiles** | `OrganizationProfile` (listed), specialty catalogue, service areas, completeness score, marketplace browse/search UI, and the before/after portfolio. Lets an owner *discover* companies and a company present itself. | Built by PRD-03 (taxonomy, search near a build, public profiles with the on-the-record read model, claim, editor); portfolio photos and promoted placement not yet. |
 | **3 — Reputation** | Reviews + objective metrics (D-16, below). | Designed; not built. |
 | **4 — Billing** | Plans, subscriptions, entitlement enforcement incl. `proposal.submit_open` (D-05, below). Until this ships, apply is gated only by `org:tendering:bid`. | Designed; not built. |
 
@@ -20,9 +20,10 @@ the open-marketplace tender flow (LINA-406) with the least new surface:
 `declared_credentials { nif, impic_licence_number, impic_licence_class, insurance_policy }`,
 `contact_policy` (contact only through RFP/invite, or public contact).
 
-- Credentials are **self-declared** and shown as "declared" (D-17).
-- **Completeness score** (0–100): logo, description, specialties, areas, NIF, IMPIC licence,
-  insurance, ≥3 portfolio entries. Feeds ranking; the UI shows the score and what raises it.
+- Credentials are **self-declared** and shown as "Stated" (D-17 as amended by D-46 — no "Checked" level).
+- **Completeness score** (0–100, PRD-03 R-19): specialties, base location + radius, description, IMPIC licence,
+  insurance, portfolio, availability. Shown to the company with what raises it; it **never changes the order of
+  results** (D-46).
 
 **PortfolioEntry**
 - `source = platform`: generated when a contract reaches `provisionally_received`. Carries the
@@ -30,10 +31,16 @@ the open-marketplace tender flow (LINA-406) with the least new surface:
   owner consents**. Labelled "built on LinkNMS".
 - `source = declared`: added manually by the org. Labelled "declared".
 
-**Search & ranking** — filters: specialty, municipality/district, kind, rating, availability flag.
-Ranking score = relevance × (completeness, rating, platform track record, recency).
-Promoted placements (paid, `directory.promoted`) are **always labelled** as promoted and never
-reorder organic results beyond their reserved slots.
+**Search & ranking (D-46, PRD-03)** — filters: specialty (taxonomy, two levels), near a build or a point within
+25/50/100 km (the company's own service radius must reach the point), municipality/district, kind, can start by;
+facets for work types, proof, size, claimed. Distances are haversine in SQL (`directory.distance_km`, no extension).
+Ranking comes **only from clients verified by the platform** — clients that signed a contract with the company on
+LinkNMS. Ranked companies (≥ 1 verified client; a terminated contract still counts — the award happened, and its late tasks weigh on the on-time rate) come first, ordered by verified
+clients, then the on-time rate of their tasks under those contracts (smoothed (x+1)/(y+2)), then builds, then
+distance, then specialty match. Companies with no verified client follow, labelled "No verified clients yet", by
+distance then specialty match. Completeness, stated data and payment never change the order. Ratings (D-16) do not
+exist yet; when they do, only ratings from clients with an award to the company may feed the rank. Promoted
+placements (paid, `directory.promoted`), when built, are shown apart from the ordered list and never inside it.
 
 ## Reputation (D-16)
 

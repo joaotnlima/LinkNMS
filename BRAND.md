@@ -62,11 +62,12 @@ It is explicitly **not**:
 - **Not tamper-*proof*.** It is tamper-*evident*: it reveals after-the-fact
   edits, it does not prevent them. These are different properties and LinkNMS
   never blurs them.
-- **Not a BIM authoring or analysis suite.** LinkNMS accepts BIM file uploads
-  and previews them where the format allows, attaching each model to the shared
-  record. It does not author or edit models, run clash detection, or replace
-  tools like Revit or ArchiCAD — the model is evidence on the record, not the
-  workspace it was made in.
+- **Not a BIM authoring or analysis suite.** LinkNMS accepts BIM file uploads,
+  previews them, and links and annotates their elements on the shared record —
+  which task an element belongs to, which issue is pinned on it. It never
+  authors or edits the model itself: nothing is written into the IFC, it runs
+  no clash detection, and it does not replace tools like Revit or ArchiCAD —
+  the model is evidence on the record, not the workspace it was made in.
 - **Not a municipal-permitting integration.** It stores links and marks
   permitting phases; it does not talk to city systems that, in most markets, do
   not yet expose an API.

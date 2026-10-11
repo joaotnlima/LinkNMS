@@ -16,13 +16,12 @@
 //
 // The store owns transactions AND writes the ledger entry inside them
 // (invariant §6.4); a use case never half-commits.
-import { randomUUID, randomBytes, createHash } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import { ProblemError } from '../../../platform/errors.mjs';
 import { transition, briefComplete, operatingModel } from '../domain/lifecycle.mjs';
 
 const LOCATION_KINDS = new Set(['site', 'building', 'unit', 'floor', 'zone']);
-const INVITE_CAPACITIES = new Set(['design', 'inspection', 'safety', 'other']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -42,6 +41,7 @@ export async function createProject({ viewer, store, body, idempotencyKey }) {
   if (body?.indicative_budget && !Number.isInteger(body.indicative_budget.amount_cents)) {
     errors.indicative_budget = 'amount_cents must be integer cents';
   }
+  const location = parseLocation(body?.location, errors);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const actor = await requireActor(store, viewer);
@@ -54,6 +54,7 @@ export async function createProject({ viewer, store, body, idempotencyKey }) {
       typology: body.typology ?? null,
       grossAreaM2: body.gross_area_m2 ?? null,
       indicativeBudgetCents: body.indicative_budget?.amount_cents ?? null,
+      location: location ?? null,
       // Doc 14 Q4: created for an owner → unowned draft until claimed.
       ownerOrgId: onBehalf ? null : viewer.orgId,
       pendingOwnerEmail: onBehalf,
@@ -102,6 +103,7 @@ export async function updateProject({ viewer, store, projectId, body, ifMatch })
   const errors = {};
   if (body?.name !== undefined && !body.name?.trim()) errors.name = 'must not be blank';
   if (body?.municipality_code !== undefined && !body.municipality_code?.trim()) errors.municipality_code = 'must not be blank';
+  const location = parseLocation(body?.location, errors);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const actor = await requireActor(store, viewer);
@@ -115,6 +117,7 @@ export async function updateProject({ viewer, store, projectId, body, ifMatch })
       typology: body?.typology,
       grossAreaM2: body?.gross_area_m2,
       indicativeBudgetCents: body?.indicative_budget === null ? null : body?.indicative_budget?.amount_cents,
+      location,
     },
     actor: actorOf(actor, viewer),
   });
@@ -159,15 +162,7 @@ export async function closeProject({ viewer, store, projectId }) {
   return { status: 200, body: projectBody(updated, await store.getOperatingModel(projectId)) };
 }
 
-/** operationId: getProjectOverview */
-export async function getProjectOverview({ viewer, store, projectId }) {
-  const { project } = await requireParticipant({ viewer, store, projectId });
-  return {
-    status: 200,
-    body: overviewBody({ ...project, open_variations: 0, open_questions: 0, pending_verifications: 0 },
-      await store.getOperatingModel(projectId)),
-  };
-}
+// operationId: getProjectOverview — moved to ./overview.mjs (PRD-09 O-1).
 
 // ── Locations ────────────────────────────────────────────────────────────
 
@@ -235,102 +230,9 @@ export async function deleteLocation({ viewer, store, locationId }) {
 }
 
 // ── Participants & invitations ───────────────────────────────────────────
+// Moved to ./participants.mjs (PRD-09 O-3..O-5).
 
-/** operationId: listParticipants */
-export async function listParticipants({ viewer, store, projectId, query }) {
-  await requireParticipant({ viewer, store, projectId });
-  const { items, nextCursor } = await store.listParticipants(projectId, {
-    cursor: query?.cursor ?? null, limit: clampLimit(query?.limit),
-  });
-  return { status: 200, body: { items: items.map(participantBody), next_cursor: nextCursor } };
-}
-
-/** operationId: inviteToProject — consultant / inspector / HSE, no priced contract. */
-export async function inviteToProject({ viewer, store, projectId, body }) {
-  requireActiveOrg(viewer);
-  if (!viewer.has('org:projects:staff')) throw new ProblemError('forbidden', null, { reason: 'role' });
-  const project = await store.getProject(projectId);
-  if (!project) throw new ProblemError('not_found');
-  const isOwner = project.owner_org_id === viewer.orgId;
-  const isPrime = await store.isPrimeSupplier(projectId, viewer.orgId);
-  if (!isOwner && !isPrime) throw new ProblemError('forbidden', 'only the owner or the prime contractor invites', { reason: 'relationship' });
-
-  const errors = {};
-  const email = body?.email?.trim().toLowerCase();
-  if (!email || !EMAIL.test(email)) errors.email = 'valid email required';
-  if (!INVITE_CAPACITIES.has(body?.capacity)) errors.capacity = 'design, inspection, safety or other';
-  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
-
-  const actor = await requireActor(store, viewer);
-  const token = randomBytes(24).toString('hex');
-  const invitation = await store.createInvitation({
-    id: randomUUID(),
-    projectId,
-    invitedByOrgId: viewer.orgId,
-    email,
-    capacity: body.capacity,
-    tokenHash: sha256(token),
-    expiresAt: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString(),
-    actor: actorOf(actor, viewer),
-  });
-  // `token` is returned ONCE, to the inviter (contract note in openapi.yaml);
-  // only its hash is stored. Delivery by email is the notifications module.
-  return { status: 201, body: { ...invitationBody(invitation), token } };
-}
-
-/**
- * operationId: previewProjectInvitation — the ONE unauthenticated read on the v2
- * surface besides the RFP personal link (LINA-398, replacing the retired v1
- * `GET /invitations/:token`). It powers the Band B accept deep link (M6/D6): a
- * signed-out visitor holding only the token learns which build they were invited
- * to, who invited them, and in what capacity, so the inline Clerk sign-up has
- * context. There is deliberately NO viewer — the token IS the credential for
- * this read; requiring a session would defeat the deep link, and acceptance
- * below still re-verifies the session (ADR-0004).
- *
- * ANTI-ORACLE: an unknown token, an already-accepted (spent) token, a revoked
- * one and an expired one all return the IDENTICAL `not_found` 404, so this
- * endpoint cannot be used to probe whether an arbitrary string is a live token.
- * Only a `pending`, unexpired invitation is ever revealed. (Transport-layer
- * rate limiting is the route's concern — this handler carries no headers.)
- */
-export async function previewProjectInvitation({ store, token }) {
-  const inv = await store.getInvitationPreviewByTokenHash(sha256(token ?? ''));
-  if (!inv || inv.status !== 'pending') throw new ProblemError('not_found');
-  if (new Date(inv.expires_at).getTime() < Date.now()) throw new ProblemError('not_found');
-  return {
-    status: 200,
-    body: {
-      project_name: inv.project_name ?? null,
-      invited_by_name: inv.invited_by_name ?? null,
-      capacity: inv.capacity,
-    },
-  };
-}
-
-/** operationId: acceptProjectInvitation */
-export async function acceptProjectInvitation({ viewer, store, token }) {
-  requireActiveOrg(viewer);
-  const actor = await requireActor(store, viewer);
-  const invitation = await store.getInvitationByTokenHash(sha256(token ?? ''));
-  if (!invitation || invitation.status === 'revoked') throw new ProblemError('not_found');
-  if (invitation.status === 'accepted') throw new ProblemError('invalid_transition', 'already accepted');
-  if (new Date(invitation.expires_at).getTime() < Date.now()) throw new ProblemError('gone', 'invitation expired');
-
-  const participant = await store.acceptInvitation({
-    invitationId: invitation.id,
-    projectId: invitation.project_id,
-    orgId: viewer.orgId,
-    inviteCapacity: invitation.capacity,
-    actor: actorOf(actor, viewer),
-  });
-  // `project_id` is carried alongside the participation so the accept deep link
-  // can redirect straight to the record (LINA-398); the participation row itself
-  // is keyed on (project, org, capacity) and does not echo it.
-  return { status: 200, body: { ...participantBody(participant), project_id: invitation.project_id } };
-}
-
-// ── Calendar & share links ───────────────────────────────────────────────
+// ── Calendar ───────────────────────────────────────────────
 
 /** operationId: getCalendar */
 export async function getCalendar({ viewer, store, projectId }) {
@@ -388,48 +290,12 @@ export async function putCalendar({ viewer, store, projectId, body }) {
   };
 }
 
-/** operationId: createShareLink — scoped, expiring, for a licensing authority. */
-export async function createShareLink({ viewer, store, projectId, body, shareBaseUrl }) {
-  const { project } = await requireOwner({ viewer, store, projectId, permission: 'org:plan:edit' });
-  const errors = {};
-  if (!body?.audience?.trim()) errors.audience = 'required — who this link is for';
-  const expiresAt = body?.expires_at ? new Date(body.expires_at) : null;
-  if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
-    errors.expires_at = 'a future date-time';
-  } else if (expiresAt.getTime() > Date.now() + 90 * 24 * 3600 * 1000) {
-    errors.expires_at = 'at most 90 days out';
-  }
-  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
-
-  const actor = await requireActor(store, viewer);
-  const token = randomBytes(24).toString('hex');
-  const link = await store.createShareLink({
-    id: randomUUID(),
-    projectId: project.id,
-    createdByPersonId: actor.id,
-    audience: body.audience.trim(),
-    documentIds: body.document_ids ?? [],
-    taskIds: body.task_ids ?? [],
-    tokenHash: sha256(token),
-    expiresAt: expiresAt.toISOString(),
-    actor: actorOf(actor, viewer),
-  });
-  return {
-    status: 201,
-    body: {
-      id: link.id,
-      audience: link.audience,
-      document_ids: link.document_ids,
-      task_ids: link.task_ids,
-      url: `${shareBaseUrl}/share/${token}`,
-      expires_at: link.expires_at,
-    },
-  };
-}
+// createShareLink moved to ./share-links.mjs with the rest of the share-link
+// surface (PRD-12 N-12).
 
 // ── shared authorization helpers ─────────────────────────────────────────
 
-function requireActiveOrg(viewer) {
+export function requireActiveOrg(viewer) {
   if (!viewer.orgId) throw new ProblemError('forbidden', 'pick an active organisation first', { reason: 'no_active_org' });
 }
 
@@ -464,7 +330,7 @@ export async function requireParticipant({ viewer, store, projectId }) {
 }
 
 /** relationship: project.owner (strict — claim has happened). */
-async function requireOwner({ viewer, store, projectId, permission = null }) {
+export async function requireOwner({ viewer, store, projectId, permission = null }) {
   const { project } = await requireParticipant({ viewer, store, projectId });
   if (permission && !viewer.has(permission)) throw new ProblemError('forbidden', null, { reason: 'role' });
   if (project.owner_org_id !== viewer.orgId) {
@@ -489,8 +355,25 @@ async function requireBriefDriver({ viewer, store, projectId, permission }) {
 
 // ── bodies & small helpers ───────────────────────────────────────────────
 
-function actorOf(person, viewer) {
+export function actorOf(person, viewer) {
   return { personId: person.id, orgId: viewer.orgId, orgRole: viewer.orgRole, channel: viewer.channel };
+}
+
+/**
+ * PRD-03 R-3: the build's point. undefined = not sent (unchanged), null =
+ * clear it, {lat, lng} = set it (WGS84, rounded to 5 decimals ≈ 1 m).
+ */
+function parseLocation(raw, errors) {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  const lat = Number(raw?.lat);
+  const lng = Number(raw?.lng);
+  if (typeof raw !== 'object' || raw?.lat == null || raw?.lng == null
+    || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    errors.location = '{lat, lng} in degrees (lat -90..90, lng -180..180), or null';
+    return undefined;
+  }
+  return { lat: Math.round(lat * 1e5) / 1e5, lng: Math.round(lng * 1e5) / 1e5 };
 }
 
 function parseIfMatch(raw) {
@@ -499,13 +382,13 @@ function parseIfMatch(raw) {
   return n;
 }
 
-function clampLimit(raw) {
+export function clampLimit(raw) {
   const n = Number(raw ?? 50);
   if (!Number.isInteger(n) || n < 1) return 50;
   return Math.min(n, 200);
 }
 
-function sha256(value) {
+export function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
@@ -513,7 +396,7 @@ function money(cents) {
   return cents == null ? undefined : { amount_cents: Number(cents), currency: 'EUR' };
 }
 
-function projectBody(p, opModel) {
+export function projectBody(p, opModel) {
   return {
     id: p.id,
     name: p.name,
@@ -522,6 +405,7 @@ function projectBody(p, opModel) {
     typology: p.typology ?? undefined,
     gross_area_m2: p.gross_area_m2 == null ? undefined : Number(p.gross_area_m2),
     indicative_budget: money(p.indicative_budget_cents),
+    ...(p.location_lat != null ? { location: { lat: Number(p.location_lat), lng: Number(p.location_lng) } } : {}),
     owner_org_id: p.owner_org_id ?? undefined,
     status: p.status,
     operating_model: opModel,
@@ -529,7 +413,7 @@ function projectBody(p, opModel) {
   };
 }
 
-function overviewBody(p, opModel) {
+export function overviewBody(p, opModel) {
   return {
     project: projectBody(p, opModel ?? 'undetermined'),
     // end_date / cost / health are planning+contracting roll-ups (phases 4-5);
@@ -547,31 +431,5 @@ function locationBody(l) {
     kind: l.kind,
     name: l.name,
     position: l.position ?? undefined,
-  };
-}
-
-function participantBody(row) {
-  return {
-    org: {
-      id: row.org_id,
-      kind: row.org_kind,
-      legal_name: row.legal_name,
-      nif: row.nif ?? undefined,
-    },
-    capacity: row.capacity,
-    source: row.source,
-    contract_id: row.contract_id ?? undefined,
-    invite_capacity: row.invite_capacity ?? undefined,
-  };
-}
-
-function invitationBody(i) {
-  return {
-    id: i.id,
-    project_id: i.project_id,
-    email: i.email,
-    capacity: i.capacity,
-    status: i.status,
-    expires_at: i.expires_at,
   };
 }

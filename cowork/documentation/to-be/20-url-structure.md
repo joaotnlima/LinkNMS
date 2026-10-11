@@ -80,11 +80,14 @@ Covers the full to-be surface from [02](./02-domain-map.md) / [12](./12-api-cata
 | `/companies/{slug}` | public company profile (e.g. `/companies/construtora-silva`) |
 | `/companies/{slug}/portfolio` | public track record / portfolio entries |
 | `/specialties/{slug}` | specialty landing (directory facet, SEO) |
+| `/companies/{slug}/claim` | claim an unclaimed profile: sends a link to the profile's e-mail (PRD-03 R-16) |
+| `/companies/{slug}/claim/{token}` | the e-mailed link that completes the claim (token = credential, signed-in) |
 | `/rfps/{token}` | public RFP response form (single-use token, LINA-294 contract) |
 | `/rfps/{token}/submitted` | post-submission confirmation |
 | `/invitations/{token}` | invitation landing (preview + accept form; POST accepts) |
 | `/sign-in`, `/sign-up` | auth doors (`?next=` bounce param stays) |
-| `/pricing` | plans/tiers (Billing, public) |
+| `/pricing` | plans/tiers — redirects to the landing pricing section; the marketing site owns pricing (PRD-12 N-11) |
+| `/share/{token}` | what a share link's holder sees, no account: the shared documents only, read-only, each access logged; `/share/{token}/{documentId}` opens (`?disposition=inline`) or downloads one; expired/revoked say so (PRD-12 N-12, flow D21) |
 
 Note: `/invitations/{token}` replaces `/invitations/{token}/accept` — the landing *is* the
 accept screen; the verb segment adds nothing (accepting stays a POST).
@@ -101,6 +104,9 @@ accept screen; the verb segment adds nothing (accepting stays a POST).
 | `/settings/organization/profile` | edit the public Directory profile (what `/companies/{slug}` shows) |
 | `/settings/billing` | subscription, entitlements, invoices |
 | `/notifications` | notification center (Collaboration) |
+| `/questions` | questions for me — addressed to my organisation on every build, `?topic=&status=` (PRD-12 N-7) |
+| `/requests` | the company inbox (PRD-04 X-9, X-10, D-47): `?tab=for-you` (default) requests for you · `?tab=near` open requests near you |
+| `/requests/{rfpId}` | one request: the package, price and send in-app (X-11), clarifications |
 
 ### Authenticated — project level (all UUID, breadcrumb-aligned)
 
@@ -110,7 +116,7 @@ accept screen; the verb segment adds nothing (accepting stays a POST).
 | `/projects/{id}` | project overview / brief (no longer a redirect) |
 | `/projects/{id}/locations` | locations (Project) |
 | `/projects/{id}/participants` | participants + invite (Project/IAM) — absorbs `/invite` |
-| `/projects/{id}/plan` | the Gantt (Planning & Execution); `?compose=`, `?task=` open panels |
+| `/projects/{id}/plan` | the Gantt (Planning & Execution); `?compose=`, `?task=` open panels; `?baseline=` draws a chosen baseline (PRD-10 E-1) |
 | `/projects/{id}/plan/tasks/{taskId}` | task workspace (comments, attachments, progress) |
 | `/projects/{id}/plan/baselines` | baselines & variations |
 | `/projects/{id}/tendering` | tendering home: RFPs the viewer can see |
@@ -123,9 +129,12 @@ accept screen; the verb segment adds nothing (accepting stays a POST).
 | `/projects/{id}/contracts/{id}/change-orders/{id}` | CO detail — replaces top-level `/change-orders/{id}` |
 | `/projects/{id}/contracts/{id}/measurements` | measurements (autos de medição) |
 | `/projects/{id}/contracts/{id}/payments` | payments record |
-| `/projects/{id}/quality` | verifications, non-conformities, inspections (Quality) |
+| `/projects/{id}/quality` | verifications, non-conformities, inspections (Quality); `?status=` filters, `?nc=` focuses one (PRD-12 N-3, N-4) |
 | `/projects/{id}/documents` | files, versions, photos (Documents); `?folder=`/`?type=` filter |
-| `/projects/{id}/questions` | threads / Q&A / meeting minutes (Collaboration) |
+| `/projects/{id}/documents/share` | the owner's share links: create, state and use, revoke, `?link=` access log (Project, PRD-12 N-12) |
+| `/projects/{id}/model` | the build's shared IFC model (Documents, PRD-07): `?task=` isolates a task's elements, `?version=` opens a version, `?tab=versions` the history; record-side edits only (D-45) |
+| `/projects/{id}/site` | the daily log by day (Planning, PRD-10 E-9): `?date=` opens a day; `/site/log` the phone-first capture (E-7, E-8; no offline, D-14); `/site/calendar` who is on site when, with overlaps (E-10, E-11), `?from=&to=` |
+| `/projects/{id}/questions` | threads / Q&A / meeting minutes (Collaboration); `?tab=addressed\|asked\|minutes`, `?q=` focuses one question (PRD-12 N-5, N-6) |
 | `/projects/{id}/history` | the scoped ledger view (Record) — absorbs `/record` + `/audit` + `/decisions` |
 
 Deliberate non-routes: money never appears in a path; sub-tabs of a screen (record tabs,
@@ -158,7 +167,9 @@ replace + delete. "Replace" = update in-app links, old path 404s.
 | `/invitations/[token]/accept` | `/invitations/{token}` | **301** — tokens are live in WhatsApp/email threads |
 | `/rfp/[token]`, `/rfp/[token]/submitted` | `/rfps/{token}[/submitted]` | **301** — token links may have been sent to bidders |
 | `/sign-in`, `/sign-up`, `/no-access`, `/onboarding/setup` | same | keep |
-| — | `/companies`, `/companies/{slug}`, `/specialties/{slug}`, `/pricing`, `/settings/*`, `/notifications`, `/projects/{id}/{tendering,contracts,quality,documents,questions,locations}` | new |
+| — | `/companies`, `/companies/{slug}`, `/specialties/{slug}`, `/pricing`, `/settings/*`, `/notifications`, `/projects/{id}/{tendering,contracts,quality,documents,model,questions,locations}` | new |
+| `/marketplace` | `/requests?tab=near` | **307** (PRD-04 X-12): the inverted marketplace is retired; the company inbox replaces it |
+| `/marketplace/bid/{rfpId}` | `/requests/{rfpId}` | **307** (X-12): the proposal for that RFP |
 
 The only redirects that matter: the two **token families** (invitations, RFP). Everything else
 is behind auth on a pre-launch product; a 404 costs nothing and dead routes cost maintenance.
@@ -174,6 +185,10 @@ is behind auth on a pre-launch product; a 404 costs nothing and dead routes cost
    suffix on collision, or org-chosen (with reserved-word list)? Are slugs renameable (needs
    permanent 301 from old slug) or frozen at creation? Recommendation: auto-mint, one rename
    allowed, old slug 301s forever.
+   **Default applied (PRD-03, 2026-10-10, until the founder decides):** auto-minted at the first profile save from the
+   display name — lowercased, diacritics stripped, non-alphanumerics → `-`, at most 60 characters — with `-2`, `-3`, …
+   on collision; reserved words (`claim`, `new`, `search`, `by-slug`) take a suffix too. **Frozen**: no rename yet (so
+   no 301 table); renaming is the recommended follow-up. The slug is unique across claimed and unclaimed profiles.
 3. **Project slugs.** Keep project URLs UUID-only (private, recommended) or add a vanity slug
    (`/projects/{id}/{slug}` with slug ignored) for readability in shared links? Costs little,
    decide only if sharing outside the participant set becomes a feature.

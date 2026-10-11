@@ -24,6 +24,8 @@ import { createPortal } from 'react-dom';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 import type { StageStatus } from '@/lib/plan-authoring';
+import { loadSpecialtyCatalogAction, rememberSpecialtyLabelAction } from '@/lib/v2/specialty-labels-actions';
+import type { TaxonomyOption } from '@/lib/v2/specialty-labels';
 
 /** The member index the grid/editor already build with `partyIndex`. */
 type PartyIndex = Map<string, PartyRef>;
@@ -244,13 +246,15 @@ export function FieldMenu({
 // source of truth between renders; the parent keys it on the server value, so a
 // reload still re-seats it on the record.
 export function StatusPicker({
-  nodeKey, value, over, what, onSet,
+  nodeKey, value, over, what, onSet, blockDone = null,
 }: {
   nodeKey: string;
   value: StageStatus;
   over: boolean;
   what: string;
   onSet: (nodeKey: string, status: StageStatus) => Promise<void> | void;
+  /** Why `done` is not available yet (PRD-05 F-16, D-48) — the server refuses it too. */
+  blockDone?: string | null;
 }) {
   const [val, setVal] = useState<StageStatus>(value);
   const [busy, setBusy] = useState(false);
@@ -260,6 +264,7 @@ export function StatusPicker({
 
   const choose = useCallback(async (next: StageStatus) => {
     if (next === val) return;
+    if (next === 'done' && blockDone) { setErr(blockDone); return; }
     const prev = val;
     setVal(next);
     setBusy(true);
@@ -274,7 +279,7 @@ export function StatusPicker({
     } finally {
       setBusy(false);
     }
-  }, [val, onSet, nodeKey]);
+  }, [val, onSet, nodeKey, blockDone]);
 
   return (
     <span className={`pgd-statusedit${over ? ' is-overdue' : ''}`}>
@@ -287,7 +292,9 @@ export function StatusPicker({
         value={val}
         trigger={<span className="fm-status-word">{word}</span>}
         options={STATUS_ORDER.map((s) => ({
-          value: s, label: STATUS_META[s].label, swatchClass: STATUS_META[s].cls,
+          value: s,
+          label: s === 'done' && blockDone ? `${STATUS_META[s].label} — deliverables pending` : STATUS_META[s].label,
+          swatchClass: STATUS_META[s].cls,
         }))}
         onSelect={(v) => { void choose(v as StageStatus); }}
       />
@@ -359,18 +366,28 @@ export function OwnerField({
 
 // ── Specialty catalog (lifted from PlanGrid so the drawer shares it) ──────────
 // The caller's known trades: the seeded system set ∪ anything they have typed,
-// across every project (GET /api/v2/specialties). Committing a brand-new label
+// across every project (GET /api/v2/specialty-labels). Committing a brand-new label
 // remembers it (POST, idempotent) so it is offered next time. Enhancement-only —
 // a failure never loses the typed label (the stage already holds it); the picker
 // just does not learn it.
-export function useSpecialtyCatalog(): { specialties: string[]; remember: (label: string) => void } {
+/** A directory taxonomy entry as the picker shows it (PRD-03 R-2). */
+export type { TaxonomyOption };
+
+export function useSpecialtyCatalog(): {
+  specialties: string[]; taxonomy: TaxonomyOption[]; remember: (label: string) => void;
+} {
   const [specialties, setSpecialties] = useState<string[]>([]);
+  const [taxonomy, setTaxonomy] = useState<TaxonomyOption[]>([]);
   useEffect(() => {
     let live = true;
-    fetch('/api/v2/specialties', { headers: { accept: 'application/json' } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { specialties?: Array<{ label: string }> } | null) => {
-        if (live && d?.specialties) setSpecialties(d.specialties.map((s) => s.label));
+    // The labels (built-in ∪ the org's own) and the PRD-03 R-2 taxonomy, through
+    // the lib/v2 clients. Picking a taxonomy entry sets the row's specialty_code
+    // as well as its label; free text stays possible.
+    loadSpecialtyCatalogAction()
+      .then((d) => {
+        if (!live) return;
+        setSpecialties(d.specialties);
+        setTaxonomy(d.taxonomy);
       })
       .catch(() => { /* picker is enhancement-only; the free-form input stands */ });
     return () => { live = false; };
@@ -383,14 +400,10 @@ export function useSpecialtyCatalog(): { specialties: string[]; remember: (label
       if (prev.some((s) => s.toLowerCase() === label.toLowerCase())) return prev;
       return [...prev, label].sort((a, b) => a.localeCompare(b));
     });
-    fetch('/api/v2/specialties', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ label }),
-    }).catch(() => { /* enhancement-only */ });
+    rememberSpecialtyLabelAction(label).catch(() => { /* enhancement-only */ });
   }, []);
 
-  return { specialties, remember };
+  return { specialties, taxonomy, remember };
 }
 
 // ── SpecialtyField ────────────────────────────────────────────────────────────
@@ -400,14 +413,18 @@ export function useSpecialtyCatalog(): { specialties: string[]; remember: (label
 // the deliberate escape hatch from LINA-306, kept alive. Selection is
 // presentational over the draft; nothing writes until the editor's autosave lands.
 const ADD_SPECIALTY = '__add_specialty__';
+const TAXONOMY_PREFIX = 'tx:';
 export function SpecialtyField({
-  value, options, disabled, ariaLabel, onSet, onRemember,
+  value, options, taxonomy = [], disabled, ariaLabel, onSet, onRemember,
 }: {
   value: string;
   options: string[];
+  /** Directory taxonomy entries (PRD-03 R-2), offered before the free labels. */
+  taxonomy?: TaxonomyOption[];
   disabled: boolean;
   ariaLabel: string;
-  onSet: (label: string) => void;
+  /** `code` is set when a taxonomy entry was picked; a free label sends none. */
+  onSet: (label: string, code?: string) => void;
   onRemember: (label: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -456,11 +473,18 @@ export function SpecialtyField({
         value={value}
         trigger={<span className={`fm-specialty-word${value ? '' : ' is-empty'}`}>{value || 'Specialty…'}</span>}
         options={[
+          ...taxonomy.map((t) => ({ value: `${TAXONOMY_PREFIX}${t.code}`, label: t.label, note: 'directory' })),
           ...opts.map((s) => ({ value: s, label: s })),
           { value: ADD_SPECIALTY, label: '＋ Add new…', isAction: true },
         ]}
         onSelect={(v) => {
           if (v === ADD_SPECIALTY) { setAdding(true); return; }
+          if (v.startsWith(TAXONOMY_PREFIX)) {
+            const code = v.slice(TAXONOMY_PREFIX.length);
+            const label = taxonomy.find((t) => t.code === code)?.label.split(' › ').pop() ?? code;
+            onSet(label, code);
+            return;
+          }
           onSet(v);
         }}
       />

@@ -5,8 +5,12 @@
 // (identity.person for the actor, contracting.contract for guards and the
 // D-35 derivation, planning.task for the location-in-use guard) are the
 // module's query ports; it never WRITES outside project.* + the ledger.
+import { randomUUID } from 'node:crypto';
+
 import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { withIdempotency } from '../../../platform/idempotency.mjs';
+import { publishEvent } from '../../../platform/outbox.mjs';
+import { shareLinkQueries } from './pg-share-links.mjs';
 
 export function createProjectStore(pool) {
   async function tx(fn) {
@@ -34,6 +38,13 @@ export function createProjectStore(pool) {
     async getProject(projectId) {
       const { rows } = await pool.query('SELECT * FROM project.project WHERE id = $1', [projectId]);
       return rows[0] ?? null;
+    },
+
+    /** Several builds at once (the build port's factsOf, PRD-04). */
+    async getProjects(projectIds) {
+      if (!projectIds.length) return [];
+      const { rows } = await pool.query('SELECT * FROM project.project WHERE id = ANY($1::uuid[])', [projectIds]);
+      return rows;
     },
 
     async isParticipant(projectId, orgId) {
@@ -154,7 +165,7 @@ export function createProjectStore(pool) {
     async listParticipants(projectId, { cursor, limit }) {
       const { rows } = await pool.query(
         `SELECT pa.project_id, pa.org_id, pa.capacity, pa.source, pa.contract_id,
-                pa.invite_capacity, o.kind AS org_kind, o.legal_name, o.nif
+                pa.invite_capacity, pa.specialty_code, o.kind AS org_kind, o.legal_name, o.nif
            FROM project.participation pa
            JOIN identity.organization o ON o.id = pa.org_id
           WHERE pa.project_id = $1 AND pa.status = 'active'
@@ -165,6 +176,22 @@ export function createProjectStore(pool) {
       );
       const items = rows.slice(0, limit);
       return { items, nextCursor: rows.length > limit ? items[items.length - 1].org_id : null };
+    },
+
+    /** PRD-09 O-3: the invitations one organisation sent on a build, newest first. */
+    async listInvitationsSentBy(projectId, orgId, { cursor, limit }) {
+      const [cursorAt, cursorId] = cursor ? String(cursor).split('~') : [null, null];
+      const { rows } = await pool.query(
+        `SELECT * FROM project.project_invitation
+          WHERE project_id = $1 AND invited_by_org_id = $2
+            AND ($3::timestamptz IS NULL OR (created_at, id) < ($3, $4::uuid))
+          ORDER BY created_at DESC, id DESC
+          LIMIT $5`,
+        [projectId, orgId, cursorAt, cursorId ?? null, limit + 1],
+      );
+      const items = rows.slice(0, limit);
+      const last = items[items.length - 1];
+      return { items, nextCursor: rows.length > limit ? `${last.created_at.toISOString()}~${last.id}` : null };
     },
 
     async getInvitationByTokenHash(tokenHash) {
@@ -180,7 +207,7 @@ export function createProjectStore(pool) {
     // revealing the build name to its holder is no new disclosure.
     async getInvitationPreviewByTokenHash(tokenHash) {
       const { rows } = await pool.query(
-        `SELECT i.status, i.expires_at, i.capacity,
+        `SELECT i.status, i.expires_at, i.capacity, i.specialty_code, i.invitee_name, i.scope_note,
                 p.name       AS project_name,
                 o.legal_name AS invited_by_name
            FROM project.project_invitation i
@@ -211,16 +238,18 @@ export function createProjectStore(pool) {
 
     // ── writes (all ledgered on the same client — §6.4) ──────────────────
     async createProject({ id, name, address, municipalityCode, typology, grossAreaM2,
-      indicativeBudgetCents, ownerOrgId, pendingOwnerEmail, createdByOrgId, actor }) {
+      indicativeBudgetCents, ownerOrgId, pendingOwnerEmail, createdByOrgId, location = null, actor }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `INSERT INTO project.project
              (id, owner_org_id, created_by_org_id, name, address, municipality_code,
-              typology, gross_area_m2, indicative_budget_cents, pending_owner_email)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+              typology, gross_area_m2, indicative_budget_cents, pending_owner_email,
+              location_lat, location_lng)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
            RETURNING *`,
           [id, ownerOrgId, createdByOrgId, name, address, municipalityCode,
-            typology, grossAreaM2, indicativeBudgetCents, pendingOwnerEmail],
+            typology, grossAreaM2, indicativeBudgetCents, pendingOwnerEmail,
+            location?.lat ?? null, location?.lng ?? null],
         );
         if (ownerOrgId) {
           await client.query(
@@ -257,6 +286,8 @@ export function createProjectStore(pool) {
              typology = CASE WHEN $7::boolean THEN $8 ELSE typology END,
              gross_area_m2 = CASE WHEN $9::boolean THEN $10::numeric ELSE gross_area_m2 END,
              indicative_budget_cents = CASE WHEN $11::boolean THEN $12::bigint ELSE indicative_budget_cents END,
+             location_lat = CASE WHEN $13::boolean THEN $14::numeric ELSE location_lat END,
+             location_lng = CASE WHEN $13::boolean THEN $15::numeric ELSE location_lng END,
              version = version + 1
            WHERE id = $1 AND version = $2
            RETURNING *`,
@@ -266,7 +297,8 @@ export function createProjectStore(pool) {
             patch.municipalityCode ?? null,
             patch.typology !== undefined, patch.typology ?? null,
             patch.grossAreaM2 !== undefined, patch.grossAreaM2 ?? null,
-            patch.indicativeBudgetCents !== undefined, patch.indicativeBudgetCents ?? null],
+            patch.indicativeBudgetCents !== undefined, patch.indicativeBudgetCents ?? null,
+            patch.location !== undefined, patch.location?.lat ?? null, patch.location?.lng ?? null],
         );
         if (!rows.length) return null; // version raced — the caller answers 409
         await appendAuditEvent(client, {
@@ -398,13 +430,13 @@ export function createProjectStore(pool) {
       });
     },
 
-    async createInvitation({ id, projectId, invitedByOrgId, email, capacity, tokenHash, expiresAt, actor }) {
+    async createInvitation({ id, projectId, invitedByOrgId, email, capacity, specialtyCode = null, inviteeName = null, scopeNote = null, tokenHash, expiresAt, actor }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `INSERT INTO project.project_invitation
-             (id, project_id, invited_by_org_id, email, capacity, token_hash, expires_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-          [id, projectId, invitedByOrgId, email, capacity, tokenHash, expiresAt],
+             (id, project_id, invited_by_org_id, email, capacity, token_hash, expires_at, specialty_code, invitee_name, scope_note)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+          [id, projectId, invitedByOrgId, email, capacity, tokenHash, expiresAt, specialtyCode, inviteeName, scopeNote],
         );
         await appendAuditEvent(client, {
           projectId,
@@ -415,14 +447,14 @@ export function createProjectStore(pool) {
           object: { type: 'project_invitation', id },
           // The ledger records THAT an email was invited, hashed elsewhere;
           // the token itself never touches the record.
-          payload: { email, capacity: rows[0].capacity, invited_by_org_id: invitedByOrgId },
+          payload: { email, capacity: rows[0].capacity, specialty_code: specialtyCode, invited_by_org_id: invitedByOrgId },
           channel: actor.channel,
         });
         return rows[0];
       });
     },
 
-    async acceptInvitation({ invitationId, projectId, orgId, inviteCapacity, actor }) {
+    async acceptInvitation({ invitationId, projectId, orgId, inviteCapacity, specialtyCode = null, actor }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `UPDATE project.project_invitation
@@ -434,11 +466,11 @@ export function createProjectStore(pool) {
         if (!rows.length) throw new Error('invitation raced: no longer pending');
         await client.query(
           `INSERT INTO project.participation
-             (project_id, org_id, capacity, source, invite_capacity)
-           VALUES ($1, $2, 'consultant', 'invitation', $3)
+             (project_id, org_id, capacity, source, invite_capacity, specialty_code)
+           VALUES ($1, $2, 'consultant', 'invitation', $3, $4)
            ON CONFLICT (project_id, org_id, capacity) DO UPDATE
-             SET status = 'active', invite_capacity = excluded.invite_capacity`,
-          [projectId, orgId, inviteCapacity],
+             SET status = 'active', invite_capacity = excluded.invite_capacity, specialty_code = excluded.specialty_code`,
+          [projectId, orgId, inviteCapacity, specialtyCode],
         );
         await appendAuditEvent(client, {
           projectId,
@@ -450,9 +482,24 @@ export function createProjectStore(pool) {
           payload: { org_id: orgId, invite_capacity: inviteCapacity },
           channel: actor.channel,
         });
+        // PRD-12 N-1: the inviter hears that its invitation was taken up — the
+        // notification centre consumes this (doc 10), same transaction.
+        await publishEvent(client, {
+          event_id: randomUUID(),
+          type: 'project.invitation.accepted',
+          project_id: projectId,
+          actor: { person_id: actor.personId ?? null, org_id: actor.orgId ?? orgId },
+          scope: { type: 'project', id: projectId },
+          data: {
+            invitation_id: invitationId,
+            org_id: orgId,
+            invited_by_org_id: rows[0].invited_by_org_id,
+            invite_capacity: inviteCapacity,
+          },
+        });
         const { rows: participant } = await client.query(
           `SELECT pa.project_id, pa.org_id, pa.capacity, pa.source, pa.contract_id,
-                  pa.invite_capacity, o.kind AS org_kind, o.legal_name, o.nif
+                  pa.invite_capacity, pa.specialty_code, o.kind AS org_kind, o.legal_name, o.nif
              FROM project.participation pa
              JOIN identity.organization o ON o.id = pa.org_id
             WHERE pa.project_id = $1 AND pa.org_id = $2 AND pa.capacity = 'consultant'`,
@@ -606,6 +653,19 @@ export function createProjectStore(pool) {
       });
     },
 
+    /**
+     * Compare-and-set a phase's status (PRD-10 E-13 activation). Answers the
+     * row when it moved, null when it was no longer `from` (a replay).
+     */
+    async setPhaseStatus({ phaseId, from, to }) {
+      const { rows } = await pool.query(
+        `UPDATE project.project_phase SET status = $3, updated_at = now()
+          WHERE id = $1 AND status = $2 RETURNING *`,
+        [phaseId, from, to],
+      );
+      return rows[0] ?? null;
+    },
+
     async insertSignOffRequest({ id, phaseId, requestedBy }) {
       const { rows } = await pool.query(
         `INSERT INTO project.phase_sign_off_request (id, phase_id, requested_by, status)
@@ -659,6 +719,9 @@ export function createProjectStore(pool) {
       if (!meta.key) return fn();
       return tx((client) => withIdempotency(client, meta, fn));
     },
+
+    // Share links (PRD-12 N-12) and the build port's location facts.
+    ...shareLinkQueries(pool, tx),
   };
 }
 

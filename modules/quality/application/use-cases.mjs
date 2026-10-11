@@ -23,7 +23,7 @@
 // (invariants §6.3/§6.4); a use case never half-commits.
 import { ProblemError } from '../../../platform/errors.mjs';
 import {
-  verificationTransition, nonConformityTransition,
+  verificationTransition, nonConformityTransition, nonConformityActions,
   verificationBody, nonConformityBody, inspectionBody,
 } from '../domain/lifecycle.mjs';
 
@@ -109,8 +109,13 @@ async function decideVerification({ viewer, store, verificationId, action, note 
   return { status: 200, body: verificationBody(decided) };
 }
 
-/** operationId: raiseNonConformity — client id = idempotency key. */
-export async function raiseNonConformity({ viewer, store, projectId, body }) {
+/**
+ * operationId: raiseNonConformity — client id = idempotency key.
+ * `ports.builds.locationsOf` checks `location_id` is a place of this build and
+ * `ports.documents.versionFacts` that each photo is a build file the raiser
+ * reads (PRD-12 N-3) — neither module's tables are read here.
+ */
+export async function raiseNonConformity({ viewer, store, ports = {}, projectId, body }) {
   requireActiveOrg(viewer);
   if (!viewer.has('org:quality:inspect')) throw new ProblemError('forbidden', null, { reason: 'role' });
   await requireParticipant({ viewer, store, projectId });
@@ -128,6 +133,9 @@ export async function raiseNonConformity({ viewer, store, projectId, body }) {
   if (body?.assigned_to_org_id !== undefined && body?.assigned_to_org_id !== null && !UUID.test(body.assigned_to_org_id)) {
     errors.assigned_to_org_id = 'an organisation id';
   }
+  if (body?.location_id !== undefined && body?.location_id !== null && !UUID.test(body.location_id)) {
+    errors.location_id = 'a location id';
+  }
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
   const actor = await requireActor(store, viewer);
@@ -139,7 +147,7 @@ export async function raiseNonConformity({ viewer, store, projectId, body }) {
     if (existing.raised_by_org_id === viewer.orgId
         && existing.raised_by_person_id === actor.id
         && existing.project_id === projectId) {
-      return { status: 201, body: nonConformityBody(existing) };
+      return { status: 201, body: await projectNonConformity({ viewer, store, nc: existing }) };
     }
     throw new ProblemError('idempotency_mismatch', 'this id was already used by a different request');
   }
@@ -155,21 +163,28 @@ export async function raiseNonConformity({ viewer, store, projectId, body }) {
     contractId = task.branch_contract_id ?? task.contract_id ?? null;
   }
 
+  const locationId = body.location_id ?? null;
+  if (locationId) await requireLocations({ ports, projectId, ids: [locationId], field: 'location_id' });
+  const photoIds = [...new Set(photos)];
+  await requirePhotos({ ports, viewer, projectId, ids: photoIds });
+  if (body.assigned_to_org_id) await requireParticipantOrg({ store, projectId, orgId: body.assigned_to_org_id });
+
   const created = await store.createNonConformity({
     id: body.id,
     projectId,
     taskId,
     contractId,
+    locationId,
     kind: body.kind ?? 'quality',
     severity: body.severity,
     description: body.description.trim(),
-    photoDocumentIds: [...new Set(photos)],
+    photoDocumentIds: photoIds,
     assignedToOrgId: body.assigned_to_org_id ?? null,
     raisedByOrgId: viewer.orgId,
     raisedByPersonId: actor.id,
     actor: actorOf(actor, viewer),
   });
-  return { status: 201, body: nonConformityBody(created) };
+  return { status: 201, body: await projectNonConformity({ viewer, store, nc: created }) };
 }
 
 /** operationId: assignNonConformity — raiser | client chain; open|rejected_fix → assigned. */
@@ -186,9 +201,8 @@ export async function assignNonConformity({ viewer, store, nonconformityId, body
     throw new ProblemError('forbidden', 'only the raiser or the client chain assigns', { reason: 'relationship' });
   }
 
-  // The openapi body is Decision{note} — it has no field naming the org, so
-  // an optional assigned_to_org_id is accepted as a benign superset; absent,
-  // the org named when the NC was raised stands. (Contract gap reported.)
+  // NonConformityAssign {assigned_to_org_id?, note?} (PRD-12 N-3); absent,
+  // the org named when the NC was raised stands.
   const assignedToOrgId = body?.assigned_to_org_id ?? nc.assigned_to_org_id ?? null;
   if (!assignedToOrgId) {
     throw new ProblemError('validation_failed', null, { errors: { assigned_to_org_id: 'name the organisation responsible for the fix' } });
@@ -196,6 +210,7 @@ export async function assignNonConformity({ viewer, store, nonconformityId, body
   if (!UUID.test(assignedToOrgId)) {
     throw new ProblemError('validation_failed', null, { errors: { assigned_to_org_id: 'an organisation id' } });
   }
+  await requireParticipantOrg({ store, projectId: nc.project_id, orgId: assignedToOrgId });
 
   return transitionNonConformity({
     viewer, store, nc, action: 'assign',
@@ -259,7 +274,7 @@ export async function rejectFixNonConformity({ viewer, store, nonconformityId, b
 }
 
 /** operationId: recordInspection — invited inspector | client chain; ledger only. */
-export async function recordInspection({ viewer, store, projectId, body }) {
+export async function recordInspection({ viewer, store, ports = {}, projectId, body }) {
   requireActiveOrg(viewer);
   if (!viewer.has('org:quality:inspect')) throw new ProblemError('forbidden', null, { reason: 'role' });
   await requireParticipant({ viewer, store, projectId });
@@ -288,6 +303,10 @@ export async function recordInspection({ viewer, store, projectId, body }) {
   if (!Array.isArray(taskIds) || taskIds.some((t) => !UUID.test(t ?? ''))) {
     errors.task_ids = 'a list of task ids';
   }
+  const locationIds = body?.location_ids ?? [];
+  if (!Array.isArray(locationIds) || locationIds.some((l) => !UUID.test(l ?? ''))) {
+    errors.location_ids = 'a list of location ids';
+  }
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
   if (taskIds.length) {
     const known = await store.tasksOfProject(projectId, taskIds);
@@ -295,6 +314,10 @@ export async function recordInspection({ viewer, store, projectId, body }) {
     if (missing.length) {
       throw new ProblemError('validation_failed', null, { errors: { task_ids: `not rows of this project: ${missing.join(', ')}` } });
     }
+  }
+
+  if (locationIds.length) {
+    await requireLocations({ ports, projectId, ids: [...new Set(locationIds)], field: 'location_ids' });
   }
 
   const actor = await requireActor(store, viewer);
@@ -315,6 +338,7 @@ export async function recordInspection({ viewer, store, projectId, body }) {
     checklist: checklist.map((c) => ({ item: c.item, ok: c.ok, ...(c.note !== undefined ? { note: c.note } : {}) })),
     findings: body.findings ?? null,
     taskIds: [...new Set(taskIds)],
+    locationIds: [...new Set(locationIds)],
     actor: actorOf(actor, viewer),
   });
   return { status: 201, body: inspectionBody(created) };
@@ -337,7 +361,53 @@ async function transitionNonConformity({ viewer, store, nc, action, set, eventTy
     actor: actorOf(actor, viewer),
   });
   if (!updated) throw new ProblemError('invalid_transition', 'someone moved this non-conformity first');
-  return { status: 200, body: nonConformityBody(updated) };
+  return { status: 200, body: await projectNonConformity({ viewer, store, nc: updated }) };
+}
+
+/**
+ * The wire body with the viewer's next steps. The client-chain query only
+ * runs when it can change the answer (an assignable NC the viewer did not
+ * raise).
+ */
+export async function projectNonConformity({ viewer, store, nc }) {
+  const assignable = nonConformityTransition(nc.status, 'assign').ok;
+  const inChain = assignable && viewer.orgId !== nc.raised_by_org_id
+    ? await store.isClientChain(viewer.orgId, { taskId: nc.task_id, contractId: nc.contract_id, projectId: nc.project_id })
+    : false;
+  return nonConformityBody(nc, nonConformityActions(nc, { orgId: viewer.orgId, inChain, has: (p) => viewer.has(p) }));
+}
+
+/** Every id must be a location of this build (project's build port). */
+async function requireLocations({ ports, projectId, ids, field }) {
+  if (!ports.builds?.locationsOf) throw new Error('quality needs the project build port to tag locations');
+  const known = await ports.builds.locationsOf(projectId, ids);
+  const missing = ids.filter((id) => !known.has(id));
+  if (missing.length) {
+    throw new ProblemError('validation_failed', null, { errors: { [field]: `not locations of this build: ${missing.join(', ')}` } });
+  }
+}
+
+/** Each photo must be a build file the raising organisation reads (documents port). */
+async function requirePhotos({ ports, viewer, projectId, ids }) {
+  if (!ids.length) return;
+  if (!ports.documents?.versionFacts) throw new Error('quality needs the documents query port to attach photos');
+  const bad = [];
+  for (const documentId of ids) {
+    const facts = await ports.documents.versionFacts({ documentId, orgId: viewer.orgId });
+    if (!facts || facts.project_id !== projectId) bad.push(documentId);
+  }
+  if (bad.length) {
+    throw new ProblemError('validation_failed', null, { errors: { photo_document_ids: `not files of this build: ${bad.join(', ')}` } });
+  }
+}
+
+/** The organisation told to fix it must take part in the build. */
+async function requireParticipantOrg({ store, projectId, orgId }) {
+  const project = await store.getProject(projectId);
+  const takesPart = project?.owner_org_id === orgId || (await store.isParticipant(projectId, orgId));
+  if (!takesPart) {
+    throw new ProblemError('validation_failed', null, { errors: { assigned_to_org_id: 'not an organisation on this build' } });
+  }
 }
 
 /** Load an NC with existence hiding: a non-participant gets 404, not 403. */
@@ -348,7 +418,7 @@ async function requireNonConformity({ viewer, store, nonconformityId }) {
   return nc;
 }
 
-function requireActiveOrg(viewer) {
+export function requireActiveOrg(viewer) {
   if (!viewer.orgId) throw new ProblemError('forbidden', 'pick an active organisation first', { reason: 'no_active_org' });
 }
 
@@ -363,7 +433,7 @@ async function requireActor(store, viewer) {
 }
 
 /** relationship: project.participant (∧ staffing for non-managers) — doc 16 §4. */
-async function requireParticipant({ viewer, store, projectId }) {
+export async function requireParticipant({ viewer, store, projectId }) {
   requireActiveOrg(viewer);
   const project = await store.getProject(projectId);
   if (!project) throw new ProblemError('not_found');
@@ -390,7 +460,7 @@ function noteOf(body) {
   return note || null;
 }
 
-function clampLimit(raw) {
+export function clampLimit(raw) {
   const n = Number(raw ?? 50);
   if (!Number.isInteger(n) || n < 1) return 50;
   return Math.min(n, 200);

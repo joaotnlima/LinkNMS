@@ -361,3 +361,16 @@ test('add + delete + update + link in one save each land in their own bucket', (
   assert.equal(diff.linkAdds[0].successor_id, 'T1');
   assert.equal(diff.linkAdds[0].predecessor_id, diff.idByKey['kAdd']);
 });
+
+test('PRD-03 R-2: a taxonomy pick sends specialty_code with the label; clearing sends null', async () => {
+  const { setTrade, toWire } = await import('../plan-authoring.ts');
+  const base = [{ key: 'p1', name: 'Roof', tasks: [], dependsOn: [], assigneePartyId: null, trade: '' }];
+  const picked = setTrade(base, 'p1', 'Tiled roofs', 'roofing-tiled');
+  const [prev] = toWire(base);
+  const [next] = toWire(picked);
+  assert.deepEqual(diffFields(prev, next).specialty_code, { value: 'roofing-tiled', base: null });
+  const freeText = setTrade(picked, 'p1', 'Telhado de xisto');
+  assert.equal(freeText[0].tradeCode, '');
+  assert.deepEqual(diffFields(next, toWire(freeText)[0]).specialty_code, { value: null, base: 'roofing-tiled' });
+  assert.equal('tradeCode' in prev, false, 'no code → the wire node is unchanged');
+});

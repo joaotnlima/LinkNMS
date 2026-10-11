@@ -44,6 +44,8 @@ export class V2Error extends Error {
     public detail: string | null = null,
     /** Field errors for `validation_failed`; keyed by field name. */
     public errors: Record<string, string> | null = null,
+    /** The whole problem body — extension members such as `conflicts` / `refused` (PRD-07). */
+    public problem: Record<string, unknown> | null = null,
   ) {
     super(message);
     this.name = 'V2Error';
@@ -81,11 +83,30 @@ export interface V2Request {
   /** Sets the `Idempotency-Key` header the write handlers dedupe on. */
   idempotencyKey?: string;
   /**
+   * Sets `If-Match` — the current `version` of a versioned aggregate (an RFP, a
+   * contract, a proposal; doc 11 "Concurrency"). A stale value is a 409.
+   */
+  ifMatch?: string | number;
+  /**
    * Allow a null viewer (a `security: []` route such as the future public RFP
    * token form, S5). Defaults false: like the /api/v2 route, an unauthenticated
    * caller on a members-only route is a 401 BEFORE dispatch, never a leak.
    */
   allowAnonymous?: boolean;
+  /**
+   * A multipart upload (PRD-09: the Excel import). In process the router gets
+   * exactly what the /api/v2 route's multipart translation gives it — strings,
+   * and each file as {filename, content_type, size, bytes}; over HTTP it is sent
+   * as real multipart/form-data. Mutually exclusive with `body`.
+   */
+  multipart?: Record<string, string | V2File>;
+}
+
+/** One file of a multipart request. */
+export interface V2File {
+  filename: string;
+  contentType: string;
+  bytes: Uint8Array;
 }
 
 // The problem body shape, exactly as platform/errors.mjs builds it.
@@ -102,7 +123,7 @@ function raise(status: number, body: unknown): never {
   const code = p.code ?? 'internal';
   const message = p.detail || p.title || `request failed (${status})`;
   if (status === 401 || code === 'unauthenticated') throw new V2Unauthenticated(p.detail ?? null);
-  throw new V2Error(status, code, message, p.detail ?? null, p.errors ?? null);
+  throw new V2Error(status, code, message, p.detail ?? null, p.errors ?? null, (body ?? null) as Record<string, unknown> | null);
 }
 
 function queryString(query?: V2Request['query']): string {
@@ -126,7 +147,24 @@ export async function v2<T>(req: V2Request): Promise<T> {
   return result.body as T;
 }
 
-async function callInProcess(req: V2Request): Promise<{ status: number; body: unknown }> {
+/**
+ * A GET the contract answers with a 302 (a short-lived signed download, e.g.
+ * PRD-12's `downloadSharedDocument`): the `Location` it points at. Same
+ * transports, same viewer resolution, same problem+json failures as `v2()`.
+ */
+export async function v2Redirect(req: V2Request): Promise<string> {
+  const result = isRemote() ? await callHttp(req) : await callInProcess(req);
+  if (result.status >= 400) raise(result.status, result.body);
+  const location = result.headers?.location;
+  if (result.status < 300 || result.status >= 400 || !location) {
+    throw new V2Error(502, 'internal', 'expected a redirect from /api/v2');
+  }
+  return location;
+}
+
+type CallResult = { status: number; body: unknown; headers?: Record<string, string> };
+
+async function callInProcess(req: V2Request): Promise<CallResult> {
   // The route decides auth here (server/v2/[[...path]]/route.ts): a null viewer
   // on a members-only route is a clean 401, never a dispatch with no identity.
   const viewer = await viewerFromClerk();
@@ -136,14 +174,15 @@ async function callInProcess(req: V2Request): Promise<{ status: number; body: un
 
   const headers: Record<string, string> = Object.fromEntries((await requestHeaders()).entries());
   if (req.idempotencyKey) headers['idempotency-key'] = req.idempotencyKey;
+  if (req.ifMatch !== undefined) headers['if-match'] = String(req.ifMatch);
 
   const result = await getRouter().dispatch({
     method: req.method,
     path: req.path,
     viewer,
     query: normaliseQuery(req.query),
-    body: req.body ?? null,
-    rawBody: req.body === undefined ? null : JSON.stringify(req.body),
+    body: req.multipart ? multipartInProcess(req.multipart) : (req.body ?? null),
+    rawBody: req.multipart || req.body === undefined ? null : JSON.stringify(req.body),
     headers,
   });
 
@@ -153,7 +192,17 @@ async function callInProcess(req: V2Request): Promise<{ status: number; body: un
   if (req.method !== 'GET' && result.status < 400) {
     after(() => dispatchOutbox());
   }
-  return { status: result.status, body: result.body };
+  return { status: result.status, body: result.body, headers: result.headers };
+}
+
+function multipartInProcess(parts: Record<string, string | V2File>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(parts)) {
+    out[k] = typeof v === 'string'
+      ? v
+      : { filename: v.filename, content_type: v.contentType, size: v.bytes.byteLength, bytes: Buffer.from(v.bytes) };
+  }
+  return out;
 }
 
 function normaliseQuery(query?: V2Request['query']): Record<string, string> {
@@ -166,8 +215,23 @@ function normaliseQuery(query?: V2Request['query']): Record<string, string> {
   return out;
 }
 
-async function callHttp(req: V2Request): Promise<{ status: number; body: unknown }> {
+async function callHttp(req: V2Request): Promise<CallResult> {
   const jar = await cookies();
+  if (req.multipart) {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(req.multipart)) {
+      if (typeof v === 'string') form.set(k, v);
+      else form.set(k, new Blob([Buffer.from(v.bytes)], { type: v.contentType }), v.filename);
+    }
+    const res = await fetch(`${API_BASE}/api/v2${req.path}${queryString(req.query)}`, {
+      method: req.method,
+      headers: { accept: 'application/json', cookie: jar.toString() },
+      body: form,
+      cache: 'no-store',
+    });
+    const text = await res.text();
+    return { status: res.status, body: text ? safeJson(text) : undefined };
+  }
   const hasBody = req.body !== undefined && req.method !== 'GET';
   const res = await fetch(`${API_BASE}/api/v2${req.path}${queryString(req.query)}`, {
     method: req.method,
@@ -179,12 +243,16 @@ async function callHttp(req: V2Request): Promise<{ status: number; body: unknown
       cookie: jar.toString(),
       ...(hasBody ? { 'content-type': 'application/json' } : {}),
       ...(req.idempotencyKey ? { 'idempotency-key': req.idempotencyKey } : {}),
+      ...(req.ifMatch !== undefined ? { 'if-match': String(req.ifMatch) } : {}),
     },
     body: hasBody ? JSON.stringify(req.body) : undefined,
     cache: 'no-store',
+    // A 302 (signed download) is answered to the caller, never followed here.
+    redirect: 'manual',
   });
   const text = await res.text();
-  return { status: res.status, body: text ? safeJson(text) : undefined };
+  const location = res.headers.get('location');
+  return { status: res.status, body: text ? safeJson(text) : undefined, ...(location ? { headers: { location } } : {}) };
 }
 
 function safeJson(text: string): unknown {

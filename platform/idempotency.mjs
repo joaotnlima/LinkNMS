@@ -70,3 +70,26 @@ export async function withIdempotency(client, { key, caller, operationId, body }
   );
   return { ...result, replayed: false };
 }
+
+/**
+ * In-memory twin of a store's `idempotent(meta, fn)` for DB-free tests: the
+ * same contract (no key → run; same key + same body → the stored result with
+ * `replayed: true`; same key + another body → idempotency_mismatch). A failed
+ * `fn` leaves no reservation behind, like the rolled-back transaction.
+ */
+export function createInMemoryIdempotency() {
+  const done = new Map();
+  return async function idempotent({ key, caller, operationId, body }, fn) {
+    if (!key) return fn();
+    const id = `${caller}\u0000${operationId}\u0000${key}`;
+    const hash = requestHash(body).toString('hex');
+    const prior = done.get(id);
+    if (prior) {
+      if (prior.hash !== hash) throw new ProblemError('idempotency_mismatch');
+      return { status: prior.status, body: structuredClone(prior.body), replayed: true };
+    }
+    const result = await fn();
+    done.set(id, { hash, status: result.status, body: structuredClone(result.body ?? null) });
+    return { ...result, replayed: false };
+  };
+}

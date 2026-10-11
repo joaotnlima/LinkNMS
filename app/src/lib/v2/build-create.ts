@@ -23,19 +23,18 @@
 //   • baseline / indicative_budget — the plan is the baseline's single source
 //     (LINA-219); a v2 draft carries no budget and the accepted plan sets the
 //     real figure. Sending a 0 here would be a second, competing source.
-//   • creatorRole, hasSignedContractor, expectedStart — these shaped v1's
-//     seed-time OPERATING MODEL and PHASE state, which v2 models through separate
-//     endpoints (participants, planning phases), NOT the project brief. They are
-//     carried by the participation / phase-seed increments, not the create call.
-//     `expectedStart` has no v2 brief field at all today (GAP-2).
+//   • creatorRole — persisted as `on_behalf_of_owner_email` when a GC creates for
+//     an owner (PRD-09 O-13); the owner path sends nothing extra.
+//   • hasSignedContractor, expectedStart — no longer asked (PRD-09 O-13): the
+//     contract shape is derived (D-35), the baseline is taken at award (D-43) and
+//     the start is the plan's first date (D-24).
 //
 // ── GAPS raised to the wiring increment (do not paper over here) ──────────────
 //   GAP-1  v2 requires `municipality_code`; the pen Basics screen does not
 //          collect it. The wiring increment MUST add the field to Basics — this
 //          seam refuses a blank rather than send a placeholder that would pollute
 //          a real record (the product's whole promise is truthful data).
-//   GAP-2  `expectedStart` is dropped. If the product wants it on v2, the brief
-//          schema needs a field (an openapi + module change), not a client hack.
+//   GAP-2  CLOSED by PRD-09 O-13: `expectedStart` is no longer asked.
 
 /** The wizard's inputs to a fresh build, pre-translation. Blank optionals are
  *  omitted from the wire body, never sent as empty strings. */
@@ -57,6 +56,11 @@ export interface BuildDraftV2Input {
    * (`on_behalf_of_owner_email`, doc 14 Q4). Optional; omitted when blank.
    */
   onBehalfOfOwnerEmail?: string;
+  /**
+   * The build's point (PRD-03 R-3), as typed: decimal degrees. Both or neither;
+   * parse them with `parseBuildPoint` first — this seam only forwards a valid pair.
+   */
+  location?: { lat: number; lng: number };
 }
 
 /** The `ProjectCreate` wire body, exactly as openapi `ProjectCreate` requires.
@@ -68,6 +72,7 @@ export interface ProjectCreateBody {
   address?: string;
   typology?: string;
   on_behalf_of_owner_email?: string;
+  location?: { lat: number; lng: number };
 }
 
 const clean = (v: string | undefined): string | undefined => {
@@ -94,5 +99,26 @@ export function toProjectCreateBody(input: BuildDraftV2Input, id: string): Proje
   if (typology) body.typology = typology;
   const onBehalf = clean(input.onBehalfOfOwnerEmail);
   if (onBehalf) body.on_behalf_of_owner_email = onBehalf.toLowerCase();
+  if (input.location) body.location = { lat: input.location.lat, lng: input.location.lng };
   return body;
+}
+
+/**
+ * The optional "where exactly" pair of Basics (PRD-03 R-3): both blank → no
+ * point; one blank, not a number or out of range → an error sentence for the
+ * form. Decimal comma accepted ("38,80").
+ */
+export function parseBuildPoint(
+  rawLat: string | undefined,
+  rawLng: string | undefined,
+): { location?: { lat: number; lng: number }; error?: string } {
+  const a = (rawLat ?? '').trim().replace(',', '.');
+  const b = (rawLng ?? '').trim().replace(',', '.');
+  if (!a && !b) return {};
+  const lat = Number(a);
+  const lng = Number(b);
+  if (!a || !b || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return { error: 'Give both latitude and longitude in decimal degrees (e.g. 38.8029 and -9.3817), or leave both blank.' };
+  }
+  return { location: { lat, lng } };
 }

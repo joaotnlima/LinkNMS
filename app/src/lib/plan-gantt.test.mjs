@@ -15,7 +15,7 @@ import {
   ganttWindow, barGeom, daysFromPixels,
   moveBar, resizeStart, resizeEnd, applyDrag, scheduleWindow, clickDates,
   baseWindow, clipBarGeom, barRect, connectorPath, connectorMidpoint, fillWindow,
-  procurementState, procurementLocksSchedule, procurementGeom,
+  procurementState, procurementLocksSchedule, procurementGeom, procurementChip, procurementTabLabel,
 } from './plan-gantt.ts';
 
 test('parseDay: UTC round-trip, rejects blanks and impossible days', () => {
@@ -381,7 +381,7 @@ test('connectorMidpoint: the arc-length midpoint lands in the middle of the arro
 
 // ── The tendering ⇄ schedule bridge (LINA-413) ───────────────────────────────
 
-test('procurementState: lifecycle folds to the four painted states', () => {
+test('procurementState: lifecycle folds to the five grid states', () => {
   assert.equal(procurementState({ status: 'draft', submittedCount: 0 }), 'draft');
   assert.equal(procurementState({ status: 'published', submittedCount: 0 }), 'tendering');
   // A bid in flips published → bids_in without waiting for the deadline.
@@ -389,8 +389,8 @@ test('procurementState: lifecycle folds to the four painted states', () => {
   // Closed is always bids_in — the deadline has passed, whatever the count.
   assert.equal(procurementState({ status: 'closed', submittedCount: 0 }), 'bids_in');
   assert.equal(procurementState({ status: 'awarded', submittedCount: 3 }), 'awarded');
-  // Cancelled leaves nothing to paint.
-  assert.equal(procurementState({ status: 'cancelled', submittedCount: 0 }), null);
+  // Cancelled is its own state now (PRD-01 G-2) — a chip, never a band.
+  assert.equal(procurementState({ status: 'cancelled', submittedCount: 0 }), 'cancelled');
 });
 
 test('procurementLocksSchedule: only an open tender locks the manual dates', () => {
@@ -429,16 +429,67 @@ test('procurementGeom: a window overhanging the view clips, flags the edge', () 
   assert.equal(g.bidsDueX, null);
 });
 
-test('procurementGeom: cancelled paints nothing', () => {
+test('procurementGeom: a cancelled tender keeps a red band, no tick, no lock (PRD-02 T-19)', () => {
   const win = { startDay: '2027-01-01', endDay: '2027-01-11', days: 11 };
-  assert.equal(procurementGeom(win, 10, {
+  const g = procurementGeom(win, 10, {
     status: 'cancelled', openedDay: '2027-01-03', bidsDueDay: '2027-01-07', submittedCount: 0,
-  }), null);
+  });
+  assert.equal(g.state, 'cancelled');
+  assert.ok(g.band);
+  assert.equal(g.bidsDueX, null);
+  assert.equal(g.locked, false);
+});
+
+test('procurementChip: a cancelled tender says why on hover (PRD-02 T-19)', () => {
+  const chip = procurementChip({
+    status: 'cancelled', openedDay: '2027-01-03', bidsDueDay: '2027-01-07', submittedCount: 0,
+    cancelReason: 'Owner changed the roof design',
+  });
+  assert.equal(chip.label, 'Cancelled');
+  assert.equal(chip.title, 'Tender cancelled — Owner changed the roof design');
 });
 
 test('procurementGeom: span wholly off-canvas and no tick → null', () => {
   const win = { startDay: '2027-02-01', endDay: '2027-02-10', days: 10 };
   assert.equal(procurementGeom(win, 10, {
     status: 'published', openedDay: '2027-01-01', bidsDueDay: '2027-01-05', submittedCount: 0,
+  }), null);
+});
+
+test('procurementChip: every state carries a word; counts and the winner when known (PRD-01 G-2)', () => {
+  const base = { openedDay: '2027-01-01', bidsDueDay: '2027-01-10' };
+  assert.equal(procurementChip(undefined), null);
+  assert.equal(procurementChip({ ...base, status: 'draft', submittedCount: 0 }).label, 'Draft');
+  assert.equal(
+    procurementChip({ ...base, status: 'published', submittedCount: 0, invitedCount: 3 }).label,
+    'Out for bids · 0/3 in',
+  );
+  assert.equal(
+    procurementChip({ ...base, status: 'published', submittedCount: 1, invitedCount: 3 }).label,
+    'Bids in · 1/3 — your move',
+  );
+  assert.equal(procurementChip({ ...base, status: 'published', submittedCount: 0 }).label, 'Out for bids');
+  assert.equal(procurementChip({ ...base, status: 'closed', submittedCount: 2 }).label, 'Bids in — your move');
+  assert.equal(
+    procurementChip({ ...base, status: 'awarded', submittedCount: 2, awardedTo: 'Acme' }).label,
+    'Awarded · Acme',
+  );
+  assert.equal(procurementChip({ ...base, status: 'cancelled', submittedCount: 0 }).state, 'cancelled');
+});
+
+test('procurementTabLabel: none / draft / n/m / n in / awarded (PRD-01 P-2)', () => {
+  const base = { openedDay: '2027-01-01', bidsDueDay: '2027-01-10' };
+  assert.equal(procurementTabLabel(undefined), 'none');
+  assert.equal(procurementTabLabel({ ...base, status: 'draft', submittedCount: 0 }), 'draft');
+  assert.equal(procurementTabLabel({ ...base, status: 'published', submittedCount: 0, invitedCount: 3 }), '0/3');
+  assert.equal(procurementTabLabel({ ...base, status: 'published', submittedCount: 1, invitedCount: 3 }), '1/3');
+  assert.equal(procurementTabLabel({ ...base, status: 'closed', submittedCount: 3 }), '3 in');
+  assert.equal(procurementTabLabel({ ...base, status: 'awarded', submittedCount: 3 }), 'awarded');
+});
+
+test('procurementGeom: a cancelled tender wholly off-canvas paints nothing', () => {
+  const win = { startDay: '2027-03-01', endDay: '2027-03-31', days: 31 };
+  assert.equal(procurementGeom(win, 10, {
+    status: 'cancelled', openedDay: '2027-01-03', bidsDueDay: '2027-01-07', submittedCount: 0,
   }), null);
 });

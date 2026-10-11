@@ -73,6 +73,8 @@ export interface V2Task {
   name: string;
   description?: string;
   specialty?: string;
+  /** PRD-03 R-2: the directory taxonomy code, when the row carries one. */
+  specialty_code?: string;
   location_id?: string;
   assignee?: V2TaskAssignee;
   dating_mode?: string;
@@ -81,15 +83,22 @@ export interface V2Task {
   duration_wd?: number;
   actual_start?: string | null;
   actual_finish?: string | null;
-  baseline: { start: string | null; finish: string | null; version?: number } | null;
+  baseline: { start: string | null; finish: string | null; version?: number; reason?: string; taken_at?: string } | null;
   schedule_state?: 'planned' | 'on_baseline' | 'extended' | 'sequence_warning';
   status: V2TaskStatus;
+  /** On the critical path — the server's one rule (planning domain/critical-path.mjs). */
+  is_critical?: boolean;
   acceptance_criteria?: string;
   can_edit?: boolean;
   editor_is_assignee?: boolean;
   cost?: V2CostRollup;
   open_variations?: number;
   open_questions?: number;
+  // PRD-13 — server-computed slippage (see ./slip-view.ts).
+  segments?: V2Segment[];
+  baseline_delta_wd?: number;
+  overrun_wd?: number;
+  projected?: { start: string; finish: string; cause_task_id?: string };
 }
 
 export type V2LinkAnchor = 'start' | 'end';
@@ -111,6 +120,8 @@ export interface V2ScheduleView {
   links: V2Link[];
   calendar?: unknown;
   health?: unknown;
+  handover?: V2Handover;
+  changes?: { total: number; unseen: number };
 }
 
 // ── The grid's shapes (restated from lib/plan-baseline.ts) ────────────────────
@@ -119,6 +130,8 @@ export interface V2ScheduleView {
 // have one import site for the v2 view.
 import type { StageStatus, StageRow } from '@/lib/plan-baseline';
 export type { StageStatus, StageRow } from '@/lib/plan-baseline';
+import { toPlanSlipView } from './slip-view.ts';
+import type { PlanSlipView, V2Segment, V2Handover } from './slip-view.ts';
 
 /** The dependency triple the grid draws links from (ADR-0020, typed deps). */
 export type GridDependencyType = 'starts_after' | 'starts_with' | 'ends_with';
@@ -136,6 +149,8 @@ export interface PlanGridView {
   isBaselined: boolean;
   /** Typed predecessor links per successor stage id (empty when none). */
   dependenciesBySuccessor: Record<string, Array<{ on: string; type: GridDependencyType }>>;
+  /** PRD-13: the server's slippage per task, the handover and the change count. */
+  slip?: PlanSlipView;
 }
 
 // ── Transforms ────────────────────────────────────────────────────────────────
@@ -204,11 +219,13 @@ export function toStageRows(tasks: V2Task[]): StageRow[] {
       key: t.id, // v2 task ids are stable (doc 05); no draft re-mint, so id IS the key
       name: t.name,
       trade: t.specialty ?? null,
+      tradeCode: t.specialty_code ?? null,
       assigneePartyId: t.assignee?.org_id ?? null, // org is the party in v2
       start: t.start,
       end: t.finish,
       costCents: toCostCents(t.cost),
       status: toStageStatus(t.status),
+      ...(t.is_critical ? { isCritical: true } : {}),
       children: build(t.id),
     }));
   };
@@ -245,6 +262,7 @@ export function toPlanGridView(view: V2ScheduleView): PlanGridView {
     rows: toStageRows(view.tasks ?? []),
     isBaselined: isBaselined(view.tasks ?? []),
     dependenciesBySuccessor: toDependencies(view.links ?? []),
+    slip: toPlanSlipView(view),
   };
 }
 

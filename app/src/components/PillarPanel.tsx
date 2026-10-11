@@ -6,11 +6,12 @@
 // does not — there is no safety surface, and it says so ("Not tracked yet",
 // ADR-0015 §2) rather than pretending an all-clear.
 //
-// This panel renders whatever the Ledger derived. No status math here — TIME→
-// SCHEDULE and COST→BUDGET were renames of existing derivations, SCOPE is
-// unchanged, and SAFETY is the service's static "not tracked" pillar.
+// This panel renders whatever the server derived. No status math here. Since
+// PRD-09 O-1 it is the build home's: the pillars come from getProjectOverview
+// (lib/v2/build-home-view.ts) and each tile links to the surface the caller
+// names in `links` — a pillar without a link renders as a plain tile.
 import Link from 'next/link';
-import type { Pillars, Pillar } from '@/lib/types';
+import type { Pillars, Pillar, PillarKey } from '@/lib/types';
 import { PillarGlyph } from './icons';
 import { money, delta } from '@/lib/format';
 
@@ -56,15 +57,14 @@ function Tile({ p, href }: { p: Pillar; href?: string }) {
     : <div className={`m14-pillar ${p.status}`}>{inner}</div>;
 }
 
-export function PillarPanel({ pillars, projectId }: { pillars: Pillars; projectId: string }) {
-  const base = `/projects/${projectId}`;
+export function PillarPanel({ pillars, links = {} }: { pillars: Pillars; links?: Partial<Record<PillarKey, string>> }) {
   // Order matches the pen: Schedule · Budget · Scope · Safety.
   return (
     <div className="m14-pillars" role="group" aria-label="Four-pillar project status">
-      <Tile p={pillars.schedule} href={`${base}/record?tab=schedule`} />
-      <Tile p={pillars.budget} href={`${base}/budget`} />
-      <Tile p={pillars.scope} href={`${base}/change-orders`} />
-      <Tile p={pillars.safety} />
+      <Tile p={pillars.schedule} href={links.schedule} />
+      <Tile p={pillars.budget} href={links.budget} />
+      <Tile p={pillars.scope} href={links.scope} />
+      <Tile p={pillars.safety} href={links.safety} />
     </div>
   );
 }

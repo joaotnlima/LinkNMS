@@ -69,8 +69,25 @@ export function verificationBody(row) {
   };
 }
 
-/** #/components/schemas/NonConformity. */
-export function nonConformityBody(row) {
+/**
+ * The transitions an organisation may take on a non-conformity now (PRD-12
+ * N-3) — the same rules the use cases enforce, so the screen offers exactly
+ * what the server will accept. `inChain` (client chain above the NC's row) is
+ * the caller's query answer; `has` is the viewer's permission check.
+ */
+export function nonConformityActions(nc, { orgId, inChain = false, has = () => true }) {
+  const out = [];
+  const isRaiser = orgId === nc.raised_by_org_id;
+  const can = (action) => nonConformityTransition(nc.status, action).ok;
+  if (can('assign') && (isRaiser || inChain) && has('org:quality:inspect')) out.push('assign');
+  if (can('fix') && orgId === nc.assigned_to_org_id && has('org:progress:report')) out.push('fix');
+  if (can('close') && isRaiser && has('org:quality:inspect')) out.push('close');
+  if (can('reject_fix') && isRaiser && has('org:quality:inspect')) out.push('reject_fix');
+  return out;
+}
+
+/** #/components/schemas/NonConformity. `actions` only when the caller projected them. */
+export function nonConformityBody(row, actions = undefined) {
   return {
     id: row.id,
     project_id: row.project_id,
@@ -82,6 +99,11 @@ export function nonConformityBody(row) {
     raised_by: { person_id: row.raised_by_person_id, org_id: row.raised_by_org_id },
     assigned_to_org_id: row.assigned_to_org_id ?? undefined,
     status: row.status,
+    location_id: row.location_id ?? undefined,
+    raised_at: iso(row.raised_at),
+    status_changed_at: iso(row.status_changed_at),
+    last_note: row.last_note ?? undefined,
+    ...(actions ? { actions } : {}),
   };
 }
 
@@ -94,6 +116,9 @@ export function inspectionBody(row) {
     checklist: row.checklist ?? [],
     findings: row.findings ?? undefined,
     task_ids: row.task_ids ?? [],
+    location_ids: row.location_ids ?? [],
+    inspector_org_id: row.inspector_org_id ?? undefined,
+    recorded_at: iso(row.recorded_at),
   };
 }
 

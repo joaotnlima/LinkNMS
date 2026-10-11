@@ -16,6 +16,7 @@
 // render and CSS picks.
 'use client';
 
+import Link from 'next/link';
 import { useClerk } from '@clerk/nextjs';
 
 function initials(name: string): string {
@@ -64,6 +65,10 @@ export function AccountMenu({
           <span className="psh-acct-name">{displayName}</span>
           <span className="psh-acct-role">{roleLabel}</span>
         </div>
+        {/* PRD-12 N-8: personal, organisation and billing settings. */}
+        <Link role="menuitem" className="psh-acct-link" href="/settings">
+          Settings
+        </Link>
         <button
           type="button"
           role="menuitem"

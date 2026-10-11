@@ -22,6 +22,22 @@ import { createContractingStore } from '@modules/contracting/infra/pg-store.mjs'
 import { createPlanningStore } from '@modules/planning/infra/pg-store.mjs';
 import { createQualityStore } from '@modules/quality/infra/pg-store.mjs';
 import { createCollaborationStore } from '@modules/collaboration/infra/pg-store.mjs';
+import { documentsConsumers } from '@modules/documents/application/consumers.mjs';
+import { createDocumentsStore } from '@modules/documents/infra/pg-store.mjs';
+import { createR2ObjectStorage } from '@modules/documents/infra/storage.mjs';
+import { selectDwgConverter } from '@modules/documents/infra/dwg-converters.mjs';
+// Published notification audience ports (PRD-12 N-1, doc 10 §Notification
+// centre): collaboration names recipients through these, never other tables.
+import { createIdentityAudience } from '@modules/identity/application/audience.mjs';
+import { createIdentityStore } from '@modules/identity/infra/pg-store.mjs';
+import { createTenderingAudience } from '@modules/tendering/application/audience.mjs';
+import { createTenderingStore } from '@modules/tendering/infra/pg-store.mjs';
+import { createPlanningAudience } from '@modules/planning/application/audience.mjs';
+import { createMailSender } from '@modules/tendering/infra/mail-sender.mjs';
+import { directoryConsumers } from '@modules/directory/application/consumers.mjs';
+import { createDirectoryStore } from '@modules/directory/infra/pg-store.mjs';
+import { tenderingConsumers } from '@modules/tendering/application/consumers.mjs';
+import { createInviteePort } from '@modules/tendering/application/invitee-port.mjs';
 
 import { getPool } from './registry';
 
@@ -36,7 +52,36 @@ function getHandlers(): Handlers {
       contractingConsumers(createContractingStore(pool)),
       planningConsumers(createPlanningStore(pool)),
       qualityConsumers(createQualityStore(pool)),
-      collaborationConsumers(createCollaborationStore(pool)),
+      // PRD-03 R-11: the directory's "On the record" read model (contract,
+      // change-order, done-task and proposal facts — never amounts, D-46).
+      // PRD-04 X-2: unclaimed profiles for the e-mail invitees of a sent RFP,
+      // named through tendering's published invitee port.
+      directoryConsumers(createDirectoryStore(pool), { invitees: createInviteePort(createTenderingStore(pool)) }),
+      // PRD-04 §6.3: a claimed profile back-fills its organisation on every
+      // past invite to that address (directory.profile.claimed).
+      tenderingConsumers(createTenderingStore(pool)),
+      // PRD-06: DWG/DXF previews. The converter is a port chosen by
+      // DWG_CONVERTER (default `none` → download only, reason
+      // converter_not_configured); LibreDWG (GPL) is never bundled — D-49 legal
+      // check pending, see to-be/08 §Documents.
+      documentsConsumers(createDocumentsStore(pool), {
+        storage: createR2ObjectStorage(),
+        converter: selectDwgConverter(process.env),
+      }),
+      collaborationConsumers(createCollaborationStore(pool), {
+        identity: createIdentityAudience(createIdentityStore(pool)),
+        tendering: createTenderingAudience(createTenderingStore(pool)),
+        planning: createPlanningAudience(createPlanningStore(pool)),
+        // Notification e-mails reuse the one MailSender port (LINA-412): same
+        // provider selection, same never-log-the-body rule. NOTIFICATIONS_MAIL_PROVIDER
+        // can hold them back (e.g. `noop`) independently of tender invites.
+        mail: {
+          sender: createMailSender({ provider: process.env.NOTIFICATIONS_MAIL_PROVIDER || undefined }),
+          baseUrl: () =>
+            process.env.NEXT_PUBLIC_APP_URL
+            ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://portal.linknms.com'),
+        },
+      }),
     );
   }
   return handlers;

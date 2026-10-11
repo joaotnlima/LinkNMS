@@ -1,0 +1,125 @@
+/* The drawing viewer (PRD-06; boards 3c F5 PdfMarkup, F6 DwgView, Component ·
+   Sheet). Tokens only (ADR-0009) — the board's bim.css modal restated on the
+   app's tokens: markups in the danger hue, measures in the baseline blue. */
+
+.vw-scrim { position: fixed; inset: 0; z-index: 60; background: var(--fade-dark); }
+.vw {
+  position: absolute; inset: 24px; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--surface-raised); color: var(--ink); border-radius: var(--radius-overlay, 14px);
+  box-shadow: 0 16px 48px var(--ink-25);
+}
+.vw-top, .vw-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 10px 16px; border-bottom: 1px solid var(--outline);
+}
+.vw-foot { border-bottom: 0; border-top: 1px solid var(--outline); }
+.vw-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vw-title { font-size: 16px; overflow-wrap: anywhere; }
+.vw-note { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.vw-vsel, .vw-input {
+  padding: 6px 10px; border: 1px solid var(--outline); border-radius: var(--radius-control, 8px);
+  background: var(--paper); color: var(--ink); font: inherit; font-size: 13px;
+}
+.vw-vsel { font-weight: 600; }
+.vw-mode { display: inline-flex; border: 1px solid var(--outline); border-radius: 999px; overflow: hidden; }
+.vw-mode button { border: 0; background: transparent; padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.vw-mode button.is-on { background: var(--owner); color: var(--paper); }
+.vw-mode button:disabled { cursor: not-allowed; opacity: .5; }
+.vw-tool {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--outline);
+  border-radius: var(--radius-control, 8px); background: var(--paper); color: var(--ink);
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-decoration: none;
+}
+.vw-tool.is-on { border-color: var(--owner); background: var(--owner-muted); color: var(--owner-fg); }
+.vw-tool:disabled { opacity: .5; cursor: not-allowed; }
+
+.vw-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 260px minmax(0, 1fr) 300px; }
+.vw-side, .vw-props { overflow: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.vw-side { border-right: 1px solid var(--outline); padding: 8px; }
+.vw-props { border-left: 1px solid var(--outline); }
+.vw-fgrp { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 8px 6px 2px; }
+.vw-fsub { font-size: 11px; color: var(--muted); padding: 6px 6px 2px; }
+.vw-frow {
+  width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 10px; align-items: center;
+  padding: 8px 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit;
+  font: inherit; font-size: 13px; text-align: left; text-decoration: none; cursor: pointer;
+}
+.vw-frow.is-on { background: var(--owner-muted); border-radius: 6px; }
+.vw-frow > span:nth-child(2), .vw-frow > b { overflow-wrap: anywhere; }
+.vw-frow-meta { grid-column: 2 / 4; font-size: 12px; color: var(--muted); }
+.vw-frow-meta.is-warn { color: var(--state-warning-fg); }
+.vw-sheets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 4px; }
+.vw-pthumb {
+  min-height: 52px; display: flex; align-items: flex-end; padding: 4px 6px; text-align: left;
+  border: 1px solid var(--outline); border-radius: 4px; background: var(--paper); color: var(--muted);
+  font: inherit; font-size: 11px; cursor: pointer;
+}
+.vw-pthumb.is-on { outline: 2px solid var(--owner); outline-offset: 1px; color: var(--ink); }
+
+.vw-centre { position: relative; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-sunken); }
+.vw-centre.is-markup { box-shadow: inset 0 0 0 3px var(--owner-muted); }
+.vw-stage { flex: 1; min-height: 0; overflow: auto; padding: 16px; display: block; }
+.vw-stage.is-dark { background: var(--ink); }
+.vw-stage.is-light, .vw-stage.is-paper { background: var(--surface-sunken); }
+.vw-sheet { position: relative; margin: 0 auto; background: var(--paper); box-shadow: 0 1px 4px var(--ink-15); }
+.vw-sheet canvas { display: block; }
+.vw-stage.is-dark .vw-sheet { background: transparent; box-shadow: none; }
+.vw-dwg { position: absolute; inset: 0; }
+.vw-dwg svg { display: block; width: 100%; height: 100%; }
+/* The preview is drawn for a light ground (colour 7 normalised to black by the
+   converter adapter); the dark ground inverts lightness and keeps the hues. */
+.vw-stage.is-dark .vw-dwg { filter: invert(1) hue-rotate(180deg); }
+.vw-stage-note { margin: 16px; color: var(--muted); font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.vw-stage-note.is-warn { color: var(--state-warning-fg); }
+.vw-banner {
+  margin: 10px 12px 0; display: flex; gap: 10px; padding: 8px 12px; border-radius: 8px; font-size: 12.5px; line-height: 1.45;
+  background: var(--owner-muted); color: var(--owner-fg);
+}
+.vw-prompt { margin: 10px 12px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.vw-zoom {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px;
+  border-top: 1px solid var(--outline); background: var(--surface-raised);
+}
+
+/* the markup layer: laid exactly over the rendered sheet */
+.mk-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.mk-layer.is-drawing { cursor: crosshair; touch-action: none; }
+.mk-shape { stroke: var(--state-danger); fill: none; cursor: pointer; }
+.mk-shape text { fill: var(--state-danger); stroke: none; }
+.mk-shape.is-measure, .mk-shape.is-live.is-measure { stroke: var(--plan-baseline); }
+.mk-shape.is-measure text { fill: var(--plan-baseline); font-weight: 700; }
+.mk-shape.is-draft { stroke-dasharray: 4 3; }
+.mk-shape.is-closed, .mk-shape.is-older { opacity: .45; }
+.mk-shape.is-on { stroke: var(--owner); }
+.mk-shape.is-on text { fill: var(--owner); }
+.mk-badge circle { fill: var(--state-danger); stroke: none; }
+.mk-badge text { fill: var(--paper); font-weight: 700; stroke: none; }
+.mk-cal { stroke: var(--plan-baseline); fill: none; }
+.mk-cal text { fill: var(--plan-baseline); stroke: none; }
+
+/* right panel */
+.vw-panel { display: flex; flex-direction: column; gap: 8px; }
+.vw-panel-hd { display: flex; flex-direction: column; gap: 2px; }
+.vw-grp { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.vw-mks { list-style: none; margin: 0; padding: 0; }
+.vw-mk { display: flex; gap: 6px; align-items: flex-start; border-bottom: 1px solid var(--line); }
+.vw-mk:last-child { border-bottom: 0; }
+.vw-mk.is-on { background: var(--owner-muted); border-radius: 6px; }
+.vw-mk-btn { flex: 1; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 8px 4px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.vw-n { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; background: var(--state-danger); color: var(--paper); }
+.vw-n.is-closed { background: var(--success); }
+.vw-linkbtn { border: 0; background: none; color: var(--owner); font: inherit; font-size: 12px; cursor: pointer; padding: 8px 4px; }
+.vw-actions { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+.vw-field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.vw-layers { display: flex; flex-direction: column; }
+.vw-cat { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.vw-cat input { accent-color: var(--owner); }
+.vw-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.vw-n-count { margin-left: auto; color: var(--muted); font-size: 12px; }
+.vw-warn { margin: 0; padding-left: 18px; color: var(--state-warning-fg); font-size: 12px; }
+
+@media (max-width: 900px) {
+  .vw { inset: 0; border-radius: 0; }
+  .vw-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(320px, 1fr) auto; overflow: auto; }
+  .vw-side, .vw-props { border: 0; border-bottom: 1px solid var(--outline); max-height: 220px; }
+}

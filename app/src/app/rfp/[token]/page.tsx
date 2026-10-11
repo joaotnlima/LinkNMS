@@ -27,7 +27,10 @@ import {
   type RfpLinkView,
 } from '@/lib/v2/rfp-link-view';
 
+import { BidderClarifications } from '@/components/tender/Clarifications';
+
 import { DeadGlyph, RfpShell, RfpState } from '../RfpShell';
+import { askQuestionAction } from './actions';
 import TokenModelViewer from './ModelViewer';
 import { ProposalForm } from './ProposalForm';
 
@@ -98,6 +101,22 @@ export default async function RfpTokenPage({
 
       <Scope view={view} token={token} />
 
+      {/* PRD-08 H-6..H-9: published answers (asker never named), this bidder's
+          own questions, and the ask box while questions are open. */}
+      <section className="rfp-sec">
+        <div className="card">
+          <div className="rfp-body">
+            <BidderClarifications
+              items={view.clarifications ?? []}
+              questionsOpen={view.questions_open ?? false}
+              questionsDeadline={view.rfp.questions_deadline ?? null}
+              rfpStatus={view.closed ? 'closed' : 'published'}
+              ask={askQuestionAction.bind(null, token)}
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="rfp-sec">
         <h2>Your proposal</h2>
         <ProposalForm token={token} mode={view.rfp.mode} />
@@ -139,9 +158,9 @@ function Scope({ view, token }: { view: RfpLinkView; token: string }) {
           {model ? (
             <TokenModelViewer
               token={token}
-              documentId={model.documentId}
-              fileName={model.fileName}
-              sizeBytes={model.sizeBytes}
+              documentId={model.document_id}
+              fileName={model.file_name}
+              sizeBytes={model.size_bytes}
             />
           ) : null}
         </div>

@@ -44,7 +44,7 @@ import {
 import './task-workspace.css';
 
 export function TaskWorkspace({
-  taskId, parties = [], heading = 'Conversation & files',
+  taskId, parties = [], heading, section = 'all', onFileCount,
 }: {
   /**
    * The v2 TASK id (a UUID), or null when the task exists only in the unsaved
@@ -54,7 +54,20 @@ export function TaskWorkspace({
   /** The build's members, for naming an author. */
   parties?: PartyRef[];
   heading?: string;
+  /**
+   * Which face to show (PRD-01 P-2): the thread (`conversation`), the files
+   * (`files`), both (`all`, the standalone task page), or nothing (`none` — the
+   * panel keeps the workspace mounted on its other tabs so the ONE read survives
+   * tab switches and the Files label can carry its count).
+   */
+  section?: 'all' | 'conversation' | 'files' | 'none';
+  /** Reports the task's file count once loaded (null while unknown). */
+  onFileCount?: (count: number | null) => void;
 }) {
+  const title = heading
+    ?? (section === 'conversation' ? 'Conversation' : section === 'files' ? 'Files' : 'Conversation & files');
+  const showThread = section === 'all' || section === 'conversation';
+  const showFiles = section === 'all' || section === 'files';
   const [view, setView] = useState<WorkspaceView | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +82,10 @@ export function TaskWorkspace({
   const [nowMs] = useState(() => Date.now());
 
   const dir = partyIndex(parties);
+
+  // The Files tab label carries the count (P-2): report it whenever it changes.
+  const docCount = view ? view.documents.length : null;
+  useEffect(() => { onFileCount?.(docCount); }, [docCount, onFileCount]);
 
   // One read per task. The id IS the identity of the thread, so switching tasks in
   // the drawer re-reads rather than reconciling — and a stale response from the
@@ -143,11 +160,13 @@ export function TaskWorkspace({
     }
   }, [taskId]);
 
+  if (section === 'none') return null;
+
   // ── The unsaved state (the rails anchor on a PERSISTED task id) ────────────
   if (!taskId) {
     return (
-      <section className="tws" aria-label={heading}>
-        <h3 className="tws-h">{heading}</h3>
+      <section className="tws" aria-label={title}>
+        <h3 className="tws-h">{title}</h3>
         <p className="tws-quiet">
           Save the plan to start the conversation. Comments and files live on the task once it is
           saved — until then there is nothing for them to hang on.
@@ -157,15 +176,17 @@ export function TaskWorkspace({
   }
 
   return (
-    <section className="tws" aria-label={heading}>
-      <h3 className="tws-h">{heading}</h3>
+    <section className="tws" aria-label={title}>
+      <h3 className="tws-h">{title}</h3>
 
       {error ? <p role="alert" className="tws-error">{error}</p> : null}
 
       {loading ? (
-        <p className="tws-quiet" role="status">Loading the conversation…</p>
+        <p className="tws-quiet" role="status">{showThread ? 'Loading the conversation…' : 'Loading the files…'}</p>
       ) : view ? (
         <>
+          {showThread ? (
+          <>
           <ol className="tws-thread">
             {view.comments.length === 0 ? (
               <li className="tws-quiet">
@@ -206,7 +227,10 @@ export function TaskWorkspace({
               </button>
             </div>
           </div>
+          </>
+          ) : null}
 
+          {showFiles ? (
           <div className="tws-files">
             <div className="tws-files-hd">
               <h4 className="tws-sub">Files</h4>
@@ -242,6 +266,7 @@ export function TaskWorkspace({
               </ul>
             )}
           </div>
+          ) : null}
         </>
       ) : null}
     </section>

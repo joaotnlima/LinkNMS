@@ -28,12 +28,13 @@
 // figure). A draft is created with a 0 baseline and the plan establishes the real
 // number, so nothing is typed twice. See the GAPS note in @/lib/build-creation.
 //
-// Expected start is a month PICKER (pen), not a free date input: the value is the
-// same "YYYY-MM" string the column already stored.
+// PRD-09 O-13: "Expected start" and "signed contractor?" are no longer asked —
+// the v2 model has no field for them (see build-creation.ts). A GC creator gives
+// the owner's email instead, which IS persisted (on_behalf_of_owner_email).
 import { redirect } from 'next/navigation';
 import { WizardChrome } from '@/components/WizardChrome';
 import { isSignedIn } from '@/lib/api';
-import { expectedStartOptions, isCreatorRole } from '@/lib/build-creation';
+import { isCreatorRole } from '@/lib/build-creation';
 import { BasicsForm } from './BasicsForm';
 import '../../../build-wizard.css';
 
@@ -56,16 +57,12 @@ export default async function NewBuildBasicsPage({
   // hit on this URL (no `?as`) means.
   const creatorRole = isCreatorRole(as) ? as : 'owner';
 
-  // Computed on the server at request time so the list always starts from the
-  // current month; the value is "YYYY-MM", the label is "March 2026".
-  const months = expectedStartOptions(new Date());
-
   // No step rail: v2 creation is a single step (Basics) that lands on the record
   // — operating-model is dropped and invite deferred (LINA-367/386), so the old
   // three-step Basics/Model/Invite rail would lie about what is left.
   return (
     <WizardChrome>
-      <BasicsForm creatorRole={creatorRole} months={months} />
+      <BasicsForm creatorRole={creatorRole} />
     </WizardChrome>
   );
 }

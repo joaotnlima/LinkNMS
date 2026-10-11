@@ -161,6 +161,8 @@ export interface StageRow {
   key: string | null;
   name: string;
   trade: string | null;
+  /** The directory taxonomy code behind the label, when one was picked (PRD-03 R-2). */
+  tradeCode?: string | null;
   /** The owning member's party id, or null (LINA-246). Never a name. */
   assigneePartyId: string | null;
   start: string | null;
@@ -168,6 +170,8 @@ export interface StageRow {
   costCents: number | null;
   /** Current execution status (LINA-306), derived from progress history. */
   status: StageStatus;
+  /** On the critical path, as the server computed it (v2 `Task.is_critical`). */
+  isCritical?: boolean;
   children: StageRow[];
 }
 

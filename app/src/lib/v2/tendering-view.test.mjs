@@ -16,6 +16,7 @@ import {
   compareRenderer, shortlistedLanes, compareBlockedReason,
   serializeCompareIds, parseCompareIds, proposalDocumentDownloadPath,
 } from './tendering-view.ts';
+import { money, moneyPrecise, delta, parseAmountToCents } from '../format.ts';
 
 // ── money ─────────────────────────────────────────────────────────────────
 test('formatMoney: whole euros, no cents', () => {
@@ -31,6 +32,16 @@ test('formatMoney: ABSENT money is "—", never €0 (the money gate at work)', 
 test('formatMoney: a non-EUR currency prints its code, negatives keep the sign', () => {
   assert.equal(formatMoney({ amount_cents: 5000, currency: 'USD' }), 'USD 50');
   assert.equal(formatMoney({ amount_cents: -2500, currency: 'EUR' }), '-€25');
+});
+
+test('lib/format money is the SAME € formatter as tendering (one shared formatter)', () => {
+  assert.equal(money(18000000), formatMoney({ amount_cents: 18000000, currency: 'EUR' }));
+  assert.equal(money(18000000), '€180,000');
+  assert.equal(moneyPrecise(150050), '€1,500.50');
+  assert.deepEqual(delta(-2500), { text: '−€25', dir: 'down' });
+  assert.deepEqual(delta(0), { text: '€0', dir: 'flat' });
+  // A typed euro sign parses like a dollar sign always did.
+  assert.equal(parseAmountToCents('€1,250.50'), 125050);
 });
 
 // ── lead time in weeks (LINA-420) ───────────────────────────────────────────

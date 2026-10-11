@@ -1,5 +1,9 @@
 // Documents domain (doc 08 §Documents) — pure: vocabularies, storage-key
 // shape, wire bodies. No I/O.
+import { MAX_UPLOAD_BYTES } from '../../../platform/uploads.mjs';
+import { fileTypeOf } from './files.mjs';
+
+export { MAX_UPLOAD_BYTES };
 
 export const SCOPE_TYPES = Object.freeze([
   'project', 'location', 'contract', 'task', 'rfp', 'proposal',
@@ -24,6 +28,7 @@ export function validateFile(file) {
   if (typeof file.name !== 'string' || !file.name.trim()) errors['file.name'] = 'required';
   if (typeof file.mime !== 'string' || !/^[\w.+-]+\/[\w.+-]+$/.test(file.mime)) errors['file.mime'] = 'a mime type';
   if (!Number.isInteger(file.size_bytes) || file.size_bytes <= 0) errors['file.size_bytes'] = 'a positive integer';
+  else if (file.size_bytes > MAX_UPLOAD_BYTES) errors['file.size_bytes'] = `at most ${MAX_UPLOAD_BYTES} bytes (100 MB)`;
   if (typeof file.sha256 !== 'string' || !SHA256.test(file.sha256)) errors['file.sha256'] = '64 hex characters';
   return errors;
 }
@@ -53,14 +58,25 @@ export function parseVersionRef(ref) {
   return { documentId: m[1], versionNo: Number(m[2]) };
 }
 
+/** The original file name a version was uploaded under (the storage key keeps it, sanitised). */
+export function fileNameOf(storageKey) {
+  const parts = String(storageKey ?? '').split('/');
+  return parts[parts.length - 1] ?? '';
+}
+
 /** Wire body (schema Document). Versions newest-last, append-only order. */
 export function documentBody(doc, versions = []) {
+  const latest = versions[versions.length - 1] ?? null;
   return {
     id: doc.id,
+    project_id: doc.project_id ?? null,
     scope_type: doc.scope_type,
     scope_id: doc.scope_id,
     kind: doc.kind,
     title: doc.title,
+    file_type: latest ? fileTypeOf(fileNameOf(latest.storage_key), latest.mime) : fileTypeOf(doc.title),
+    preview_status: doc.preview_status ?? 'ready',
+    ...(doc.preview_reason ? { preview_reason: doc.preview_reason } : {}),
     share_with_ancestors: doc.share_with_ancestors,
     current_version: doc.current_version,
     versions: versions.map((v) => ({
@@ -70,6 +86,9 @@ export function documentBody(doc, versions = []) {
       sha256: v.sha256,
       uploaded_by: { person_id: v.uploaded_by_person_id, org_id: v.uploaded_by_org_id },
       uploaded_at: v.uploaded_at,
+      ...(v.note ? { note: v.note } : {}),
+      ...(v.base_version_no ? { base_version_no: v.base_version_no } : {}),
+      change_kind: v.change_kind ?? 'upload',
     })),
   };
 }

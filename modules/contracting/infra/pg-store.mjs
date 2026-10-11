@@ -146,6 +146,18 @@ export function createContractingStore(pool) {
       return rows.length > 0;
     },
 
+    /** The live prime contractor of a build (application/party-port.mjs). */
+    async isLivePrimeSupplier(projectId, orgId) {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM contracting.contract
+          WHERE project_id = $1 AND supplier_org_id = $2 AND kind = 'prime'
+            AND status IN ('signed','active','provisionally_received')
+          LIMIT 1`,
+        [projectId, orgId],
+      );
+      return rows.length > 0;
+    },
+
     async getOrganization(orgId) {
       const { rows } = await pool.query('SELECT * FROM identity.organization WHERE id = $1', [orgId]);
       return rows[0] ?? null;
@@ -472,6 +484,24 @@ export function createContractingStore(pool) {
         [rows[0].contract_id],
       );
       return { payment: rows[0], contract: contracts[0] };
+    },
+
+    /**
+     * The cost side of a build for one client org (PRD-09 O-1, D-38) —
+     * application/cost-port.mjs. Signed contracts only.
+     */
+    async clientCostSummary(projectId, orgId) {
+      const { rows } = await pool.query(
+        `SELECT count(DISTINCT c.id)::int AS contracts,
+                coalesce(sum(round(b.quantity * b.unit_price_cents)) FILTER (WHERE b.introduced_by_change_order_id IS NULL), 0) AS baseline_cents,
+                coalesce(sum(round(b.quantity * b.unit_price_cents)) FILTER (WHERE b.superseded_by_change_order_id IS NULL), 0) AS current_cents
+           FROM contracting.contract c
+           LEFT JOIN contracting.boq_item b ON b.contract_id = c.id
+          WHERE c.project_id = $1 AND c.client_org_id = $2
+            AND c.status IN ('signed','active','provisionally_received','closed')`,
+        [projectId, orgId],
+      );
+      return rows[0];
     },
 
     /** Financials — every sum in SQL so rounding is checks.sql §2 exactly. */

@@ -178,6 +178,7 @@ function fakeStore() {
             state.links = state.links.map((l) => (l.id === id ? { ...l, ...patch } : l));
           },
           removeLink: (id) => { state.links = state.links.filter((l) => l.id !== id); },
+          insertProgress: (args) => this.insertProgress(args),
           ledger: (entry) => state.ledger.push(entry.type),
           publish: (evt) => state.events.push(evt),
         },
@@ -228,6 +229,10 @@ describe('planning over the /api/v2 router', () => {
       assert.equal(byId[TASK_B].assignee.inherited, true);
       assert.equal(res.body.links.length, 1);
       assert.ok(res.body.health.undated_rows.some((r) => r.id === OWNER_ROW));
+      // The server's critical path (audit S4b): every row says, the undated row never is.
+      assert.ok(res.body.tasks.every((t) => typeof t.is_critical === 'boolean'));
+      assert.equal(byId[OWNER_ROW].is_critical, false);
+      assert.ok(res.body.tasks.some((t) => t.is_critical));
     });
 
     test('the owner edits everywhere', async () => {
@@ -440,7 +445,12 @@ describe('planning over the /api/v2 router', () => {
         start: '2026-09-23', finish: '2026-09-25',
       });
       assert.equal(res.status, 200);
-      assert.deepEqual(res.body.would_move, [{ id: TASK_B, start: '2026-09-28', finish: '2026-09-29' }]);
+      assert.deepEqual(res.body.would_move, [{ id: TASK_B, name: 'Estrutura', start: '2026-09-28', finish: '2026-09-29' }]);
+      // PRD-13 S-10: the impact note — new project finish; no baseline here, so
+      // no delta vs baseline and nobody is notified.
+      assert.equal(res.body.project_finish.after, '2026-09-29');
+      assert.equal(res.body.baseline_delta_wd, undefined);
+      assert.deepEqual(res.body.notify, []);
       assert.equal(store.state.tasks.get(TASK_A).start, '2026-09-21'); // untouched
     });
   });
@@ -677,5 +687,68 @@ describe('planning over the /api/v2 router', () => {
       const byId = Object.fromEntries(read.body.tasks.map((t) => [t.id, t]));
       assert.equal(byId[SUB_ROOT].start, '2026-09-21'); // earliest of its new child TASK_A
     });
+  });
+});
+
+describe('specialty_code — the directory taxonomy on a row (PRD-03 R-2)', () => {
+  const specialties = { exists: async (code) => ['roofing', 'roofing-tiled'].includes(code) };
+  let router;
+  let store;
+  beforeEach(() => {
+    router = createRouter();
+    store = fakeStore();
+    registerPlanning(router, { store, specialties });
+  });
+  const dispatch = (method, path, v, body) => router.dispatch({ method, path, viewer: v, body, headers: {} });
+
+  test('a row is created and re-coded with a taxonomy code; the free-text label stays', async () => {
+    const id = uuid();
+    const created = await dispatch('POST', `/projects/${PROJECT}/tasks`, viewer(GC_ORG), {
+      id, parent_id: GC_ROOT, name: 'Telhado', specialty: 'Telhados (sub)', specialty_code: 'roofing',
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.task.specialty, 'Telhados (sub)');
+    assert.equal(created.body.task.specialty_code, 'roofing');
+    const patched = await dispatch('PATCH', `/tasks/${id}`, viewer(GC_ORG), {
+      client_change_id: uuid(), changes: { specialty_code: { value: 'roofing-tiled', base: 'roofing' } },
+    });
+    assert.equal(patched.status, 200);
+    assert.equal(patched.body.task.specialty_code, 'roofing-tiled');
+    const cleared = await dispatch('PATCH', `/tasks/${id}`, viewer(GC_ORG), {
+      client_change_id: uuid(), changes: { specialty_code: { value: null } },
+    });
+    assert.equal(cleared.body.task.specialty_code, undefined);
+  });
+
+  test('an unknown or malformed code is 422; without the taxonomy port a code is refused', async () => {
+    const bad = await dispatch('POST', `/projects/${PROJECT}/tasks`, viewer(GC_ORG), {
+      id: uuid(), parent_id: GC_ROOT, name: 'X', specialty_code: 'made-up',
+    });
+    assert.equal(bad.status, 422);
+    assert.ok(bad.body.errors.specialty_code);
+    const malformed = await dispatch('PATCH', `/tasks/${TASK_A}`, viewer(GC_ORG), {
+      client_change_id: uuid(), changes: { specialty_code: { value: 'Roofing!' } },
+    });
+    assert.equal(malformed.status, 422);
+    const bare = createRouter();
+    registerPlanning(bare, { store: fakeStore() });
+    const noPort = await bare.dispatch({
+      method: 'POST', path: `/projects/${PROJECT}/tasks`, viewer: viewer(GC_ORG), headers: {},
+      body: { id: uuid(), parent_id: GC_ROOT, name: 'X', specialty_code: 'roofing' },
+    });
+    assert.equal(noPort.status, 422);
+  });
+
+  test('specialty labels moved to /specialty-labels', async () => {
+    store.listSpecialties = async () => ['Telhados de xisto'];
+    const res = await dispatch('GET', '/specialty-labels', viewer(GC_ORG));
+    assert.equal(res.status, 200);
+    assert.ok(res.body.items.some((s) => s.label === 'Roofing'));
+    assert.ok(res.body.items.some((s) => s.label === 'Telhados de xisto'));
+    assert.deepEqual(res.body.specialties, res.body.items); // deprecated twin (audit S6)
+    assert.equal(router.match('GET', '/specialties'), null);
+    // D-34: remembering a label needs org:plan:edit (audit).
+    const refused = await dispatch('POST', '/specialty-labels', viewer(GC_ORG, { perms: [] }), { label: 'Xisto' });
+    assert.deepEqual([refused.status, refused.body.reason], [403, 'role']);
   });
 });

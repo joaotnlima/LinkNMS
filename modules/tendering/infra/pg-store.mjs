@@ -18,6 +18,9 @@ import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { publishEvent } from '../../../platform/outbox.mjs';
 import { withIdempotency } from '../../../platform/idempotency.mjs';
+import { clarificationQueries } from './pg-clarifications.mjs';
+import { audienceQueries } from './pg-audience.mjs';
+import { bidRequestQueries } from './pg-bid-requests.mjs';
 
 export function createTenderingStore(pool) {
   async function tx(fn) {
@@ -46,6 +49,24 @@ export function createTenderingStore(pool) {
     return rows[0] ?? null;
   }
 
+  /**
+   * The guarded status move, stamping the moment the RFP entered `to`
+   * (PRD-02 T-10) and, on cancel, the issuer's reason (T-19). Null when `from`
+   * raced away.
+   */
+  async function moveRfp(client, { rfpId, from, to, reason }) {
+    const { rows } = await client.query(
+      `UPDATE tendering.rfp SET status = $3, version = version + 1,
+         published_at = CASE WHEN $3 = 'published' THEN now() ELSE published_at END,
+         closed_at    = CASE WHEN $3 = 'closed'    THEN now() ELSE closed_at END,
+         cancelled_at = CASE WHEN $3 = 'cancelled' THEN now() ELSE cancelled_at END,
+         cancel_reason = CASE WHEN $3 = 'cancelled' THEN $4 ELSE cancel_reason END
+        WHERE id = $1 AND status = $2 RETURNING id`,
+      [rfpId, from, to, reason],
+    );
+    return rows.length > 0;
+  }
+
   async function insertPackage(client, { rfpId, packageVersion, packageRows, packageItems }) {
     for (const row of packageRows) {
       await client.query(
@@ -68,6 +89,14 @@ export function createTenderingStore(pool) {
   }
 
   return {
+    // Clarifications + the tendering home (PRD-08) — infra/pg-clarifications.mjs.
+    ...clarificationQueries(pool, tx),
+    // The notification audience port's reads (PRD-12) — infra/pg-audience.mjs.
+    ...audienceQueries(pool),
+    // Requests to bid, the company inbox and the directory links (PRD-04) —
+    // infra/pg-bid-requests.mjs.
+    ...bidRequestQueries(pool, tx),
+
     // ── cross-schema reads (query ports) ─────────────────────────────────
     async getPersonByClerkId(clerkUserId) {
       const { rows } = await pool.query('SELECT * FROM identity.person WHERE clerk_user_id = $1', [clerkUserId]);
@@ -151,7 +180,7 @@ export function createTenderingStore(pool) {
            )
          SELECT id AS task_id,
                 CASE WHEN rel_depth = 0 THEN NULL ELSE parent_id END AS parent_task_id,
-                name, description AS scope_text, specialty, position
+                name, description AS scope_text, specialty, specialty_code, position
            FROM sub ORDER BY rel_depth, position`,
         [projectId, rootTaskIds],
       );
@@ -172,6 +201,19 @@ export function createTenderingStore(pool) {
       return loadRfp(pool, rfpId);
     },
 
+    /**
+     * The build's model this RFP references (PRD-07 §5): a document id, and a
+     * pinned version or null (follows the current version). Draft-only is the
+     * use case's rule; a package edit of a draft is not ledgered (the model's
+     * bytes are, by Documents).
+     */
+    async setRfpModel({ rfpId, documentId, versionNo }) {
+      await pool.query(
+        'UPDATE tendering.rfp SET model_document_id = $2, model_version_no = $3 WHERE id = $1',
+        [rfpId, documentId, versionNo],
+      );
+    },
+
     async packageOf(rfpId, packageVersion) {
       const { rows } = await pool.query(
         `SELECT task_id, parent_task_id, name, scope_text, specialty, position
@@ -188,19 +230,6 @@ export function createTenderingStore(pool) {
         [rfpId, packageVersion],
       );
       return { rows, items };
-    },
-
-    async clarificationsOf(rfpId) {
-      const { rows } = await pool.query(
-        'SELECT * FROM tendering.clarification WHERE rfp_id = $1 ORDER BY id',
-        [rfpId],
-      );
-      return rows;
-    },
-
-    async getClarification(clarificationId) {
-      const { rows } = await pool.query('SELECT * FROM tendering.clarification WHERE id = $1', [clarificationId]);
-      return rows[0] ?? null;
     },
 
     async isRecipient(rfpId, orgId) {
@@ -224,8 +253,9 @@ export function createTenderingStore(pool) {
         `SELECT rec.id, rec.rfp_id, rec.org_id, rec.email, rec.status,
                 rec.expires_at, rec.revoked_at,
                 r.title, r.scope_text, r.specialties, r.submission_deadline,
-                r.purpose, r.mode,
+                r.questions_deadline, r.purpose, r.mode,
                 r.status AS rfp_status, r.project_id, r.package_version,
+                r.model_document_id, r.model_version_no,
                 pr.name AS project_name,
                 -- The site's name is a public-safe locality; the full address
                 -- (PII) is never handed to an anonymous bidder.
@@ -513,6 +543,55 @@ export function createTenderingStore(pool) {
       return rows[0] ?? null;
     },
 
+    /**
+     * The per-task procurement read model of a project (PRD-01 G-2/G-3): one
+     * row per (root task, RFP) pair of the tenders `issuerOrgId` ISSUED on the
+     * project — the issuer clause is in SQL, so no other org's tender or lane
+     * ever leaves here (V8). Each row carries the RFP's roots, its lane-status
+     * histogram ({status: n}, never a price) and the awarded bidder's identity;
+     * domain/task-procurement.mjs picks the governing RFP per task and folds
+     * the counts. One query, whatever the number of tendered rows.
+     */
+    /**
+     * Every (root task, RFP) pair of the issuer's tenders, for one page of
+     * tendered root tasks (keyset on task id): all of a task's tenders land on
+     * the same page, so the domain can pick the governing one.
+     */
+    async taskProcurementOfProject(projectId, issuerOrgId, { afterTaskId = null, limit = 200 } = {}) {
+      const { rows } = await pool.query(
+        `SELECT rr.task_id, r.id, r.title, r.status, r.created_at, r.submission_deadline,
+                r.excluded_task_ids, r.published_at, r.closed_at, r.awarded_at, r.cancelled_at,
+                r.cancel_reason,
+                coalesce((SELECT array_agg(x.task_id ORDER BY x.task_id) FROM tendering.rfp_root x
+                           WHERE x.rfp_id = r.id), '{}') AS root_task_ids,
+                coalesce((SELECT jsonb_object_agg(s.status, s.n)
+                            FROM (SELECT p.status, count(*)::int AS n FROM tendering.proposal p
+                                   WHERE p.rfp_id = r.id GROUP BY p.status) s), '{}'::jsonb) AS lane_counts,
+                (SELECT count(*)::int FROM tendering.clarification c
+                  WHERE c.rfp_id = r.id AND c.status = 'open') AS open_question_count,
+                ap.bidder_org_id AS awarded_org_id,
+                coalesce(rec.company_name, rec.email) AS awarded_recipient_name
+           FROM tendering.rfp r
+           JOIN tendering.rfp_root rr ON rr.rfp_id = r.id
+           LEFT JOIN tendering.proposal ap ON ap.id = r.awarded_proposal_id
+           LEFT JOIN tendering.rfp_recipient rec ON rec.id = ap.recipient_id
+          WHERE r.project_id = $1 AND r.issuer_org_id = $2
+            AND rr.task_id IN (SELECT DISTINCT xr.task_id FROM tendering.rfp_root xr
+                                 JOIN tendering.rfp x ON x.id = xr.rfp_id
+                                WHERE x.project_id = $1 AND x.issuer_org_id = $2
+                                  AND ($3::uuid IS NULL OR xr.task_id > $3::uuid)
+                                ORDER BY xr.task_id LIMIT $4)
+          ORDER BY rr.task_id, r.id`,
+        [projectId, issuerOrgId, afterTaskId, limit + 1],
+      );
+      const taskIds = [...new Set(rows.map((r) => r.task_id))];
+      const pageIds = new Set(taskIds.slice(0, limit));
+      return {
+        items: rows.filter((r) => pageIds.has(r.task_id)),
+        nextTaskId: taskIds.length > limit ? taskIds[limit - 1] : null,
+      };
+    },
+
     /** Every lane of an RFP — issuer-side internals (award, comparison). */
     async lanesOfRfp(rfpId) {
       const { rows } = await pool.query(
@@ -542,14 +621,14 @@ export function createTenderingStore(pool) {
       return rows;
     },
 
-    /** Open listing (D-15): published, visibility open, filterable. */
+    /** Listed RFPs (D-15/D-47): published, listed, filterable (deprecated read). */
     async browseOpenRfps({ specialty, municipality, cursor, limit }) {
       const { rows } = await pool.query(
         `SELECT r.*,
                 coalesce((SELECT array_agg(task_id) FROM tendering.rfp_root WHERE rfp_id = r.id), '{}') AS root_task_ids
            FROM tendering.rfp r
            JOIN project.project pr ON pr.id = r.project_id
-          WHERE r.visibility = 'open' AND r.status = 'published'
+          WHERE r.listed AND r.status = 'published'
             AND ($1::text IS NULL OR $1 = ANY(r.specialties))
             AND ($2::text IS NULL OR pr.municipality_code = $2)
             AND ($3::uuid IS NULL OR r.id > $3)
@@ -562,9 +641,9 @@ export function createTenderingStore(pool) {
 
     /**
      * The org's own tenders — every RFP it ISSUED, plus the ones it was invited
-     * to or bid on. The issuer clause is not optional: the plan's per-task tender
-     * bands and the "open the existing tender" resolution both read this list as
-     * the issuer's own tenders (app getProcurementWindows / procurement page), so
+     * to or bid on. The issuer clause is not optional: the "open the existing
+     * tender" resolution reads this list as the issuer's own tenders (the
+     * procurement page; the plan's bands now read taskProcurementOfProject), so
      * an issuer-only RFP that this query dropped read to the owner as "no tender
      * here at all" — the owner could not see a single submitted proposal on a
      * tender they ran (LINA-420). Issuer OR recipient OR bidder, de-duplicated.
@@ -590,17 +669,18 @@ export function createTenderingStore(pool) {
     // ── writes (ledger + outbox on the same client — §6.3/§6.4) ──────────
 
     async createRfp({ id, projectId, issuerOrgId, level, parentContractId, purpose, mode, title, scopeText,
-      visibility, questionsDeadline, submissionDeadline, rootTaskIds, packageRows, packageItems, actor }) {
+      listed = false, questionsDeadline, submissionDeadline, rootTaskIds, excludedTaskIds = [], packageRows, packageItems, actor }) {
       return tx(async (client) => {
         const specialties = [...new Set(packageRows.map((r) => r.specialty).filter(Boolean))];
+        // `visibility` (deprecated) follows `listed` through the 0023 trigger.
         await client.query(
           `INSERT INTO tendering.rfp
              (id, project_id, issuer_org_id, level, parent_contract_id, purpose, mode, title, scope_text,
-              specialties, visibility, questions_deadline, submission_deadline)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+              specialties, specialty_codes, listed, questions_deadline, submission_deadline, excluded_task_ids)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
           [id, projectId, issuerOrgId, level, parentContractId,
             purpose ?? 'execution', mode ?? 'detailed', title, scopeText,
-            specialties, visibility, questionsDeadline, submissionDeadline],
+            specialties, specialtyCodesOf(packageRows), Boolean(listed), questionsDeadline, submissionDeadline, excludedTaskIds],
         );
         for (const taskId of rootTaskIds) {
           await client.query('INSERT INTO tendering.rfp_root (rfp_id, task_id) VALUES ($1, $2)', [id, taskId]);
@@ -613,31 +693,36 @@ export function createTenderingStore(pool) {
           type: 'tendering.rfp.created',
           scope: { type: 'project', id: projectId },
           object: { type: 'rfp', id },
-          payload: { level, title, root_task_ids: rootTaskIds, visibility, items: packageItems.length },
+          payload: {
+            level, title, root_task_ids: rootTaskIds, listed: Boolean(listed), items: packageItems.length,
+            ...(excludedTaskIds.length ? { excluded_task_ids: excludedTaskIds } : {}),
+          },
           channel: actor.channel,
         });
         return loadRfp(client, id);
       });
     },
 
-    async updateRfp({ rfpId, expectedVersion, set, rootTaskIds, packageRows, packageItems, actor }) {
+    async updateRfp({ rfpId, expectedVersion, set, rootTaskIds, excludedTaskIds = null, packageRows, packageItems, actor }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `UPDATE tendering.rfp SET
              title = coalesce($3, title),
              scope_text = CASE WHEN $4::boolean THEN $5 ELSE scope_text END,
-             visibility = coalesce($6, visibility),
+             listed = coalesce($6::boolean, listed),
              questions_deadline = CASE WHEN $7::boolean THEN $8::timestamptz ELSE questions_deadline END,
              submission_deadline = coalesce($9::timestamptz, submission_deadline),
+             excluded_task_ids = coalesce($10::uuid[], excluded_task_ids),
              version = version + 1
            WHERE id = $1 AND version = $2 AND status = 'draft'
            RETURNING *`,
           [rfpId, expectedVersion,
             set.title ?? null,
             set.scopeText !== undefined, set.scopeText ?? null,
-            set.visibility ?? null,
+            set.listed ?? null,
             set.questionsDeadline !== undefined, set.questionsDeadline ?? null,
-            set.submissionDeadline ?? null],
+            set.submissionDeadline ?? null,
+            excludedTaskIds],
         );
         if (!rows.length) return null; // version raced — the caller answers 409
         if (rootTaskIds) {
@@ -649,7 +734,8 @@ export function createTenderingStore(pool) {
           await client.query('DELETE FROM tendering.rfp_package_row WHERE rfp_id = $1 AND package_version = 1', [rfpId]);
           await insertPackage(client, { rfpId, packageVersion: 1, packageRows, packageItems });
           const specialties = [...new Set(packageRows.map((r) => r.specialty).filter(Boolean))];
-          await client.query('UPDATE tendering.rfp SET specialties = $2 WHERE id = $1', [rfpId, specialties]);
+          await client.query('UPDATE tendering.rfp SET specialties = $2, specialty_codes = $3 WHERE id = $1',
+            [rfpId, specialties, specialtyCodesOf(packageRows)]);
         }
         await appendAuditEvent(client, {
           projectId: rows[0].project_id, actor,
@@ -657,7 +743,11 @@ export function createTenderingStore(pool) {
           type: 'tendering.rfp.updated',
           scope: { type: 'project', id: rows[0].project_id },
           object: { type: 'rfp', id: rfpId },
-          payload: { ...(rootTaskIds ? { root_task_ids: rootTaskIds } : {}), fields: Object.keys(set).filter((k) => set[k] !== undefined) },
+          payload: {
+            ...(rootTaskIds ? { root_task_ids: rootTaskIds } : {}),
+            ...(excludedTaskIds ? { excluded_task_ids: excludedTaskIds } : {}),
+            fields: Object.keys(set).filter((k) => set[k] !== undefined),
+          },
           channel: actor.channel,
         });
         return loadRfp(client, rfpId);
@@ -669,68 +759,7 @@ export function createTenderingStore(pool) {
      * D-36). The raw token is returned ONCE; only its hash is stored.
      * A re-add of the same email is absorbed (UNIQUE rfp_id, email).
      */
-    /**
-     * Self-serve apply to an OPEN RFP (LINA-406): a bidder that discovered the
-     * RFP through the marketplace claims its own lane, the mirror of the issuer
-     * minting one with addRecipients. Idempotent and collision-safe:
-     *   - a re-apply hits UNIQUE (rfp_id, email) and the lane is returned as-is
-     *     (created=false), so a retry never forks a second lane;
-     *   - a prior email-only invite for the org's address (org_id NULL) is
-     *     ADOPTED — org_id and the proposal's bidder_org_id are backfilled — so
-     *     "the issuer emailed me, then I signed in and applied" lands on one lane.
-     * A token is minted only to satisfy the NOT NULL/UNIQUE token_hash column;
-     * it is never surfaced — the applicant is authenticated and drives the lane
-     * through the authed proposal endpoints, not the public link.
-     */
-    async applyToOpenRfp({ rfpId, projectId, orgId, email, actor }) {
-      return tx(async (client) => {
-        const token = randomBytes(32).toString('hex');
-        const { rows: recRows } = await client.query(
-          `INSERT INTO tendering.rfp_recipient (id, rfp_id, org_id, email, token_hash, expires_at)
-           VALUES ($1,$2,$3,$4,$5,
-             (SELECT submission_deadline + interval '14 days' FROM tendering.rfp WHERE id = $2))
-           ON CONFLICT (rfp_id, email) DO UPDATE
-             SET org_id = COALESCE(tendering.rfp_recipient.org_id, EXCLUDED.org_id)
-           RETURNING *`,
-          [randomUUID(), rfpId, orgId, email, sha256(token)],
-        );
-        const recipient = recRows[0];
-        let { rows: propRows } = await client.query(
-          'SELECT * FROM tendering.proposal WHERE recipient_id = $1',
-          [recipient.id],
-        );
-        let created = false;
-        if (!propRows.length) {
-          ({ rows: propRows } = await client.query(
-            `INSERT INTO tendering.proposal (id, rfp_id, recipient_id, bidder_org_id)
-             VALUES ($1,$2,$3,$4) RETURNING *`,
-            [randomUUID(), rfpId, recipient.id, orgId],
-          ));
-          created = true;
-        } else if (propRows[0].bidder_org_id == null) {
-          ({ rows: propRows } = await client.query(
-            'UPDATE tendering.proposal SET bidder_org_id = $2 WHERE id = $1 RETURNING *',
-            [propRows[0].id, orgId],
-          ));
-        }
-        if (created) {
-          await appendAuditEvent(client, {
-            projectId, actor,
-            category: 'tendering',
-            type: 'tendering.rfp.applied',
-            scope: { type: 'project', id: projectId },
-            object: { type: 'rfp', id: rfpId },
-            // D-29: bidder identity lives in tendering.*, never the ledger —
-            // the record only notes that a self-serve apply happened.
-            payload: {},
-            channel: actor.channel,
-          });
-        }
-        return { proposalId: propRows[0].id, created };
-      });
-    },
-
-    async addRecipients({ rfpId, projectId, recipients, actor }) {
+    async addRecipients({ rfpId, projectId, recipients, actor, published = false }) {
       return tx(async (client) => {
         const out = [];
         for (const r of recipients) {
@@ -738,12 +767,13 @@ export function createTenderingStore(pool) {
           const { rows } = await client.query(
             // expires_at = the RFP's submission deadline + a 14-day proposal
             // validity window (gap S1, doc 21); a re-issue later rotates it.
-            `INSERT INTO tendering.rfp_recipient (id, rfp_id, org_id, email, token_hash, expires_at)
+            // source / company_name: where the bidder came from (PRD-04 §3).
+            `INSERT INTO tendering.rfp_recipient (id, rfp_id, org_id, email, token_hash, expires_at, source, company_name)
              VALUES ($1,$2,$3,$4,$5,
-               (SELECT submission_deadline + interval '14 days' FROM tendering.rfp WHERE id = $2))
+               (SELECT submission_deadline + interval '14 days' FROM tendering.rfp WHERE id = $2), $6, $7)
              ON CONFLICT (rfp_id, email) DO NOTHING
              RETURNING *`,
-            [randomUUID(), rfpId, r.orgId, r.email, sha256(token)],
+            [randomUUID(), rfpId, r.orgId, r.email, sha256(token), r.source ?? 'email', r.companyName ?? null],
           );
           if (!rows.length) {
             const { rows: existing } = await client.query(
@@ -772,6 +802,20 @@ export function createTenderingStore(pool) {
           payload: { count: out.length },
           channel: actor.channel,
         });
+        // "Invite more" on a sent RFP mints and mails links now: the directory
+        // seeds unclaimed profiles for new address-only invitees (PRD-04 X-2),
+        // as it does at publish. Outbox only — the ledger entry is above.
+        const minted = out.filter((o) => o.token).length;
+        if (published && minted) {
+          await publishEvent(client, {
+            event_id: randomUUID(),
+            type: 'tendering.rfp.recipients_added',
+            project_id: projectId,
+            actor: { person_id: actor.personId, org_id: actor.orgId },
+            scope: { type: 'project', id: projectId },
+            data: { rfp_id: rfpId, project_id: projectId, count: minted },
+          });
+        }
         return out;
       });
     },
@@ -853,12 +897,8 @@ export function createTenderingStore(pool) {
     /** Guarded status move; null when `from` raced away (caller answers 409). */
     async transitionRfp({ rfpId, from, to, eventType, projectId, data, actor }) {
       return tx(async (client) => {
-        const { rows } = await client.query(
-          `UPDATE tendering.rfp SET status = $3, version = version + 1
-            WHERE id = $1 AND status = $2 RETURNING *`,
-          [rfpId, from, to],
-        );
-        if (!rows.length) return null;
+        const moved = await moveRfp(client, { rfpId, from, to, reason: data?.reason ?? null });
+        if (!moved) return null;
         await appendAuditEvent(client, {
           projectId, actor,
           category: 'tendering',
@@ -877,6 +917,97 @@ export function createTenderingStore(pool) {
           data: { rfp_id: rfpId, project_id: projectId, ...data },
         });
         return loadRfp(client, rfpId);
+      });
+    },
+
+    /**
+     * Publish (PRD-02 T-7): the move to `published` AND the minting of a fresh
+     * personal link for every recipient still queued from the draft, in ONE
+     * transaction with the ledger entry and the event. Returns {rfp, links:
+     * [{recipient, token}]} — the raw tokens exist only in this return value,
+     * for the caller to email — or null when `from` raced away.
+     */
+    async publishRfp({ rfpId, from, to, eventType, projectId, data, actor, listingPoint = null }) {
+      return tx(async (client) => {
+        const moved = await moveRfp(client, { rfpId, from, to, reason: null });
+        if (!moved) return null;
+        // The build's point as the build port answered it at publication — what
+        // "open requests near you" matches on (0030; never project.* at read time).
+        await client.query(
+          `UPDATE tendering.rfp SET listing_lat = $2, listing_lng = $3, listing_municipality_code = $4
+            WHERE id = $1`,
+          [rfpId, listingPoint?.lat ?? null, listingPoint?.lat == null ? null : listingPoint.lng,
+            listingPoint?.municipality_code ?? null],
+        );
+        const { rows: queued } = await client.query(
+          `SELECT id FROM tendering.rfp_recipient
+            WHERE rfp_id = $1 AND status = 'queued' AND sent_at IS NULL ORDER BY id`,
+          [rfpId],
+        );
+        const links = [];
+        for (const { id } of queued) {
+          const token = randomBytes(32).toString('hex');
+          const { rows } = await client.query(
+            `UPDATE tendering.rfp_recipient SET token_hash = $2, revoked_at = NULL,
+               expires_at = (SELECT submission_deadline + interval '14 days' FROM tendering.rfp WHERE id = $3)
+             WHERE id = $1 RETURNING *`,
+            [id, sha256(token), rfpId],
+          );
+          links.push({ recipient: rows[0], token });
+        }
+        await appendAuditEvent(client, {
+          projectId, actor,
+          category: 'tendering',
+          type: eventType,
+          scope: { type: 'project', id: projectId },
+          object: { type: 'rfp', id: rfpId },
+          payload: { from, to, ...data, links_minted: links.length },
+          channel: actor.channel,
+        });
+        await publishEvent(client, {
+          event_id: randomUUID(),
+          type: eventType,
+          project_id: projectId,
+          actor: { person_id: actor.personId, org_id: actor.orgId },
+          scope: { type: 'project', id: projectId },
+          data: { rfp_id: rfpId, project_id: projectId, ...data },
+        });
+        return { rfp: await loadRfp(client, rfpId), links };
+      });
+    },
+
+    /**
+     * Remove a queued recipient from a DRAFT (PRD-02 T-6): the recipient row
+     * and its untouched lane. Guarded on the RFP still being a draft; null when
+     * it is not (the caller answers 409). Nothing was ever sent, so there is no
+     * evidence to keep; the ledger records that one was removed, not who.
+     */
+    async removeDraftRecipient({ rfpId, recipientId, projectId, actor }) {
+      return tx(async (client) => {
+        const { rows: live } = await client.query(
+          `SELECT 1 FROM tendering.rfp WHERE id = $1 AND status = 'draft' FOR UPDATE`,
+          [rfpId],
+        );
+        if (!live.length) return null;
+        await client.query(
+          `DELETE FROM tendering.proposal WHERE recipient_id = $1 AND rfp_id = $2 AND status = 'invited'`,
+          [recipientId, rfpId],
+        );
+        const { rowCount } = await client.query(
+          'DELETE FROM tendering.rfp_recipient WHERE id = $1 AND rfp_id = $2',
+          [recipientId, rfpId],
+        );
+        if (!rowCount) return null;
+        await appendAuditEvent(client, {
+          projectId, actor,
+          category: 'tendering',
+          type: 'tendering.rfp.recipient_removed',
+          scope: { type: 'project', id: projectId },
+          object: { type: 'rfp', id: rfpId },
+          payload: { count: 1 },
+          channel: actor.channel,
+        });
+        return true;
       });
     },
 
@@ -916,58 +1047,6 @@ export function createTenderingStore(pool) {
           data: { rfp_id: rfpId, package_version: packageVersion, summary },
         });
         return loadRfp(client, rfpId);
-      });
-    },
-
-    async askClarification({ id, rfpId, projectId, askedByOrgId, question, actor }) {
-      return tx(async (client) => {
-        const { rows } = await client.query(
-          `INSERT INTO tendering.clarification (id, rfp_id, asked_by_org_id, question)
-           VALUES ($1,$2,$3,$4) RETURNING *`,
-          [id, rfpId, askedByOrgId, question],
-        );
-        await appendAuditEvent(client, {
-          projectId, actor,
-          category: 'tendering',
-          type: 'tendering.clarification.asked',
-          // rfp_private: the ASKER must stay invisible to other bidders (V8);
-          // the ledger keeps who asked, the wire never shows it.
-          scope: { type: 'rfp_private', id: rfpId },
-          object: { type: 'clarification', id },
-          payload: { rfp_id: rfpId, question },
-          channel: actor.channel,
-        });
-        return rows[0];
-      });
-    },
-
-    async answerClarification({ clarificationId, rfpId, projectId, answer, actor }) {
-      return tx(async (client) => {
-        const { rows } = await client.query(
-          `UPDATE tendering.clarification
-              SET answer = $2, answered_at = now(), status = 'answered'
-            WHERE id = $1 AND status = 'open' RETURNING *`,
-          [clarificationId, answer],
-        );
-        if (!rows.length) return null;
-        await appendAuditEvent(client, {
-          projectId, actor,
-          category: 'tendering',
-          type: 'tendering.clarification.answered',
-          scope: { type: 'project', id: projectId },
-          object: { type: 'clarification', id: clarificationId },
-          payload: { rfp_id: rfpId, answer },
-          channel: actor.channel,
-        });
-        await publishEvent(client, {
-          event_id: randomUUID(),
-          type: 'tendering.clarification.answered',
-          project_id: projectId,
-          actor: { person_id: actor.personId, org_id: actor.orgId },
-          scope: { type: 'project', id: projectId },
-          data: { rfp_id: rfpId, clarification_id: clarificationId },
-        });
-        return rows[0];
       });
     },
 
@@ -1207,10 +1286,11 @@ export function createTenderingStore(pool) {
      * contract draft written by contracting's award port on this client.
      */
     async awardRfp({ rfpId, from, winnerProposalId, declineProposalIds, note,
-      projectId, actor, createContract }) {
+      projectId, actor, createContract, planFacts = {} }) {
       return tx(async (client) => {
         const { rows } = await client.query(
-          `UPDATE tendering.rfp SET status = 'awarded', awarded_proposal_id = $3, version = version + 1
+          `UPDATE tendering.rfp SET status = 'awarded', awarded_proposal_id = $3, awarded_at = now(),
+                  closed_at = coalesce(closed_at, now()), version = version + 1
             WHERE id = $1 AND status = $2 RETURNING *`,
           [rfpId, from, winnerProposalId],
         );
@@ -1249,7 +1329,7 @@ export function createTenderingStore(pool) {
           project_id: projectId,
           actor: { person_id: actor.personId, org_id: actor.orgId },
           scope: { type: 'project', id: projectId },
-          data: { rfp_id: rfpId, proposal_id: winnerProposalId, contract_id: award.contract.id },
+          data: { rfp_id: rfpId, proposal_id: winnerProposalId, contract_id: award.contract.id, ...planFacts },
         });
         return award;
       });
@@ -1261,6 +1341,11 @@ export function createTenderingStore(pool) {
       return tx((client) => withIdempotency(client, meta, fn));
     },
   };
+}
+
+/** Taxonomy codes of the package rows (planning task.specialty_code, PRD-03 R-2). */
+function specialtyCodesOf(packageRows) {
+  return [...new Set(packageRows.map((r) => r.specialty_code).filter(Boolean))].sort();
 }
 
 function sha256(raw) {

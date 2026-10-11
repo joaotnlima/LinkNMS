@@ -292,6 +292,22 @@ jobs:
           DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
         run: npm test
 
+      # PRD-03 acceptance: the directory. Ranking per D-46 is pure-domain
+      # tested (verified clients first, completeness never an input); the http
+      # layer proves the anonymous public reads, the company-side gate and the
+      # claim path; the store proves haversine search within both radii, the
+      # event-fed "On the record" read model (replays absorbed, counts equal
+      # the record tables), names only with owner consent, no amount columns.
+      - name: Install directory module dependencies
+        working-directory: modules/directory
+        run: npm ci --ignore-scripts
+
+      - name: Run directory module tests
+        working-directory: modules/directory
+        env:
+          DATABASE_URL: postgres://migrator:ci@localhost:5432/postgres
+        run: npm test
+
       # LINA-359 acceptance: the audit-ledger READ side. The V7 redaction
       # projection is pure-domain tested; the http layer proves the
       # project.participant ∧ staffing gate and the redaction passthrough; and

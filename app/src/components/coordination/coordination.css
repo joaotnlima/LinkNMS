@@ -1,0 +1,20 @@
+/* PRD-12 — quality, questions and minutes, share links. Theme tokens only;
+   builds on site.css (ste-*) for the page frame, cards and fields. */
+.crd-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.crd-item { border: 1px solid var(--outline); border-radius: 8px; background: var(--raised); padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.crd-item.is-focus { border-color: var(--owner-fg); box-shadow: 0 0 0 2px var(--owner-muted); }
+.crd-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); }
+.crd-badge { display: inline-flex; align-items: center; border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 700; border: 1px solid var(--outline); }
+.crd-badge.is-critical { border-color: var(--danger); color: var(--danger); }
+.crd-badge.is-major { border-color: var(--warning); color: var(--warning); }
+.crd-badge.is-approved { border-color: var(--success); color: var(--success-fg); }
+.crd-badge.is-rejected { border-color: var(--danger); color: var(--danger); }
+.crd-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.crd-tabs a { padding: 6px 12px; border: 1px solid var(--outline); border-radius: 16px; font-size: 13px; color: inherit; text-decoration: none; }
+.crd-tabs a.is-on { border-color: var(--owner-fg); background: var(--owner-muted); color: var(--owner-fg); font-weight: 600; }
+.crd-act { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.crd-act textarea, .crd-act select, .crd-act input { flex: 1 1 200px; }
+.crd-body { white-space: pre-wrap; font-size: 14px; margin: 0; }
+.crd-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.crd-table th, .crd-table td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--outline); vertical-align: top; }
+.crd-table-wrap { overflow-x: auto; }

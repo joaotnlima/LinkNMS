@@ -26,14 +26,15 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 
 import type { ProcurementRfp } from '../plan-gantt';
+import { allPages } from './pages';
 import { v2, V2Error } from './client';
 import type { V2Me } from './profile-view';
 import type {
-  V2Rfp, V2Recipient, V2ProposalLane, V2Comparison, RfpDraftInput, RfpVisibility,
+  V2Model, V2Rfp, V2Recipient, V2ProposalLane, V2Comparison, RfpDraftInput,
   V2Money, V2ProposalDetail, V2ProposalDocument,
-  RfpStatus, ProposalStatus,
 } from './tendering-view';
 import type { V2UploadTicket } from './task-workspace-view';
+import { toProcurementWindows, type V2TaskProcurement } from './task-procurement-view';
 
 // ── Reads: the composer's own RFPs ───────────────────────────────────────────
 
@@ -107,7 +108,9 @@ export async function getInbox(rfp: Pick<V2Rfp, 'id' | 'root_task_ids'>): Promis
   // needs those invited lanes to offer "record an emailed bid" against them, and
   // for a money-viewer the per-task read still carries `total` (LINA-372). The
   // comparison call is then only the money-gated per-line matrix.
-  const lanes = await gatherLanes(rfp.root_task_ids);
+  // A task tendered more than once has lanes of several RFPs; keep this one's
+  // (lanes carry `rfp_id` since PRD-02 — an older server's lanes all pass).
+  const lanes = (await gatherLanes(rfp.root_task_ids)).filter((l) => !l.rfp_id || l.rfp_id === rfp.id);
   try {
     const cmp = await v2<V2Comparison>({
       method: 'GET', path: `/rfps/${encodeURIComponent(rfp.id)}/comparison`,
@@ -222,42 +225,21 @@ export async function getCompareEntries(proposalIds: readonly string[]): Promise
 }
 
 // ── The tendering ⇄ schedule bridge: procurement windows (LINA-413) ──────────
-// The plan's Gantt paints a procurement window on a tendered task's bar — the
-// stretch of calendar spent choosing a contractor before the work can begin.
-// This is the READ that feeds it: for every root task of the project's live
-// tenders, the RFP facts the bar needs (status, when it opened, when bids are
-// due, how many have landed). PRIMITIVES ONLY — no write-back of a date.
-
-/** The `rfp` block `GET /tasks/{id}/proposal-lanes` carries (RfpWindow). */
-interface RfpWindowWire {
-  id: string;
-  status: RfpStatus;
-  opened_at?: string;
-  submission_deadline: string;
-  awarded_proposal_id?: string;
-}
-
-/** A proposal-lanes read with its governing-RFP block (LINA-413). */
-interface LanesWithRfp extends ListBody<V2ProposalLane> {
-  rfp?: RfpWindowWire | null;
-}
-
-/** A lane counts as a landed bid — what turns "tendering" into "bids in". */
-function isLandedBid(status: ProposalStatus): boolean {
-  return status === 'submitted' || status === 'shortlisted' || status === 'awarded';
-}
+// The plan's Tender column and Gantt band read, for every tendered root task,
+// the governing RFP's facts (status, when it opened, when bids are due, invited
+// and landed counts, title, winner). The tendering module composes all of that
+// in ONE read model (`GET /projects/{projectId}/task-procurement`, PRD-01
+// G-2/G-3) — which RFP governs a row, what counts as a landed bid and who won
+// are its rules, not this client's. PRIMITIVES ONLY — no write-back of a date.
 
 /**
- * Every tendered task of a project, mapped to the procurement window its Gantt
- * bar paints (LINA-413), keyed by task id (= the plan row's stable key in v2).
+ * Every tendered task of a project, mapped to the procurement window its row
+ * paints (LINA-413), keyed by task id (= the plan row's stable key in v2).
  *
- * Scope is the ISSUER's own tenders (`getMyRfps`), filtered to this project and
- * excluding cancelled ones — which is exactly who the plan editor serves (the GC
- * authoring the plan is the tender's issuer; a bidder never sees the editor). We
- * discover WHICH tasks are out to tender from the RFP list, then read each root
- * task's lanes to get the `rfp` block (its `opened_at`, the draft's creation) and
- * count the bids that have landed. One read per tendered task, in parallel; a
- * denied/absent read drops that task silently rather than failing the plan.
+ * Scope is the viewer org's OWN tenders on the project (issuer side — the GC
+ * authoring the plan is the tender's issuer; a bidder never sees the editor),
+ * cancelled ones included when nothing else governs the row (the Tender column
+ * says "Cancelled").
  *
  * Fail-closed like every read here: no active org, no tenders, or any V2Error →
  * an empty map, never a crash and never a leak.
@@ -265,33 +247,14 @@ function isLandedBid(status: ProposalStatus): boolean {
 export async function getProcurementWindows(
   projectId: string,
 ): Promise<Record<string, ProcurementRfp>> {
-  const rfps = (await getMyRfps()).filter(
-    (r) => r.project_id === projectId && r.status !== 'cancelled',
-  );
-  // The union of root tasks across the project's live tenders — one read each.
-  const taskIds = [...new Set(rfps.flatMap((r) => r.root_task_ids))];
-  if (taskIds.length === 0) return {};
-
-  const windows: Record<string, ProcurementRfp> = {};
-  await Promise.all(taskIds.map(async (taskId) => {
-    try {
-      const res = await v2<LanesWithRfp>({
-        method: 'GET', path: `/tasks/${encodeURIComponent(taskId)}/proposal-lanes`,
-      });
-      const rfp = res.rfp;
-      if (!rfp?.opened_at) return; // no live tender on this row (or pre-LINA-413 store)
-      windows[taskId] = {
-        status: rfp.status,
-        openedDay: rfp.opened_at.slice(0, 10),
-        bidsDueDay: rfp.submission_deadline.slice(0, 10),
-        submittedCount: (res.items ?? []).filter((l) => isLandedBid(l.status)).length,
-      };
-    } catch (err) {
-      if (err instanceof V2Error) return;
-      throw err;
-    }
-  }));
-  return windows;
+  // No active org is the server's 403 (no issuer to scope to) → {} below.
+  try {
+    const items = await allPages<V2TaskProcurement>({ path: `/projects/${encodeURIComponent(projectId)}/task-procurement` });
+    return toProcurementWindows(items);
+  } catch (err) {
+    if (err instanceof V2Error) return {};
+    throw err;
+  }
 }
 
 // ── Writes: the composer ─────────────────────────────────────────────────────
@@ -320,17 +283,18 @@ export async function createRfp(projectId: string, draft: RfpDraftInput): Promis
       root_task_ids: draft.rootTaskIds,
       title: draft.title.trim(),
       ...(draft.scopeText.trim() ? { scope_text: draft.scopeText.trim() } : {}),
-      visibility: draft.visibility,
+      listed: draft.listed,
       ...(draft.purpose ? { purpose: draft.purpose } : {}),
       ...(draft.mode ? { mode: draft.mode } : {}),
       ...(draft.questionsDeadline ? { questions_deadline: draft.questionsDeadline } : {}),
-      submission_deadline: draft.submissionDeadline,
+      ...(draft.excludedTaskIds?.length ? { excluded_task_ids: draft.excludedTaskIds } : {}),
+      ...(draft.submissionDeadline ? { submission_deadline: draft.submissionDeadline } : {}),
     },
   });
 }
 
 /**
- * PATCH /rfps/{rfpId} — edit a draft's title/scope/deadlines/visibility. The
+ * PATCH /rfps/{rfpId} — edit a draft's title/scope/deadlines/listing. The
  * `version` becomes the `If-Match` the handler uses for optimistic concurrency;
  * a stale version is a 409 the caller re-reads on. Only a draft is editable.
  */
@@ -339,7 +303,12 @@ export interface RfpPatch {
   scopeText?: string;
   questionsDeadline?: string | null;
   submissionDeadline?: string;
-  visibility?: RfpVisibility;
+  /** PRD-04 X-3: also list it as an open request. */
+  listed?: boolean;
+  /** The package's roots (PRD-02 "+ Add tasks from the plan"); re-snapshots it. */
+  rootTaskIds?: string[];
+  /** Rows left out of the package (T-3 "Include it" removes one). */
+  excludedTaskIds?: string[];
 }
 
 export async function updateRfp(rfpId: string, patch: RfpPatch, version: number): Promise<V2Rfp> {
@@ -348,11 +317,15 @@ export async function updateRfp(rfpId: string, patch: RfpPatch, version: number)
   if (patch.scopeText !== undefined) body.scope_text = patch.scopeText.trim();
   if (patch.questionsDeadline !== undefined) body.questions_deadline = patch.questionsDeadline;
   if (patch.submissionDeadline !== undefined) body.submission_deadline = patch.submissionDeadline;
-  if (patch.visibility !== undefined) body.visibility = patch.visibility;
+  if (patch.listed !== undefined) body.listed = patch.listed;
+  if (patch.rootTaskIds !== undefined) body.root_task_ids = patch.rootTaskIds;
+  if (patch.excludedTaskIds !== undefined) body.excluded_task_ids = patch.excludedTaskIds;
+  // The RFP is a versioned aggregate: the version rides as If-Match (doc 11).
   return v2<V2Rfp>({
     method: 'PATCH',
     path: `/rfps/${encodeURIComponent(rfpId)}`,
-    body: { ...body, version },
+    ifMatch: version,
+    body,
   });
 }
 
@@ -383,9 +356,13 @@ export async function closeRfp(rfpId: string): Promise<V2Rfp> {
   return v2<V2Rfp>({ method: 'POST', path: `/rfps/${encodeURIComponent(rfpId)}:close` });
 }
 
-/** POST /rfps/{rfpId}:cancel — abandon the tender (draft/published/closed). */
-export async function cancelRfp(rfpId: string): Promise<V2Rfp> {
-  return v2<V2Rfp>({ method: 'POST', path: `/rfps/${encodeURIComponent(rfpId)}:cancel` });
+/** POST /rfps/{rfpId}:cancel — abandon the tender (draft/published/closed), optionally saying why (T-19). */
+export async function cancelRfp(rfpId: string, reason?: string): Promise<V2Rfp> {
+  return v2<V2Rfp>({
+    method: 'POST',
+    path: `/rfps/${encodeURIComponent(rfpId)}:cancel`,
+    ...(reason?.trim() ? { body: { reason: reason.trim() } } : {}),
+  });
 }
 
 // ── Writes: the inbox / evaluation ───────────────────────────────────────────
@@ -550,7 +527,19 @@ export async function completeRfpModel(rfpId: string, documentId: string): Promi
   });
 }
 
-/** Remove the attached model (soft delete; the byte ledger is never touched). */
+/**
+ * PRD-07: attach the BUILD's model to the RFP — following its current version
+ * (`versionNo` null) or pinned to one. Issuer, draft only (server-enforced).
+ */
+export async function attachRfpModel(rfpId: string, documentId: string, versionNo: number | null): Promise<V2Model> {
+  return v2<V2Model>({
+    method: 'PUT',
+    path: rfpModelBase(rfpId),
+    body: { document_id: documentId, version_no: versionNo },
+  });
+}
+
+/** Detach the model from the RFP (PRD-07: the build keeps its model). */
 export async function removeRfpModel(rfpId: string, documentId: string): Promise<void> {
   await v2<unknown>({
     method: 'DELETE',

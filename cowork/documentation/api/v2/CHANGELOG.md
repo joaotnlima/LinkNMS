@@ -2,6 +2,334 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-11 — Architecture audit fixes (consistency, no new features)
+
+- **Idempotency-Key honoured.** The nine operations that declared `Idempotency-Key` but ignored it now reserve it in
+  the use case (a replay answers the original status and body; the same key with another body is `409
+  idempotency_mismatch`): `applyToOpenRfp`, `approveBidRequest`, `reserveProjectModelVersion`, `saveModelEdits`,
+  `restoreProjectModel`, `saveDocumentMarkups`, `closeMarkup`, `reopenMarkup`, `linkMarkup`. The header is now declared
+  (and honoured) on `claimProfile`, `acceptProfileClaim`, `createSpecialtyLabel`, `revokeShareLink`, `createDeliverable`,
+  `submitDeliverable`, `approveDeliverable`, `requestDeliverableChanges`, `addDailyLogEntries`,
+  `askClarificationByToken` (the link's recipient is the caller), `declineBidRequest`, `declineRfpInvitation`,
+  `linkTaskDocuments`. Additive: omitting the header behaves as before.
+- **`listOpenRequests` is cursor-paginated** (`cursor`, `limit`, `next_cursor`; `422` on a foreign cursor). The match
+  (specialty family, radius or service area) and the order (nearest first, then deadline) run on the server over the
+  whole set — the previous first-500-then-filter cut, which could drop matches, is gone. `distance_km` is measured from
+  the build's point recorded on the RFP at publication. Migration `db/v2/0030_tendering_rfp_listing_point.sql`.
+- **`RfpModel` speaks snake_case** (`document_id`, `file_name`, `size_bytes`, `current_version`). The camelCase fields
+  (`documentId`, `fileName`, `sizeBytes`, `currentVersion`) are **deprecated**, still returned with the same values; the
+  first-party app reads the snake_case ones.
+- **Cursor pagination** (`cursor`, `limit`, `next_cursor`, `422` on a foreign cursor) on `listMyPortfolio` (newest end
+  date first, undated last), `listProjectRfps` (newest first), `listTaskProcurement` (a page is a set of root tasks, each
+  with every tender on it; default 200) and `listBidRequests` (pending first, then newest). Additive: without `cursor`
+  the first page is answered.
+- **`listSpecialtyLabels`** answers the list envelope `items` (+ `next_cursor: null`); `specialties` is **deprecated**,
+  same content. New schema `SpecialtyLabel`.
+- **New (Tendering): `listAskCandidates`** — `GET /projects/{projectId}/ask-candidates?company_id=` (PRD-04 X-6, X-7):
+  the build's tasks for "Ask for a proposal" in one read, each with `specialty_match` (the company's specialty family),
+  the governing RFP the viewer's org issued and the `target` (`draft` | `new` | `locked`). Replaces the app's join of
+  `/schedule` with `/task-procurement` and its client-side ranking. New schema `AskCandidate`.
+- **`Task.is_critical` is filled** on every task read (`getSchedule`, `getTask`, delta answers): the server's one
+  critical-path rule (a leaf whose one-working-day slip moves the project finish, and the summaries containing one) —
+  the same rule behind `getTenderWindow.critical_task_ids`. The app's own CPM is gone; the plan's critical-path overlay
+  reads this field. `float_wd` is not added (not cheap with this rule).
+- **Model upload check server-side (PRD-07 M-18).** `reserveProjectModelVersion` takes optional `global_ids` (the new
+  file's element GlobalIds, extracted by the client — the server does not download and parse up to 100 MB per upload;
+  it validates the list). When the upload completes the server compares them with the record and the previous upload;
+  `getProjectModel` answers `upload_check` (`ModelUploadCheck`: `unmatched_global_ids`, `regenerated`, counts).
+  `ProjectModel.viewer.scope` gains `edits_all` and `editable_global_ids` — the server's M-8 answer, which the app now
+  reads instead of re-deriving the edit scope. Migration `db/v2/0031_documents_model_upload_check.sql`.
+- **MCP tool names** (`x-mcp-tool` / `x-mcp-mode`) on the new Directory and Tendering operations, following their
+  siblings: `get_company_by_slug` (twin of `get_company`), `get_my_company_profile`, `get_listing_stats`,
+  `list_my_portfolio`, `get_portfolio_consent`, `list_project_rfps`, `list_task_procurement`, `list_ask_candidates`,
+  `list_bid_requests`, `list_rfp_requests`, `list_open_requests` (read); `attach_rfp_model`, `remove_rfp_recipient`,
+  `approve_bid_request`, `decline_bid_request`, `decline_rfp_invitation` (write-confirm). Human-only and link-token
+  operations stay without one.
+- Editorial: the DWG layer's `on` property is quoted (`'on'`) so YAML 1.1 readers do not turn it into `true`.
+- **Defaults and limits live on the server.** `RfpCreate.submission_deadline` is optional: omitted, the server sets 14
+  calendar days out at 18:00 Lisbon time (the app no longer computes it). `listShareLinks` answers `max_expires_at`, the
+  latest expiry `createShareLink` accepts now (its 90-day limit); the app offers dates up to it and keeps no copy.
+- **`x-clerk-permission` on every operation added since the PRD work began** (and on the public / link-token ones):
+  the permission the use case enforces, or `none` (README). **Behaviour change (D-34):** `linkTaskDocuments`,
+  `unlinkTaskDocument`, `reserveProjectModelVersion`, `saveModelEdits`, `restoreProjectModel` and `createSpecialtyLabel`
+  now require `org:plan:edit` (403 `reason: role` without it) — they edit the plan or its model and checked only the
+  relationship before. Markups stay `none`, like comments.
+
+## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
+
+- **Quality (N-3, N-4).** New `listNonConformities` — `GET /projects/{id}/nonconformities?status=&kind=&task_id=`
+  (default `active` = not closed) and `listInspections` — `GET /projects/{id}/inspections?task_id=&location_id=`.
+  `NonConformity` gains `location_id` (validated against the build's locations), `raised_at`, `status_changed_at`,
+  `last_note`; `photo_document_ids` must be the build's documents (422 otherwise). `Inspection` gains `location_ids`,
+  `inspector_org_id`, `recorded_at`. `assignNonConformity` takes `NonConformityAssign` (`assigned_to_org_id`, `note`)
+  instead of `Decision` — a superset, `note` keeps its meaning (closes the gap the phase-5 handler reported).
+- **Questions and minutes (N-5..N-7).** `QuestionTopic` (`clarification` default | `design_change` | `scope_gap`) on
+  `CommentCreate` and `Comment`. A `scope_gap` question is routed to the project owner (an `addressee_org_id` naming
+  anyone else is 422). Answering a `design_change` question requires `decision` (`approved` | `rejected`), stored on the
+  question. `Comment` gains `project_id`, `topic`, `decision`, `attachment_ids`. New `listProjectQuestions` —
+  `GET /projects/{id}/questions?role=addressed|asked|all&status=&topic=` (only exchanges the viewer's org is part of).
+  `listMyQuestions` gains `topic` and `project` filters. New `listMinutes` — `GET /projects/{id}/minutes` (drafts only for
+  the writing org); `MeetingMinute` gains `project_id`, `created_by_org_id`.
+- **Share links (N-12, flow D21).** New `listShareLinks` — `GET /projects/{id}/share-links` (state, `access_count`,
+  `last_accessed_at`; never the url), `revokeShareLink` — `POST /share-links/{id}:revoke`, `listShareLinkAccesses` —
+  `GET /share-links/{id}/accesses`, and the public pair (`security: []`, token in the path, dispatched in-process):
+  `resolveShareLink` — `GET /shared/{token}` (`SharedView`: build name, audience, expiry, shared documents only) and
+  `downloadSharedDocument` — `GET /shared/{token}/documents/{documentId}:download` (302). Expired or revoked → `410 gone`
+  with `reason`; unknown → `404`. Every served access is logged (`ShareLinkAccess`). `createShareLink` now requires at
+  least one of the build's shareable files in `document_ids`; `ShareLink` gains `status`, `created_at`, `revoked_at`,
+  `access_count`, `last_accessed_at`.
+- Migrations `db/v2/0027_quality_coordination.sql`, `0028_collaboration_question_topic.sql`,
+  `0029_project_share_link_access.sql`.
+
+## 2026-10-11 — Bootstrap a build: overview, participants, Excel import (PRD-09 O-1..O-14)
+
+- **`getProjectOverview` is filled** (O-1): `end_date`, `open_variations`, `health` from Planning's overview port, `cost`
+  (cost side, D-38) from Contracting's, `pending_verifications` from Quality's, `open_questions` from Collaboration's.
+  New additive fields `plan` (`rows`, `top_level`, `start`) and `open_nonconformities` (`quality`, `safety`).
+- **New:** `getNotificationSummary` — `GET /me/notification-summary?project_id=` (O-2): unread notifications by category
+  with the newest of each. `NotificationCategory` gains `plan`.
+- **Participants** (O-3, O-4): `Participant` gains `specialty_code`, `specialty_name`, `people[]` (staffed). New
+  `listProjectInvitations` — `GET /projects/{id}/invitations` (the invitations the viewer's org sent, with state).
+  `ProjectInvitation` gains `name`, `scope_note`, `specialty_code` / `specialty_name`, `created_at`, and the capacity
+  `contractor` (a party invited before any contract). `InvitationPreview` gains `specialty_code`, `specialty_name`,
+  `invitee_name`, `scope_note` (O-5: the landing names the real role).
+- **Excel import, implemented** (O-6..O-12): `uploadScheduleImport` (multipart `.xlsx`, ≤ 10 MB) answers sheets, columns
+  and a suggested mapping; `mapScheduleImport` takes `ScheduleImportMapping` (sheet + field → column) and answers a live
+  10-row `sample` and `missing_required`; `previewScheduleImport` answers the WBS `tree`, `counts` and warnings;
+  `confirmScheduleImport` writes into an EMPTY plan only (409 `plan_not_empty`) and publishes `planning.plan.imported`.
+  New `getScheduleImport`. `ScheduleImport.preview` is deprecated (never answered); `parent_task_id` is refused until the
+  diff re-import exists.
+- Migrations `db/v2/0024_planning_schedule_import.sql`, `db/v2/0025_project_party_invite.sql`.
+
+## 2026-10-11 — Connecting the RFP and the directory: ask to bid, company inbox (PRD-04 X-1..X-13, D-47)
+
+- **BREAKING (meaning) — `applyToOpenRfp`** (`POST /rfps/{rfpId}:apply`) is now **ask to bid** (D-47 amends D-40 Slice 1):
+  it creates a PENDING `BidRequest` (`201`; asking again answers the same request, `200`) and **never a lane**. It used to
+  answer a `Proposal` lane. Same path and operationId (renaming is itself breaking); `409` when the org is already invited.
+  Taken inside v2 under the pre-launch exemption of [versioning-and-deprecation.md](./versioning-and-deprecation.md): no
+  external caller exists, and the only first-party caller (`/marketplace`, `loadBidContext`) moved in the same change — the
+  bid page no longer applies, it opens the lane the org already holds. A lane without the issuer's approval is no longer
+  reachable at all, which is the point of D-47.
+- **New (Tendering):** `listBidRequests` — `GET /rfps/{rfpId}/bid-requests` (issuer; each with the company's `CompanyProof`
+  read through the directory port); `approveBidRequest` — `POST /bid-requests/{id}:approve` (creates the lane with source
+  `asked_to_bid` and e-mails the link, or adopts a prior e-mail invite to the org's address); `declineBidRequest` —
+  `POST /bid-requests/{id}:decline`; the company inbox: `listRequestsForMe` — `GET /me/rfp-requests` (`CompanyRequest`:
+  origin, issuer level, build, bids due, task and file counts, invite and lane state) and `listOpenRequests` —
+  `GET /me/open-requests` (`OpenRequest`: listed RFPs matching the company's specialties and service area, nearest first,
+  with its bid request); `declineRfpInvitation` — `POST /rfps/{rfpId}/invitation:decline`.
+- `Rfp` / `RfpCreate` gain `listed` ("also list it as an open request", X-3) and `Rfp` gains `specialty_codes`. **`visibility`
+  is deprecated**, not removed: dropping it would break the contract (and billing's open-listing usage reads it), so the
+  column stays and a trigger keeps it in step (`open` ⇔ `listed`); a client that only sends `visibility` still means the
+  same thing, and `listed` wins when both are sent.
+- `RecipientAdd` items take `company_id` (a directory profile: claimed → its organisation, unclaimed → its e-mail);
+  `Recipient` gains `source` (`directory` · `email` · `asked_to_bid`) and `company_name`. Addresses are stored lower-case.
+- `browseOpenRfps` is **deprecated** (reads `listed`; replaced by `listOpenRequests`).
+- Events: `tendering.bid_request.requested` / `.approved` / `.declined` (ledger `rfp_private` without the org; outbox with
+  it) → notifications (issuer; the asking company). `tendering.rfp.recipients_added` (outbox only) and
+  `tendering.rfp.published` (gains `listed`, `specialty_codes`) → the directory seeds unclaimed profiles for address-only
+  invitees through tendering's invitee port. **New producer:** `directory.profile.claimed` → tendering back-fills the
+  organisation on every past invite to the claimed address. See to-be/10.
+- Migration `db/v2/0023_tendering_rfp_directory.sql` (`rfp_recipient.source`, `company_name`, `created_at`; `rfp.listed`,
+  `specialty_codes`, the sync trigger; `tendering.bid_request`).
+
+## 2026-10-10 — Company directory: taxonomy, search near a build, public profiles, claim (PRD-03 R-1..R-20, D-46)
+
+- **Directory, now implemented.** `listSpecialties` — `GET /specialties` is the two-level PT/EN taxonomy (`Specialty`
+  gains `position`, `impic_ref`, `impic_ref_verified` — always false). Public (`security: []`).
+- `searchOrganizations` — `GET /directory/organizations` is public and answers `DirectorySearchResult` (cards, facets,
+  `near`, `ranked_total`) instead of a page of `OrganizationProfile` (it had no implementation or caller). New params
+  `q`, `near_project`, `lat`, `lng`, `radius_km` (25/50/100), `can_start_by`, `work_type`, `proof`, `size`, `claimed`;
+  `kind`, `municipality`, `district` kept; `min_rating` deprecated and ignored (no ratings — D-16 is a later slice).
+  Order per **D-46**: companies with verified clients first, by their record; then "No verified clients yet" by
+  distance and specialty match.
+- `getDirectoryOrganization` — public, answers `DirectoryProfile`. **New:** `getDirectoryProfileBySlug` —
+  `GET /directory/organizations/by-slug/{slug}`.
+- `putProfile` creates on first save (201, slug minted, to-be/20 §5.2) and takes `OrganizationProfileWrite`
+  (base point + municipality, service radius, availability). **New:** `getMyProfile` (`GET
+  /organizations/{orgId}/profile`), `getListingStats` (`GET /organizations/{orgId}/listing-stats`). `Completeness`
+  gains `items[]`. `addPortfolioEntry` takes `PortfolioEntryWrite` (no photos yet); **new** `listMyPortfolio` (`GET
+  /organizations/{orgId}/portfolio`).
+- **New:** `claimProfile` — `POST /directory/organizations/{orgId}:claim` (mails a single-use link to the profile's
+  e-mail) and `acceptProfileClaim` — `POST /directory/claims/{token}:accept`.
+- `putPortfolioConsent` moves from Reputation to Directory and takes `PortfolioConsentWrite {show_on_profiles}`
+  (answers `PortfolioConsent`; it was a body-less `Decision` with no implementation). **New:** `getPortfolioConsent`.
+- **Project:** `Project` / `ProjectCreate` gain `location {lat, lng}` (R-3).
+- **Planning:** `Task`, `TaskCreate` and the `TaskDelta` keys gain `specialty_code` (R-2). The per-org plan labels move
+  from the undocumented `/specialties` routes to `listSpecialtyLabels` / `createSpecialtyLabel` (`GET`/`POST
+  /specialty-labels`); `/specialties` is the taxonomy, as the contract always said.
+- Events: `planning.progress.reported` with status `done` carries `assignee_org_id`, `contract_id`, `baseline_finish`,
+  `actual_finish` (additive). Directory consumes contract, change-order, progress and proposal events into its own
+  read model (to-be/10).
+- Migrations `db/v2/0020_project_build_location.sql`, `0021_planning_task_specialty_code.sql`, `0022_directory.sql`.
+
+## 2026-10-10 — The shared project model: record-side edits only (PRD-07 M-1..M-9, M-11, M-12, M-14..M-18; D-45)
+
+- **New (Documents):** `getProjectModel` — `GET /projects/{projectId}/model?version=` (`ProjectModel`: the build's model,
+  element links and issue pins at a version, plan rows with element counts, the viewer's M-8 scope, who edits);
+  `reserveProjectModelVersion` — `POST /projects/{projectId}/model/versions` (first model by any participant, later
+  `.ifc` by the author only; complete with `completeUpload`); `saveModelEdits` — `POST /projects/{projectId}/model:save`
+  `{base_version_no, note, changes[], resolutions?}` → a `change_kind: edit` version re-pointing the current bytes,
+  403 `out_of_scope` with `refused[]`, 409 `version_conflict` with `conflicts[]` (per-element merge, M-14);
+  `restoreProjectModel` — `POST /projects/{projectId}/model:restore {version_no, note?}` (`change_kind: restore`);
+  `compareModelRecord` — `GET /projects/{projectId}/model/record-diff?from=&to=`; `getTaskModel` —
+  `GET /tasks/{taskId}/model` (Files tab card).
+- `createDocumentVersion` on the project model answers 403 unless the caller is the model's author (M-9);
+  `saveDocumentMarkups` refuses the model (it takes links and pins).
+- **New (Tendering):** `attachRfpModel` — `PUT /rfps/{rfpId}/model {document_id, version_no?}`: the RFP references the
+  build's model, following current or pinned. `RfpModel` gains `pinned`, `currentVersion`. `reserveRfpModel` /
+  `completeRfpModel` are **deprecated** and keep working: they upload the build's model (first, or a new version by
+  its author — 403 otherwise) and attach it following current. `removeRfpModel` now **detaches** (the build keeps its
+  model). The view-url routes serve the version the RFP references.
+- `VersionChangeKind` gains `restore`. New schemas `ProjectModel`, `ProjectModelVersionCreate`, `ElementLink`,
+  `ElementPin`, `ModelTask`, `ModelEditChange`, `ModelEditSave`, `ModelEditResult`, `ModelRecordDiff`, `TaskModel`.
+- Events: `documents.model.edited` (ledgered + outbox) → Notifications (`files`): the model's author when someone
+  else saved, and the owners of the tasks whose elements changed.
+- Migrations `db/v2/0018_tendering_rfp_model.sql` (RFP → model reference, backfilled) and
+  `0019_documents_project_model.sql` (moves the LINA-409 RFP models to their builds).
+
+## 2026-10-10 — 2D drawings: PDF / DWG viewer, markup layer and DWG preview (PRD-06 V-1..V-17; additive)
+
+- **New (Documents):** `listDocumentMarkups` — `GET /documents/{documentId}/markups`; `saveDocumentMarkups` —
+  `POST /documents/{documentId}/markups:save` `{base_version_no, markups[], note?}` → `{document, markups[]}`: appends a
+  `markup_only` version that reuses the base version's `storage_key` and `sha256` (no byte copy), 409 when
+  `base_version_no` is not current; `closeMarkup` / `reopenMarkup` — `POST /markups/{markupId}:close` · `:reopen`;
+  `linkMarkup` — `POST /markups/{markupId}:link` `{question_id | nonconformity_id}` (the markup became a Collaboration
+  question or a Quality issue); `getDocumentViewUrl` — `GET /document-versions/{versionId}:view-url` (inline presigned GET
+  for the client-side PDF renderer); `getDocumentPreview` — `GET /document-versions/{versionId}/preview` (DWG/DXF layouts as
+  SVG with inline URLs, layers, warnings, or `unavailable` + `reason`).
+- New schemas `Markup`, `MarkupDraft`, `MarkupSave`, `MarkupSaveResult`, `MarkupLink`, `MarkupKind`, `MarkupGeometry`,
+  `MarkupState`, `ViewUrl`, `DocumentPreview`; parameter `markupId`.
+- `Document` gains `preview_reason`; `PreviewStatus` now also covers DXF (`pending` on upload) and `unavailable` is set by
+  the conversion job (reason on `preview_reason`).
+- Events: none on the outbox. Ledger-only: `documents.markups.saved` (sha256), `documents.markup.closed` / `.reopened` /
+  `.linked`. Documents consumes its own `documents.version.uploaded` for the DWG/DXF conversion (doc 10).
+- Migration `db/v2/0018_documents_markup_preview.sql`.
+
+## 2026-10-10 — Task files, project files and deliverables (PRD-05 F-1..F-19; additive)
+
+- **New (Documents):** `listTaskDocuments` — `GET /tasks/{taskId}/documents` (`TaskDocument` = `Document` + `role`,
+  `inherited`, `inherited_from_task_id`, `attached`, `used_on[]`); `linkTaskDocuments` — `POST /tasks/{taskId}/document-links`
+  `{document_ids[], role, include_subtasks}`; `unlinkTaskDocument` — `DELETE /tasks/{taskId}/document-links/{documentId}`;
+  `listProjectDocuments` — `GET /projects/{projectId}/documents?q=&type=` (`ProjectDocument` = `Document` + `used_on[]`).
+- `DocumentCreate` gains `note` and `link {task_id, role, include_subtasks}` (one project document linked to the task in the
+  same call); `file` is now the shared `FileDeclaration` (cap 104857600 bytes = 100 MB for every kind, D-49).
+  `createDocumentVersion` takes `DocumentVersionCreate {file, note, base_version_no, change_kind}` (scope fields still accepted
+  and must agree). `Document` gains `project_id`, `file_type` (`FileType`), `preview_status` (`PreviewStatus`),
+  `share_with_ancestors`; each version gains `note`, `base_version_no`, `change_kind`.
+- **New (Planning):** `listTaskDeliverables`, `createDeliverable` (`GET/POST /tasks/{taskId}/deliverables`),
+  `listProjectDeliverables` (`GET /projects/{projectId}/deliverables`), `updateDeliverable` / `deleteDeliverable`
+  (`PATCH/DELETE /deliverables/{id}`), `submitDeliverable` (`:submit`), `approveDeliverable` (`:approve`),
+  `requestDeliverableChanges` (`:request-changes`).
+- `reportProgress`: `done` answers 409 `invalid_transition` (`reason: deliverables_pending`, `pending_deliverable_ids`) while a
+  required deliverable is unapproved (D-48).
+- `NotificationCategory` gains `files`.
+- Events: `planning.deliverable.submitted` / `.approved` / `.changes_requested`; `documents.version.uploaded` data gains `mime`,
+  `note`, `linked_task_ids`; `tendering.rfp.awarded` data gains `purpose`, `deliverables[]` (doc 10).
+- Migrations `db/v2/0016_documents_task_files.sql`, `db/v2/0017_planning_deliverables.sql`.
+
+## 2026-10-10 — Notification centre and settings (PRD-12 N-1, N-2, N-8..N-10; additive + two body fixes)
+
+- **New (Collaboration):** `getNotificationPreferences` — `GET /me/notification-preferences`: the effective
+  set, one item per `NotificationCategory` × channel, defaults (enabled) filled in. `putNotificationPreferences`
+  now answers the same full set and refuses an unknown category (422).
+- `listNotifications` gains `category` and `limit`, and `unread_count` (the bell). `Notification.category` is
+  the new `NotificationCategory` enum (`bids`, `tendering`, `variations`, `invitations`, `questions`,
+  `quality`); `object_ref` documents `project_id`, `url` (the deep link, now always present) and `count`.
+- **Fix:** `markNotificationsRead` request body was mis-typed as `Decision`; it is `{ids[]} | {all: true}` as
+  implemented since phase 7.
+- **New (Identity & Access):** `inviteMember` (`POST /organizations/{orgId}/invitations`), `updateMemberRole`
+  (`PATCH /organizations/{orgId}/members/{personId}`), `removeMember` (`DELETE …`) — Clerk invitation /
+  membership through the identity module's Clerk gateway, role within the org kind's role set, the last admin
+  protected, `seats` entitlement on invite (402). All `x-human-only`.
+- `getMe` gains `assignable_roles` — the active org kind's role set, so the members screen never re-derives doc 16 §4.
+- `listMembers` items are now `Member` (`Person` + `org_role`), which is what the handler always returned.
+- **New (Billing):** `getMySubscription` — `GET /billing/subscription`: the active org's subscription with its
+  `plan` (404 when it never subscribed).
+
+## 2026-10-10 — Tendering at its own address, and clarifications (PRD-08; additive)
+
+- **New (Tendering):** `listProjectRfps` — `GET /projects/{projectId}/rfps`. The tendering home in one read:
+  every RFP of the project the viewer's org issued (drafts included) or, once sent, was invited to / bids on,
+  as `ProjectRfp` = `Rfp` + `viewer_role`, `covers[] {task_id, name}` (package roots), `covered_task_count`,
+  `questions_open`; issuer only: `invited_count`, `submitted_count`, `open_question_count`, `awarded_to`;
+  bidder only: `my_proposal {id, status}` (V8 — a bidder never sees the counts). Not paginated (bounded).
+- **New (Tendering):** `askClarificationByToken` — `POST /rfp-links/{token}/clarifications` `{id, question}`,
+  `security: []` (H-6): a link-only bidder asks; idempotent on `id`; 409 after `questions_deadline` (H-9).
+- `getRfpByToken` gains `rfp.questions_deadline`, `questions_open` and `clarifications[]` (answered ones +
+  the recipient's own).
+- `getRfp` gains `questions_open`. `Clarification` gains `asked_at` and `mine` (response-only; the asker is
+  still never on the wire). `TaskProcurement` gains `open_question_count` (the panel's Tender-tab badge, H-7).
+- `askClarification` / `answerClarification`: behaviour documented (deadline enforced server-side; answers
+  public to all bidders; `tendering.clarification.answered` on the outbox; link-only bidders get a link-less
+  email notice). Question ≤ 4000, answer ≤ 8000 characters.
+- Migration `db/v2/0015_tendering_clarifications.sql`: `clarification.asked_by_org_id` nullable,
+  `asked_by_recipient_id`, `asked_at`, at-least-one-asker CHECK.
+
+## 2026-10-10 — Tender from the task panel (PRD-02, D-42; additive + one behaviour fix)
+
+- **New (Planning):** `getTenderWindow` — `GET /projects/{projectId}/schedule/tender-window?task_ids=&include=&bids_due=`.
+  The plan side of a tender, computed where the calendar, links and critical path live: covered rows,
+  `left_out[]` (descendants already assigned to another party, with the assignee; `include` puts them back),
+  `work_window {start, finish, duration_wd}`, `on_critical_path` + `critical_task_ids` (a one-working-day
+  delay of the row moves the project finish under D-22 rigid links), `project_finish`, `mobilisation_lead_wd`,
+  `award_by` (planned start − lead, on the project calendar), `wd_bids_due_to_start`, `wd_bids_due_to_award_by`.
+- **New (Planning):** `getPlanningSettings` / `putPlanningSettings` — `GET/PUT /projects/{projectId}/planning-settings`
+  `{mobilisation_lead_wd}` (0–60, default 5; same gate as `putCalendar`).
+- **New (Tendering):** `removeRecipient` — `DELETE /rfps/{rfpId}/recipients/{recipientId}`, draft only (T-6).
+- `RfpCreate` / `updateRfp` accept `excluded_task_ids` (descendants left out of the package with their
+  sub-trees, T-3). `Rfp` gains `excluded_task_ids`, `created_at`, `published_at`, `closed_at`, `awarded_at`,
+  `cancelled_at`, `cancel_reason`; `TaskProcurement` gains `excluded_task_ids`, the four stamps and
+  `cancel_reason` (T-10, T-19).
+- `ProposalLane` gains `validity_until` (the panel's side-by-side "Valid until", T-14) and `rfp_id` (a re-tendered
+  task has lanes of several RFPs; the panel shows only the governing one's).
+- `cancelRfp` accepts an optional body `{reason}` (≤ 500); `tendering.rfp.cancelled` carries it.
+- **Behaviour fix — a draft is private until it is sent (D-29, T-6/T-7):** `addRecipients` on a **draft**
+  only queues the recipient: no email is sent and no `token` is returned. `publishRfp` mints a fresh personal
+  link for every still-queued recipient in the publish transaction and then emails each one. On a published
+  RFP `addRecipients` is unchanged (mint + send at once).
+- Migration `db/v2/0013_tendering_panel.sql` (rfp stamps, reason, exclusions) and
+  `db/v2/0014_planning_settings.sql` (`planning.project_setting`).
+
+## 2026-10-10 — Changes against the baseline in the plan (PRD-13, D-43, D-44; additive)
+
+- **Schedule / Task read** (`getSchedule`, `getTask`, every `TaskDeltaResult`):
+  - `Segment.kind` gains `overrun` (a leaf not closed past its finish, drawn to today — D-44, needs no
+    baseline) and `projected` (the push an overrun would make on a linked successor — never written).
+    Segments gain `moved` (baseline), `delta_wd`, `cause` (`moved` · `pushed` · `not_closed` ·
+    `closed_late` · `closed_early` · `net`), `cause_task_id`, `by_org_id` — labels never rely on colour.
+  - `Task` gains `baseline_delta_wd` (working days vs baseline; summaries net), `overrun_wd`, `projected`
+    and `baseline.reason` / `baseline.taken_at`.
+  - `Schedule` gains `handover` (`finish`, `projected_finish`, `baseline_finish`, `delta_wd`) and
+    `changes` (`total`, `unseen`).
+- **Variation** gains `reason`, `changed_by_org_name`, `seen_by_viewer`, `can_acknowledge`; `cause`
+  gains `closed_late`.
+- `updateTask` (`TaskDelta`) accepts an optional `reason` (≤ 500) stored on the time variation (S-11).
+- `previewMove` (`MovePreviewResult`) gains `would_move[].name`, `project_finish {before, after}`,
+  `baseline_delta_wd` and `notify[]` — the impact note before commit (S-10).
+- `reportProgress` (`ProgressCreate`) accepts `actual_finish`; `done` on a leaf with no actual finish now
+  records one (today by default) in the same commit, so a late close stays drawn (`closed_late`).
+- **New:** `acknowledgeVariations` — `POST /projects/{projectId}/variations:acknowledge`
+  `{variation_ids[]}` ("Acknowledge all in view", S-15): all-or-nothing, one transaction.
+- **Event:** `tendering.rfp.awarded` data gains `root_task_ids`, `supplier_org_id`, `start`, `duration_wd`;
+  planning consumes it to take the awarded branch's baseline at award (D-43, reason `award`).
+- Migration `db/v2/0012_planning_baseline_changes.sql`: `planning.baseline.reason` + `award`,
+  `planning.variation.cause` + `closed_late`, `planning.variation.reason`.
+
+## 2026-10-10 — Per-task procurement projection (PRD-01 G-2/G-3, additive)
+
+- **One Tendering read** replaces the plan's client-side N+1 composition (`/me/rfps` + one
+  `/tasks/{id}/proposal-lanes` per tendered row):
+  - `listTaskProcurement` — `GET /projects/{projectId}/task-procurement` (authed; relationship
+    **project.participant**, items scoped to RFPs the viewer's org **issued**). One item per
+    tendered root task: the governing RFP (awarded wins, else newest live, a cancelled one only when
+    the row has no other), `status`, `opened_at`, `submission_deadline`, `root_task_ids`,
+    `invited_count`, `submitted_count` (submitted · shortlisted · awarded lanes) and `awarded_to`
+    (`{org_id, name}` | null).
+  - Counts are of the **governing RFP's** lanes only (the per-task lanes read mixes every RFP ever
+    rooted on the row). No money on the wire (D-06/D-07). Not paginated — bounded by the project's
+    tenders.
+- No schema migration — a read over `tendering.rfp`, `rfp_root`, `proposal`, `rfp_recipient`.
+
 ## 2026-10-05 — Self-serve summary bid (LINA-406, additive)
 
 - **One Tendering op** lets a marketplace applicant actually price and send its bid (marketplace

@@ -1,0 +1,47 @@
+/* /notifications — the notification centre (PRD-12 N-1). */
+.ntf { width: 100%; max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+.ntf-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.ntf-title { margin: 0; font-size: 22px; font-weight: 650; }
+.ntf-sub { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
+.ntf-sub a { color: var(--owner-fg); }
+.ntf-btn {
+  padding: 8px 12px; border: 1px solid var(--outline); border-radius: 8px;
+  background: var(--surface-raised); font: inherit; font-size: 13px; cursor: pointer;
+}
+.ntf-btn:hover { background: var(--surface-sunken); }
+.ntf-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 18px 0 8px; }
+.ntf-chip {
+  padding: 5px 10px; border: 1px solid var(--outline); border-radius: 999px;
+  font-size: 12.5px; color: var(--ink); text-decoration: none; background: var(--surface-raised);
+}
+.ntf-chip.is-on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.ntf-sep { width: 1px; height: 18px; background: var(--outline); margin: 0 4px; }
+.ntf-empty { margin: 32px 0; color: var(--muted); }
+.ntf-group { margin-top: 20px; }
+.ntf-group-title {
+  margin: 0 0 6px; font-size: 12px; font-weight: 650; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted);
+}
+.ntf-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--outline); border-radius: 10px; overflow: hidden; }
+.ntf-item { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); background: var(--surface-raised); }
+.ntf-item:first-child { border-top: 0; }
+.ntf-item.is-unread { background: var(--owner-muted); }
+.ntf-open { flex: 1; min-width: 0; }
+.ntf-open-btn {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; width: 100%;
+  padding: 12px 14px; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; color: var(--ink);
+}
+.ntf-cat { grid-column: 1; font-size: 11.5px; color: var(--muted); }
+.ntf-item-title { grid-column: 1; font-size: 14px; font-weight: 500; }
+.ntf-item.is-unread .ntf-item-title { font-weight: 650; }
+.ntf-time { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.ntf-mark {
+  margin-right: 10px; padding: 5px 8px; border: 0; border-radius: 6px; background: transparent;
+  font: inherit; font-size: 12px; color: var(--owner-fg); cursor: pointer;
+}
+.ntf-mark:hover { background: var(--surface-raised); }
+.ntf-more { margin-top: 16px; text-align: center; }
+@media (max-width: 600px) {
+  .ntf-open-btn { grid-template-columns: 1fr; }
+  .ntf-time { grid-column: 1; grid-row: auto; }
+}
