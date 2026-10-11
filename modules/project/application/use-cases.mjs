@@ -22,7 +22,6 @@ import { ProblemError } from '../../../platform/errors.mjs';
 import { transition, briefComplete, operatingModel } from '../domain/lifecycle.mjs';
 
 const LOCATION_KINDS = new Set(['site', 'building', 'unit', 'floor', 'zone']);
-const INVITE_CAPACITIES = new Set(['design', 'inspection', 'safety', 'other']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -163,15 +162,7 @@ export async function closeProject({ viewer, store, projectId }) {
   return { status: 200, body: projectBody(updated, await store.getOperatingModel(projectId)) };
 }
 
-/** operationId: getProjectOverview */
-export async function getProjectOverview({ viewer, store, projectId }) {
-  const { project } = await requireParticipant({ viewer, store, projectId });
-  return {
-    status: 200,
-    body: overviewBody({ ...project, open_variations: 0, open_questions: 0, pending_verifications: 0 },
-      await store.getOperatingModel(projectId)),
-  };
-}
+// operationId: getProjectOverview — moved to ./overview.mjs (PRD-09 O-1).
 
 // ── Locations ────────────────────────────────────────────────────────────
 
@@ -239,100 +230,7 @@ export async function deleteLocation({ viewer, store, locationId }) {
 }
 
 // ── Participants & invitations ───────────────────────────────────────────
-
-/** operationId: listParticipants */
-export async function listParticipants({ viewer, store, projectId, query }) {
-  await requireParticipant({ viewer, store, projectId });
-  const { items, nextCursor } = await store.listParticipants(projectId, {
-    cursor: query?.cursor ?? null, limit: clampLimit(query?.limit),
-  });
-  return { status: 200, body: { items: items.map(participantBody), next_cursor: nextCursor } };
-}
-
-/** operationId: inviteToProject — consultant / inspector / HSE, no priced contract. */
-export async function inviteToProject({ viewer, store, projectId, body }) {
-  requireActiveOrg(viewer);
-  if (!viewer.has('org:projects:staff')) throw new ProblemError('forbidden', null, { reason: 'role' });
-  const project = await store.getProject(projectId);
-  if (!project) throw new ProblemError('not_found');
-  const isOwner = project.owner_org_id === viewer.orgId;
-  const isPrime = await store.isPrimeSupplier(projectId, viewer.orgId);
-  if (!isOwner && !isPrime) throw new ProblemError('forbidden', 'only the owner or the prime contractor invites', { reason: 'relationship' });
-
-  const errors = {};
-  const email = body?.email?.trim().toLowerCase();
-  if (!email || !EMAIL.test(email)) errors.email = 'valid email required';
-  if (!INVITE_CAPACITIES.has(body?.capacity)) errors.capacity = 'design, inspection, safety or other';
-  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
-
-  const actor = await requireActor(store, viewer);
-  const token = randomBytes(24).toString('hex');
-  const invitation = await store.createInvitation({
-    id: randomUUID(),
-    projectId,
-    invitedByOrgId: viewer.orgId,
-    email,
-    capacity: body.capacity,
-    tokenHash: sha256(token),
-    expiresAt: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString(),
-    actor: actorOf(actor, viewer),
-  });
-  // `token` is returned ONCE, to the inviter (contract note in openapi.yaml);
-  // only its hash is stored. Delivery by email is the notifications module.
-  return { status: 201, body: { ...invitationBody(invitation), token } };
-}
-
-/**
- * operationId: previewProjectInvitation — the ONE unauthenticated read on the v2
- * surface besides the RFP personal link (LINA-398, replacing the retired v1
- * `GET /invitations/:token`). It powers the Band B accept deep link (M6/D6): a
- * signed-out visitor holding only the token learns which build they were invited
- * to, who invited them, and in what capacity, so the inline Clerk sign-up has
- * context. There is deliberately NO viewer — the token IS the credential for
- * this read; requiring a session would defeat the deep link, and acceptance
- * below still re-verifies the session (ADR-0004).
- *
- * ANTI-ORACLE: an unknown token, an already-accepted (spent) token, a revoked
- * one and an expired one all return the IDENTICAL `not_found` 404, so this
- * endpoint cannot be used to probe whether an arbitrary string is a live token.
- * Only a `pending`, unexpired invitation is ever revealed. (Transport-layer
- * rate limiting is the route's concern — this handler carries no headers.)
- */
-export async function previewProjectInvitation({ store, token }) {
-  const inv = await store.getInvitationPreviewByTokenHash(sha256(token ?? ''));
-  if (!inv || inv.status !== 'pending') throw new ProblemError('not_found');
-  if (new Date(inv.expires_at).getTime() < Date.now()) throw new ProblemError('not_found');
-  return {
-    status: 200,
-    body: {
-      project_name: inv.project_name ?? null,
-      invited_by_name: inv.invited_by_name ?? null,
-      capacity: inv.capacity,
-    },
-  };
-}
-
-/** operationId: acceptProjectInvitation */
-export async function acceptProjectInvitation({ viewer, store, token }) {
-  requireActiveOrg(viewer);
-  const actor = await requireActor(store, viewer);
-  const invitation = await store.getInvitationByTokenHash(sha256(token ?? ''));
-  if (!invitation || invitation.status === 'revoked') throw new ProblemError('not_found');
-  if (invitation.status === 'accepted') throw new ProblemError('invalid_transition', 'already accepted');
-  if (new Date(invitation.expires_at).getTime() < Date.now()) throw new ProblemError('gone', 'invitation expired');
-
-  const participant = await store.acceptInvitation({
-    invitationId: invitation.id,
-    projectId: invitation.project_id,
-    orgId: viewer.orgId,
-    inviteCapacity: invitation.capacity,
-    actor: actorOf(actor, viewer),
-  });
-  // `project_id` is carried alongside the participation so the accept deep link
-  // can redirect straight to the record (LINA-398); the participation row itself
-  // is keyed on (project, org, capacity) and does not echo it.
-  return { status: 200, body: { ...participantBody(participant), project_id: invitation.project_id } };
-}
+// Moved to ./participants.mjs (PRD-09 O-3..O-5).
 
 // ── Calendar & share links ───────────────────────────────────────────────
 
@@ -433,7 +331,7 @@ export async function createShareLink({ viewer, store, projectId, body, shareBas
 
 // ── shared authorization helpers ─────────────────────────────────────────
 
-function requireActiveOrg(viewer) {
+export function requireActiveOrg(viewer) {
   if (!viewer.orgId) throw new ProblemError('forbidden', 'pick an active organisation first', { reason: 'no_active_org' });
 }
 
@@ -493,7 +391,7 @@ async function requireBriefDriver({ viewer, store, projectId, permission }) {
 
 // ── bodies & small helpers ───────────────────────────────────────────────
 
-function actorOf(person, viewer) {
+export function actorOf(person, viewer) {
   return { personId: person.id, orgId: viewer.orgId, orgRole: viewer.orgRole, channel: viewer.channel };
 }
 
@@ -520,13 +418,13 @@ function parseIfMatch(raw) {
   return n;
 }
 
-function clampLimit(raw) {
+export function clampLimit(raw) {
   const n = Number(raw ?? 50);
   if (!Number.isInteger(n) || n < 1) return 50;
   return Math.min(n, 200);
 }
 
-function sha256(value) {
+export function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
@@ -534,7 +432,7 @@ function money(cents) {
   return cents == null ? undefined : { amount_cents: Number(cents), currency: 'EUR' };
 }
 
-function projectBody(p, opModel) {
+export function projectBody(p, opModel) {
   return {
     id: p.id,
     name: p.name,
@@ -551,7 +449,7 @@ function projectBody(p, opModel) {
   };
 }
 
-function overviewBody(p, opModel) {
+export function overviewBody(p, opModel) {
   return {
     project: projectBody(p, opModel ?? 'undetermined'),
     // end_date / cost / health are planning+contracting roll-ups (phases 4-5);
@@ -569,31 +467,5 @@ function locationBody(l) {
     kind: l.kind,
     name: l.name,
     position: l.position ?? undefined,
-  };
-}
-
-function participantBody(row) {
-  return {
-    org: {
-      id: row.org_id,
-      kind: row.org_kind,
-      legal_name: row.legal_name,
-      nif: row.nif ?? undefined,
-    },
-    capacity: row.capacity,
-    source: row.source,
-    contract_id: row.contract_id ?? undefined,
-    invite_capacity: row.invite_capacity ?? undefined,
-  };
-}
-
-function invitationBody(i) {
-  return {
-    id: i.id,
-    project_id: i.project_id,
-    email: i.email,
-    capacity: i.capacity,
-    status: i.status,
-    expires_at: i.expires_at,
   };
 }

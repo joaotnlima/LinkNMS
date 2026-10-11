@@ -164,7 +164,7 @@ export function createProjectStore(pool) {
     async listParticipants(projectId, { cursor, limit }) {
       const { rows } = await pool.query(
         `SELECT pa.project_id, pa.org_id, pa.capacity, pa.source, pa.contract_id,
-                pa.invite_capacity, o.kind AS org_kind, o.legal_name, o.nif
+                pa.invite_capacity, pa.specialty_code, o.kind AS org_kind, o.legal_name, o.nif
            FROM project.participation pa
            JOIN identity.organization o ON o.id = pa.org_id
           WHERE pa.project_id = $1 AND pa.status = 'active'
@@ -175,6 +175,39 @@ export function createProjectStore(pool) {
       );
       const items = rows.slice(0, limit);
       return { items, nextCursor: rows.length > limit ? items[items.length - 1].org_id : null };
+    },
+
+    /**
+     * PRD-09 O-3: the people each organisation staffed on the build (identity
+     * staffing — the same rule the project read uses), names only.
+     */
+    async listStaffedPeople(projectId, orgIds) {
+      if (!orgIds.length) return [];
+      const { rows } = await pool.query(
+        `SELECT s.org_id, p.id AS person_id, p.name
+           FROM identity.project_staffing s
+           JOIN identity.person p ON p.id = s.person_id
+          WHERE s.project_id = $1 AND s.org_id = ANY($2::uuid[])
+          ORDER BY p.name`,
+        [projectId, orgIds],
+      );
+      return rows;
+    },
+
+    /** PRD-09 O-3: the invitations one organisation sent on a build, newest first. */
+    async listInvitationsSentBy(projectId, orgId, { cursor, limit }) {
+      const [cursorAt, cursorId] = cursor ? String(cursor).split('~') : [null, null];
+      const { rows } = await pool.query(
+        `SELECT * FROM project.project_invitation
+          WHERE project_id = $1 AND invited_by_org_id = $2
+            AND ($3::timestamptz IS NULL OR (created_at, id) < ($3, $4::uuid))
+          ORDER BY created_at DESC, id DESC
+          LIMIT $5`,
+        [projectId, orgId, cursorAt, cursorId ?? null, limit + 1],
+      );
+      const items = rows.slice(0, limit);
+      const last = items[items.length - 1];
+      return { items, nextCursor: rows.length > limit ? `${last.created_at.toISOString()}~${last.id}` : null };
     },
 
     async getInvitationByTokenHash(tokenHash) {
@@ -190,7 +223,7 @@ export function createProjectStore(pool) {
     // revealing the build name to its holder is no new disclosure.
     async getInvitationPreviewByTokenHash(tokenHash) {
       const { rows } = await pool.query(
-        `SELECT i.status, i.expires_at, i.capacity,
+        `SELECT i.status, i.expires_at, i.capacity, i.specialty_code, i.invitee_name, i.scope_note,
                 p.name       AS project_name,
                 o.legal_name AS invited_by_name
            FROM project.project_invitation i
@@ -413,13 +446,13 @@ export function createProjectStore(pool) {
       });
     },
 
-    async createInvitation({ id, projectId, invitedByOrgId, email, capacity, tokenHash, expiresAt, actor }) {
+    async createInvitation({ id, projectId, invitedByOrgId, email, capacity, specialtyCode = null, inviteeName = null, scopeNote = null, tokenHash, expiresAt, actor }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `INSERT INTO project.project_invitation
-             (id, project_id, invited_by_org_id, email, capacity, token_hash, expires_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-          [id, projectId, invitedByOrgId, email, capacity, tokenHash, expiresAt],
+             (id, project_id, invited_by_org_id, email, capacity, token_hash, expires_at, specialty_code, invitee_name, scope_note)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+          [id, projectId, invitedByOrgId, email, capacity, tokenHash, expiresAt, specialtyCode, inviteeName, scopeNote],
         );
         await appendAuditEvent(client, {
           projectId,
@@ -430,14 +463,14 @@ export function createProjectStore(pool) {
           object: { type: 'project_invitation', id },
           // The ledger records THAT an email was invited, hashed elsewhere;
           // the token itself never touches the record.
-          payload: { email, capacity: rows[0].capacity, invited_by_org_id: invitedByOrgId },
+          payload: { email, capacity: rows[0].capacity, specialty_code: specialtyCode, invited_by_org_id: invitedByOrgId },
           channel: actor.channel,
         });
         return rows[0];
       });
     },
 
-    async acceptInvitation({ invitationId, projectId, orgId, inviteCapacity, actor }) {
+    async acceptInvitation({ invitationId, projectId, orgId, inviteCapacity, specialtyCode = null, actor }) {
       return tx(async (client) => {
         const { rows } = await client.query(
           `UPDATE project.project_invitation
@@ -449,11 +482,11 @@ export function createProjectStore(pool) {
         if (!rows.length) throw new Error('invitation raced: no longer pending');
         await client.query(
           `INSERT INTO project.participation
-             (project_id, org_id, capacity, source, invite_capacity)
-           VALUES ($1, $2, 'consultant', 'invitation', $3)
+             (project_id, org_id, capacity, source, invite_capacity, specialty_code)
+           VALUES ($1, $2, 'consultant', 'invitation', $3, $4)
            ON CONFLICT (project_id, org_id, capacity) DO UPDATE
-             SET status = 'active', invite_capacity = excluded.invite_capacity`,
-          [projectId, orgId, inviteCapacity],
+             SET status = 'active', invite_capacity = excluded.invite_capacity, specialty_code = excluded.specialty_code`,
+          [projectId, orgId, inviteCapacity, specialtyCode],
         );
         await appendAuditEvent(client, {
           projectId,
@@ -482,7 +515,7 @@ export function createProjectStore(pool) {
         });
         const { rows: participant } = await client.query(
           `SELECT pa.project_id, pa.org_id, pa.capacity, pa.source, pa.contract_id,
-                  pa.invite_capacity, o.kind AS org_kind, o.legal_name, o.nif
+                  pa.invite_capacity, pa.specialty_code, o.kind AS org_kind, o.legal_name, o.nif
              FROM project.participation pa
              JOIN identity.organization o ON o.id = pa.org_id
             WHERE pa.project_id = $1 AND pa.org_id = $2 AND pa.capacity = 'consultant'`,

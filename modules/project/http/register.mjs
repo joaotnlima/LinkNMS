@@ -2,19 +2,26 @@
 // cowork/documentation/api/v2/openapi.yaml (greppable, AGENT-INDEX §7).
 import {
   createProject, listProjects, getProject, updateProject,
-  claimProject, cancelProject, closeProject, getProjectOverview,
+  claimProject, cancelProject, closeProject,
   listLocations, createLocation, updateLocation, deleteLocation,
-  listParticipants, inviteToProject, previewProjectInvitation, acceptProjectInvitation,
   getCalendar, putCalendar, createShareLink,
 } from '../application/use-cases.mjs';
+import {
+  listParticipants, listProjectInvitations, inviteToProject, previewProjectInvitation, acceptProjectInvitation,
+} from '../application/participants.mjs';
+import { getProjectOverview } from '../application/overview.mjs';
 import {
   listPhases, requestSignOff, approveSignOff, rejectSignOff,
 } from '../application/phases.mjs';
 
 /**
- * @param {{ store: object, shareBaseUrl: () => string }} deps
+ * @param {{ store: object, shareBaseUrl: () => string,
+ *           specialties?: { exists: Function, describe: Function },
+ *           facts?: { planning?: object, contracting?: object, quality?: object, questions?: object } }} deps
+ *   `specialties` — the directory's taxonomy port (an invitation's trade, PRD-09 O-4/O-5).
+ *   `facts` — the owning modules' query ports the build home reads (PRD-09 O-1).
  */
-export function registerProject(router, { store, shareBaseUrl }) {
+export function registerProject(router, { store, shareBaseUrl, specialties, facts = {} }) {
   router.register('POST', '/projects', 'createProject', ({ viewer, body, headers }) =>
     createProject({ viewer, store, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
@@ -37,7 +44,7 @@ export function registerProject(router, { store, shareBaseUrl }) {
     closeProject({ viewer, store, projectId: params.projectId }));
 
   router.register('GET', '/projects/{projectId}/overview', 'getProjectOverview', ({ viewer, params }) =>
-    getProjectOverview({ viewer, store, projectId: params.projectId }));
+    getProjectOverview({ viewer, store, facts, projectId: params.projectId }));
 
   router.register('GET', '/projects/{projectId}/locations', 'listLocations', ({ viewer, params, query }) =>
     listLocations({ viewer, store, projectId: params.projectId, query }));
@@ -52,10 +59,13 @@ export function registerProject(router, { store, shareBaseUrl }) {
     deleteLocation({ viewer, store, locationId: params.locationId }));
 
   router.register('GET', '/projects/{projectId}/participants', 'listParticipants', ({ viewer, params, query }) =>
-    listParticipants({ viewer, store, projectId: params.projectId, query }));
+    listParticipants({ viewer, store, specialties, projectId: params.projectId, query }));
+
+  router.register('GET', '/projects/{projectId}/invitations', 'listProjectInvitations', ({ viewer, params, query }) =>
+    listProjectInvitations({ viewer, store, specialties, projectId: params.projectId, query }));
 
   router.register('POST', '/projects/{projectId}/invitations', 'inviteToProject', ({ viewer, params, body }) =>
-    inviteToProject({ viewer, store, projectId: params.projectId, body }));
+    inviteToProject({ viewer, store, specialties, projectId: params.projectId, body }));
 
   // Unauthenticated preview (security: [], LINA-398): the token in the path IS
   // the credential, exactly like the RFP personal link. The /api/v2 edge lets a
@@ -63,10 +73,10 @@ export function registerProject(router, { store, shareBaseUrl }) {
   // and the store read is anti-oracle. The :accept POST below still requires a
   // session.
   router.register('GET', '/project-invitations/{token}', 'previewProjectInvitation', ({ params }) =>
-    previewProjectInvitation({ store, token: params.token }));
+    previewProjectInvitation({ store, specialties, token: params.token }));
 
   router.register('POST', '/project-invitations/{token}:accept', 'acceptProjectInvitation', ({ viewer, params }) =>
-    acceptProjectInvitation({ viewer, store, token: params.token }));
+    acceptProjectInvitation({ viewer, store, specialties, token: params.token }));
 
   router.register('GET', '/projects/{projectId}/calendar', 'getCalendar', ({ viewer, params }) =>
     getCalendar({ viewer, store, projectId: params.projectId }));

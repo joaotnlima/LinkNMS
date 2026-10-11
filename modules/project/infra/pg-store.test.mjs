@@ -30,7 +30,7 @@ describe('project store over Postgres (v2 migrations)', { skip }, () => {
     await admin.query(`DROP DATABASE IF EXISTS ${DB}`);
     await admin.query(`CREATE DATABASE ${DB}`);
     pool = new pg.Pool({ connectionString: url.replace(/\/[^/]*$/, `/${DB}`), max: 2 });
-    for (const f of ['0001_schema.sql', '0002_platform_idempotency.sql', '0003_project_claim.sql', '0020_project_build_location.sql']) {
+    for (const f of ['0001_schema.sql', '0002_platform_idempotency.sql', '0003_project_claim.sql', '0020_project_build_location.sql', '0025_project_party_invite.sql']) {
       await pool.query(readFileSync(join(ROOT, 'db', 'v2', f), 'utf8'));
     }
     await pool.query(
@@ -171,6 +171,36 @@ describe('project store over Postgres (v2 migrations)', { skip }, () => {
     await assert.rejects(() => store.acceptInvitation({
       invitationId: inv.id, projectId: id, orgId: GC_ORG, inviteCapacity: 'inspection', actor: ACTOR,
     }));
+  });
+
+  test('PRD-09 O-3..O-5: a contractor invite carries name, trade and scope; the trade travels to the participation', async () => {
+    const id = randomUUID();
+    await store.createProject({
+      id, name: 'Casa Almeida', address: null, municipalityCode: '1111', typology: null,
+      grossAreaM2: null, indicativeBudgetCents: null,
+      ownerOrgId: OWNER_ORG, pendingOwnerEmail: null, createdByOrgId: OWNER_ORG, actor: ACTOR,
+    });
+    const tokenHash = createHash('sha256').update('tok-gc').digest('hex');
+    const inv = await store.createInvitation({
+      id: randomUUID(), projectId: id, invitedByOrgId: OWNER_ORG, email: 'nuno@ferreira.pt',
+      capacity: 'contractor', specialtyCode: 'electrical', inviteeName: 'Nuno Ferreira', scopeNote: 'Whole-house wiring',
+      tokenHash, expiresAt: new Date(Date.now() + 86400000).toISOString(), actor: ACTOR,
+    });
+    const preview = await store.getInvitationPreviewByTokenHash(tokenHash);
+    assert.deepEqual([preview.capacity, preview.specialty_code, preview.invitee_name, preview.scope_note],
+      ['contractor', 'electrical', 'Nuno Ferreira', 'Whole-house wiring']);
+    const sent = await store.listInvitationsSentBy(id, OWNER_ORG, { cursor: null, limit: 10 });
+    assert.deepEqual(sent.items.map((i) => i.id), [inv.id]);
+    assert.equal((await store.listInvitationsSentBy(id, GC_ORG, { cursor: null, limit: 10 })).items.length, 0);
+
+    const participant = await store.acceptInvitation({
+      invitationId: inv.id, projectId: id, orgId: GC_ORG, inviteCapacity: 'contractor', specialtyCode: 'electrical', actor: ACTOR,
+    });
+    assert.deepEqual([participant.capacity, participant.invite_capacity, participant.specialty_code], ['consultant', 'contractor', 'electrical']);
+    await pool.query(`INSERT INTO identity.project_staffing (project_id, org_id, person_id, staffed_by) VALUES ($1, $2, $3, $3)`, [id, GC_ORG, PERSON]);
+    assert.deepEqual(await store.listStaffedPeople(id, [GC_ORG]), [{ org_id: GC_ORG, person_id: PERSON, name: 'Ana' }]);
+    const parts = await store.listParticipants(id, { cursor: null, limit: 10 });
+    assert.equal(parts.items.find((r) => r.org_id === GC_ORG).specialty_code, 'electrical');
   });
 
   test('locationInUse sees children; delete removes and ledgers', async () => {
