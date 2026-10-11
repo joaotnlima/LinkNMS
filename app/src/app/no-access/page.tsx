@@ -20,13 +20,14 @@ import { SignOutLink } from '@/components/SignOutLink';
 // Moved here in LINA-191 with its last consumer: /sign-in and /sign-up left the
 // `.ob-auth` centred-card layout for the split-screen AuthShell, so this
 // stylesheet no longer belongs under sign-up/.
+import { PRICING_URL } from '@/lib/plans';
 import './no-access.css';
 
 export const dynamic = 'force-dynamic';
 
-// The marketing site, where founding seats are claimed. Overridable so preview
-// environments point at their own landing deployment rather than production.
-const LANDING_URL = `${(process.env.NEXT_PUBLIC_LANDING_URL || 'https://linknms.com').replace(/\/$/, '')}/#pricing`;
+// The marketing site, where founding seats are claimed: the one landing
+// pricing anchor every app link uses (lib/plans.ts, PRD-12 N-11).
+const LANDING_URL = PRICING_URL;
 
 export default async function NoAccessPage() {
   const state = await sessionState();

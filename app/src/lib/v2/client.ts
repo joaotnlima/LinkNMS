@@ -147,7 +147,24 @@ export async function v2<T>(req: V2Request): Promise<T> {
   return result.body as T;
 }
 
-async function callInProcess(req: V2Request): Promise<{ status: number; body: unknown }> {
+/**
+ * A GET the contract answers with a 302 (a short-lived signed download, e.g.
+ * PRD-12's `downloadSharedDocument`): the `Location` it points at. Same
+ * transports, same viewer resolution, same problem+json failures as `v2()`.
+ */
+export async function v2Redirect(req: V2Request): Promise<string> {
+  const result = isRemote() ? await callHttp(req) : await callInProcess(req);
+  if (result.status >= 400) raise(result.status, result.body);
+  const location = result.headers?.location;
+  if (result.status < 300 || result.status >= 400 || !location) {
+    throw new V2Error(502, 'internal', 'expected a redirect from /api/v2');
+  }
+  return location;
+}
+
+type CallResult = { status: number; body: unknown; headers?: Record<string, string> };
+
+async function callInProcess(req: V2Request): Promise<CallResult> {
   // The route decides auth here (server/v2/[[...path]]/route.ts): a null viewer
   // on a members-only route is a clean 401, never a dispatch with no identity.
   const viewer = await viewerFromClerk();
@@ -175,7 +192,7 @@ async function callInProcess(req: V2Request): Promise<{ status: number; body: un
   if (req.method !== 'GET' && result.status < 400) {
     after(() => dispatchOutbox());
   }
-  return { status: result.status, body: result.body };
+  return { status: result.status, body: result.body, headers: result.headers };
 }
 
 function multipartInProcess(parts: Record<string, string | V2File>): Record<string, unknown> {
@@ -198,7 +215,7 @@ function normaliseQuery(query?: V2Request['query']): Record<string, string> {
   return out;
 }
 
-async function callHttp(req: V2Request): Promise<{ status: number; body: unknown }> {
+async function callHttp(req: V2Request): Promise<CallResult> {
   const jar = await cookies();
   if (req.multipart) {
     const form = new FormData();
@@ -230,9 +247,12 @@ async function callHttp(req: V2Request): Promise<{ status: number; body: unknown
     },
     body: hasBody ? JSON.stringify(req.body) : undefined,
     cache: 'no-store',
+    // A 302 (signed download) is answered to the caller, never followed here.
+    redirect: 'manual',
   });
   const text = await res.text();
-  return { status: res.status, body: text ? safeJson(text) : undefined };
+  const location = res.headers.get('location');
+  return { status: res.status, body: text ? safeJson(text) : undefined, ...(location ? { headers: { location } } : {}) };
 }
 
 function safeJson(text: string): unknown {

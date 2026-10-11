@@ -76,7 +76,11 @@ export default async function ProjectDocumentsPage({
             <h1 className="tfl-h" style={{ fontSize: 20 }}>Files</h1>
             <p className="tfl-note">Every file lives once in the build; tasks link to it, so a new version shows everywhere it is used.</p>
           </div>
-          <Link className="btn" href={`/projects/${id}/plan`}>Open the plan</Link>
+          <span className="btn-row">
+            {/* PRD-12 N-12: scoped, expiring links for someone with no account. */}
+            <Link className="btn" href={`/projects/${id}/documents/share`}>Share links</Link>
+            <Link className="btn" href={`/projects/${id}/plan`}>Open the plan</Link>
+          </span>
         </header>
 
         <form className="pfl-bar" method="get" action={`/projects/${id}/documents`}>

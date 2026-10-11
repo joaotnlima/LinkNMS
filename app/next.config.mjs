@@ -119,6 +119,15 @@ const nextConfig = {
         source: '/rfp/:path*',
         headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
       },
+      // PRD-12 N-12: the share link holder's page and its downloads carry the
+      // token in the path the same way — same posture, plus no indexing.
+      {
+        source: '/share/:path*',
+        headers: [
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' },
+        ],
+      },
     ];
   },
 };
