@@ -10,11 +10,13 @@
 - `accepted` → Planning appends `verified`; `rejected` → Planning appends `in_progress` with the reason.
 
 **NonConformity**: `(project, task?, contract?, raised_by, severity, description, photos, status: open → assigned → fixed → closed | rejected_fix)`.
-Raised by any participant; assigned to the responsible supplier; closed only by whoever raised it
-(or the coordinator). Open non-conformities block `provisionally_received` of the contract.
+Raised by any participant (with an optional project location and photos — the build's documents);
+assigned to the responsible supplier; closed only by the organisation that raised it, which may instead reject the fix
+back to the assignee (`rejected_fix`) — never the fixer, never a coordinator (AGENT-INDEX §6.1, DB CHECK 8h; PRD-12 N-3).
+Open non-conformities block `provisionally_received` of the contract.
 
 **Inspection** (consultants — inspector, HSE): a dated record with checklist, findings and
-documents, optionally linked to tasks; may spawn non-conformities.
+documents, optionally linked to tasks and/or project locations (PRD-12 N-4); may spawn non-conformities.
 
 ## Documents
 
@@ -52,9 +54,13 @@ documents, optionally linked to tasks; may spawn non-conformities.
 - A **question** has state `open → answered → resolved`, an addressee org, and an SLA clock.
   Open questions show on the object and on the addressee's queue — this is the dispute channel
   for the owner (D-13).
+- A question has a **topic** (PRD-12 N-5, flows C16–C17): `clarification` (default); `design_change` — the addressee
+  (typically the architect) answers with a decision, `approved` or `rejected`, kept on the question; `scope_gap` — work
+  nobody holds, always addressed to the project owner, who assigns it. A build's questions list only the exchanges the
+  viewer's organisation is part of (asker or addressee).
 - Comments are editable for 10 minutes, then immutable; deletions leave a tombstone.
 
-**MeetingMinute** (ata de reunião de obra): `(project, date, attendees[], items[{text, owner_org, due_date, linked_object?}])`,
+**MeetingMinute** (ata de reunião de obra; a draft is visible only to the organisation writing it): `(project, date, attendees[], items[{text, owner_org, due_date, linked_object?}])`,
 `status: draft → circulated → acknowledged` (each attending org acknowledges). This is the to-be home
 of the as-is *decision log*: a decision is an acknowledged minute item.
 

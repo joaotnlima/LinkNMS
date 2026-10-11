@@ -2,6 +2,32 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
+
+- **Quality (N-3, N-4).** New `listNonConformities` — `GET /projects/{id}/nonconformities?status=&kind=&task_id=`
+  (default `active` = not closed) and `listInspections` — `GET /projects/{id}/inspections?task_id=&location_id=`.
+  `NonConformity` gains `location_id` (validated against the build's locations), `raised_at`, `status_changed_at`,
+  `last_note`; `photo_document_ids` must be the build's documents (422 otherwise). `Inspection` gains `location_ids`,
+  `inspector_org_id`, `recorded_at`. `assignNonConformity` takes `NonConformityAssign` (`assigned_to_org_id`, `note`)
+  instead of `Decision` — a superset, `note` keeps its meaning (closes the gap the phase-5 handler reported).
+- **Questions and minutes (N-5..N-7).** `QuestionTopic` (`clarification` default | `design_change` | `scope_gap`) on
+  `CommentCreate` and `Comment`. A `scope_gap` question is routed to the project owner (an `addressee_org_id` naming
+  anyone else is 422). Answering a `design_change` question requires `decision` (`approved` | `rejected`), stored on the
+  question. `Comment` gains `project_id`, `topic`, `decision`, `attachment_ids`. New `listProjectQuestions` —
+  `GET /projects/{id}/questions?role=addressed|asked|all&status=&topic=` (only exchanges the viewer's org is part of).
+  `listMyQuestions` gains `topic` and `project` filters. New `listMinutes` — `GET /projects/{id}/minutes` (drafts only for
+  the writing org); `MeetingMinute` gains `project_id`, `created_by_org_id`.
+- **Share links (N-12, flow D21).** New `listShareLinks` — `GET /projects/{id}/share-links` (state, `access_count`,
+  `last_accessed_at`; never the url), `revokeShareLink` — `POST /share-links/{id}:revoke`, `listShareLinkAccesses` —
+  `GET /share-links/{id}/accesses`, and the public pair (`security: []`, token in the path, dispatched in-process):
+  `resolveShareLink` — `GET /shared/{token}` (`SharedView`: build name, audience, expiry, shared documents only) and
+  `downloadSharedDocument` — `GET /shared/{token}/documents/{documentId}:download` (302). Expired or revoked → `410 gone`
+  with `reason`; unknown → `404`. Every served access is logged (`ShareLinkAccess`). `createShareLink` now requires at
+  least one of the build's shareable files in `document_ids`; `ShareLink` gains `status`, `created_at`, `revoked_at`,
+  `access_count`, `last_accessed_at`.
+- Migrations `db/v2/0027_quality_coordination.sql`, `0028_collaboration_question_topic.sql`,
+  `0029_project_share_link_access.sql`.
+
 ## 2026-10-11 — Bootstrap a build: overview, participants, Excel import (PRD-09 O-1..O-14)
 
 - **`getProjectOverview` is filled** (O-1): `end_date`, `open_variations`, `health` from Planning's overview port, `cost`

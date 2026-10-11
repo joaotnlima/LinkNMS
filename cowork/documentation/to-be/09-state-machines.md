@@ -64,7 +64,8 @@ A new change on the same row and kind re-opens an acknowledged variation. `quest
 pending → accepted | rejected.
 
 ## Non-conformity ●
-open → assigned → fixed → closed; fixed → assigned (fix rejected).
+open → assigned → fixed → closed; fixed → rejected_fix (fix rejected — back with the assignee) → fixed (fixed again)
+or → assigned (reassigned). Close and reject-fix belong to the raising organisation only (invariant §6.1, DB CHECK 8h).
 
 ## Question
 open → answered → resolved; answered → open (follow-up).

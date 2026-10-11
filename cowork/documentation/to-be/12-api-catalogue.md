@@ -38,6 +38,8 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Claim a project created on my behalf | OW | `POST /projects/{id}:claim` |
 | Edit brief | OW | `PATCH /projects/{id}` |
 | Manage buildings/units | OW | `POST /projects/{id}/locations` · `PATCH/DELETE /locations/{id}` |
+| Scoped, expiring share link for a licensing authority: pick the build's files, set an expiry; list with state and use; revoke; access log (PRD-12 N-12, flow D21) | OW | `POST`/`GET /projects/{id}/share-links` · `POST /share-links/{id}:revoke` · `GET /share-links/{id}/accesses` |
+| What the link holder sees, no account — the shared files only, each access logged; expired/revoked → 410 | link holder | `GET /shared/{token}` · `GET /shared/{token}/documents/{documentId}:download?disposition=` |
 | My portfolio of projects (with status, variance, open questions) | ANY | `GET /projects?role=&status=` |
 | Project overview (owner control view: baseline/forecast/actual, cost if visible, open items) | participant | `GET /projects/{id}/overview` |
 | Participants on the build: organisation, capacity, trade, staffed people (PRD-09 O-3) | participant | `GET /projects/{id}/participants` |
@@ -134,8 +136,10 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 |---|---|---|
 | Verification queue | coordinator | `GET /me/verifications?status=pending` |
 | Accept / reject completion | coordinator | `POST /verifications/{id}:accept` · `:reject` |
-| Raise / assign / fix / close non-conformity | per state machine | `POST /projects/{id}/nonconformities` · `POST /nonconformities/{id}:assign` · `:fix` · `:close` · `:reject-fix` |
-| Record inspection | CS | `POST /projects/{id}/inspections` |
+| Raise (location, task, photos, severity) / assign / fix / close (raiser only) / reject fix | per state machine | `POST /projects/{id}/nonconformities` · `POST /nonconformities/{id}:assign` · `:fix` · `:close` · `:reject-fix` |
+| The build's non-conformities (PRD-12 N-3) | participant | `GET /projects/{id}/nonconformities?status=&kind=&task_id=` |
+| Record inspection (against tasks and/or locations) | CS | `POST /projects/{id}/inspections` |
+| The build's inspections (PRD-12 N-4) | participant | `GET /projects/{id}/inspections?task_id=&location_id=` |
 
 ## Documents
 | Use case | Actor | Endpoint |
@@ -163,8 +167,9 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 |---|---|---|
 | Comment / ask question on any object | readers | `POST /threads/{objectType}/{objectId}/comments` |
 | Answer / resolve question | addressee / asker | `POST /comments/{id}:answer` · `:resolve` |
-| Open questions addressed to me | ANY | `GET /me/questions?status=open` |
-| Meeting minutes | participant | `POST /projects/{id}/minutes` · `:circulate` · `:acknowledge` |
+| Questions addressed to me across builds (PRD-12 N-7) | ANY | `GET /me/questions?status=open&topic=&project=` |
+| A build's questions my org asked or must answer — clarifications, design-change approvals (answered with a decision), scope gaps (routed to the owner) (PRD-12 N-5) | participant | `GET /projects/{id}/questions?role=&status=&topic=` |
+| Meeting minutes (PRD-12 N-6) | participant | `GET`/`POST /projects/{id}/minutes` · `:circulate` · `:acknowledge` |
 | Activity feed | participant | `GET /projects/{id}/activity?cursor=` |
 | Notifications (deep link in `object_ref.url`, `unread_count` for the bell) & preferences | ANY | `GET /me/notifications?unread=&category=&cursor=&limit=` · `POST /notifications:mark-read` · `GET`/`PUT /me/notification-preferences` |
 | What's waiting for me — unread notifications by category, optionally on one build (PRD-09 O-2) | ANY | `GET /me/notification-summary?project_id=` |

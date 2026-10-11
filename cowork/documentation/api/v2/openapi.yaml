@@ -1957,6 +1957,49 @@ paths:
       schema:
         type: string
         format: uuid
+    get:
+      tags:
+      - Project
+      operationId: listShareLinks
+      summary: The build's share links with their state and use (PRD-12 N-12)
+      description: '**Clerk permission:** `org:plan:edit`
+
+
+        **Relationship (LinkNMS):** project.owner
+
+
+        Newest first, every state (`active`, `expired`, `revoked`), with `access_count` and `last_accessed_at`.
+        No `url`: the token is never stored.'
+      x-clerk-permission: org:plan:edit
+      x-relationship: project.owner
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ShareLink'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
     post:
       tags:
       - Project
@@ -1965,7 +2008,13 @@ paths:
       description: '**Clerk permission:** `org:plan:edit`
 
 
-        **Relationship (LinkNMS):** project.owner'
+        **Relationship (LinkNMS):** project.owner
+
+
+        PRD-12 N-12 (flow D21). `document_ids` are the build''s files (project, location or task files the
+        participants share, never an organisation-private one — 422 otherwise); at least one. `expires_at` at
+        most 90 days out. The `url` (and its token) is answered ONCE, here; only its sha256 is stored. The scope
+        is frozen at creation (a trigger refuses any later change but the revocation).'
       x-clerk-permission: org:plan:edit
       x-relationship: project.owner
       parameters:
@@ -1995,6 +2044,184 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /share-links/{shareLinkId}:revoke:
+    parameters:
+    - name: shareLinkId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      tags:
+      - Project
+      operationId: revokeShareLink
+      summary: Revoke a share link now (PRD-12 N-12)
+      description: '**Clerk permission:** `org:plan:edit`
+
+
+        **Relationship (LinkNMS):** project.owner
+
+
+        The link answers `410` from the next request on. Revoking a revoked link answers it unchanged; an
+        expired link can still be revoked (the record says who closed it). Ledgered as
+        `project.share_link.revoked`.'
+      x-clerk-permission: org:plan:edit
+      x-relationship: project.owner
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLink'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /share-links/{shareLinkId}/accesses:
+    parameters:
+    - name: shareLinkId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Project
+      operationId: listShareLinkAccesses
+      summary: Who opened the link, when, and what they downloaded (PRD-12 N-12)
+      description: '**Clerk permission:** `org:plan:edit`
+
+
+        **Relationship (LinkNMS):** project.owner
+
+
+        Every access the public surface served, newest first (append-only log, also ledgered without the
+        address as `project.share_link.accessed`).'
+      x-clerk-permission: org:plan:edit
+      x-relationship: project.owner
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ShareLinkAccess'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /shared/{token}:
+    parameters:
+    - name: token
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      tags:
+      - Project
+      operationId: resolveShareLink
+      summary: The documents a share link opens — for the holder, no account (PRD-12 N-12)
+      description: '**Clerk permission:** none (token-authenticated)
+
+
+        **Relationship (LinkNMS):** the link holder — the token in the path IS the credential (as the RFP
+        personal link, gap S1: dispatched in-process by the public page, never a wire URL).
+
+
+        Answers the build''s name, the audience, the expiry and the shared documents ONLY (current version,
+        read-only). Each successful read is logged (`view`) with the time, address and user agent. An unknown
+        token is `404`; a known token past `expires_at` or revoked is `410 gone` with `reason`
+        (`expired` | `revoked`) and `expires_at`, and is not logged as an access.'
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: 410 gone — the link expired or was revoked (`reason`, `expires_at`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /shared/{token}/documents/{documentId}:download:
+    parameters:
+    - name: token
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Project
+      operationId: downloadSharedDocument
+      summary: 302 to a short-lived signed URL of one shared document (PRD-12 N-12)
+      description: '**Clerk permission:** none (token-authenticated)
+
+
+        **Relationship (LinkNMS):** the link holder; the document must be one the link names.
+
+
+        `disposition=inline` opens it in the browser (PDF, images), `attachment` (default) downloads it. Logged
+        (`download`, with the document) before the redirect; `404` for a document the link does not name, `410`
+        as `resolveShareLink`.'
+      security: []
+      parameters:
+      - name: disposition
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - attachment
+          - inline
+      responses:
+        '302':
+          description: Redirect to a short-lived signed URL
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: 410 gone — the link expired or was revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /projects/{projectId}/phases:
     parameters:
     - name: projectId
@@ -8261,6 +8488,78 @@ paths:
       schema:
         type: string
         format: uuid
+    get:
+      tags:
+      - Quality
+      operationId: listNonConformities
+      summary: The build's non-conformities (PRD-12 N-3)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        Newest first. `status` filters one state, or `active` (everything not `closed`, the default). Each item
+        carries what the screen needs to offer the next step; the server still decides every transition
+        (assign: raiser | client chain; fix: assignee; close and reject-fix: the raising organisation only).'
+      x-relationship: project.participant
+      x-mcp-tool: list_nonconformities
+      x-mcp-mode: read
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - active
+          - all
+          - open
+          - assigned
+          - fixed
+          - rejected_fix
+          - closed
+      - name: kind
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - quality
+          - safety
+      - name: task_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/NonConformity'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
     post:
       tags:
       - Quality
@@ -8325,7 +8624,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Decision'
+              $ref: '#/components/schemas/NonConformityAssign'
       responses:
         '200':
           description: OK
@@ -8495,6 +8794,61 @@ paths:
       schema:
         type: string
         format: uuid
+    get:
+      tags:
+      - Quality
+      operationId: listInspections
+      summary: The build's inspections (PRD-12 N-4)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        Newest inspection date first; `task_id` / `location_id` keep the ones recorded against that row or place.'
+      x-relationship: project.participant
+      x-mcp-tool: list_inspections
+      x-mcp-mode: read
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - name: task_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: location_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Inspection'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
     post:
       tags:
       - Quality
@@ -9718,17 +10072,36 @@ paths:
       tags:
       - Collaboration
       operationId: listMyQuestions
-      summary: Open questions addressed to me
+      summary: Questions addressed to my organisation, across builds (PRD-12 N-7)
       description: '**Clerk permission:** none beyond an authenticated session
 
 
-        **Relationship (LinkNMS):** none'
+        **Relationship (LinkNMS):** none (the addressee is the active organisation)
+
+
+        Defaults to `status=open`. `topic` narrows to clarifications, design-change approvals or scope gaps;
+        `project` to one build. Each item names its `project_id` for the deep link.'
       parameters:
       - name: status
         in: query
         required: false
         schema:
           type: string
+          enum:
+          - open
+          - answered
+          - resolved
+      - name: topic
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/QuestionTopic'
+      - name: project
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
       - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/Limit'
       responses:
@@ -9753,6 +10126,83 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /projects/{projectId}/questions:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Collaboration
+      operationId: listProjectQuestions
+      summary: The build's questions my organisation asked or must answer (PRD-12 N-5)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        Questions on any object of the build where the active organisation is the asker or the addressee —
+        never someone else''s exchange (a thread''s visibility is its object''s, doc 08). `role=addressed` is the
+        queue (the architect''s clarifications and design-change approvals; the owner''s scope gaps),
+        `role=asked` what the organisation is waiting on. Newest first.'
+      x-relationship: project.participant
+      x-mcp-tool: list_project_questions
+      x-mcp-mode: read
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - name: role
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - addressed
+          - asked
+          - all
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - open
+          - answered
+          - resolved
+      - name: topic
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/QuestionTopic'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Comment'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/minutes:
     parameters:
     - name: projectId
@@ -9761,6 +10211,50 @@ paths:
       schema:
         type: string
         format: uuid
+    get:
+      tags:
+      - Collaboration
+      operationId: listMinutes
+      summary: The build's meeting minutes (PRD-12 N-6)
+      description: '**Clerk permission:** none beyond an authenticated session
+
+
+        **Relationship (LinkNMS):** project.participant
+
+
+        Newest meeting first. A `draft` is shown only to the organisation that wrote it; circulated and
+        acknowledged minutes to every participant, with each attending organisation''s acknowledgement.'
+      x-relationship: project.participant
+      x-mcp-tool: list_minutes
+      x-mcp-mode: read
+      parameters:
+      - $ref: '#/components/parameters/projectId'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/MeetingMinute'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
     post:
       tags:
       - Collaboration
@@ -12270,6 +12764,9 @@ components:
                 type: string
     ShareLink:
       type: object
+      description: 'A scoped, expiring link for someone with no account (flow D21). `url` is answered only by
+        `createShareLink`. `status`, `created_at`, `revoked_at`, `access_count`, `last_accessed_at` are
+        read-only (PRD-12 N-12).'
       properties:
         id: *id001
         audience:
@@ -12284,6 +12781,73 @@ components:
           type: string
           format: uri
         expires_at: *id004
+        status:
+          type: string
+          enum:
+          - active
+          - expired
+          - revoked
+        created_at: *id004
+        revoked_at: *id004
+        access_count:
+          type: integer
+        last_accessed_at: *id004
+    ShareLinkAccess:
+      type: object
+      description: One access the public share surface served (PRD-12 N-12). Append-only.
+      properties:
+        id: *id001
+        at: *id004
+        action:
+          type: string
+          enum:
+          - view
+          - download
+        document_id: *id001
+        ip:
+          type: string
+        user_agent:
+          type: string
+    SharedDocument:
+      type: object
+      properties:
+        id: *id001
+        title:
+          type: string
+        kind:
+          type: string
+        file_type:
+          type: string
+        mime:
+          type: string
+        version_no:
+          type: integer
+        size_bytes:
+          type: integer
+        sha256:
+          type: string
+        uploaded_at: *id004
+    SharedView:
+      type: object
+      description: What the holder of a share link sees — the build's name, who it is for, until when, and the
+        shared documents only (PRD-12 N-12).
+      properties:
+        project_name:
+          type: string
+        municipality_code:
+          type: string
+        audience:
+          type: string
+        expires_at: *id004
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/SharedDocument'
+      required:
+      - project_name
+      - audience
+      - expires_at
+      - documents
     Phase:
       type: object
       description: 'A phase-sequencing layer on the project record (LINA-356 /
@@ -15303,7 +15867,26 @@ components:
           - fixed
           - closed
           - rejected_fix
-      description: Only the raising organisation can close it.
+        location_id:
+          description: Where on site (a project location, PRD-12 N-3).
+          type: string
+          format: uuid
+        raised_at: *id004
+        status_changed_at: *id004
+        last_note:
+          type: string
+          description: The note of the latest transition (why the fix was rejected, what was done). Read-only.
+      description: 'Only the raising organisation can close it, or reject the fix back to the assignee
+        (`rejected_fix`, who fixes again or is reassigned). `photo_document_ids` are the build''s documents (the
+        photos uploaded through the documents flow).'
+    NonConformityAssign:
+      type: object
+      description: Assign a non-conformity to the organisation responsible for the fix (PRD-12 N-3). Without
+        `assigned_to_org_id` the organisation named when it was raised stands.
+      properties:
+        assigned_to_org_id: *id001
+        note:
+          type: string
     Inspection:
       type: object
       properties:
@@ -15329,6 +15912,12 @@ components:
         task_ids:
           type: array
           items: *id001
+        location_ids:
+          description: The project locations inspected (PRD-12 N-4).
+          type: array
+          items: *id001
+        inspector_org_id: *id001
+        recorded_at: *id004
     DocumentCreate:
       type: object
       properties:
@@ -15972,10 +16561,28 @@ components:
         attachment_ids:
           type: array
           items: *id001
+        topic:
+          $ref: '#/components/schemas/QuestionTopic'
+        decision:
+          description: On the answer to a `design_change` question only (required there) — the addressee
+            approves or rejects the change (PRD-12 N-5).
+          type: string
+          enum:
+          - approved
+          - rejected
       required:
       - id
       - kind
       - body
+    QuestionTopic:
+      type: string
+      description: 'What a question is (PRD-12 N-5, flows C16–C17): a `clarification` (default), a
+        `design_change` the addressee approves or rejects when answering, or a `scope_gap` — work nobody
+        holds, always routed to the project owner (an `addressee_org_id` naming anyone else is refused).'
+      enum:
+      - clarification
+      - design_change
+      - scope_gap
     Comment:
       type: object
       properties:
@@ -16003,10 +16610,23 @@ components:
         answers_comment_id: *id001
         created_at: *id004
         deleted: *id002
+        project_id: *id001
+        topic:
+          $ref: '#/components/schemas/QuestionTopic'
+        decision:
+          type: string
+          enum:
+          - approved
+          - rejected
+        attachment_ids:
+          type: array
+          items: *id001
     MeetingMinute:
       type: object
       properties:
         id: *id001
+        project_id: *id001
+        created_by_org_id: *id001
         date: *id003
         attendees:
           type: array

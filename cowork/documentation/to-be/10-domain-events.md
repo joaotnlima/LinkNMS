@@ -129,6 +129,20 @@ imported_by_org_id, imported_by_org_name, owner_org_id` — scope `project`. Wri
 rows (the structural batch's own `planning.task.moved` entry stays the row-level audit); the ledger payload carries the
 same counts, which is the record's "Plan imported by {GC}, {n} actions, {m} sub-actions" stamp (flow 01 screen 11).
 
+**`quality.nonconformity.*` data (PRD-12 N-3):** `nonconformity_id, project_id, task_id, contract_id, location_id, kind,
+severity, status, assigned_to_org_id, raised_by_org_id` (+ `note` on the transitions) — scope `project`. Contracting's
+reception guard reads `status`; the notification centre names the assigned or the raising org from the data alone.
+
+**`collaboration.question.opened` data (PRD-12 N-5):** adds `topic` (`clarification` | `design_change` | `scope_gap`); a
+`scope_gap` is always addressed to the project owner (read through the project's build port `ownerOf`, never
+`project.*`). `.answered` adds `topic` and, for a design change, `decision` (`approved` | `rejected`).
+
+**Share links (PRD-12 N-12, flow D21) — ledger only, no outbox event:** `project.share_link.created` (audience, document
+ids, expiry), `project.share_link.revoked`, and `project.share_link.accessed` for every access the public surface serves
+(`share_link_id, action (view | download), document_id?`) — scope `project`, so every participant can see that "the
+municipality opened the licence pack on T". The address and user agent stay in `project.share_link_access` (owner-only
+read), never in the hash chain.
+
 **`project.invitation.accepted` data (PRD-12 N-1):** `invitation_id, org_id, invited_by_org_id, invite_capacity` — scope
 `project`. Published in the acceptance transaction (it was ledger-only before PRD-12).
 
@@ -148,7 +162,10 @@ injected at the composition root (`app/src/server/v2/dispatcher.ts`):
 | `tendering.bid_request.approved` / `.declined` | `tendering` | the asking company (`data.org_id`, by role `org:tendering:bid`) | — (on the event) | `/requests/{rfp}` · `/requests?tab=near` |
 | `planning.variation.recorded`, `.updated` | `variations` (15-min digest) | owner + client of the row's contract, narrowed by `collaboration.variation_subscription` | planning `variationAudience` | `/projects/{p}/plan` |
 | `project.invitation.accepted` | `invitations` | inviter org | — (on the event) | `/projects/{p}` |
-| `collaboration.question.*`, `quality.nonconformity.raised` | `questions`, `quality` | addressee / asker / assigned org | — (on the event) | `/projects/{p}` |
+| `collaboration.question.opened` / `.answered` / `.resolved` | `questions` | addressee / asker / addressee org | — (on the event) | `/projects/{p}/questions?q={comment}` |
+| `quality.nonconformity.raised`, `.assigned`, `.fix_rejected` | `quality` | the assigned org (never the actor's org) | — (on the event) | `/projects/{p}/quality?nc={id}` |
+| `quality.nonconformity.fixed` | `quality` | the raising org (it closes or rejects the fix) | — (on the event) | `/projects/{p}/quality?nc={id}` |
+| `quality.nonconformity.closed` | `quality` | the assigned org | — (on the event) | `/projects/{p}/quality?nc={id}` |
 | `planning.deliverable.submitted` | `files` | the client side of the task: orgs whose edit scope contains the row (owner, clients up the branch chain), minus the assignee and the submitter | planning `deliverableAudience` | `/projects/{p}/plan?task={t}&tab=files` |
 | `planning.deliverable.approved`, `.changes_requested` | `files` | the submitter org and the task's assignee org (never the decider) | planning `deliverableAudience` | `/projects/{p}/plan?task={t}&tab=files` |
 | `documents.version.uploaded` (with `linked_task_ids`) | `files` | the owner of every linking task — its effective assignee org, else the project owner — minus the uploader | planning `taskOwners` | `/projects/{p}/plan?task={t}&tab=files` |
