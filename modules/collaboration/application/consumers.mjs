@@ -16,8 +16,11 @@
 //       narrowed/extended by collaboration.variation_subscription
 //   project.invitation.accepted      → the inviter org
 //   planning.plan.imported           → the project owner (PRD-09 O-12)
-//   collaboration.question.*         → addressee / asker org
-//   quality.nonconformity.raised     → the assigned org
+//   collaboration.question.*         → addressee / asker org; a design change
+//                                      and a scope gap say so (PRD-12 N-5)
+//   quality.nonconformity.raised / .assigned / .fix_rejected / .closed
+//                                    → the assigned org; .fixed → the raiser
+//                                      (only it closes, PRD-12 N-3)
 //   planning.deliverable.submitted   → client side of the task (planning port)
 //   planning.deliverable.approved / .changes_requested
 //                                    → the submitter org + the task's assignee
@@ -34,10 +37,11 @@
 // Nothing here is ledgered — notifications are housekeeping, not the record.
 import {
   bidSubmittedTargets, clarificationAnsweredTargets, awardedTargets, cancelledTargets,
-  invitationAcceptedTargets, variationDigestOrgs, variationDigestRef, projectUrl, notificationEmail,
+  invitationAcceptedTargets, variationDigestOrgs, variationDigestRef, notificationEmail,
   deliverableSubmittedTargets, deliverableDecidedTargets, newVersionTargets, modelEditedTargets,
   bidRequestedTargets, bidRequestDecidedTargets, planImportedTargets,
 } from '../domain/notifications.mjs';
+import { questionTargets, nonConformityTargets } from '../domain/coordination.mjs';
 
 const NO_PEOPLE = Object.freeze({ projectAudience: async () => [], orgAudience: async () => [] });
 
@@ -96,17 +100,6 @@ export function collaborationConsumers(store, ports = {}) {
     }
   }
 
-  const onProject = (category, title, orgOf, refOf) => async (evt) => {
-    if (!evt.project_id) return;
-    await deliver(evt, [{
-      orgId: orgOf(evt),
-      audience: 'project',
-      category,
-      title,
-      objectRef: { ...refOf(evt), project_id: evt.project_id, url: projectUrl(evt.project_id) },
-    }].filter((t) => t.orgId));
-  };
-
   const rfpEvent = (decide) => async (evt) => {
     if (!ports.tendering) return;
     const rfpId = evt.data?.rfp_id ?? null;
@@ -164,23 +157,14 @@ export function collaborationConsumers(store, ports = {}) {
     'project.invitation.accepted': (evt) => deliver(evt, invitationAcceptedTargets(evt)),
     'planning.plan.imported': (evt) => deliver(evt, planImportedTargets(evt)),
 
-    'collaboration.question.opened': onProject(
-      'questions', 'A question was addressed to your organisation',
-      (evt) => evt.data?.addressee_org_id, (evt) => ({ type: 'comment', id: evt.data?.comment_id }),
-    ),
-    'collaboration.question.answered': onProject(
-      'questions', 'Your question was answered',
-      (evt) => evt.data?.asker_org_id, (evt) => ({ type: 'comment', id: evt.data?.comment_id }),
-    ),
-    'collaboration.question.resolved': onProject(
-      'questions', 'A question you answered was resolved',
-      (evt) => evt.data?.addressee_org_id, (evt) => ({ type: 'comment', id: evt.data?.comment_id }),
-    ),
-    'quality.nonconformity.raised': onProject(
-      'quality', 'A non-conformity was assigned to your organisation',
-      (evt) => evt.data?.assigned_to_org_id,
-      (evt) => ({ type: 'nonconformity', id: evt.data?.nonconformity_id ?? evt.scope?.id }),
-    ),
+    'collaboration.question.opened': (evt) => deliver(evt, questionTargets(evt)),
+    'collaboration.question.answered': (evt) => deliver(evt, questionTargets(evt)),
+    'collaboration.question.resolved': (evt) => deliver(evt, questionTargets(evt)),
+    'quality.nonconformity.raised': (evt) => deliver(evt, nonConformityTargets(evt)),
+    'quality.nonconformity.assigned': (evt) => deliver(evt, nonConformityTargets(evt)),
+    'quality.nonconformity.fixed': (evt) => deliver(evt, nonConformityTargets(evt)),
+    'quality.nonconformity.fix_rejected': (evt) => deliver(evt, nonConformityTargets(evt)),
+    'quality.nonconformity.closed': (evt) => deliver(evt, nonConformityTargets(evt)),
 
     'planning.variation.recorded': digest,
     'planning.variation.updated': digest,

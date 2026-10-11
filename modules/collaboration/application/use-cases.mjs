@@ -19,6 +19,9 @@ import {
   commentBody, minuteBody, notificationBody, activityItem,
 } from '../domain/lifecycle.mjs';
 import { NOTIFICATION_CATEGORIES, effectivePreferences } from '../domain/notifications.mjs';
+import {
+  QUESTION_TOPICS, questionAddressee, answerDecision, questionActions, minuteActions,
+} from '../domain/coordination.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -36,11 +39,15 @@ export async function listComments({ viewer, store, objectType, objectId, query 
     cursor: uuidOrNull(query?.cursor),
     limit: clampLimit(query?.limit),
   });
-  return { status: 200, body: { items: items.map(commentBody), next_cursor: nextCursor } };
+  return { status: 200, body: { items: items.map((c) => projectComment(c, viewer)), next_cursor: nextCursor } };
 }
 
-/** operationId: createComment — note, or question with an addressee (D-13). */
-export async function createComment({ viewer, store, objectType, objectId, body }) {
+/**
+ * operationId: createComment — note, or question with an addressee (D-13).
+ * A question has a topic (PRD-12 N-5): a scope gap is routed to the owner,
+ * named through the project's build port (`ports.builds.ownerOf`).
+ */
+export async function createComment({ viewer, store, ports = {}, objectType, objectId, body }) {
   requireActiveOrg(viewer);
   const { projectId } = await requireReadableObject({ viewer, store, objectType, objectId });
 
@@ -53,12 +60,24 @@ export async function createComment({ viewer, store, objectType, objectId, body 
   if (!Array.isArray(mentions) || mentions.some((m) => !UUID.test(m ?? ''))) errors.mentions = 'a list of person ids';
   const attachments = body?.attachment_ids ?? [];
   if (!Array.isArray(attachments) || attachments.some((a) => !UUID.test(a ?? ''))) errors.attachment_ids = 'a list of document ids';
+  const topic = body?.kind === 'question' ? (body?.topic ?? 'clarification') : null;
   if (body?.kind === 'question') {
     // The DB CHECK (kind = question ⇔ status present) backs this; the
     // addressee is what makes it a dispute channel and not a shout.
-    if (!UUID.test(body?.addressee_org_id ?? '')) errors.addressee_org_id = 'a question is addressed to an organisation';
-  } else if (body?.addressee_org_id !== undefined && body?.addressee_org_id !== null) {
-    errors.addressee_org_id = 'only questions carry an addressee';
+    if (!QUESTION_TOPICS.includes(topic)) errors.topic = QUESTION_TOPICS.join(', ');
+    if (body?.addressee_org_id != null && !UUID.test(body.addressee_org_id)) errors.addressee_org_id = 'an organisation id';
+  } else {
+    if (body?.addressee_org_id !== undefined && body?.addressee_org_id !== null) errors.addressee_org_id = 'only questions carry an addressee';
+    if (body?.topic !== undefined && body?.topic !== null) errors.topic = 'only questions carry a topic';
+  }
+  let addresseeOrgId = null;
+  if (body?.kind === 'question' && !errors.topic && !errors.addressee_org_id) {
+    const owner = topic === 'scope_gap' && projectId ? await requireBuilds(ports).ownerOf(projectId) : null;
+    const routed = questionAddressee({
+      topic, addresseeOrgId: body?.addressee_org_id ?? null, ownerOrgId: owner?.owner_org_id ?? null, askerOrgId: viewer.orgId,
+    });
+    if (routed.ok) addresseeOrgId = routed.addresseeOrgId;
+    else errors.addressee_org_id = routed.error;
   }
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
@@ -68,7 +87,7 @@ export async function createComment({ viewer, store, objectType, objectId, body 
   const existing = await store.getComment(body.id);
   if (existing) {
     if (existing.author_org_id === viewer.orgId && existing.object_id === objectId) {
-      return { status: 201, body: commentBody(existing) };
+      return { status: 201, body: projectComment(existing, viewer) };
     }
     throw new ProblemError('idempotency_mismatch', 'this id was already used by a different request');
   }
@@ -82,10 +101,11 @@ export async function createComment({ viewer, store, objectType, objectId, body 
     body: body.body.trim(),
     mentions: [...new Set(mentions)],
     attachmentDocumentIds: [...new Set(attachments)],
-    addresseeOrgId: body.kind === 'question' ? body.addressee_org_id : null,
+    addresseeOrgId,
+    topic,
     actor: actorOf(actor, viewer),
   });
-  return { status: 201, body: commentBody(created) };
+  return { status: 201, body: projectComment({ ...created, project_id: projectId }, viewer) };
 }
 
 /** operationId: answerQuestion — addressee org only; open → answered. */
@@ -99,6 +119,8 @@ export async function answerQuestion({ viewer, store, commentId, body }) {
   if (!outcome.ok) throw new ProblemError('invalid_transition', outcome.reason);
 
   const errors = {};
+  const decided = answerDecision(question.topic, body?.decision);
+  if (!decided.ok) errors.decision = decided.error;
   if (!UUID.test(body?.id ?? '')) errors.id = 'client-generated UUIDv7 required';
   if (typeof body?.body !== 'string' || !body.body.trim()) errors.body = 'required';
   else if (body.body.length > MAX_BODY) errors.body = `at most ${MAX_BODY} characters`;
@@ -113,11 +135,13 @@ export async function answerQuestion({ viewer, store, commentId, body }) {
     body: body.body.trim(),
     mentions: [...new Set(body?.mentions ?? [])],
     attachmentDocumentIds: [...new Set(attachments)],
+    decision: decided.decision,
+    topic: question.topic ?? 'clarification',
     projectId: question.project_id,
     actor: actorOf(actor, viewer),
   });
   if (!answered) throw new ProblemError('invalid_transition', 'someone answered this question first');
-  return { status: 201, body: commentBody(answered) };
+  return { status: 201, body: projectComment(answered, viewer) };
 }
 
 /** operationId: resolveQuestion — asker only; answered → resolved. */
@@ -137,23 +161,27 @@ export async function resolveQuestion({ viewer, store, commentId }) {
     actor: actorOf(actor, viewer),
   });
   if (!resolved) throw new ProblemError('invalid_transition', 'someone moved this question first');
-  return { status: 200, body: commentBody(resolved) };
+  return { status: 200, body: projectComment({ ...resolved, project_id: question.project_id }, viewer) };
 }
 
-/** operationId: listMyQuestions — the active org's addressee queue. */
+/** operationId: listMyQuestions — the active org's addressee queue, across builds (PRD-12 N-7). */
 export async function listMyQuestions({ viewer, store, query }) {
   requireActiveOrg(viewer);
-  if (query?.status !== undefined && !QUESTION_STATUSES.has(query.status)) {
-    throw new ProblemError('validation_failed', null, { errors: { status: 'open, answered or resolved' } });
-  }
+  const errors = {};
+  if (query?.status !== undefined && !QUESTION_STATUSES.has(query.status)) errors.status = 'open, answered or resolved';
+  if (query?.topic !== undefined && !QUESTION_TOPICS.includes(query.topic)) errors.topic = QUESTION_TOPICS.join(', ');
+  if (query?.project !== undefined && !UUID.test(query.project)) errors.project = 'a project id';
+  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
   const { items, nextCursor } = await store.listMyQuestions({
     orgId: viewer.orgId,
     // The queue defaults to what still needs an answer.
     status: query?.status ?? 'open',
+    topic: query?.topic ?? null,
+    projectId: query?.project ?? null,
     cursor: uuidOrNull(query?.cursor),
     limit: clampLimit(query?.limit),
   });
-  return { status: 200, body: { items: items.map(commentBody), next_cursor: nextCursor } };
+  return { status: 200, body: { items: items.map((c) => projectComment(c, viewer)), next_cursor: nextCursor } };
 }
 
 /** operationId: createMinute — draft ata de obra; participant writes it. */
@@ -185,7 +213,7 @@ export async function createMinute({ viewer, store, projectId, body }) {
   if (existing) {
     if (existing.created_by_org_id === viewer.orgId && existing.project_id === projectId) {
       const parts = await store.minuteParts(body.id);
-      return { status: 201, body: minuteBody(existing, parts.items, parts.acks) };
+      return { status: 201, body: projectMinute(existing, parts, viewer) };
     }
     throw new ProblemError('idempotency_mismatch', 'this id was already used by a different request');
   }
@@ -205,7 +233,7 @@ export async function createMinute({ viewer, store, projectId, body }) {
     actor: actorOf(actor, viewer),
   });
   const parts = await store.minuteParts(body.id);
-  return { status: 201, body: minuteBody(created, parts.items, parts.acks) };
+  return { status: 201, body: projectMinute(created, parts, viewer) };
 }
 
 /** operationId: circulateMinute — author only; draft → circulated. */
@@ -220,7 +248,7 @@ export async function circulateMinute({ viewer, store, minuteId }) {
   const updated = await store.circulateMinute({ minuteId });
   if (!updated) throw new ProblemError('invalid_transition', 'someone moved this minute first');
   const parts = await store.minuteParts(minuteId);
-  return { status: 200, body: minuteBody(updated, parts.items, parts.acks) };
+  return { status: 200, body: projectMinute(updated, parts, viewer) };
 }
 
 /** operationId: acknowledgeMinute — attendee org; replays are absorbed. */
@@ -239,7 +267,7 @@ export async function acknowledgeMinute({ viewer, store, minuteId }) {
     actor: actorOf(actor, viewer),
   });
   const parts = await store.minuteParts(minuteId);
-  return { status: 200, body: minuteBody(updated, parts.items, parts.acks) };
+  return { status: 200, body: projectMinute(updated, parts, viewer) };
 }
 
 /** operationId: listActivity — the outbox projection, viewer-filtered. */
@@ -343,6 +371,21 @@ export async function putNotificationPreferences({ viewer, store, body }) {
 
 // ── shared helpers ───────────────────────────────────────────────────────
 
+/** A comment with the viewer's next step on it, when it is a question. */
+export function projectComment(c, viewer) {
+  return commentBody(c, c.kind === 'question' ? questionActions(c, viewer.orgId) : undefined);
+}
+
+/** A minute with its items, acks and the viewer's next step. */
+export function projectMinute(minute, parts, viewer) {
+  return minuteBody(minute, parts.items, parts.acks, minuteActions(minute, parts.acks, viewer.orgId));
+}
+
+function requireBuilds(ports) {
+  if (!ports.builds?.ownerOf) throw new Error('collaboration needs the project build port to route a scope gap');
+  return ports.builds;
+}
+
 /** Resolve + read-check an object; 404 hides both absence and no-access. */
 async function requireReadableObject({ viewer, store, objectType, objectId }) {
   if (!THREAD_OBJECT_TYPES.includes(objectType) || !UUID.test(objectId ?? '')) {
@@ -372,7 +415,7 @@ async function requireMinute({ viewer, store, minuteId }) {
   return minute;
 }
 
-async function requireParticipant({ viewer, store, projectId }) {
+export async function requireParticipant({ viewer, store, projectId }) {
   requireActiveOrg(viewer);
   if (!(await store.isParticipant(projectId, viewer.orgId))) {
     // 404, not 403: a non-participant does not learn the project exists.
@@ -400,11 +443,11 @@ function actorOf(person, viewer) {
   return { personId: person.id, orgId: viewer.orgId, orgRole: viewer.orgRole, channel: viewer.channel };
 }
 
-function uuidOrNull(raw) {
+export function uuidOrNull(raw) {
   return raw !== undefined && UUID.test(raw) ? raw : null;
 }
 
-function clampLimit(raw) {
+export function clampLimit(raw) {
   const n = Number(raw ?? 50);
   if (!Number.isInteger(n) || n < 1) return 50;
   return Math.min(n, 200);

@@ -238,7 +238,9 @@ export function getRouter() {
   // Phase 7 — Collaboration (threads with addressed questions, meeting
   // minutes, the activity feed, notifications). The event consumers that
   // FILL notifications run with the outbox dispatcher, not here.
-  registerCollaboration(router, { store: createCollaborationStore(getPool()) });
+  // PRD-12 N-5: a scope-gap question is routed to the build's owner, named
+  // through the project's build port (never project.*).
+  registerCollaboration(router, { store: createCollaborationStore(getPool()), builds: createBuildPort(projectStore) });
 
   // Phase 8 — Billing (plan catalogue, one subscription per org, usage,
   // add-ons). The entitlements PORT other modules consume is

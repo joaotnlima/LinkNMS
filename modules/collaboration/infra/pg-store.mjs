@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { publishEvent } from '../../../platform/outbox.mjs';
 import { notificationQueries } from './pg-notifications.mjs';
+import { questionQueries } from './pg-questions.mjs';
 
 export function createCollaborationStore(pool) {
   async function tx(fn) {
@@ -194,7 +195,7 @@ export function createCollaborationStore(pool) {
 
     async listComments({ objectType, objectId, cursor, limit }) {
       const { rows } = await pool.query(
-        `SELECT c.*, t.object_type, t.object_id
+        `SELECT c.*, t.object_type, t.object_id, t.project_id
            FROM collaboration.comment c JOIN collaboration.thread t ON t.id = c.thread_id
           WHERE t.object_type = $1 AND t.object_id = $2
             AND ($3::uuid IS NULL OR c.id > $3)
@@ -206,21 +207,7 @@ export function createCollaborationStore(pool) {
       return { items: page, nextCursor: rows.length > limit ? page[page.length - 1].id : null };
     },
 
-    /** The addressee's question queue (D-13: the owner's dispute channel). */
-    async listMyQuestions({ orgId, status, cursor, limit }) {
-      const { rows } = await pool.query(
-        `SELECT c.*, t.object_type, t.object_id
-           FROM collaboration.comment c JOIN collaboration.thread t ON t.id = c.thread_id
-          WHERE c.kind = 'question' AND c.addressee_org_id = $1
-            AND ($2::text IS NULL OR c.question_status = $2)
-            AND ($3::uuid IS NULL OR c.id > $3)
-          ORDER BY c.created_at, c.id
-          LIMIT $4`,
-        [orgId, status, cursor, limit + 1],
-      );
-      const page = rows.slice(0, limit);
-      return { items: page, nextCursor: rows.length > limit ? page[page.length - 1].id : null };
-    },
+    // listMyQuestions, listProjectQuestions, listMinutes: ./pg-questions.mjs (PRD-12).
 
     /**
      * Note: plain insert. Question: + ledger `collaboration.question.opened`
@@ -228,7 +215,7 @@ export function createCollaborationStore(pool) {
      * UNIQUE(object_type, object_id) makes racers converge.
      */
     async createComment({ id, objectType, objectId, projectId, kind, body, mentions,
-      attachmentDocumentIds, addresseeOrgId, actor }) {
+      attachmentDocumentIds, addresseeOrgId, topic = null, actor }) {
       return tx(async (client) => {
         const { rows: [thread] } = await client.query(
           `INSERT INTO collaboration.thread (id, project_id, object_type, object_id)
@@ -241,11 +228,11 @@ export function createCollaborationStore(pool) {
         const { rows } = await client.query(
           `INSERT INTO collaboration.comment
              (id, thread_id, author_person_id, author_org_id, kind, body, mentions,
-              attachment_document_ids, addressee_org_id, question_status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+              attachment_document_ids, addressee_org_id, question_status, topic)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
            RETURNING *`,
           [id, thread.id, actor.personId, actor.orgId, kind, body, mentions,
-            attachmentDocumentIds, addresseeOrgId, isQuestion ? 'open' : null],
+            attachmentDocumentIds, addresseeOrgId, isQuestion ? 'open' : null, isQuestion ? (topic ?? 'clarification') : null],
         );
         const comment = { ...rows[0], object_type: objectType, object_id: objectId };
         if (isQuestion && projectId) {
@@ -256,7 +243,7 @@ export function createCollaborationStore(pool) {
             type: 'collaboration.question.opened',
             scope: { type: 'project', id: projectId },
             object: { type: 'comment', id },
-            payload: { object_type: objectType, object_id: objectId, addressee_org_id: addresseeOrgId },
+            payload: { object_type: objectType, object_id: objectId, addressee_org_id: addresseeOrgId, topic: comment.topic },
             channel: actor.channel,
           });
           await publishEvent(client, {
@@ -271,6 +258,7 @@ export function createCollaborationStore(pool) {
               object_id: objectId,
               addressee_org_id: addresseeOrgId,
               asker_org_id: actor.orgId,
+              topic: comment.topic,
             },
           });
         }
@@ -282,13 +270,15 @@ export function createCollaborationStore(pool) {
      * Answer = the answer comment + the question's open → answered move in
      * ONE transaction; null when the question raced away from `open`.
      */
-    async answerQuestion({ questionId, answerId, body, mentions, attachmentDocumentIds, projectId, actor }) {
+    async answerQuestion({ questionId, answerId, body, mentions, attachmentDocumentIds, decision = null, topic = null,
+      projectId, actor }) {
       return tx(async (client) => {
+        // A design change's decision is kept on the QUESTION (0028).
         const { rows: moved } = await client.query(
-          `UPDATE collaboration.comment SET question_status = 'answered'
+          `UPDATE collaboration.comment SET question_status = 'answered', decision = $2
             WHERE id = $1 AND kind = 'question' AND question_status = 'open'
             RETURNING thread_id, addressee_org_id, author_org_id, author_person_id`,
-          [questionId],
+          [questionId, decision],
         );
         if (!moved.length) return null;
         const q = moved[0];
@@ -312,7 +302,7 @@ export function createCollaborationStore(pool) {
             type: 'collaboration.question.answered',
             scope: { type: 'project', id: projectId },
             object: { type: 'comment', id: questionId },
-            payload: { answer_comment_id: answerId },
+            payload: { answer_comment_id: answerId, ...(decision ? { decision } : {}) },
             channel: actor.channel,
           });
           await publishEvent(client, {
@@ -326,6 +316,8 @@ export function createCollaborationStore(pool) {
               answer_comment_id: answerId,
               asker_org_id: q.author_org_id,
               asker_person_id: q.author_person_id,
+              topic,
+              ...(decision ? { decision } : {}),
             },
           });
         }
@@ -504,5 +496,6 @@ export function createCollaborationStore(pool) {
     // Notifications, preferences and the variation digest (PRD-12) —
     // infra/pg-notifications.mjs, spread so callers still see ONE store.
     ...notificationQueries(pool, tx),
+    ...questionQueries(pool),
   };
 }
