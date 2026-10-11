@@ -49,6 +49,11 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
 - **Defaults and limits live on the server.** `RfpCreate.submission_deadline` is optional: omitted, the server sets 14
   calendar days out at 18:00 Lisbon time (the app no longer computes it). `listShareLinks` answers `max_expires_at`, the
   latest expiry `createShareLink` accepts now (its 90-day limit); the app offers dates up to it and keeps no copy.
+- **`x-clerk-permission` on every operation added since the PRD work began** (and on the public / link-token ones):
+  the permission the use case enforces, or `none` (README). **Behaviour change (D-34):** `linkTaskDocuments`,
+  `unlinkTaskDocument`, `reserveProjectModelVersion`, `saveModelEdits`, `restoreProjectModel` and `createSpecialtyLabel`
+  now require `org:plan:edit` (403 `reason: role` without it) — they edit the plan or its model and checked only the
+  relationship before. Markups stay `none`, like comments.
 
 ## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
 

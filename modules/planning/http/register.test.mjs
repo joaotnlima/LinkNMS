@@ -747,5 +747,8 @@ describe('specialty_code — the directory taxonomy on a row (PRD-03 R-2)', () =
     assert.ok(res.body.items.some((s) => s.label === 'Telhados de xisto'));
     assert.deepEqual(res.body.specialties, res.body.items); // deprecated twin (audit S6)
     assert.equal(router.match('GET', '/specialties'), null);
+    // D-34: remembering a label needs org:plan:edit (audit).
+    const refused = await dispatch('POST', '/specialty-labels', viewer(GC_ORG, { perms: [] }), { label: 'Xisto' });
+    assert.deepEqual([refused.status, refused.body.reason], [403, 'role']);
   });
 });

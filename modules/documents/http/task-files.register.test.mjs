@@ -57,10 +57,10 @@ function fakeStore() {
   };
 }
 
-function viewer(orgId) {
+function viewer(orgId, permissions = ['org:plan:edit']) {
   return createViewerContext({
     clerkUserId: 'user_me', personId: ME, orgId, clerkOrgId: `clerk_${orgId}`,
-    orgKind: 'contractor', orgRole: 'manager', permissions: [], channel: 'ui',
+    orgKind: 'contractor', orgRole: 'manager', permissions, channel: 'ui',
   });
 }
 
@@ -102,6 +102,8 @@ describe('PRD-05 task files over the /api/v2 router', () => {
   test('unlinkTaskDocument: 204 for a link, 404 when there is none', async () => {
     assert.equal((await dispatch('DELETE', `/tasks/${TASK}/document-links/${DOC}`, viewer(GC_ORG))).status, 204);
     assert.equal((await dispatch('DELETE', `/tasks/${SUB}/document-links/${DOC}`, viewer(GC_ORG))).status, 404);
+    // D-34: the editor org's person without org:plan:edit is refused on the permission (audit).
+    assert.equal((await dispatch('DELETE', `/tasks/${TASK}/document-links/${DOC}`, viewer(GC_ORG, []))).status, 403);
   });
 
   test('listProjectDocuments: participants only; type is validated; the search is escaped', async () => {

@@ -460,6 +460,7 @@ paths:
 
 
         **Relationship (LinkNMS):** none'
+      x-clerk-permission: none
       security: []
       responses:
         '204':
@@ -809,6 +810,7 @@ paths:
 
 
         **MCP tool:** `find_companies`'
+      x-clerk-permission: none
       x-mcp-tool: find_companies
       x-mcp-mode: read
       security: []
@@ -955,6 +957,7 @@ paths:
 
 
         **MCP tool:** `get_company`'
+      x-clerk-permission: none
       x-mcp-tool: get_company
       x-mcp-mode: read
       security: []
@@ -995,6 +998,7 @@ paths:
 
 
         **Relationship (LinkNMS):** none'
+      x-clerk-permission: none
       security: []
       x-mcp-tool: get_company_by_slug
       x-mcp-mode: read
@@ -1111,6 +1115,7 @@ paths:
 
 
         **MCP tool:** `list_specialties`'
+      x-clerk-permission: none
       x-mcp-tool: list_specialties
       x-mcp-mode: read
       security: []
@@ -1147,6 +1152,7 @@ paths:
 
 
         **Relationship (LinkNMS):** none'
+      x-clerk-permission: none
       responses:
         '200':
           description: OK
@@ -1178,10 +1184,11 @@ paths:
       - Planning
       operationId: createSpecialtyLabel
       summary: Remember a specialty label for the organisation (idempotent)
-      description: '**Clerk permission:** none beyond an authenticated session with an active organisation
+      description: '**Clerk permission:** `org:plan:edit`
 
 
         **Relationship (LinkNMS):** none'
+      x-clerk-permission: org:plan:edit
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -1766,6 +1773,7 @@ paths:
         **Relationship (LinkNMS):** project.participant — only the invitations the viewer''s OWN organisation
         sent (the invited addresses are the inviter''s business). PRD-09 O-3: the participants page shows the
         invite state (pending / accepted / expired / revoked). Newest first; never a token.'
+      x-clerk-permission: none
       x-relationship: project.participant
       parameters:
       - $ref: '#/components/parameters/projectId'
@@ -1850,6 +1858,7 @@ paths:
         IS the credential. Anti-oracle: an unknown, spent (accepted/revoked) or
         expired token all return the IDENTICAL 404, so this cannot probe token
         validity. Rate-limited.'
+      x-clerk-permission: none
       security: []
       responses:
         '200':
@@ -2193,6 +2202,7 @@ paths:
         read-only). Each successful read is logged (`view`) with the time, address and user agent. An unknown
         token is `404`; a known token past `expires_at` or revoked is `410 gone` with `reason`
         (`expired` | `revoked`) and `expires_at`, and is not logged as an access.'
+      x-clerk-permission: none
       security: []
       responses:
         '200':
@@ -2236,6 +2246,7 @@ paths:
         `disposition=inline` opens it in the browser (PDF, images), `attachment` (default) downloads it. Logged
         (`download`, with the document) before the redirect; `404` for a document the link does not name, `410`
         as `resolveShareLink`.'
+      x-clerk-permission: none
       security: []
       parameters:
       - name: disposition
@@ -3237,6 +3248,7 @@ paths:
         (true while a required deliverable is not approved — `reportProgress` refuses `done`, D-48) and, for the
         viewer, what it may do: `can_edit` (client side — edit scope ∋ row, not the assignee), `can_submit` (the
         assignee org) and `to_review_count` (submitted versions waiting on the viewer''s org).'
+      x-clerk-permission: none
       x-relationship: project.participant
       x-mcp-tool: list_task_deliverables
       x-mcp-mode: read
@@ -3324,6 +3336,7 @@ paths:
 
 
         Bounded (one row per deliverable of the build); `next_cursor` is always null.'
+      x-clerk-permission: none
       x-relationship: project.participant
       parameters:
       - $ref: '#/components/parameters/projectId'
@@ -3899,6 +3912,7 @@ paths:
 
 
         **Relationship (LinkNMS):** project.participant'
+      x-clerk-permission: none
       x-relationship: project.participant
       parameters:
       - $ref: '#/components/parameters/projectId'
@@ -3954,6 +3968,7 @@ paths:
 
 
         **Relationship (LinkNMS):** project.participant'
+      x-clerk-permission: none
       x-relationship: project.participant
       parameters:
       - $ref: '#/components/parameters/projectId'
@@ -4263,6 +4278,7 @@ paths:
         Days that have entries in the window, newest first: organisations on site and total headcount (the
         latest presence entry per organisation), weather, and counts of work, issues and photos. Window
         `from`/`to` (default the last 30 days, at most 366). Bounded by the window; `next_cursor` is always null.'
+      x-clerk-permission: none
       x-relationship: project.participant
       x-mcp-tool: list_daily_logs
       x-mcp-mode: read
@@ -4332,6 +4348,7 @@ paths:
         A day with no entries answers 200 with empty sections (the capture page opens on it). `on_site` and
         `weather` are the latest entry per organisation / of the day — a correction is a newer entry; every entry
         stays in `entries` (append-only, D-23: shown, not rewritten).'
+      x-clerk-permission: none
       x-relationship: project.participant
       x-mcp-tool: get_daily_log
       x-mcp-mode: read
@@ -4450,6 +4467,7 @@ paths:
 
 
         Bounded (at most the last 200 entries); `next_cursor` is always null.'
+      x-clerk-permission: none
       x-relationship: project.participant
       x-mcp-tool: list_task_daily_log
       x-mcp-mode: read
@@ -4707,6 +4725,7 @@ paths:
 
 
         **Relationship (LinkNMS):** the importing organisation ∧ project.participant (others: 404)'
+      x-clerk-permission: none
       parameters:
       - $ref: '#/components/parameters/importId'
       responses:
@@ -5042,6 +5061,7 @@ paths:
 
         **Relationship (LinkNMS):** project.participant | recipient/bidder of an RFP of the
         project; items: issuer | recipient | bidder'
+      x-clerk-permission: none
       x-relationship: 'project.participant | rfp recipient; items: issuer | recipient | bidder'
       x-mcp-tool: list_project_rfps
       x-mcp-mode: read
@@ -5164,6 +5184,7 @@ paths:
 
 
         **Relationship (LinkNMS):** project.participant; items: issuer'
+      x-clerk-permission: none
       x-relationship: 'project.participant; items: issuer'
       x-mcp-tool: list_task_procurement
       x-mcp-mode: read
@@ -5222,6 +5243,7 @@ paths:
 
 
         **Relationship (LinkNMS):** the invited recipient'
+      x-clerk-permission: none
       security: []
       responses:
         '200':
@@ -5325,6 +5347,7 @@ paths:
 
 
         **Relationship (LinkNMS):** the invited recipient'
+      x-clerk-permission: none
       security: []
       requestBody:
         required: true
@@ -5382,6 +5405,7 @@ paths:
 
 
         **Relationship (LinkNMS):** the invited recipient'
+      x-clerk-permission: none
       security: []
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -5433,6 +5457,7 @@ paths:
 
 
         **Relationship (LinkNMS):** the invited recipient'
+      x-clerk-permission: none
       security: []
       requestBody:
         required: true
@@ -5499,6 +5524,7 @@ paths:
 
 
         **Relationship (LinkNMS):** the invited recipient'
+      x-clerk-permission: none
       security: []
       responses:
         '200':
@@ -5837,6 +5863,7 @@ paths:
 
 
         **Relationship (LinkNMS):** the invited recipient'
+      x-clerk-permission: none
       security: []
       responses:
         '200':
@@ -8660,6 +8687,7 @@ paths:
         Newest first. `status` filters one state, or `active` (everything not `closed`, the default). Each item
         carries what the screen needs to offer the next step; the server still decides every transition
         (assign: raiser | client chain; fix: assignee; close and reject-fix: the raising organisation only).'
+      x-clerk-permission: none
       x-relationship: project.participant
       x-mcp-tool: list_nonconformities
       x-mcp-mode: read
@@ -8964,6 +8992,7 @@ paths:
 
 
         Newest inspection date first; `task_id` / `location_id` keep the ones recorded against that row or place.'
+      x-clerk-permission: none
       x-relationship: project.participant
       x-mcp-tool: list_inspections
       x-mcp-mode: read
@@ -9268,6 +9297,7 @@ paths:
         conversation, always `reference`) and `used_on[]` — every task of the project that links the same file, so
         the panel can say "also on 2.5.1" without another read. Bounded (≤ 500 files per task), `next_cursor` is
         always null.'
+      x-clerk-permission: none
       x-relationship: project.participant
       parameters:
       - $ref: '#/components/parameters/taskId'
@@ -9306,7 +9336,7 @@ paths:
       - Documents
       operationId: linkTaskDocuments
       summary: Link project files to a task — never a copy (PRD-05 F-9, F-10, F-17)
-      description: '**Clerk permission:** none beyond an authenticated session
+      description: '**Clerk permission:** `org:plan:edit`
 
 
         **Relationship (LinkNMS):** edit scope ∋ task (D-33) ∧ reader of every linked document
@@ -9318,6 +9348,7 @@ paths:
         the same project can be linked (contract, RFP and proposal files keep their narrower audiences). Idempotent:
         re-linking an already-linked file answers it unchanged (its role is not rewritten). Ledgered as
         `documents.link.added` (audit only, no outbox event).'
+      x-clerk-permission: org:plan:edit
       x-relationship: edit scope ∋ task
       parameters:
       - $ref: '#/components/parameters/taskId'
@@ -9369,7 +9400,7 @@ paths:
       - Documents
       operationId: unlinkTaskDocument
       summary: Remove a file from a task (the file stays in the project)
-      description: '**Clerk permission:** none beyond an authenticated session
+      description: '**Clerk permission:** `org:plan:edit`
 
 
         **Relationship (LinkNMS):** edit scope ∋ task (D-33)
@@ -9378,6 +9409,7 @@ paths:
         Removes this task''s link only — an inherited link goes from this sub-task alone; the document, its versions and
         every other task''s link are untouched. A file attached to the task itself (`attached: true`) has no link to
         remove (404). Ledgered as `documents.link.removed` (audit only).'
+      x-clerk-permission: org:plan:edit
       x-relationship: edit scope ∋ task
       responses:
         '204':
@@ -9415,6 +9447,7 @@ paths:
         live D-33 scope (GC: its branch; an awarded company: its awarded rows; closed when the contract ends, M-9);
         `none`. `access` lists who edits on which scope (M-6). A build without a model answers `document: null`.
         Bidders on an RFP who are not participants never reach this — they see the RFP''s attached view only (M-7).'
+      x-clerk-permission: none
       x-relationship: project.participant
       parameters:
       - $ref: '#/components/parameters/projectId'
@@ -9451,7 +9484,7 @@ paths:
       - Documents
       operationId: reserveProjectModelVersion
       summary: Reserve the next .ifc of the build's model — its first, or a new version by the author (PRD-07 M-9, M-18)
-      description: '**Clerk permission:** none beyond an authenticated session
+      description: '**Clerk permission:** `org:plan:edit`
 
 
         **Relationship (LinkNMS):** project.participant for the first model (that org becomes the model''s author);
@@ -9463,6 +9496,7 @@ paths:
         replaces. Element links and issue pins are keyed by GlobalId, so they carry over to the new file with nothing
         to do; the viewer lists linked elements missing from the new file before upload and warns when an export
         regenerated its GlobalIds (M-18). `createDocumentVersion` on the model document follows the same author rule.'
+      x-clerk-permission: org:plan:edit
       x-relationship: project.participant (first) | model author
       parameters:
       - $ref: '#/components/parameters/projectId'
@@ -9503,7 +9537,7 @@ paths:
       - Documents
       operationId: saveModelEdits
       summary: Save a private draft of record-side edits as a new model version (PRD-07 M-8, M-11, M-12, M-14; D-45)
-      description: '**Clerk permission:** none beyond an authenticated session
+      description: '**Clerk permission:** `org:plan:edit`
 
 
         **Relationship (LinkNMS):** model author | project owner (whole model) | an org with rows in its live D-33 edit
@@ -9522,6 +9556,7 @@ paths:
         element (`resolutions {global_id: mine|theirs}`) — never last-write-wins. `note` is required (it goes on the
         record). Ledgered and published as `documents.model.edited` (the author is notified when someone else saved —
         "edited by"; the owners of the tasks whose elements changed too).'
+      x-clerk-permission: org:plan:edit
       x-relationship: model author | project owner | D-33 edit scope ∋ linked rows
       parameters:
       - $ref: '#/components/parameters/projectId'
@@ -9562,7 +9597,7 @@ paths:
       - Documents
       operationId: restoreProjectModel
       summary: Restore vN — appends v(n+1) as a copy of vN; nothing is deleted (PRD-07 M-17)
-      description: '**Clerk permission:** none beyond an authenticated session
+      description: '**Clerk permission:** `org:plan:edit`
 
 
         **Relationship (LinkNMS):** model author | project owner
@@ -9572,6 +9607,7 @@ paths:
         vN''s element links (links added since are stamped removed in the new version; links removed since are added
         back). Issue pins stay (an issue is never taken off the record). Every version stays. Ledgered and published as
         `documents.model.edited` (`change_kind: restore`).'
+      x-clerk-permission: org:plan:edit
       x-relationship: model author | project owner
       parameters:
       - $ref: '#/components/parameters/projectId'
@@ -9622,6 +9658,7 @@ paths:
 
         The record half of "compare vA ↔ vB". The file half (elements added / removed / properties changed, matched by
         GlobalId) is computed by the viewer from the two IFC files themselves — the server never parses IFC.'
+      x-clerk-permission: none
       x-relationship: project.participant
       parameters:
       - $ref: '#/components/parameters/projectId'
@@ -9661,6 +9698,7 @@ paths:
 
         `model: null` when the build has no model. `can_edit` is the M-8 rule for this row (`edit_reason`: author,
         owner, scope, none). The card opens `/projects/{id}/model?task={taskId}` with the task isolated.'
+      x-clerk-permission: none
       x-relationship: project.participant
       parameters:
       - $ref: '#/components/parameters/taskId'
@@ -9698,6 +9736,7 @@ paths:
         parties), never another org''s private document. `q` searches the title (sheet number or name), `type`
         filters by file type. Each item carries `used_on[]` (the tasks linking it, with role). Newest first; keyset
         pagination.'
+      x-clerk-permission: none
       x-relationship: project.participant
       parameters:
       - $ref: '#/components/parameters/projectId'
@@ -9760,6 +9799,7 @@ paths:
         Markups are a layer kept on the record; the PDF / DWG bytes are never changed. Each markup is pinned to the
         version it was saved in (`version_no`) and to a page (PDF, `"1"`, `"2"`…) or a layout (DWG/DXF, its name).
         A viewer of version *n* shows the markups with `version_no ≤ n`. Ordered by `version_no`, then creation.'
+      x-clerk-permission: none
       x-relationship: readers of the scope
       parameters:
       - $ref: '#/components/parameters/documentId'
@@ -9815,6 +9855,7 @@ paths:
         another markup answers 409. Ledgered as `documents.markups.saved` (sha256 of the unchanged bytes, scope
         `project`); no outbox event — a markup-only version neither notifies task owners nor re-opens a deliverable
         review (the bytes did not change).'
+      x-clerk-permission: none
       x-relationship: project.participant ∧ readers of the scope
       parameters:
       - $ref: '#/components/parameters/documentId'
@@ -9863,6 +9904,7 @@ paths:
 
         The state of a markup is record-side: closing it writes no new version. Ledgered as `documents.markup.closed`
         (audit only). Closing a closed markup answers it unchanged.'
+      x-clerk-permission: none
       x-relationship: markup author org ∨ edit scope of the document
       parameters:
       - $ref: '#/components/parameters/markupId'
@@ -9900,6 +9942,7 @@ paths:
 
 
         Ledgered as `documents.markup.reopened` (audit only).'
+      x-clerk-permission: none
       x-relationship: markup author org ∨ edit scope of the document
       parameters:
       - $ref: '#/components/parameters/markupId'
@@ -9943,6 +9986,7 @@ paths:
         records the link on the markup, checked through the Collaboration question port and the Quality
         non-conformity port (same project, raised by the viewer''s org). Many markups — on PDF pages and DWG layouts —
         may point at the same issue. Ledgered as `documents.markup.linked` (audit only).'
+      x-clerk-permission: none
       x-relationship: markup author org
       parameters:
       - $ref: '#/components/parameters/markupId'
@@ -9990,6 +10034,7 @@ paths:
 
         Same V6 check as `downloadDocument`, but answers JSON with a presigned **inline** GET (a few minutes) so the
         client-side PDF renderer can fetch the bytes. Only proven versions.'
+      x-clerk-permission: none
       x-relationship: readers of the scope
       parameters:
       - $ref: '#/components/parameters/versionId'
@@ -10033,6 +10078,7 @@ paths:
         only. `layers` lists the file''s layers when the converter provides them (toggling them is the viewer''s own
         view); `warnings` lists what the conversion substituted or could not resolve (missing xrefs, fonts). The .dwg
         itself is never changed. Any other file type answers `status: ready` with no layouts (it renders as-is).'
+      x-clerk-permission: none
       x-relationship: readers of the scope
       parameters:
       - $ref: '#/components/parameters/versionId'
@@ -10308,6 +10354,7 @@ paths:
         never someone else''s exchange (a thread''s visibility is its object''s, doc 08). `role=addressed` is the
         queue (the architect''s clarifications and design-change approvals; the owner''s scope gaps),
         `role=asked` what the organisation is waiting on. Newest first.'
+      x-clerk-permission: none
       x-relationship: project.participant
       x-mcp-tool: list_project_questions
       x-mcp-mode: read
@@ -10383,6 +10430,7 @@ paths:
 
         Newest meeting first. A `draft` is shown only to the organisation that wrote it; circulated and
         acknowledged minutes to every participant, with each attending organisation''s acknowledgement.'
+      x-clerk-permission: none
       x-relationship: project.participant
       x-mcp-tool: list_minutes
       x-mcp-mode: read
@@ -10697,6 +10745,7 @@ paths:
         PRD-09 O-2: the build home''s "What''s waiting for you". One read: per category with unread rows, the
         count and the newest unread item (its title and deep link), newest category first. `project_id`
         narrows to notifications about that build.'
+      x-clerk-permission: none
       parameters:
       - name: project_id
         in: query
@@ -10729,6 +10778,7 @@ paths:
 
         One item per `NotificationCategory` × channel (`in_app`, `email`), in catalogue order. A pair the person
         never set answers its default: enabled (doc 08). PRD-12 N-2, N-8.'
+      x-clerk-permission: none
       responses:
         '200':
           description: OK
@@ -11168,6 +11218,7 @@ paths:
 
 
         **Relationship (LinkNMS):** project.owner'
+      x-clerk-permission: none
       x-relationship: project.owner
       x-mcp-tool: get_portfolio_consent
       x-mcp-mode: read

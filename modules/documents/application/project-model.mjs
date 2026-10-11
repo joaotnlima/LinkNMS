@@ -60,6 +60,11 @@ function roleOf({ viewer, scopes, authorOrgId }) {
   return { isOwner, isAuthor, whole: isOwner || isAuthor, taskIds };
 }
 
+/** D-34: a model version (upload, record-side edit, restore) is plan editing — the permission half. */
+function requirePlanEdit(viewer) {
+  if (!viewer.has('org:plan:edit')) throw new ProblemError('forbidden', null, { reason: 'role' });
+}
+
 function isIfcName(name) {
   return typeof name === 'string' && /\.ifc$/i.test(name.trim());
 }
@@ -151,6 +156,7 @@ export async function getProjectModel({ viewer, store, planning = null, projectI
  */
 export async function reserveProjectModelVersion({ viewer, store, storage, projectId, body, idempotencyKey = null }) {
   await requireReadableProject({ viewer, store, projectId });
+  requirePlanEdit(viewer);
   // A replay answers the same reservation (and ticket) instead of a second version.
   return store.idempotent(
     { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'reserveProjectModelVersion', body: { project_id: projectId, ...body } },
@@ -214,6 +220,7 @@ async function reserveVersion({ viewer, store, storage, projectId, body }) {
 /** operationId: saveModelEdits — a record-side draft becomes version n+1 (M-11..M-14). */
 export async function saveModelEdits({ viewer, store, planning = null, projectId, body, idempotencyKey = null }) {
   await requireReadableProject({ viewer, store, projectId });
+  requirePlanEdit(viewer);
   return store.idempotent(
     { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'saveModelEdits', body: { project_id: projectId, ...body } },
     () => saveEdits({ viewer, store, planning, projectId, body }),
@@ -282,6 +289,7 @@ async function saveEdits({ viewer, store, planning, projectId, body }) {
 /** operationId: restoreProjectModel — Restore vN creates v(n+1) as its copy (M-17). */
 export async function restoreProjectModel({ viewer, store, planning = null, projectId, body, idempotencyKey = null }) {
   await requireReadableProject({ viewer, store, projectId });
+  requirePlanEdit(viewer);
   // Inside the reservation: a replay must not trip "already the current version".
   return store.idempotent(
     { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'restoreProjectModel', body: { project_id: projectId, ...body } },

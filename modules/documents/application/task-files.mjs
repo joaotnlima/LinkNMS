@@ -35,6 +35,8 @@ async function requireReadableTask({ viewer, store, taskId }) {
 
 async function requireTaskEditor({ viewer, store, taskId }) {
   const task = await requireReadableTask({ viewer, store, taskId });
+  // D-34: permission ∧ relationship — linking files to a plan row is plan editing.
+  if (!viewer.has('org:plan:edit')) throw new ProblemError('forbidden', null, { reason: 'role' });
   if (!(await store.canEditScope({ scopeType: 'task', scopeId: taskId, orgId: viewer.orgId }))) {
     throw new ProblemError('forbidden', 'linking files to this task needs its edit scope', { reason: 'relationship' });
   }

@@ -2103,6 +2103,8 @@ export async function listSpecialtyLabels({ viewer, store }) {
 
 export async function createSpecialtyLabel({ viewer, store, body, idempotencyKey = null }) {
   if (!viewer.orgId) throw new ProblemError('unauthenticated', 'active org required');
+  // D-34: remembering a plan label is part of editing the plan.
+  if (!viewer.has('org:plan:edit')) throw new ProblemError('forbidden', null, { reason: 'role' });
   const raw = body?.label;
   if (typeof raw !== 'string' || !raw.trim()) {
     throw new ProblemError('validation_failed', null, { errors: { label: 'required non-empty string' } });

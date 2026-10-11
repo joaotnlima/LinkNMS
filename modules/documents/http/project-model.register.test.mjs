@@ -61,10 +61,10 @@ const planning = {
   },
 };
 
-function viewer(orgId) {
+function viewer(orgId, permissions = ['org:plan:edit']) {
   return createViewerContext({
     clerkUserId: 'user_me', personId: ME, orgId, clerkOrgId: `clerk_${orgId}`,
-    orgKind: 'contractor', orgRole: 'manager', permissions: [], channel: 'ui',
+    orgKind: 'contractor', orgRole: 'manager', permissions, channel: 'ui',
   });
 }
 
@@ -140,6 +140,9 @@ describe('PRD-07 project model over the /api/v2 router', () => {
 
   test('model/versions: the author only, IFC only', async () => {
     const file = { name: 'rev-c.ifc', mime: 'application/octet-stream', size_bytes: 10, sha256: 'a'.repeat(64) };
+    // D-34: without org:plan:edit the author is refused on the permission (audit).
+    const noPerm = await dispatch('POST', `/projects/${PROJECT}/model/versions`, viewer(ARCH, []), { file });
+    assert.deepEqual([noPerm.status, noPerm.body.reason], [403, 'role']);
     assert.equal((await dispatch('POST', `/projects/${PROJECT}/model/versions`, viewer(OWNER), { file })).status, 403);
     assert.equal((await dispatch('POST', `/projects/${PROJECT}/model/versions`, viewer(ARCH), { file: { ...file, name: 'x.pdf' } })).status, 422);
   });
