@@ -33,6 +33,12 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
   critical-path rule (a leaf whose one-working-day slip moves the project finish, and the summaries containing one) —
   the same rule behind `getTenderWindow.critical_task_ids`. The app's own CPM is gone; the plan's critical-path overlay
   reads this field. `float_wd` is not added (not cheap with this rule).
+- **Model upload check server-side (PRD-07 M-18).** `reserveProjectModelVersion` takes optional `global_ids` (the new
+  file's element GlobalIds, extracted by the client — the server does not download and parse up to 100 MB per upload;
+  it validates the list). When the upload completes the server compares them with the record and the previous upload;
+  `getProjectModel` answers `upload_check` (`ModelUploadCheck`: `unmatched_global_ids`, `regenerated`, counts).
+  `ProjectModel.viewer.scope` gains `edits_all` and `editable_global_ids` — the server's M-8 answer, which the app now
+  reads instead of re-deriving the edit scope. Migration `db/v2/0031_documents_model_upload_check.sql`.
 
 ## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
 

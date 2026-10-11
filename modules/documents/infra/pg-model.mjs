@@ -134,6 +134,47 @@ export function modelQueries(pool, tx) {
       return stateOn(pool, documentId);
     },
 
+    // ── the upload check (M-18, 0031) ─────────────────────────────────────
+    /** The client-declared GlobalIds of a reserved model version. */
+    async saveModelElements({ documentId, versionNo, globalIds }) {
+      await pool.query(
+        `INSERT INTO documents.model_upload (document_id, version_no, global_ids) VALUES ($1, $2, $3)
+         ON CONFLICT (document_id, version_no) DO UPDATE SET global_ids = excluded.global_ids
+          WHERE documents.model_upload.checked_at IS NULL`,
+        [documentId, versionNo, globalIds],
+      );
+    },
+
+    /** This version's declared elements and the latest earlier upload's (or null). */
+    async modelUploadPair(documentId, versionNo) {
+      const { rows } = await pool.query(
+        `SELECT version_no, global_ids, checked_at FROM documents.model_upload
+          WHERE document_id = $1 AND version_no <= $2 ORDER BY version_no DESC LIMIT 2`,
+        [documentId, versionNo],
+      );
+      const current = rows[0]?.version_no === versionNo ? rows[0] : null;
+      return { current, previous: current ? rows[1] ?? null : null };
+    },
+
+    async recordModelUploadCheck({ documentId, versionNo, check }) {
+      await pool.query(
+        `UPDATE documents.model_upload
+            SET unmatched_global_ids = $3, regenerated = $4, shared_count = $5, recorded_count = $6, checked_at = now()
+          WHERE document_id = $1 AND version_no = $2 AND checked_at IS NULL`,
+        [documentId, versionNo, check.unmatched, check.regenerated, check.shared, check.recorded],
+      );
+    },
+
+    /** The latest completed check of the model (the one the page shows). */
+    async latestModelUploadCheck(documentId) {
+      const { rows } = await pool.query(
+        `SELECT * FROM documents.model_upload WHERE document_id = $1 AND checked_at IS NOT NULL
+          ORDER BY version_no DESC LIMIT 1`,
+        [documentId],
+      );
+      return rows[0] ?? null;
+    },
+
     /** Live element links of one task (Files tab card, PRD-05 F-4). */
     async taskElementCount(documentId, taskId) {
       const { rows: [{ n }] } = await pool.query(

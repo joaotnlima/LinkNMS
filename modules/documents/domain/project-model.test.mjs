@@ -55,7 +55,10 @@ test('AC2 / M-8: an awarded company links and pins only elements already on its 
   assert.deepEqual(refused.map((r) => r.index), [1, 2, 3]);
   // The author / owner: the whole model.
   assert.deepEqual(scopeRefusals(edit.changes, editScope({ whole: true, links }), { projectTaskIds }), []);
-  assert.deepEqual(scopeBody(scope, {}), { kind: 'tasks', task_ids: [T_ROOF, T_TILES], element_count: 1 });
+  assert.deepEqual(scopeBody(scope, {}), {
+    kind: 'tasks', task_ids: [T_ROOF, T_TILES], element_count: 1, edits_all: false, editable_global_ids: [...scope.globalIds],
+  });
+  assert.equal(scopeBody(editScope({ whole: true, links }), { isOwner: true }).edits_all, true);
   assert.equal(scopeBody(editScope({ whole: false, links }), {}).kind, 'none');
 });
 

@@ -284,9 +284,16 @@ export function pinBody(p) {
 
 /** The viewer's scope on the wire (M-1 "Edit my elements" shows when it is not none). */
 export function scopeBody(scope, { isAuthor, isOwner }) {
-  if (scope.whole) return { kind: isAuthor ? 'author' : (isOwner ? 'owner' : 'whole'), task_ids: [], element_count: null };
-  const count = scope.globalIds?.size ?? 0;
-  return { kind: scope.taskIds.size ? 'tasks' : 'none', task_ids: [...scope.taskIds], element_count: count };
+  // `edits_all` / `editable_global_ids` are the server's answer to "may I edit
+  // this element" (M-8) — the UI reads them, it never re-derives the rule.
+  if (scope.whole) {
+    return { kind: isAuthor ? 'author' : (isOwner ? 'owner' : 'whole'), task_ids: [], element_count: null, edits_all: true };
+  }
+  const editable = [...(scope.globalIds ?? [])].sort();
+  return {
+    kind: scope.taskIds.size ? 'tasks' : 'none', task_ids: [...scope.taskIds], element_count: editable.length,
+    edits_all: false, editable_global_ids: editable,
+  };
 }
 
 /** Element counts per task on the live record (M-3 legend). */

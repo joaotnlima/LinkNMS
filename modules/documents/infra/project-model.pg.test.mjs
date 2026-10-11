@@ -93,10 +93,13 @@ async function freshDb(pg) {
   return { admin, pool };
 }
 
-async function upload({ store, storage, orgId, sha, note }) {
+async function upload({ store, storage, orgId, sha, note, globalIds }) {
   const ticket = await reserveProjectModelVersion({
     viewer: viewer(orgId), store, storage, projectId: PROJECT,
-    body: { file: { name: 'casa.ifc', mime: 'application/octet-stream', size_bytes: 1000, sha256: sha.repeat(64) }, note },
+    body: {
+      file: { name: 'casa.ifc', mime: 'application/octet-stream', size_bytes: 1000, sha256: sha.repeat(64) }, note,
+      ...(globalIds ? { global_ids: globalIds } : {}),
+    },
   });
   const [id, no] = ticket.body.document_version_id.split('.');
   const v = await store.getVersion(id, Number(no));
@@ -246,5 +249,25 @@ describe('the shared project model over Postgres (PRD-07)', { skip }, () => {
     assert.equal(after.body.links.length, before.body.links.length);
     assert.equal(after.body.pins.length, 1);
     assert.equal(after.body.document.versions.at(-1).change_kind, 'upload');
+    assert.equal(after.body.upload_check, null, 'no GlobalIds declared → no check');
+  });
+
+  test('M-18 server-side: the declared GlobalIds are compared with the record and the previous upload on completion', async () => {
+    const live = (await getProjectModel({ viewer: viewer(OWNER), store, planning, projectId: PROJECT })).body.links.map((l) => l.global_id);
+    const dropped = live[0];
+    const kept = [...new Set(live)].filter((x) => x !== dropped);
+    const extra = [10, 11, 12, 13, 14].map(g);
+    await upload({ store, storage, orgId: ARCH, sha: 'd', note: 'Rev D', globalIds: [...kept, ...extra] });
+    const first = (await getProjectModel({ viewer: viewer(OWNER), store, planning, projectId: PROJECT })).body.upload_check;
+    assert.equal(first.version_no, 10);
+    assert.ok(first.unmatched_global_ids.includes(dropped), 'the linked element missing from the file is listed');
+    assert.ok(kept.every((x) => !first.unmatched_global_ids.includes(x)));
+    assert.equal(first.regenerated, false);
+    // An export that regenerated every GlobalId shares nothing with v10.
+    await upload({ store, storage, orgId: ARCH, sha: 'e', note: 'Rev E', globalIds: [20, 21, 22, 23, 24, 25].map(g) });
+    const regen = (await getProjectModel({ viewer: viewer(OWNER), store, planning, projectId: PROJECT })).body.upload_check;
+    assert.deepEqual([regen.version_no, regen.regenerated, regen.shared_count], [11, true, 0]);
+    await assert.rejects(upload({ store, storage, orgId: ARCH, sha: 'f', note: 'x', globalIds: ['nope'] }),
+      (e) => e.problem.code === 'validation_failed');
   });
 });

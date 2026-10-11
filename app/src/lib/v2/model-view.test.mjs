@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 
 import {
   colourContext, colourOf, legendRows, isolatedElements, resolveTaskParam, editableElements, canEditElement,
-  addChange, applyDraft, draftBody, draftLines, historyRows, compareIndexes, uploadCheck, editorOfTask,
+  addChange, applyDraft, draftBody, draftLines, historyRows, compareIndexes, editorOfTask,
   NEUTRAL, STATUS_COLOURS,
 } from './model-view.ts';
 
@@ -54,9 +54,9 @@ test('M-4: ?task= isolates the task and its sub-tasks, by id or outline code', (
   assert.deepEqual([...isolatedElements('tiles', tasks, links)], ['B']);
 });
 
-test('M-8 mirror: whole model for author/owner, linked elements of scoped rows otherwise', () => {
-  assert.equal(editableElements({ viewer: { scope: { kind: 'owner', task_ids: [] } } }, links), 'all');
-  const tn = editableElements({ viewer: { scope: { kind: 'tasks', task_ids: ['tiles'] } } }, links);
+test('M-8: the server answer is read — edits_all, else its editable GlobalIds', () => {
+  assert.equal(editableElements({ viewer: { scope: { kind: 'owner', task_ids: [], edits_all: true } } }), 'all');
+  const tn = editableElements({ viewer: { scope: { kind: 'tasks', task_ids: ['tiles'], edits_all: false, editable_global_ids: ['B'] } } });
   assert.ok(canEditElement(tn, 'B'));
   assert.ok(!canEditElement(tn, 'A'));
 });
@@ -93,16 +93,11 @@ test('M-15: history newest first, "edited by", author review pending until the a
   assert.equal(pending[0].authorReviewPending, true);
 });
 
-test('M-16 / M-18: compare by GlobalId; unmatched records; regenerated GlobalIds warn', () => {
+test('M-16: compare two versions by GlobalId (the M-18 upload check is server-side)', () => {
   const a = new Map([['A', { name: 'Skylight', cls: 'IFCWINDOW', props: { Width: '1.14' } }], ['B', { name: 'Tile', cls: 'IFCCOVERING', props: {} }]]);
   const b = new Map([['A', { name: 'Skylight', cls: 'IFCWINDOW', props: { Width: '0.94' } }], ['D', { name: 'Gutter', cls: 'IFCPIPESEGMENT', props: {} }]]);
   const diff = compareIndexes(a, b);
   assert.deepEqual(diff.added.map((x) => x.globalId), ['D']);
   assert.deepEqual(diff.removed.map((x) => x.globalId), ['B']);
   assert.deepEqual(diff.changed[0].changes, [{ key: 'Width', from: '1.14', to: '0.94' }]);
-  const check = uploadCheck(a, b, [{ global_id: 'B' }], [{ global_ids: ['A', 'Q'] }]);
-  assert.deepEqual(check.unmatched, ['B', 'Q']);
-  assert.equal(check.regenerated, false);
-  const many = (p) => new Map(Array.from({ length: 20 }, (_, i) => [`${p}${i}`, { name: '', cls: '', props: {} }]));
-  assert.equal(uploadCheck(many('x'), many('y'), [], []).regenerated, true, '"all removed, all added"');
 });

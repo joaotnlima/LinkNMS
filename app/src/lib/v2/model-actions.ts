@@ -46,9 +46,9 @@ export async function recordDiffAction(projectId: string, from: number, to: numb
 }
 
 export async function reserveModelVersionAction(
-  projectId: string, file: { name: string; sizeBytes: number; sha256: string }, note?: string | null,
+  projectId: string, file: { name: string; sizeBytes: number; sha256: string }, note?: string | null, globalIds?: string[] | null,
 ): Promise<ModelResult<{ versionRef: string; uploadUrl: string }>> {
-  return run(() => reserveModelVersion(projectId, file, note));
+  return run(() => reserveModelVersion(projectId, file, note, globalIds));
 }
 
 export async function completeModelVersionAction(versionRef: string): Promise<ModelResult<number>> {

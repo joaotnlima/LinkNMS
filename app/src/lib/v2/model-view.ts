@@ -28,8 +28,28 @@ export interface V2ProjectModel {
   links: V2ElementLink[];
   pins: V2ElementPin[];
   tasks: V2ModelTask[];
-  viewer: { scope: { kind: ScopeKind; task_ids: string[]; element_count: number | null }; can_upload: boolean; can_restore: boolean };
+  viewer: {
+    scope: {
+      kind: ScopeKind; task_ids: string[]; element_count: number | null;
+      /** M-8, the server's answer: every element is editable (author, owner). */
+      edits_all?: boolean;
+      /** M-8, when not `edits_all`: the elements the viewer may edit. */
+      editable_global_ids?: string[];
+    };
+    can_upload: boolean; can_restore: boolean;
+  };
   access: { readers: 'participants'; editors: V2ModelEditor[]; unassigned_tasks: Array<{ task_id: string; element_count: number }> };
+  /** M-18, computed by the server when the latest .ifc completed. */
+  upload_check?: V2ModelUploadCheck | null;
+}
+/** #/components/schemas/ModelUploadCheck */
+export interface V2ModelUploadCheck {
+  version_no: number;
+  element_count?: number;
+  unmatched_global_ids: string[];
+  regenerated: boolean;
+  shared_count?: number;
+  recorded_count?: number;
 }
 export interface V2RecordDiff {
   from: number; to: number;
@@ -170,13 +190,12 @@ export function resolveTaskParam(param: string | null | undefined, tasks: V2Mode
   return tasks.find((t) => t.id === param)?.id ?? tasks.find((t) => t.code === param)?.id ?? null;
 }
 
-// ── scope (a mirror for the UI; the server enforces) ─────────────────────────
+// ── scope (the server's answer, read — never re-derived) ─────────────────────
 
-export function editableElements(model: Pick<V2ProjectModel, 'viewer'>, links: Array<{ global_id: string; task_id: string }>): Set<string> | 'all' {
+export function editableElements(model: Pick<V2ProjectModel, 'viewer'>): Set<string> | 'all' {
   const s = model.viewer.scope;
-  if (s.kind === 'author' || s.kind === 'owner' || s.kind === 'whole') return 'all';
-  const rows = new Set(s.task_ids);
-  return new Set(links.filter((l) => rows.has(l.task_id)).map((l) => l.global_id));
+  if (s.edits_all) return 'all';
+  return new Set(s.editable_global_ids ?? []);
 }
 
 export function canEditElement(editable: Set<string> | 'all', gid: string): boolean {
@@ -185,7 +204,7 @@ export function canEditElement(editable: Set<string> | 'all', gid: string): bool
 
 export function editableTasks(model: Pick<V2ProjectModel, 'viewer' | 'tasks'>): V2ModelTask[] {
   const s = model.viewer.scope;
-  if (s.kind === 'author' || s.kind === 'owner' || s.kind === 'whole') return model.tasks;
+  if (s.edits_all) return model.tasks;
   const rows = new Set(s.task_ids);
   return model.tasks.filter((t) => rows.has(t.id));
 }
@@ -314,21 +333,6 @@ export function compareIndexes(a: IfcIndex, b: IfcIndex): FileDiff {
     if (changes.length) out.changed.push({ globalId: gid, name: g.name, changes });
   }
   return out;
-}
-
-/**
- * M-18 before an upload: linked / pinned elements missing from the new file
- * (listed for relinking — nothing is dropped silently), and the "GlobalIds
- * regenerated" warning when the two files share almost no element.
- */
-export function uploadCheck(current: IfcIndex | null, next: IfcIndex, links: Array<{ global_id: string }>, pins: Array<{ global_ids: string[] }>) {
-  const recorded = new Set([...links.map((l) => l.global_id), ...pins.flatMap((p) => p.global_ids)]);
-  const unmatched = [...recorded].filter((g) => !next.has(g)).sort();
-  let shared = 0;
-  if (current) for (const g of current.keys()) if (next.has(g)) shared += 1;
-  const base = current ? Math.min(current.size, next.size) : 0;
-  const regenerated = Boolean(current && base >= 5 && shared / base < 0.1);
-  return { unmatched, regenerated, shared, recorded: recorded.size };
 }
 
 export function humanSize(bytes: number): string {

@@ -83,7 +83,7 @@ describe('PRD-07 project model over the /api/v2 router', () => {
   test('getProjectModel: the record + the viewer\'s scope; 404 for strangers', async () => {
     const res = await dispatch('GET', `/projects/${PROJECT}/model`, viewer(ROOF));
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body.viewer.scope, { kind: 'tasks', task_ids: [T_ROOF], element_count: 1 });
+    assert.deepEqual(res.body.viewer.scope, { kind: 'tasks', task_ids: [T_ROOF], element_count: 1, edits_all: false, editable_global_ids: [G1] });
     assert.equal(res.body.tasks.find((t) => t.id === T_ROOF).element_count, 1);
     assert.deepEqual(res.body.access.editors.map((e) => e.role), ['author', 'owner', 'branch']);
     assert.equal((await dispatch('GET', `/projects/${PROJECT}/model`, viewer(STRANGER))).status, 404);

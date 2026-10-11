@@ -16382,6 +16382,28 @@ components:
         note:
           type: string
           maxLength: 2000
+        global_ids:
+          type: array
+          maxItems: 500000
+          description: 'M-18: the element GlobalIds of the new file, extracted by the client from the bytes it
+            uploads (the server does not download and parse up to 100 MB per upload). Validated (shape, size,
+            duplicates dropped) and kept with the version; when the upload completes the server compares them
+            with the record and the previous upload — `ProjectModel.upload_check`. Optional: without it there
+            is no check.'
+          items: { type: string, pattern: '^[0-9A-Za-z_$]{22}$' }
+    ModelUploadCheck:
+      type: object
+      description: 'M-18, computed by the server when a new .ifc of the model completed: recorded elements (live
+        links and issue pins) missing from the file — they stay on the record for relinking — and whether the
+        export regenerated its GlobalIds (shares under 10% of elements with the previous upload).'
+      properties:
+        version_no: { type: integer }
+        element_count: { type: integer }
+        unmatched_global_ids: { type: array, items: { type: string } }
+        regenerated: { type: boolean }
+        shared_count: { type: integer }
+        recorded_count: { type: integer }
+      required: [version_no, unmatched_global_ids, regenerated]
     ElementLink:
       type: object
       description: An element (IFC GlobalId) linked to a plan row — record-side, survives re-uploads (PRD-07, D-45).
@@ -16442,6 +16464,12 @@ components:
                 kind: { type: string, enum: [author, owner, whole, tasks, none] }
                 task_ids: { type: array, items: { type: string, format: uuid } }
                 element_count: { type: integer, nullable: true }
+                edits_all: { type: boolean, description: 'M-8: the viewer edits every element (author, owner).' }
+                editable_global_ids:
+                  type: array
+                  description: 'M-8, when not `edits_all`: the elements the viewer may link, unlink or pin — the server''s
+                    answer; the UI reads it instead of re-deriving the scope.'
+                  items: { type: string }
             can_upload: { type: boolean }
             can_restore: { type: boolean }
         access:
@@ -16466,6 +16494,10 @@ components:
                 properties:
                   task_id: { type: string, format: uuid }
                   element_count: { type: integer }
+        upload_check:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ModelUploadCheck'
       required: [project_id, document, links, pins, tasks, viewer, access]
     ModelEditChange:
       type: object

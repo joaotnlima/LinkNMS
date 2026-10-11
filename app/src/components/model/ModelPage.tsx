@@ -106,7 +106,7 @@ export function ModelPage({
   const record = useMemo(() => applyDraft(model.links, model.pins, editing ? draft : null), [model.links, model.pins, editing, draft]);
   const ctx = useMemo(() => colourContext(model, record.links), [model, record.links]);
   const isolated = useMemo(() => (isolate ? isolatedElements(isolate, model.tasks, record.links) : null), [isolate, model.tasks, record.links]);
-  const editable = useMemo(() => editableElements(model, model.links), [model]);
+  const editable = useMemo(() => editableElements(model), [model]);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
 
   const paint = useCallback((gid: string) => {
@@ -153,7 +153,7 @@ export function ModelPage({
         {error ? <p role="alert" className="mdl-err">{error}</p> : null}
         <section className="mdl-card mdl-empty">
           <p>This build has no model yet. Put the IFC on the record once — every task, RFP and company then works from the same file. The organisation that uploads it becomes the model’s author: the only one who uploads later versions.</p>
-          {model.viewer.can_upload ? <ModelUpload projectId={projectId} current={null} links={[]} pins={[]} nextVersion={1} onDone={() => reload(null)} /> : null}
+          {model.viewer.can_upload ? <ModelUpload projectId={projectId} check={null} nextVersion={1} onDone={() => reload(null)} /> : null}
         </section>
       </main>
     );
@@ -192,7 +192,7 @@ export function ModelPage({
       {!isCurrent ? <p className="mdl-banner">You are viewing v{viewing}. v{doc.current_version} is current.</p> : null}
 
       {tab === 'versions' ? (
-        <ModelVersions projectId={projectId} model={model} orgName={orgName} currentBytes={bytes}
+        <ModelVersions projectId={projectId} model={model} orgName={orgName}
           onOpen={(n) => { setTab('model'); void reload(n); }} onChanged={() => reload(null)} onClose={() => setTab('model')} />
       ) : null}
 

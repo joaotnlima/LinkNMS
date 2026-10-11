@@ -18,12 +18,11 @@ import { fetchBytes, readIfcIndex } from './ifc-index';
 import { ModelUpload } from './ModelUpload';
 
 export function ModelVersions({
-  projectId, model, orgName, currentBytes, onOpen, onChanged, onClose,
+  projectId, model, orgName, onOpen, onChanged, onClose,
 }: {
   projectId: string;
   model: V2ProjectModel;
   orgName: (id: string | null | undefined) => string;
-  currentBytes: Uint8Array | null;
   onOpen: (versionNo: number) => void;
   onChanged: () => void;
   onClose: () => void;
@@ -36,7 +35,6 @@ export function ModelVersions({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const taskLabel = (id: string) => { const t = model.tasks.find((x) => x.id === id); return t ? `${t.code} ${t.name}` : 'a task'; };
-  const isViewingCurrent = (model.viewing_version ?? doc.current_version) === doc.current_version;
 
   const restore = async (n: number) => {
     setBusy(`Restoring v${n}…`); setError(null);
@@ -70,7 +68,7 @@ export function ModelVersions({
         <button type="button" className="btn sm" onClick={onClose}>Back to model</button>
       </div>
       {model.viewer.can_upload ? (
-        <ModelUpload projectId={projectId} current={isViewingCurrent ? currentBytes : null} links={model.links} pins={model.pins}
+        <ModelUpload projectId={projectId} check={model.upload_check ?? null}
           nextVersion={doc.current_version + 1} onDone={onChanged} />
       ) : null}
       <ol className="mdl-history">

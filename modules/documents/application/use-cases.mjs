@@ -18,6 +18,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { ProblemError } from '../../../platform/errors.mjs';
+import { checkModelUpload } from './model-check.mjs';
 import {
   SCOPE_TYPES, KINDS, validateFile, storageKey, versionRef,
   parseVersionRef, documentBody,
@@ -175,6 +176,8 @@ export async function completeUpload({ viewer, store, storage, versionId }) {
     actor: actorOf(actor, viewer),
   });
   if (!result) throw new ProblemError('not_found');
+  // PRD-07 M-18: a new .ifc of the build's model is checked against the record here.
+  if (!result.replay) await checkModelUpload({ store, doc: result.doc, versionNo: ref.versionNo });
   const versions = await store.listVersions(ref.documentId, result.doc.current_version);
   return { status: 200, body: documentBody(result.doc, versions) };
 }

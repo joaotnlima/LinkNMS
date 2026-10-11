@@ -29,6 +29,7 @@ import {
   validateModelEdits, editScope, scopeRefusals, mergeDraft, changeCount, restorePlan, recordDiff,
   linksAt, elementLinkBody, pinBody, scopeBody, elementCounts,
 } from '../domain/project-model.mjs';
+import { validateDeclaredGlobalIds, uploadCheckBody } from '../domain/model-check.mjs';
 import { requireActiveOrg, requireActor, actorOf } from './use-cases.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -111,10 +112,11 @@ export async function getProjectModel({ viewer, store, planning = null, projectI
     }
     at = n;
   }
-  const [versions, authorOrgId, record] = await Promise.all([
+  const [versions, authorOrgId, record, check] = await Promise.all([
     store.listVersions(doc.id, doc.current_version),
     store.modelAuthorOrgId(doc.id),
     store.modelRecord(doc.id),
+    typeof store.latestModelUploadCheck === 'function' ? store.latestModelUploadCheck(doc.id) : null,
   ]);
   const role = roleOf({ viewer, scopes, authorOrgId });
   const scope = editScope({ whole: role.whole, taskIds: role.taskIds, links: record.links });
@@ -136,6 +138,8 @@ export async function getProjectModel({ viewer, store, planning = null, projectI
         can_restore: role.whole,
       },
       access: accessBody({ scopes, authorOrgId, links: record.links }),
+      // M-18, computed when the latest .ifc completed (null without declared GlobalIds).
+      upload_check: check ? uploadCheckBody(check) : null,
     },
   };
 }
@@ -160,6 +164,10 @@ async function reserveVersion({ viewer, store, storage, projectId, body }) {
   if (body?.note !== undefined && body.note !== null && (typeof body.note !== 'string' || body.note.trim().length > 2000)) {
     errors.note = 'text up to 2000 characters';
   }
+  // M-18: the new file's element GlobalIds, extracted by the client — the
+  // server compares them with the record when the upload completes.
+  const declared = validateDeclaredGlobalIds(body?.global_ids);
+  if (declared.error) errors.global_ids = declared.error;
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
   const note = typeof body?.note === 'string' && body.note.trim() ? body.note.trim() : null;
   const file = { ...body.file, mime: MODEL_MIME };
@@ -192,6 +200,9 @@ async function reserveVersion({ viewer, store, storage, projectId, body }) {
       if (err?.code === '23505') throw new ProblemError('version_conflict', 'another model was just put on this build — reload');
       throw err;
     }
+  }
+  if (declared.globalIds && typeof store.saveModelElements === 'function') {
+    await store.saveModelElements({ documentId: version.document_id, versionNo: version.version_no, globalIds: declared.globalIds });
   }
   const { url, expiresAt } = await storage.signUpload({ key: version.storage_key, mime: version.mime, sha256Hex: version.sha256 });
   return {

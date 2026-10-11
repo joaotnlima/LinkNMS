@@ -72,13 +72,17 @@ export async function fetchRecordDiff(projectId: string, from: number, to: numbe
   }));
 }
 
-export async function reserveModelVersion(projectId: string, file: { name: string; sizeBytes: number; sha256: string }, note?: string | null) {
+export async function reserveModelVersion(
+  projectId: string, file: { name: string; sizeBytes: number; sha256: string }, note?: string | null, globalIds?: string[] | null,
+) {
   return call(async () => {
     const t = await v2<{ document_version_id: string; upload_url: string }>({
       method: 'POST', path: `/projects/${enc(projectId)}/model/versions`, idempotencyKey: crypto.randomUUID(),
       body: {
         file: { name: file.name, mime: 'application/x-step', size_bytes: file.sizeBytes, sha256: file.sha256.toLowerCase() },
         ...(note ? { note } : {}),
+        // M-18: the new file's GlobalIds; the server checks them against the record on completion.
+        ...(globalIds?.length ? { global_ids: globalIds } : {}),
       },
     });
     return { versionRef: t.document_version_id, uploadUrl: t.upload_url };
