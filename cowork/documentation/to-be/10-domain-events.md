@@ -32,7 +32,8 @@ as the change). A dispatcher delivers to in-process handlers; handlers are idemp
 | `planning.link.added`, `.changed`, `.removed` | Planning | SSE | ● |
 | `planning.progress.reported` | Planning | Quality (on done), Contracting (activation), Directory (tasks finished on the planned date, PRD-03 R-11), Feed, SSE | ● |
 | `planning.baseline.taken` | Planning | Feed, Project (the first one activates the execution phase, PRD-10 E-13) | ● |
-| `planning.daily_log.recorded` (PRD-10 E-7) | Planning | Feed | ● |
+| `planning.daily_log.recorded` (PRD-10 E-7) | Planning | — (no consumer yet; published for the feed / notifications to come) | ● |
+| `planning.settings.updated` (PRD-02 §5: the mobilisation lead) | Planning | — (ledger entry only, not on the outbox: nothing reacts to it) | ● |
 | `planning.plan.imported` (PRD-09 O-12) | Planning | Notifications (the owner) | ● |
 | `planning.deliverable.submitted`, `.approved`, `.changes_requested` | Planning | Notifications (submitted → client side of the task; decided → submitter + assignee org) | ● (sha256) |
 | `quality.verification.accepted`, `.rejected` | Quality | Planning, Contracting (measurable qty), Reputation | ● |

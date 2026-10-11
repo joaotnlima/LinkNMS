@@ -1,7 +1,7 @@
 # 12 — API catalogue by use case
 
 Every use case the UI needs, mapped to the endpoint that serves it. The machine-readable contract is
-[`api/v2/openapi.yaml`](../../../api/v2/README.md) (153 operations); when the two disagree, fix both in the same change. If a screen needs something
+[`api/v2/openapi.yaml`](../../../api/v2/README.md) (248 operations); when the two disagree, fix both in the same change. If a screen needs something
 not listed here, the catalogue is extended first — the UI never works around it.
 Actor abbreviations: **OW** owner (household) · **GC** general contractor · **SP** specialty /
 subcontractor · **CS** consultant · **ANY** any authorized participant.
@@ -99,13 +99,14 @@ subcontractor · **CS** consultant · **ANY** any authorized participant.
 | Browse listed RFPs (deprecated by "open requests near you") | SP, GC | `GET /marketplace/rfps?specialty=&municipality=` |
 | My RFP list (issued, invited, bid on) | SP, GC | `GET /me/rfps` |
 | Company inbox — requests for you: origin, bids due, tasks, files, lane (PRD-04 X-9) / decline one | SP, GC | `GET /me/rfp-requests` · `POST /rfps/{id}/invitation:decline` |
-| Company inbox — open requests near you: listed RFPs matching my specialties and service area (X-10) | SP, GC | `GET /me/open-requests` |
+| Company inbox — open requests near you: listed RFPs matching my specialties and service area, nearest first, paged (X-10) | SP, GC | `GET /me/open-requests?cursor=` |
 | Ask to bid on a listed RFP — a pending request, never a lane (D-47, X-13) | SP, GC | `POST /rfps/{id}:apply` |
 | Requests to bid on my RFP, with proof lines; approve (lane + link) / decline (X-5) | issuer | `GET /rfps/{id}/bid-requests` · `POST /bid-requests/{id}:approve` · `:decline` |
 | Ask / answer clarification (asking only until `questions_deadline`; answers public to all bidders, asker never shown) | bidder / issuer | `POST /rfps/{id}/clarifications` · `POST /clarifications/{id}:answer` |
 | Ask a clarification from the personal link (no session) | link-only bidder | `POST /rfp-links/{token}/clarifications` |
 | Tendering home of a project: every RFP the viewer can see, with covered tasks, bids due, `n/m in` and open questions (issuer); own lane (bidder) | participant · bidder | `GET /projects/{id}/rfps` |
 | Per-task procurement state of a project (Tender column + Gantt band: governing RFP, status, opened / bids due, invited & landed counts, winner — no prices) | issuer (participant; only RFPs it issued) | `GET /projects/{id}/task-procurement` |
+| "Ask for a proposal" from a company profile: the build's tasks ranked on the company's specialties, each with its draft / new / locked target (PRD-04 X-6, X-7) | issuer (participant) | `GET /projects/{id}/ask-candidates?company_id=` |
 | Proposal lanes under a tendered row, with pre-computed comparison (price, duration, dates, missing lines, docs, status, link) | issuer: all lanes · bidder: own lane | `GET /tasks/{id}/proposal-lanes` |
 | Build my proposal plan in my lane (rows, durations/dates, links, prices, docs) | bidder | `GET /proposals/{id}` · `POST /proposals/{id}/rows` · `PATCH /proposal-rows/{id}` · `PUT /proposals/{id}/lines` · `POST /proposals/{id}:submit` · `:withdraw` |
 | Record an answer received by email (PDFs + total, duration, conditions) | issuer | `POST /proposals/{id}:record-offline` |

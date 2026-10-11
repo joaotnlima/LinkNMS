@@ -498,6 +498,8 @@ paths:
 
         **Relationship (LinkNMS):** the profile is the active organisation''s (`orgId` = active org)'
       x-clerk-permission: org:profile:manage
+      x-mcp-tool: get_my_company_profile
+      x-mcp-mode: read
       parameters:
       - $ref: '#/components/parameters/orgId'
       responses:
@@ -628,6 +630,8 @@ paths:
 
         **Relationship (LinkNMS):** `orgId` = active org'
       x-clerk-permission: org:profile:manage
+      x-mcp-tool: get_listing_stats
+      x-mcp-mode: read
       parameters:
       - $ref: '#/components/parameters/orgId'
       responses:
@@ -665,6 +669,8 @@ paths:
 
         **Relationship (LinkNMS):** `orgId` = active org'
       x-clerk-permission: org:profile:manage
+      x-mcp-tool: list_my_portfolio
+      x-mcp-mode: read
       parameters:
       - $ref: '#/components/parameters/orgId'
       - $ref: '#/components/parameters/Cursor'
@@ -990,6 +996,8 @@ paths:
 
         **Relationship (LinkNMS):** none'
       security: []
+      x-mcp-tool: get_company_by_slug
+      x-mcp-mode: read
       responses:
         '200':
           description: OK
@@ -5030,6 +5038,8 @@ paths:
         **Relationship (LinkNMS):** project.participant | recipient/bidder of an RFP of the
         project; items: issuer | recipient | bidder'
       x-relationship: 'project.participant | rfp recipient; items: issuer | recipient | bidder'
+      x-mcp-tool: list_project_rfps
+      x-mcp-mode: read
       parameters:
       - $ref: '#/components/parameters/projectId'
       - $ref: '#/components/parameters/Cursor'
@@ -5150,6 +5160,8 @@ paths:
 
         **Relationship (LinkNMS):** project.participant; items: issuer'
       x-relationship: 'project.participant; items: issuer'
+      x-mcp-tool: list_task_procurement
+      x-mcp-mode: read
       parameters:
       - $ref: '#/components/parameters/projectId'
       - $ref: '#/components/parameters/Cursor'
@@ -5628,6 +5640,8 @@ paths:
         **Relationship (LinkNMS):** issuer'
       x-clerk-permission: org:tendering:issue
       x-relationship: issuer
+      x-mcp-tool: attach_rfp_model
+      x-mcp-mode: write-confirm
       requestBody:
         required: true
         content:
@@ -6091,6 +6105,8 @@ paths:
         **Relationship (LinkNMS):** issuer'
       x-clerk-permission: org:tendering:issue
       x-relationship: issuer
+      x-mcp-tool: remove_rfp_recipient
+      x-mcp-mode: write-confirm
       responses:
         '204':
           description: Removed
@@ -6431,6 +6447,8 @@ paths:
         **Relationship (LinkNMS):** issuer'
       x-clerk-permission: org:tendering:issue
       x-relationship: issuer
+      x-mcp-tool: list_bid_requests
+      x-mcp-mode: read
       parameters:
       - $ref: '#/components/parameters/rfpId'
       - $ref: '#/components/parameters/Cursor'
@@ -6486,6 +6504,8 @@ paths:
         **Relationship (LinkNMS):** issuer'
       x-clerk-permission: org:tendering:issue
       x-relationship: issuer
+      x-mcp-tool: approve_bid_request
+      x-mcp-mode: write-confirm
       parameters:
       - name: bidRequestId
         in: path
@@ -6535,6 +6555,8 @@ paths:
         **Relationship (LinkNMS):** issuer'
       x-clerk-permission: org:tendering:issue
       x-relationship: issuer
+      x-mcp-tool: decline_bid_request
+      x-mcp-mode: write-confirm
       parameters:
       - name: bidRequestId
         in: path
@@ -6586,6 +6608,8 @@ paths:
         **Relationship (LinkNMS):** recipient'
       x-clerk-permission: org:tendering:bid
       x-relationship: recipient
+      x-mcp-tool: decline_rfp_invitation
+      x-mcp-mode: write-confirm
       parameters:
       - $ref: '#/components/parameters/rfpId'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -6730,6 +6754,8 @@ paths:
         **Relationship (LinkNMS):** recipient (own organisation)'
       x-clerk-permission: org:tendering:bid
       x-relationship: recipient
+      x-mcp-tool: list_rfp_requests
+      x-mcp-mode: read
       parameters:
       - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/Limit'
@@ -6778,6 +6804,8 @@ paths:
         **Relationship (LinkNMS):** none (matching profile, D-47)'
       x-clerk-permission: org:tendering:bid
       x-relationship: none
+      x-mcp-tool: list_open_requests
+      x-mcp-mode: read
       parameters:
       - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/Limit'
@@ -11136,6 +11164,8 @@ paths:
 
         **Relationship (LinkNMS):** project.owner'
       x-relationship: project.owner
+      x-mcp-tool: get_portfolio_consent
+      x-mcp-mode: read
       parameters:
       - $ref: '#/components/parameters/projectId'
       responses:
@@ -16676,7 +16706,7 @@ components:
               color:
                 type: string
                 description: CSS colour when the converter knows it
-              on:
+              'on':
                 type: boolean
                 description: the layer's own on/off state in the file
               count:

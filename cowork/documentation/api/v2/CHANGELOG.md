@@ -39,6 +39,13 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
   `getProjectModel` answers `upload_check` (`ModelUploadCheck`: `unmatched_global_ids`, `regenerated`, counts).
   `ProjectModel.viewer.scope` gains `edits_all` and `editable_global_ids` — the server's M-8 answer, which the app now
   reads instead of re-deriving the edit scope. Migration `db/v2/0031_documents_model_upload_check.sql`.
+- **MCP tool names** (`x-mcp-tool` / `x-mcp-mode`) on the new Directory and Tendering operations, following their
+  siblings: `get_company_by_slug` (twin of `get_company`), `get_my_company_profile`, `get_listing_stats`,
+  `list_my_portfolio`, `get_portfolio_consent`, `list_project_rfps`, `list_task_procurement`, `list_ask_candidates`,
+  `list_bid_requests`, `list_rfp_requests`, `list_open_requests` (read); `attach_rfp_model`, `remove_rfp_recipient`,
+  `approve_bid_request`, `decline_bid_request`, `decline_rfp_invitation` (write-confirm). Human-only and link-token
+  operations stay without one.
+- Editorial: the DWG layer's `on` property is quoted (`'on'`) so YAML 1.1 readers do not turn it into `true`.
 
 ## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
 
