@@ -37,7 +37,7 @@ export function FilesSection({ rfp, lanes }: { rfp: V2Rfp; lanes: V2ProposalLane
         {rfp.status === 'draft' ? (
           <RfpModelComposer rfpId={rfp.id} projectId={rfp.project_id} model={model} />
         ) : model ? (
-          <OwnerModelViewer rfpId={rfp.id} documentId={model.documentId} fileName={model.fileName} sizeBytes={model.sizeBytes} />
+          <OwnerModelViewer rfpId={rfp.id} documentId={model.document_id} fileName={model.file_name} sizeBytes={model.size_bytes} />
         ) : (
           <p className="tnd-note">No 3D model was attached to this tender.</p>
         )}

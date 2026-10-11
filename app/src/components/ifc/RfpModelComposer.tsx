@@ -62,7 +62,7 @@ export default function RfpModelComposer({
 
   // Re-sync when the package projection resolves (package loads async after the
   // composer first paints) or a different RFP mounts this control.
-  useEffect(() => { setCurrent(model); }, [model?.documentId, model?.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setCurrent(model); }, [model?.document_id, model?.version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pick = () => { setError(null); inputRef.current?.click(); };
 
@@ -96,14 +96,14 @@ export default function RfpModelComposer({
       if (!done.ok) { setError(done.message); return; }
 
       setCurrent({
-        documentId: reserved.data.documentId,
+        document_id: reserved.data.documentId,
         version: reserved.data.version,
-        fileName: file.name,
+        file_name: file.name,
         mime: MODEL_MIME,
-        sizeBytes: file.size,
+        size_bytes: file.size,
         sha256: hex,
         pinned: false,
-        currentVersion: reserved.data.version,
+        current_version: reserved.data.version,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That model did not upload. Try again.');
@@ -126,7 +126,7 @@ export default function RfpModelComposer({
     if (!current) return;
     setBusy(true);
     setError(null);
-    const res = await removeRfpModelAction(rfpId, current.documentId);
+    const res = await removeRfpModelAction(rfpId, current.document_id);
     setBusy(false);
     if (!res.ok) { setError(res.message); return; }
     setCurrent(null);
@@ -159,17 +159,17 @@ export default function RfpModelComposer({
               Remove from this tender
             </button>
             <button type="button" className="btn" disabled={disabled || busy}
-              onClick={() => attach(current.documentId, current.pinned ? null : current.version)}>
+              onClick={() => attach(current.document_id, current.pinned ? null : current.version)}>
               {current.pinned ? `Pinned to v${current.version} — follow the current version` : `Follows the current version (v${current.version}) — pin it`}
             </button>
           </div>
           <div style={{ marginTop: 10 }}>
             <OwnerModelViewer
-              key={`${current.documentId}:${current.version}`}
+              key={`${current.document_id}:${current.version}`}
               rfpId={rfpId}
-              documentId={current.documentId}
-              fileName={current.fileName}
-              sizeBytes={current.sizeBytes}
+              documentId={current.document_id}
+              fileName={current.file_name}
+              sizeBytes={current.size_bytes}
             />
           </div>
         </>

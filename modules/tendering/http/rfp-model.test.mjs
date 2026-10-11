@@ -200,8 +200,10 @@ describe('projection — package.models[]', () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.package.models.length, 1);
     assert.deepEqual(res.body.package.models[0], {
-      documentId, version: 1, fileName: 'casa-silva.ifc',
-      mime: 'application/x-step', sizeBytes: 2048, sha256: SHA, pinned: false, currentVersion: 1,
+      document_id: documentId, version: 1, file_name: 'casa-silva.ifc',
+      mime: 'application/x-step', size_bytes: 2048, sha256: SHA, pinned: false, current_version: 1,
+      // deprecated camelCase twins (audit S5)
+      documentId, fileName: 'casa-silva.ifc', sizeBytes: 2048, currentVersion: 1,
     });
   });
 
@@ -287,7 +289,7 @@ describe('replace & remove', () => {
     await attachModel(router, store, ds, storage, { ...ifc, sha256: 'b'.repeat(64) });
     const pin = await call(router, 'PUT', `/rfps/${RFP}/model`, { v: viewer(ISSUER_ORG), body: { document_id: documentId, version_no: 1 } });
     assert.equal(pin.status, 200);
-    assert.deepEqual([pin.body.version, pin.body.pinned, pin.body.currentVersion], [1, true, 2]);
+    assert.deepEqual([pin.body.version, pin.body.pinned, pin.body.current_version], [1, true, 2]);
     const link = await call(router, 'GET', `/rfp-links/${TOKEN}`);
     assert.equal(link.body.rfp.package.models[0].version, 1);
     const view = await call(router, 'GET', `/rfp-links/${TOKEN}/model/${documentId}:view-url`);

@@ -158,9 +158,9 @@ function Scope({ view, token }: { view: RfpLinkView; token: string }) {
           {model ? (
             <TokenModelViewer
               token={token}
-              documentId={model.documentId}
-              fileName={model.fileName}
-              sizeBytes={model.sizeBytes}
+              documentId={model.document_id}
+              fileName={model.file_name}
+              sizeBytes={model.size_bytes}
             />
           ) : null}
         </div>

@@ -141,9 +141,9 @@ export function ProposalsInbox({
         <div className="prc-field">
           <OwnerModelViewer
             rfpId={rfp.id}
-            documentId={rfp.package.models[0].documentId}
-            fileName={rfp.package.models[0].fileName}
-            sizeBytes={rfp.package.models[0].sizeBytes}
+            documentId={rfp.package.models[0].document_id}
+            fileName={rfp.package.models[0].file_name}
+            sizeBytes={rfp.package.models[0].size_bytes}
           />
         </div>
       ) : null}

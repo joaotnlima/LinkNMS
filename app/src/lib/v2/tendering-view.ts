@@ -87,16 +87,16 @@ export interface V2PackageRow {
 
 /** The build's model as this RFP shows it (packageBody.models, LINA-409 / doc 24, PRD-07 §5). */
 export interface V2Model {
-  documentId: string;
+  document_id: string;
   version: number;
-  fileName: string;
+  file_name: string;
   mime: string;
-  sizeBytes: number;
+  size_bytes: number;
   sha256?: string | null;
   /** PRD-07: true when the RFP is pinned to `version`; false when it follows the build model's current version. */
   pinned?: boolean;
   /** PRD-07: the build model's current version. */
-  currentVersion?: number;
+  current_version?: number;
 }
 
 export interface V2Package {

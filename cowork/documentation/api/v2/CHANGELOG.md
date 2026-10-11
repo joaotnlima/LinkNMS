@@ -16,6 +16,9 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
   (specialty family, radius or service area) and the order (nearest first, then deadline) run on the server over the
   whole set — the previous first-500-then-filter cut, which could drop matches, is gone. `distance_km` is measured from
   the build's point recorded on the RFP at publication. Migration `db/v2/0030_tendering_rfp_listing_point.sql`.
+- **`RfpModel` speaks snake_case** (`document_id`, `file_name`, `size_bytes`, `current_version`). The camelCase fields
+  (`documentId`, `fileName`, `sizeBytes`, `currentVersion`) are **deprecated**, still returned with the same values; the
+  first-party app reads the snake_case ones.
 
 ## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
 

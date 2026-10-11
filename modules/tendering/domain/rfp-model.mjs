@@ -60,17 +60,24 @@ export function validateModelFile(file) {
  * (owner inbox, public token form, marketplace composer) can render the viewer
  * without a second round trip. Since PRD-07 the document is the BUILD's model;
  * `version` is the version this RFP shows — the pinned one, or the current —
- * and `pinned` says which. `fileName` is the document title (the uploaded name).
+ * and `pinned` says which. `file_name` is the document title (the uploaded name).
  */
 export function modelBody(doc, version, { pinned = false } = {}) {
+  const sizeBytes = version ? Number(version.size_bytes) : 0;
   return {
-    documentId: doc.id,
+    document_id: doc.id,
     version: version?.version_no ?? doc.current_version,
-    fileName: doc.title,
+    file_name: doc.title,
     mime: version?.mime ?? MODEL_MIME,
-    sizeBytes: version ? Number(version.size_bytes) : 0,
+    size_bytes: sizeBytes,
     sha256: version?.sha256 ?? null,
     pinned,
+    current_version: doc.current_version,
+    // Deprecated camelCase twins (api/v2 CHANGELOG 2026-10-11): kept until the
+    // deprecation window of versioning-and-deprecation.md closes.
+    documentId: doc.id,
+    fileName: doc.title,
+    sizeBytes,
     currentVersion: doc.current_version,
   };
 }

@@ -69,11 +69,11 @@ export interface PackageRow {
 
 /** An attached BIM model the bidder may view before pricing (LINA-409 / doc 24). */
 export interface PackageModel {
-  documentId: string;
+  document_id: string;
   version: number;
-  fileName: string;
+  file_name: string;
   mime: string;
-  sizeBytes: number;
+  size_bytes: number;
   sha256?: string | null;
 }
 
