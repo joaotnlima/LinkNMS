@@ -30,6 +30,47 @@ const TASK_SELECT = `
          last_change_cause, deleted_at
     FROM planning.task`;
 
+// project.calendar.closures is daterange[], for which node-postgres has no
+// parser: it hands the column back as ONE array-literal string
+// ('{"[2026-08-10,2026-08-22)"}', or '{}'), and `.map` on it threw inside
+// loadPlanOn — every read and write of a build with a calendar row answered
+// 500 internal. Postgres flattens the ranges to inclusive {from, to} JSON
+// (canonical daterange is [lower, upper), so `to` is upper - 1), the same
+// inclusive bounds the project module's GET /calendar answers.
+const CALENDAR_SELECT = `
+  SELECT work_days,
+         COALESCE((
+           SELECT json_agg(json_build_object('from', ${D('lower(r)')}, 'to', ${D('upper(r) - 1')}) ORDER BY lower(r))
+             FROM unnest(closures) AS r
+            WHERE NOT isempty(r) AND lower(r) IS NOT NULL AND upper(r) IS NOT NULL
+         ), '[]'::json) AS closures
+    FROM project.calendar WHERE project_id = $1`;
+
+/**
+ * The calendar's closures as inclusive {from, to} ISO dates. Accepts the
+ * JSON CALENDAR_SELECT answers and, defensively, a raw daterange[] literal
+ * (a caller selecting the bare column) — never throws on either.
+ */
+export function closuresN(column) {
+  if (Array.isArray(column)) {
+    return column
+      .filter((c) => c && typeof c.from === 'string' && typeof c.to === 'string')
+      .map(({ from, to }) => ({ from, to }));
+  }
+  if (typeof column !== 'string') return [];
+  return [...column.matchAll(/([[(])(\d{4}-\d{2}-\d{2}),(\d{4}-\d{2}-\d{2})([\])])/g)]
+    .map(([, opener, lower, upper, closer]) => ({
+      from: opener === '(' ? isoPlusDays(lower, 1) : lower,
+      to: closer === ')' ? isoPlusDays(upper, -1) : upper,
+    }));
+}
+
+function isoPlusDays(iso, days) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 const TASK_COLS = {
   parentId: 'parent_id', depth: 'depth', position: 'position', kind: 'kind',
   name: 'name', description: 'description', specialty: 'specialty', specialtyCode: 'specialty_code',
@@ -124,7 +165,7 @@ export function createPlanningStore(pool) {
     const [{ rows: calRows }, { rows: holidayRows }, { rows: contractRows }, { rows: statusRows },
       { rows: lineRows }, { rows: variationRows }, { rows: baselineRows },
       { rows: baselineTextRows }] = await Promise.all([
-      q.query('SELECT work_days, closures FROM project.calendar WHERE project_id = $1', [projectId]),
+      q.query(CALENDAR_SELECT, [projectId]),
       q.query(
         `SELECT ${D('date')} AS date, name FROM platform.holiday WHERE scope = 'national' OR scope = $1 ORDER BY date`,
         [project.municipality_code ?? ''],
@@ -187,7 +228,7 @@ export function createPlanningStore(pool) {
       links: linkRows.map(linkN),
       calendarRaw: {
         work_days: cal.work_days,
-        closures: (cal.closures ?? []).map(({ from, to }) => ({ from, to })),
+        closures: closuresN(cal.closures),
         holidays: holidayRows,
       },
       contracts: new Map(contractRows.map((r) => [r.id, {
