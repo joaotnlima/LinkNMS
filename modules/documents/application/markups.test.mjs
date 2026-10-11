@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   listDocumentMarkups, saveDocumentMarkups, closeMarkup, reopenMarkup, linkMarkup,
 } from './markups.mjs';
+import { createInMemoryIdempotency } from '../../../platform/idempotency.mjs';
 
 const PROJECT = '01920000-0000-7000-8000-0000000000b1';
 const DOC = '01920000-0000-7000-8000-0000000000e1';
@@ -31,6 +32,7 @@ function memoryStore() {
   ];
   const markups = new Map();
   return {
+    idempotent: createInMemoryIdempotency(),
     docs, versions, markups,
     async getPersonByClerkId() { return { id: 'person' }; },
     async getDocument(id) { return docs.get(id) ?? null; },

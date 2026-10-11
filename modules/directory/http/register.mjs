@@ -54,11 +54,11 @@ export function registerDirectory(router, { store, builds, mail }) {
   router.register('DELETE', '/organizations/{orgId}/portfolio/{entryId}', 'deletePortfolioEntry', ({ viewer, params }) =>
     deletePortfolioEntry({ viewer, store, orgId: params.orgId, entryId: params.entryId }));
 
-  router.register('POST', '/directory/organizations/{orgId}:claim', 'claimProfile', ({ viewer, params }) =>
-    claimProfile({ viewer, store, mail, orgId: params.orgId }));
+  router.register('POST', '/directory/organizations/{orgId}:claim', 'claimProfile', ({ viewer, params, headers }) =>
+    claimProfile({ viewer, store, mail, orgId: params.orgId, idempotencyKey: headers['idempotency-key'] ?? null }));
 
-  router.register('POST', '/directory/claims/{token}:accept', 'acceptProfileClaim', ({ viewer, params }) =>
-    acceptProfileClaim({ viewer, store, token: params.token }));
+  router.register('POST', '/directory/claims/{token}:accept', 'acceptProfileClaim', ({ viewer, params, headers }) =>
+    acceptProfileClaim({ viewer, store, token: params.token, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   // ── the owner's consent to show a build's name (R-12) ─────────────────
   router.register('GET', '/projects/{projectId}/portfolio-consent', 'getPortfolioConsent', ({ viewer, params }) =>

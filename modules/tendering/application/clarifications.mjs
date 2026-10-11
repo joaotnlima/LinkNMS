@@ -53,9 +53,17 @@ export async function askClarification({ viewer, store, rfpId, body, now = new D
  * security: []. The token is the authority; an unknown, revoked or expired one
  * answers the same not_found as every other link endpoint (no oracle).
  */
-export async function askClarificationByToken({ store, token, body, now = new Date() }) {
+export async function askClarificationByToken({ store, token, body, idempotencyKey = null, now = new Date() }) {
   const rec = await store.findRecipientByToken(token ?? '');
   if (!rec) throw new ProblemError('not_found', 'this link is not valid');
+  // No signed-in caller: the link's recipient is the idempotency caller.
+  return store.idempotent(
+    { key: idempotencyKey, caller: `rfp-link:${rec.id}`, operationId: 'askClarificationByToken', body },
+    () => askByToken({ store, rec, body, now }),
+  );
+}
+
+async function askByToken({ store, rec, body, now }) {
   const refusal = askRefusal({ status: rec.rfp_status, questions_deadline: rec.questions_deadline }, now);
   if (refusal) throw new ProblemError('invalid_transition', refusal);
   const errors = questionErrors(body, UUID);

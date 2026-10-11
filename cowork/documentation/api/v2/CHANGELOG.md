@@ -2,6 +2,17 @@
 
 One dated entry per API change, newest first. Policy: [versioning-and-deprecation.md](./versioning-and-deprecation.md).
 
+## 2026-10-11 — Architecture audit fixes (consistency, no new features)
+
+- **Idempotency-Key honoured.** The nine operations that declared `Idempotency-Key` but ignored it now reserve it in
+  the use case (a replay answers the original status and body; the same key with another body is `409
+  idempotency_mismatch`): `applyToOpenRfp`, `approveBidRequest`, `reserveProjectModelVersion`, `saveModelEdits`,
+  `restoreProjectModel`, `saveDocumentMarkups`, `closeMarkup`, `reopenMarkup`, `linkMarkup`. The header is now declared
+  (and honoured) on `claimProfile`, `acceptProfileClaim`, `createSpecialtyLabel`, `revokeShareLink`, `createDeliverable`,
+  `submitDeliverable`, `approveDeliverable`, `requestDeliverableChanges`, `addDailyLogEntries`,
+  `askClarificationByToken` (the link's recipient is the caller), `declineBidRequest`, `declineRfpInvitation`,
+  `linkTaskDocuments`. Additive: omitting the header behaves as before.
+
 ## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
 
 - **Quality (N-3, N-4).** New `listNonConformities` — `GET /projects/{id}/nonconformities?status=&kind=&task_id=`

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { createRouter } from '../../../platform/router.mjs';
 import { createViewerContext } from '../../../platform/viewer-context.mjs';
 import { registerPlanning } from './register.mjs';
+import { createInMemoryIdempotency } from '../../../platform/idempotency.mjs';
 
 const OWNER_ORG = '01920000-0000-7000-8000-0000000010a1';
 const STRANGER = '01920000-0000-7000-8000-0000000010a9';
@@ -25,6 +26,7 @@ function fakeStore() {
     [TASK, { id: TASK, projectId: PROJECT, parentId: null, name: 'Walls', branchContractId: null, kind: 'task', start: '2027-02-08', finish: '2027-02-12', assigneeOrgId: OWNER_ORG }],
   ]);
   return {
+    idempotent: createInMemoryIdempotency(),
     state,
     async getPersonByClerkId(id) { return id === 'user_me' ? { id: ME } : null; },
     async getProject(id) { return id === PROJECT ? { id, owner_org_id: OWNER_ORG, created_by_org_id: OWNER_ORG } : null; },

@@ -25,10 +25,18 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * operationId: applyToOpenRfp — ask to bid (D-47). 201 a new pending request;
  * 200 the existing one (idempotent per RFP and organisation).
  */
-export async function applyToOpenRfp({ viewer, store, rfpId, now = new Date() }) {
+export async function applyToOpenRfp({ viewer, store, rfpId, idempotencyKey = null, now = new Date() }) {
   if (!viewer.orgId) throw new ProblemError('forbidden', 'pick an active organisation first', { reason: 'no_active_org' });
   if (!viewer.has('org:tendering:bid')) throw new ProblemError('forbidden', null, { reason: 'role' });
   if (!UUID.test(rfpId ?? '')) throw new ProblemError('not_found');
+  // A replay answers the original result even after the RFP moved on.
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'applyToOpenRfp', body: { rfp_id: rfpId, org_id: viewer.orgId } },
+    () => askToBid({ viewer, store, rfpId, now }),
+  );
+}
+
+async function askToBid({ viewer, store, rfpId, now }) {
   const rfp = await store.getRfp(rfpId);
   const can = askable(rfp, { orgId: viewer.orgId, now });
   if (!can.ok) {
@@ -61,8 +69,17 @@ export async function listBidRequests({ viewer, store, directory, builds, rfpId 
  * here; the link is e-mailed to the organisation's address. A prior e-mail
  * invite to that address is adopted (no second link is minted or sent).
  */
-export async function approveBidRequest({ viewer, store, directory, builds, mailSender, linkBaseUrl, bidRequestId }) {
+export async function approveBidRequest({
+  viewer, store, directory, builds, mailSender, linkBaseUrl, bidRequestId, idempotencyKey = null,
+}) {
   const { request, rfp } = await requireDecider({ viewer, store, bidRequestId });
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'approveBidRequest', body: { bid_request_id: request.id } },
+    () => approve({ viewer, store, directory, builds, mailSender, linkBaseUrl, request, rfp }),
+  );
+}
+
+async function approve({ viewer, store, directory, builds, mailSender, linkBaseUrl, request, rfp }) {
   const ok = decidable(request, rfp, 'approve');
   if (!ok.ok) throw new ProblemError('invalid_transition', ok.reason);
   const org = await store.getOrganization(request.org_id);
@@ -87,8 +104,15 @@ export async function approveBidRequest({ viewer, store, directory, builds, mail
 }
 
 /** operationId: declineBidRequest — no lane, no link; the company is told. */
-export async function declineBidRequest({ viewer, store, bidRequestId }) {
+export async function declineBidRequest({ viewer, store, bidRequestId, idempotencyKey = null }) {
   const { request, rfp } = await requireDecider({ viewer, store, bidRequestId });
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'declineBidRequest', body: { bid_request_id: request.id } },
+    () => decline({ viewer, store, request, rfp }),
+  );
+}
+
+async function decline({ viewer, store, request, rfp }) {
   const ok = decidable(request, rfp, 'decline');
   if (!ok.ok) throw new ProblemError('invalid_transition', ok.reason);
   const actor = await requireActor(store, viewer);

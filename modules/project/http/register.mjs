@@ -99,8 +99,8 @@ export function registerProject(router, { store, shareBaseUrl, specialties, fact
   router.register('GET', '/projects/{projectId}/share-links', 'listShareLinks', ({ viewer, params, query }) =>
     listShareLinks({ viewer, store, projectId: params.projectId, query }));
 
-  router.register('POST', '/share-links/{shareLinkId}:revoke', 'revokeShareLink', ({ viewer, params }) =>
-    revokeShareLink({ viewer, store, shareLinkId: params.shareLinkId }));
+  router.register('POST', '/share-links/{shareLinkId}:revoke', 'revokeShareLink', ({ viewer, params, headers }) =>
+    revokeShareLink({ viewer, store, shareLinkId: params.shareLinkId, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('GET', '/share-links/{shareLinkId}/accesses', 'listShareLinkAccesses', ({ viewer, params, query }) =>
     listShareLinkAccesses({ viewer, store, shareLinkId: params.shareLinkId, query }));

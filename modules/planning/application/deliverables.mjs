@@ -70,8 +70,16 @@ export async function listProjectDeliverables({ viewer, store, projectId }) {
 // ── client side: the required list (F-12) ───────────────────────────────────
 
 /** operationId: createDeliverable — idempotent on the client id. */
-export async function createDeliverable({ viewer, store, taskId, body }) {
+export async function createDeliverable(args) {
+  const { viewer, store, taskId, body, idempotencyKey = null } = args;
   requirePermission(viewer, 'org:plan:edit');
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'createDeliverable', body: { task_id: taskId, ...body } },
+    () => runCreateDeliverable(args),
+  );
+}
+
+async function runCreateDeliverable({ viewer, store, taskId, body }) {
   const { task, actor, side } = await loadTask({ viewer, store, taskId });
   requireClientSide(side);
   const { errors, value } = validateDeliverableFields(body);
@@ -115,8 +123,16 @@ export async function deleteDeliverable({ viewer, store, deliverableId }) {
 // ── submit and review (F-13..F-15) ──────────────────────────────────────────
 
 /** operationId: submitDeliverable — the assignee hands over a proven version. */
-export async function submitDeliverable({ viewer, store, documents, deliverableId, body }) {
+export async function submitDeliverable(args) {
+  const { viewer, store, deliverableId, body, idempotencyKey = null } = args;
   requirePermission(viewer, 'org:progress:report');
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'submitDeliverable', body: { deliverable_id: deliverableId, ...body } },
+    () => runSubmitDeliverable(args),
+  );
+}
+
+async function runSubmitDeliverable({ viewer, store, documents, deliverableId, body }) {
   const { deliverable, task, side, actor } = await loadDeliverable({ viewer, store, deliverableId });
   if (!side.canSubmit) {
     throw new ProblemError('forbidden', 'the organisation responsible for the task submits its deliverables', { reason: 'relationship' });
@@ -149,8 +165,17 @@ export async function submitDeliverable({ viewer, store, documents, deliverableI
   return { status: 200, body: deliverableBody(updated) };
 }
 
-async function decide({ viewer, store, deliverableId, body, status }) {
+async function decide(args) {
+  const { viewer, store, deliverableId, body, status, idempotencyKey = null } = args;
   requirePermission(viewer, 'org:quality:verify');
+  const operationId = status === 'approved' ? 'approveDeliverable' : 'requestDeliverableChanges';
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId, body: { deliverable_id: deliverableId, ...body } },
+    () => decideNow(args),
+  );
+}
+
+async function decideNow({ viewer, store, deliverableId, body, status }) {
   const { deliverable, side, actor } = await loadDeliverable({ viewer, store, deliverableId });
   requireClientSide(side);
   const comment = validateText(body?.comment, 'comment', { required: status === 'changes_requested' });

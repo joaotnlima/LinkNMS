@@ -61,8 +61,8 @@ export function registerTendering(router, {
 
   // A link-only bidder asks a question (PRD-08 H-6) — security: [], the token
   // is the authority; refused after the questions deadline (H-9).
-  router.register('POST', '/rfp-links/{token}/clarifications', 'askClarificationByToken', ({ params, body }) =>
-    askClarificationByToken({ store, token: params.token, body }));
+  router.register('POST', '/rfp-links/{token}/clarifications', 'askClarificationByToken', ({ params, body, headers }) =>
+    askClarificationByToken({ store, token: params.token, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   // Token-scoped portfolio-image upload (LINA-370) — also security: [], the
   // token is the authority. Reserve a presigned PUT, then prove the bytes.
@@ -153,19 +153,20 @@ export function registerTendering(router, {
 
   // Ask to bid on a listed RFP (D-47, PRD-04 X-13): a PENDING request, never
   // a lane. The issuer approves (lane + link) or declines.
-  router.register('POST', '/rfps/{rfpId}:apply', 'applyToOpenRfp', ({ viewer, params }) =>
-    applyToOpenRfp({ viewer, store, rfpId: params.rfpId }));
+  router.register('POST', '/rfps/{rfpId}:apply', 'applyToOpenRfp', ({ viewer, params, headers }) =>
+    applyToOpenRfp({ viewer, store, rfpId: params.rfpId, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('GET', '/rfps/{rfpId}/bid-requests', 'listBidRequests', ({ viewer, params }) =>
     listBidRequests({ viewer, store, directory, builds, rfpId: params.rfpId }));
 
-  router.register('POST', '/bid-requests/{bidRequestId}:approve', 'approveBidRequest', ({ viewer, params }) =>
+  router.register('POST', '/bid-requests/{bidRequestId}:approve', 'approveBidRequest', ({ viewer, params, headers }) =>
     approveBidRequest({
       viewer, store, directory, builds, mailSender, linkBaseUrl: baseUrl(), bidRequestId: params.bidRequestId,
+      idempotencyKey: headers['idempotency-key'] ?? null,
     }));
 
-  router.register('POST', '/bid-requests/{bidRequestId}:decline', 'declineBidRequest', ({ viewer, params }) =>
-    declineBidRequest({ viewer, store, bidRequestId: params.bidRequestId }));
+  router.register('POST', '/bid-requests/{bidRequestId}:decline', 'declineBidRequest', ({ viewer, params, headers }) =>
+    declineBidRequest({ viewer, store, bidRequestId: params.bidRequestId, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('GET', '/me/rfps', 'listMyRfps', ({ viewer, query }) =>
     listMyRfps({ viewer, store, query }));
@@ -178,8 +179,8 @@ export function registerTendering(router, {
   router.register('GET', '/me/open-requests', 'listOpenRequests', ({ viewer }) =>
     listOpenRequests({ viewer, store, directory, builds }));
 
-  router.register('POST', '/rfps/{rfpId}/invitation:decline', 'declineRfpInvitation', ({ viewer, params }) =>
-    declineRfpInvitation({ viewer, store, builds, rfpId: params.rfpId }));
+  router.register('POST', '/rfps/{rfpId}/invitation:decline', 'declineRfpInvitation', ({ viewer, params, headers }) =>
+    declineRfpInvitation({ viewer, store, builds, rfpId: params.rfpId, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('POST', '/rfps/{rfpId}/clarifications', 'askClarification', ({ viewer, params, body }) =>
     askClarification({ viewer, store, rfpId: params.rfpId, body }));

@@ -64,9 +64,16 @@ export async function listOpenRequests({ viewer, store, directory, builds }) {
 }
 
 /** operationId: declineRfpInvitation — the company will not bid. */
-export async function declineRfpInvitation({ viewer, store, builds, rfpId }) {
+export async function declineRfpInvitation({ viewer, store, builds, rfpId, idempotencyKey = null }) {
   requireBidder(viewer);
   if (!UUID.test(rfpId ?? '')) throw new ProblemError('not_found');
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'declineRfpInvitation', body: { rfp_id: rfpId, org_id: viewer.orgId } },
+    () => decline({ viewer, store, builds, rfpId }),
+  );
+}
+
+async function decline({ viewer, store, builds, rfpId }) {
   const invite = await store.invitationOf(rfpId, viewer.orgId);
   if (!invite) throw new ProblemError('not_found');
   const rfp = await store.getRfp(rfpId);

@@ -10,6 +10,7 @@ import { createRouter } from '../../../platform/router.mjs';
 import { createViewerContext } from '../../../platform/viewer-context.mjs';
 import { createInMemoryObjectStorage } from '../infra/storage.mjs';
 import { registerDocuments } from './register.mjs';
+import { createInMemoryIdempotency } from '../../../platform/idempotency.mjs';
 
 const OWNER = '01920000-0000-7000-8000-0000000000a1';
 const ROOF = '01920000-0000-7000-8000-0000000000a2';
@@ -30,6 +31,7 @@ function fakeStore() {
     { id: 'l2', global_id: G2, task_id: T_FRAME, added_in_version: 3, removed_in_version: null, created_by_org_id: OWNER },
   ];
   return {
+    idempotent: createInMemoryIdempotency(),
     saves: [],
     async getPersonByClerkId() { return { id: ME }; },
     async resolveScope(type, id) { return (type === 'project' && id === PROJECT) || (type === 'task' && [T_ROOF, T_FRAME].includes(id)) ? { projectId: PROJECT } : null; },
@@ -109,6 +111,19 @@ describe('PRD-07 project model over the /api/v2 router', () => {
     assert.equal(ok.status, 201);
     assert.equal(ok.body.version_no, 4);
     assert.equal(ok.body.edited_by_author, false);
+  });
+
+  test('model:save honours Idempotency-Key: a replay answers the first save, a different body 409s (audit B1)', async () => {
+    const send = (body) => router.dispatch({
+      method: 'POST', path: `/projects/${PROJECT}/model:save`, viewer: viewer(OWNER), body, query: {}, headers: { 'idempotency-key': 'k-save-1' },
+    });
+    const body = { base_version_no: 3, note: 'n', changes: [{ op: 'unlink', global_id: G2, task_id: T_FRAME }] };
+    const first = await send(body);
+    const again = await send(body);
+    assert.deepEqual([first.status, again.status], [201, 201]);
+    assert.deepEqual(again.body, first.body);
+    assert.equal(store.saves.length, 1);
+    assert.equal((await send({ ...body, note: 'other' })).status, 409);
   });
 
   test('model:restore is for the author and the owner; record-diff and the task card resolve', async () => {

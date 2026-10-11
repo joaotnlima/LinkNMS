@@ -2096,7 +2096,7 @@ export async function listSpecialtyLabels({ viewer, store }) {
   return { status: 200, body: { specialties: merged.map((label) => ({ label })) } };
 }
 
-export async function createSpecialtyLabel({ viewer, store, body }) {
+export async function createSpecialtyLabel({ viewer, store, body, idempotencyKey = null }) {
   if (!viewer.orgId) throw new ProblemError('unauthenticated', 'active org required');
   const raw = body?.label;
   if (typeof raw !== 'string' || !raw.trim()) {
@@ -2106,6 +2106,11 @@ export async function createSpecialtyLabel({ viewer, store, body }) {
   if (label.length > MAX_LABEL) {
     throw new ProblemError('validation_failed', null, { errors: { label: `must be ≤ ${MAX_LABEL} chars` } });
   }
-  const stored = await store.createUserSpecialty({ orgId: viewer.orgId, label });
-  return { status: 200, body: { specialty: { label: stored } } };
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'createSpecialtyLabel', body: { label } },
+    async () => {
+      const stored = await store.createUserSpecialty({ orgId: viewer.orgId, label });
+      return { status: 200, body: { specialty: { label: stored } } };
+    },
+  );
 }

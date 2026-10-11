@@ -214,8 +214,14 @@ describe('the shared project model over Postgres (PRD-07)', { skip }, () => {
   test('AC4: Restore v3 creates v8 equal to v3; v4..v7 stay', async () => {
     await assert.rejects(restoreProjectModel({ viewer: viewer(ROOF), store, planning, projectId: PROJECT, body: { version_no: 3 } }),
       (e) => e.problem.code === 'forbidden');
-    const r = await restoreProjectModel({ viewer: viewer(ARCH), store, planning, projectId: PROJECT, body: { version_no: 3 } });
+    const key = randomUUID();
+    const r = await restoreProjectModel({ viewer: viewer(ARCH), store, planning, projectId: PROJECT, body: { version_no: 3 }, idempotencyKey: key });
     assert.equal(r.body.version_no, 8);
+    // Idempotency-Key replay (audit B1): the original answer, no v9.
+    const again = await restoreProjectModel({ viewer: viewer(ARCH), store, planning, projectId: PROJECT, body: { version_no: 3 }, idempotencyKey: key });
+    assert.deepEqual([again.status, again.body.version_no, again.replayed], [201, 8, true]);
+    const { rows: [{ n }] } = await pool.query('SELECT max(version_no)::int AS n FROM documents.document_version WHERE document_id = $1', [docId]);
+    assert.equal(n, 8);
     const { rows: [v3, v8] } = await pool.query(
       'SELECT * FROM documents.document_version WHERE document_id = $1 AND version_no IN (3, 8) ORDER BY version_no', [docId],
     );

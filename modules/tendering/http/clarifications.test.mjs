@@ -17,6 +17,7 @@ import { createRouter } from '../../../platform/router.mjs';
 import { createViewerContext } from '../../../platform/viewer-context.mjs';
 import { createCapturingMailSender } from '../infra/mail-sender.mjs';
 import { registerTendering } from './register.mjs';
+import { createInMemoryIdempotency } from '../../../platform/idempotency.mjs';
 
 const OWNER = '01950000-0000-7000-8000-0000000000a1';
 const BIDDER_A = '01950000-0000-7000-8000-0000000000a2';
@@ -46,6 +47,7 @@ function fakeStore() {
   }]]);
   const events = [];
   return {
+    idempotent: createInMemoryIdempotency(),
     rfp, clar, events,
     async getPersonByClerkId() { return { id: ME, clerk_user_id: 'user_me' }; },
     async getProject(id) { return id === PROJECT ? { id, owner_org_id: OWNER, created_by_org_id: OWNER } : null; },

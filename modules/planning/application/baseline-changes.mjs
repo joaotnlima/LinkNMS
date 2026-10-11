@@ -148,7 +148,7 @@ function assignRoots({ plan, roots, supplierOrgId, actor }) {
 }
 
 /** operationId: acknowledgeVariations — PRD-13 S-15, all or nothing. */
-export async function acknowledgeVariations({ viewer, store, projectId, body }) {
+export async function acknowledgeVariations({ viewer, store, projectId, body, idempotencyKey = null }) {
   requireActiveOrg(viewer);
   if (!viewer.has('org:variations:acknowledge')) throw new ProblemError('forbidden', null, { reason: 'role' });
   const ids = Array.isArray(body?.variation_ids) ? [...new Set(body.variation_ids)] : null;
@@ -156,6 +156,15 @@ export async function acknowledgeVariations({ viewer, store, projectId, body }) 
     throw new ProblemError('validation_failed', null, { errors: { variation_ids: '1 to 200 variation ids' } });
   }
   const { actor } = await requireParticipant({ viewer, store, projectId });
+  // Inside the reservation: a replay answers the first result instead of
+  // refusing the now-acknowledged variations.
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'acknowledgeVariations', body: { project_id: projectId, ...body } },
+    () => acknowledge({ viewer, store, projectId, ids, actor }),
+  );
+}
+
+async function acknowledge({ viewer, store, projectId, ids, actor }) {
   const snapshot = await store.loadPlan(projectId);
   const who = viewerWho(viewer, snapshot);
   const refused = [];

@@ -145,8 +145,16 @@ export async function getProjectModel({ viewer, store, planning = null, projectI
  * model (or its first) and answer an upload ticket; `completeUpload` proves it.
  * Links and issues carry over by GlobalId with nothing to do here (M-18).
  */
-export async function reserveProjectModelVersion({ viewer, store, storage, projectId, body }) {
+export async function reserveProjectModelVersion({ viewer, store, storage, projectId, body, idempotencyKey = null }) {
   await requireReadableProject({ viewer, store, projectId });
+  // A replay answers the same reservation (and ticket) instead of a second version.
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'reserveProjectModelVersion', body: { project_id: projectId, ...body } },
+    () => reserveVersion({ viewer, store, storage, projectId, body }),
+  );
+}
+
+async function reserveVersion({ viewer, store, storage, projectId, body }) {
   const errors = validateFile(body?.file);
   if (!errors['file.name'] && !isIfcName(body?.file?.name)) errors['file.name'] = 'an IFC file (.ifc) — the only model format';
   if (body?.note !== undefined && body.note !== null && (typeof body.note !== 'string' || body.note.trim().length > 2000)) {
@@ -193,8 +201,15 @@ export async function reserveProjectModelVersion({ viewer, store, storage, proje
 }
 
 /** operationId: saveModelEdits — a record-side draft becomes version n+1 (M-11..M-14). */
-export async function saveModelEdits({ viewer, store, planning = null, projectId, body }) {
+export async function saveModelEdits({ viewer, store, planning = null, projectId, body, idempotencyKey = null }) {
   await requireReadableProject({ viewer, store, projectId });
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'saveModelEdits', body: { project_id: projectId, ...body } },
+    () => saveEdits({ viewer, store, planning, projectId, body }),
+  );
+}
+
+async function saveEdits({ viewer, store, planning, projectId, body }) {
   const doc = await requireModel(store, projectId);
   const { errors, edit } = validateModelEdits(body);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
@@ -254,8 +269,16 @@ export async function saveModelEdits({ viewer, store, planning = null, projectId
 }
 
 /** operationId: restoreProjectModel — Restore vN creates v(n+1) as its copy (M-17). */
-export async function restoreProjectModel({ viewer, store, planning = null, projectId, body }) {
+export async function restoreProjectModel({ viewer, store, planning = null, projectId, body, idempotencyKey = null }) {
   await requireReadableProject({ viewer, store, projectId });
+  // Inside the reservation: a replay must not trip "already the current version".
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'restoreProjectModel', body: { project_id: projectId, ...body } },
+    () => restore({ viewer, store, planning, projectId, body }),
+  );
+}
+
+async function restore({ viewer, store, planning, projectId, body }) {
   const doc = await requireModel(store, projectId);
   const n = body?.version_no;
   const errors = {};

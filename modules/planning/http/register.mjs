@@ -108,10 +108,7 @@ export function registerPlanning(router, { store, documents, specialties, workbo
     acknowledgeVariation({ viewer, store, variationId: params.variationId }));
 
   router.register('POST', '/projects/{projectId}/variations:acknowledge', 'acknowledgeVariations', ({ viewer, params, body, headers }) =>
-    store.idempotent(
-      { key: headers['idempotency-key'] ?? null, caller: viewer.clerkUserId, operationId: 'acknowledgeVariations', body },
-      () => acknowledgeVariations({ viewer, store, projectId: params.projectId, body }),
-    ));
+    acknowledgeVariations({ viewer, store, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('POST', '/variations/{variationId}:question', 'questionVariation', ({ viewer, params, body }) =>
     questionVariation({ viewer, store, variationId: params.variationId, body }));
@@ -126,8 +123,8 @@ export function registerPlanning(router, { store, documents, specialties, workbo
   router.register('GET', '/tasks/{taskId}/deliverables', 'listTaskDeliverables', ({ viewer, params }) =>
     listTaskDeliverables({ viewer, store, taskId: params.taskId }));
 
-  router.register('POST', '/tasks/{taskId}/deliverables', 'createDeliverable', ({ viewer, params, body }) =>
-    createDeliverable({ viewer, store, taskId: params.taskId, body }));
+  router.register('POST', '/tasks/{taskId}/deliverables', 'createDeliverable', ({ viewer, params, body, headers }) =>
+    createDeliverable({ viewer, store, taskId: params.taskId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('GET', '/projects/{projectId}/deliverables', 'listProjectDeliverables', ({ viewer, params }) =>
     listProjectDeliverables({ viewer, store, projectId: params.projectId }));
@@ -138,14 +135,14 @@ export function registerPlanning(router, { store, documents, specialties, workbo
   router.register('DELETE', '/deliverables/{deliverableId}', 'deleteDeliverable', ({ viewer, params }) =>
     deleteDeliverable({ viewer, store, deliverableId: params.deliverableId }));
 
-  router.register('POST', '/deliverables/{deliverableId}:submit', 'submitDeliverable', ({ viewer, params, body }) =>
-    submitDeliverable({ viewer, store, documents, deliverableId: params.deliverableId, body }));
+  router.register('POST', '/deliverables/{deliverableId}:submit', 'submitDeliverable', ({ viewer, params, body, headers }) =>
+    submitDeliverable({ viewer, store, documents, deliverableId: params.deliverableId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
-  router.register('POST', '/deliverables/{deliverableId}:approve', 'approveDeliverable', ({ viewer, params, body }) =>
-    approveDeliverable({ viewer, store, deliverableId: params.deliverableId, body }));
+  router.register('POST', '/deliverables/{deliverableId}:approve', 'approveDeliverable', ({ viewer, params, body, headers }) =>
+    approveDeliverable({ viewer, store, deliverableId: params.deliverableId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
-  router.register('POST', '/deliverables/{deliverableId}:request-changes', 'requestDeliverableChanges', ({ viewer, params, body }) =>
-    requestDeliverableChanges({ viewer, store, deliverableId: params.deliverableId, body }));
+  router.register('POST', '/deliverables/{deliverableId}:request-changes', 'requestDeliverableChanges', ({ viewer, params, body, headers }) =>
+    requestDeliverableChanges({ viewer, store, deliverableId: params.deliverableId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   // ── PRD-10: running the plan — baselines, site calendar, daily log ───────
   router.register('GET', '/projects/{projectId}/baselines', 'listBaselines', ({ viewer, params, query }) =>
@@ -160,8 +157,8 @@ export function registerPlanning(router, { store, documents, specialties, workbo
   router.register('GET', '/projects/{projectId}/daily-logs/{date}', 'getDailyLog', ({ viewer, params }) =>
     getDailyLog({ viewer, store, projectId: params.projectId, date: params.date }));
 
-  router.register('POST', '/projects/{projectId}/daily-logs/{date}/entries', 'addDailyLogEntries', ({ viewer, params, body }) =>
-    addDailyLogEntries({ viewer, store, documents, projectId: params.projectId, date: params.date, body }));
+  router.register('POST', '/projects/{projectId}/daily-logs/{date}/entries', 'addDailyLogEntries', ({ viewer, params, body, headers }) =>
+    addDailyLogEntries({ viewer, store, documents, projectId: params.projectId, date: params.date, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('GET', '/tasks/{taskId}/daily-log-entries', 'listTaskDailyLogEntries', ({ viewer, params }) =>
     listTaskDailyLogEntries({ viewer, store, taskId: params.taskId }));
@@ -187,8 +184,8 @@ export function registerPlanning(router, { store, documents, specialties, workbo
   router.register('GET', '/specialty-labels', 'listSpecialtyLabels', ({ viewer }) =>
     listSpecialtyLabels({ viewer, store }));
 
-  router.register('POST', '/specialty-labels', 'createSpecialtyLabel', ({ viewer, body }) =>
-    createSpecialtyLabel({ viewer, store, body }));
+  router.register('POST', '/specialty-labels', 'createSpecialtyLabel', ({ viewer, body, headers }) =>
+    createSpecialtyLabel({ viewer, store, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   // Plan template "my default" (LINA-383) — per-person, project-independent,
   // names-only (LINA-241, ADR-0018). Gated on the identity mirror only (no org),

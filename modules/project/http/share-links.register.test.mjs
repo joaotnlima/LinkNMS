@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { createRouter } from '../../../platform/router.mjs';
 import { createViewerContext } from '../../../platform/viewer-context.mjs';
 import { registerProject } from './register.mjs';
+import { createInMemoryIdempotency } from '../../../platform/idempotency.mjs';
 
 const OWNER_ORG = '01920000-0000-7000-8000-0000000000a1';
 const GC_ORG = '01920000-0000-7000-8000-0000000000a2';
@@ -23,6 +24,7 @@ function fakeStore() {
   const ledger = [];
   const project = { id: PROJECT, owner_org_id: OWNER_ORG, created_by_org_id: OWNER_ORG, name: 'Casa da Maia', municipality_code: '1306' };
   return {
+    idempotent: createInMemoryIdempotency(),
     links, accesses, ledger,
     async getPersonByClerkId(id) { return id === 'user_me' ? { id: ME } : null; },
     async getProject(id) { return id === PROJECT ? project : null; },

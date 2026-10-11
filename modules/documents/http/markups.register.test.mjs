@@ -8,6 +8,7 @@ import { createRouter } from '../../../platform/router.mjs';
 import { createViewerContext } from '../../../platform/viewer-context.mjs';
 import { createInMemoryObjectStorage } from '../infra/storage.mjs';
 import { registerDocuments } from './register.mjs';
+import { createInMemoryIdempotency } from '../../../platform/idempotency.mjs';
 
 const GC_ORG = '01920000-0000-7000-8000-0000000000a2';
 const STRANGER_ORG = '01920000-0000-7000-8000-0000000000a5';
@@ -24,6 +25,7 @@ function fakeStore() {
     geometry: { points: [[1, 1]] }, text: 'x', author_person_id: ME, author_org_id: GC_ORG, created_at: '2026-10-10T00:00:00Z', state: 'open',
   };
   return {
+    idempotent: createInMemoryIdempotency(),
     saved: [],
     async getPersonByClerkId() { return { id: ME }; },
     async getDocument(id) { return id === DOC ? doc : null; },
@@ -88,6 +90,21 @@ describe('PRD-06 markups over the /api/v2 router', () => {
     assert.equal(linked.status, 200);
     assert.equal(linked.body.question_id, Q);
     assert.equal((await dispatch('POST', `/markups/${M1}:link`, viewer(GC_ORG), {})).status, 422);
+  });
+
+  test(':close, :reopen and :link replay their first answer under the same Idempotency-Key (audit B1)', async () => {
+    let writes = 0;
+    const setState = store.setMarkupState;
+    store.setMarkupState = async (cmd) => { writes += 1; return setState(cmd); };
+    const send = (path, body = null) => router.dispatch({
+      method: 'POST', path, viewer: viewer(GC_ORG), body, query: {}, headers: { 'idempotency-key': 'k-close-1' },
+    });
+    const first = await send(`/markups/${M1}:close`);
+    const again = await send(`/markups/${M1}:close`);
+    assert.deepEqual(again.body, first.body);
+    assert.equal(writes, 1);
+    // The key is per operation: the same key on :link is a fresh command.
+    assert.equal((await send(`/markups/${M1}:link`, { question_id: Q })).status, 200);
   });
 
   test('viewing routes: :view-url answers an inline URL, /preview the DWG state; unproven versions 404', async () => {

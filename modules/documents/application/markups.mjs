@@ -46,10 +46,17 @@ export async function listDocumentMarkups({ viewer, store, documentId, query }) 
 }
 
 /** operationId: saveDocumentMarkups — appends the markups-only version n+1. */
-export async function saveDocumentMarkups({ viewer, store, documentId, body }) {
+export async function saveDocumentMarkups({ viewer, store, documentId, body, idempotencyKey = null }) {
   requireActiveOrg(viewer);
   if (!UUID.test(documentId ?? '')) throw new ProblemError('not_found');
   const doc = await requireReadableDocument({ viewer, store, documentId });
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'saveDocumentMarkups', body: { document_id: doc.id, ...body } },
+    () => persistMarkups({ viewer, store, doc, body }),
+  );
+}
+
+async function persistMarkups({ viewer, store, doc, body }) {
   if (!doc.project_id || !PROJECT_FILE_SCOPES.includes(doc.scope_type) || doc.private_to_org_id) {
     throw new ProblemError('forbidden', 'markups are kept on project, location and task files', { reason: 'scope' });
   }
@@ -106,8 +113,15 @@ async function requireReadableMarkup({ viewer, store, markupId }) {
   return { markup, doc };
 }
 
-async function changeState({ viewer, store, markupId, action }) {
+async function changeState({ viewer, store, markupId, action, idempotencyKey }) {
   const { markup, doc } = await requireReadableMarkup({ viewer, store, markupId });
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: `${action}Markup`, body: { markup_id: markup.id } },
+    () => transition({ viewer, store, markup, doc, action }),
+  );
+}
+
+async function transition({ viewer, store, markup, doc, action }) {
   if (markup.author_org_id !== viewer.orgId
       && !(await store.canEditScope({ scopeType: doc.scope_type, scopeId: doc.scope_id, orgId: viewer.orgId }))) {
     throw new ProblemError('forbidden', 'only the organisation that drew the markup, or an editor of the file, closes it',
@@ -123,13 +137,13 @@ async function changeState({ viewer, store, markupId, action }) {
 }
 
 /** operationId: closeMarkup */
-export function closeMarkup({ viewer, store, markupId }) {
-  return changeState({ viewer, store, markupId, action: 'close' });
+export function closeMarkup({ viewer, store, markupId, idempotencyKey = null }) {
+  return changeState({ viewer, store, markupId, action: 'close', idempotencyKey });
 }
 
 /** operationId: reopenMarkup */
-export function reopenMarkup({ viewer, store, markupId }) {
-  return changeState({ viewer, store, markupId, action: 'reopen' });
+export function reopenMarkup({ viewer, store, markupId, idempotencyKey = null }) {
+  return changeState({ viewer, store, markupId, action: 'reopen', idempotencyKey });
 }
 
 /**
@@ -137,8 +151,15 @@ export function reopenMarkup({ viewer, store, markupId }) {
  * (questionFacts), `nonconformities` the Quality port (nonconformityFacts),
  * both injected at the composition root.
  */
-export async function linkMarkup({ viewer, store, questions = null, nonconformities = null, markupId, body }) {
+export async function linkMarkup({ viewer, store, questions = null, nonconformities = null, markupId, body, idempotencyKey = null }) {
   const { markup } = await requireReadableMarkup({ viewer, store, markupId });
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'linkMarkup', body: { markup_id: markup.id, ...body } },
+    () => linkTo({ viewer, store, questions, nonconformities, markup, body }),
+  );
+}
+
+async function linkTo({ viewer, store, questions, nonconformities, markup, body }) {
   if (markup.author_org_id !== viewer.orgId) {
     throw new ProblemError('forbidden', 'only the organisation that drew the markup links it', { reason: 'relationship' });
   }

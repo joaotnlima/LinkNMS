@@ -1019,6 +1019,7 @@ paths:
       x-human-only: true
       parameters:
       - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '202':
           description: Link sent
@@ -1057,6 +1058,8 @@ paths:
         **Relationship (LinkNMS):** active org = claimant'
       x-clerk-permission: org:profile:manage
       x-human-only: true
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           description: Claimed
@@ -1156,6 +1159,8 @@ paths:
 
 
         **Relationship (LinkNMS):** none'
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -2068,6 +2073,8 @@ paths:
         `project.share_link.revoked`.'
       x-clerk-permission: org:plan:edit
       x-relationship: project.owner
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           description: OK
@@ -3239,6 +3246,7 @@ paths:
       x-mcp-mode: write-confirm
       parameters:
       - $ref: '#/components/parameters/taskId'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -3408,6 +3416,8 @@ paths:
       x-relationship: assignee of the task
       x-mcp-tool: submit_deliverable
       x-mcp-mode: write-confirm
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -3459,6 +3469,8 @@ paths:
       x-relationship: client side of the task ∧ ≠ submitter
       x-mcp-tool: approve_deliverable
       x-mcp-mode: write-confirm
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: false
         content:
@@ -3504,6 +3516,8 @@ paths:
       x-relationship: client side of the task ∧ ≠ submitter
       x-mcp-tool: request_deliverable_changes
       x-mcp-mode: write-confirm
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -4349,6 +4363,7 @@ paths:
       x-mcp-mode: write-confirm
       parameters:
       - $ref: '#/components/parameters/projectId'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -5260,6 +5275,8 @@ paths:
 
         **Relationship (LinkNMS):** the invited recipient'
       security: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -6428,6 +6445,7 @@ paths:
         schema:
           type: string
           format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           description: Declined
@@ -6473,6 +6491,7 @@ paths:
       x-relationship: recipient
       parameters:
       - $ref: '#/components/parameters/rfpId'
+      - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           description: Declined
@@ -9163,6 +9182,7 @@ paths:
       x-relationship: edit scope ∋ task
       parameters:
       - $ref: '#/components/parameters/taskId'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:

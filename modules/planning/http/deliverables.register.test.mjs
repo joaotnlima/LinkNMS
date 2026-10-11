@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { createRouter } from '../../../platform/router.mjs';
 import { createViewerContext } from '../../../platform/viewer-context.mjs';
 import { registerPlanning } from './register.mjs';
+import { createInMemoryIdempotency } from '../../../platform/idempotency.mjs';
 
 const OWNER_ORG = '01920000-0000-7000-8000-0000000005a1';
 const SUB_ORG = '01920000-0000-7000-8000-0000000005a2';
@@ -27,6 +28,7 @@ function fakeStore() {
   });
   state.deliverables.push(deliverable());
   return {
+    idempotent: createInMemoryIdempotency(),
     state,
     async getPersonByClerkId(id) { return id === 'user_me' ? { id: ME } : null; },
     async getProject(id) { return id === PROJECT ? { id, owner_org_id: OWNER_ORG, created_by_org_id: OWNER_ORG } : null; },
@@ -53,6 +55,12 @@ function fakeStore() {
         submitted_by_person_id: actor.personId, submitted_at: 'now',
       });
       return state.deliverables.find((d) => d.id === id);
+    },
+    async decideDeliverable({ id, submissionId, status }) {
+      const sub = state.submissions.find((x) => x.id === submissionId);
+      if (sub.status !== 'submitted') return { conflict: true };
+      Object.assign(sub, { status, decided_at: 'now' });
+      return { deliverable: state.deliverables.find((d) => d.id === id) };
     },
     async insertProgress(p) { state.progress.push(p); return { ...p, seq: 1, reportedAt: 'now' }; },
   };
@@ -110,6 +118,18 @@ describe('PRD-05 deliverables over the /api/v2 router', () => {
     assert.equal((await dispatch('POST', `/deliverables/${DEL}:approve`, viewer(OWNER_ORG, ['org:plan:edit']))).status, 403);
     const noComment = await dispatch('POST', `/deliverables/${DEL}:request-changes`, viewer(OWNER_ORG), {});
     assert.equal(noComment.status, 422);
+  });
+
+  test('Idempotency-Key: submit and approve replay their first answer (audit nits)', async () => {
+    const keyed = (path, v, body, key) => router.dispatch({ method: 'POST', path, viewer: v, body, query: {}, headers: { 'idempotency-key': key } });
+    const first = await keyed(`/deliverables/${DEL}:submit`, viewer(SUB_ORG), { document_id: DOC, note: 'n' }, 'k-sub');
+    const again = await keyed(`/deliverables/${DEL}:submit`, viewer(SUB_ORG), { document_id: DOC, note: 'n' }, 'k-sub');
+    assert.deepEqual(again.body, first.body);
+    const approved = await keyed(`/deliverables/${DEL}:approve`, viewer(OWNER_ORG), {}, 'k-appr');
+    assert.equal(approved.status, 200);
+    const replay = await keyed(`/deliverables/${DEL}:approve`, viewer(OWNER_ORG), {}, 'k-appr');
+    assert.deepEqual([replay.status, replay.body], [200, approved.body]); // not "nothing is waiting for review"
+    assert.equal((await keyed(`/deliverables/${DEL}:submit`, viewer(SUB_ORG), { document_id: DOC, note: 'other' }, 'k-sub')).status, 409);
   });
 
   test('D-48: done is refused with 409 deliverables_pending; other statuses pass', async () => {

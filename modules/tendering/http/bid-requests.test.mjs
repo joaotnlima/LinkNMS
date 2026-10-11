@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { createRouter } from '../../../platform/router.mjs';
 import { createViewerContext } from '../../../platform/viewer-context.mjs';
 import { registerTendering } from './register.mjs';
+import { createInMemoryIdempotency } from '../../../platform/idempotency.mjs';
 
 const OWNER = '01920000-0000-7000-8000-0000000000a1';
 const ROOFER = '01920000-0000-7000-8000-0000000000a2';
@@ -41,6 +42,7 @@ function fakeStore() {
   const sent = [];
   const events = [];
   return {
+    idempotent: createInMemoryIdempotency(),
     rfps, requests, recipients, sent, events,
     async getPersonByClerkId() { return { id: ME }; },
     async isStaffed() { return true; },
@@ -188,6 +190,23 @@ describe('PRD-04 over the /api/v2 router', () => {
     assert.equal(mails[0].to, 'geral@telhados.pt');
     assert.ok(store.events.includes('tendering.bid_request.approved'));
     assert.equal((await call('POST', `/bid-requests/${req.id}:decline`, viewer(OWNER))).status, 409);
+  });
+
+  test('Idempotency-Key: ask, approve and decline replay their first answer (audit B1)', async () => {
+    const keyed = (method, path, v, key) => router.dispatch({ method, path, viewer: v, body: null, query: {}, headers: { 'idempotency-key': key } });
+    const asked = await keyed('POST', `/rfps/${RFP}:apply`, viewer(ROOFER), 'k-ask');
+    const askedAgain = await keyed('POST', `/rfps/${RFP}:apply`, viewer(ROOFER), 'k-ask');
+    assert.deepEqual([asked.status, askedAgain.status], [201, 201]); // the replay answers 201, not "already asked" 200
+    assert.deepEqual(askedAgain.body, asked.body);
+    const approved = await keyed('POST', `/bid-requests/${asked.body.id}:approve`, viewer(OWNER), 'k-approve');
+    const approvedAgain = await keyed('POST', `/bid-requests/${asked.body.id}:approve`, viewer(OWNER), 'k-approve');
+    assert.deepEqual([approved.status, approvedAgain.status], [200, 200]); // not 409 "already decided"
+    assert.deepEqual(approvedAgain.body, approved.body);
+    assert.equal(mails.length, 1, 'one link e-mailed');
+    assert.equal(store.recipients.length, 1);
+    const declined = await keyed('POST', `/rfps/${RFP}/invitation:decline`, viewer(ROOFER), 'k-decl');
+    const declinedAgain = await keyed('POST', `/rfps/${RFP}/invitation:decline`, viewer(ROOFER), 'k-decl');
+    assert.deepEqual(declinedAgain.body, declined.body);
   });
 
   test('decline → declined, no lane, no mail; only the issuer decides', async () => {

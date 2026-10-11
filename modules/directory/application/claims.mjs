@@ -18,7 +18,7 @@ const CLAIM_TTL_MS = 7 * 24 * 3600 * 1000;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** operationId: claimProfile — 202, a link goes to the profile's e-mail. */
-export async function claimProfile({ viewer, store, mail, orgId, now = new Date() }) {
+export async function claimProfile({ viewer, store, mail, orgId, idempotencyKey = null, now = new Date() }) {
   requireActiveOrg(viewer);
   requireHuman(viewer, 'claiming a profile');
   if (!viewer.has('org:profile:manage')) throw new ProblemError('forbidden', null, { reason: 'role' });
@@ -26,6 +26,14 @@ export async function claimProfile({ viewer, store, mail, orgId, now = new Date(
     throw new ProblemError('forbidden', 'households are not listed in the directory', { reason: 'org_kind' });
   }
   if (!UUID.test(orgId ?? '')) throw new ProblemError('not_found');
+  // A replay answers the first 202 — no second link is minted or mailed.
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'claimProfile', body: { org_id: orgId, claimant_org_id: viewer.orgId } },
+    () => startClaim({ viewer, store, mail, orgId, now }),
+  );
+}
+
+async function startClaim({ viewer, store, mail, orgId, now }) {
   const profile = await store.getProfileByOrg(orgId);
   if (!profile || !profile.listed) throw new ProblemError('not_found');
   if (profile.claimed) throw new ProblemError('invalid_transition', 'this profile is already claimed');
@@ -61,11 +69,19 @@ export async function claimProfile({ viewer, store, mail, orgId, now = new Date(
 }
 
 /** operationId: acceptProfileClaim — the e-mailed token completes the claim. */
-export async function acceptProfileClaim({ viewer, store, token, now = new Date() }) {
+export async function acceptProfileClaim({ viewer, store, token, idempotencyKey = null, now = new Date() }) {
   requireActiveOrg(viewer);
   requireHuman(viewer, 'claiming a profile');
   if (!viewer.has('org:profile:manage')) throw new ProblemError('forbidden', null, { reason: 'role' });
   if (typeof token !== 'string' || token.length < 20 || token.length > 100) throw new ProblemError('gone');
+  // Inside the reservation: a replay answers the profile, not 410 for a used token.
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'acceptProfileClaim', body: { token_hash: sha256(token) } },
+    () => acceptClaim({ viewer, store, token, now }),
+  );
+}
+
+async function acceptClaim({ viewer, store, token, now }) {
   const claim = await store.findClaimByHash(sha256(token));
   if (!claim || claim.accepted_at || new Date(claim.expires_at) <= now) throw new ProblemError('gone');
   if (claim.claimant_org_id !== viewer.orgId) {

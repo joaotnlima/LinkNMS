@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 
 import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { publishEvent } from '../../../platform/outbox.mjs';
+import { withIdempotency } from '../../../platform/idempotency.mjs';
 import { fileNameOf } from '../domain/model.mjs';
 import { fileTypeOf, initialPreviewStatus } from '../domain/files.mjs';
 import { linkQueries, insertLinksOn } from './pg-links.mjs';
@@ -44,6 +45,12 @@ export function createDocumentsStore(pool) {
     ...previewQueries(pool, tx),
     // The shared project model and its record-side edits (PRD-07) — infra/pg-model.mjs.
     ...modelQueries(pool, tx),
+
+    /** Idempotency-Key reservation (platform 0002) around a command (doc 11). */
+    async idempotent(meta, fn) {
+      if (!meta.key) return fn();
+      return tx((client) => withIdempotency(client, meta, fn));
+    },
 
     // ── identity / project guards (same ports as the sibling modules) ─────
     async getPersonByClerkId(clerkUserId) {

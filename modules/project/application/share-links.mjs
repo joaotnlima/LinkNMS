@@ -69,8 +69,15 @@ export async function listShareLinks({ viewer, store, projectId, query }) {
 }
 
 /** operationId: revokeShareLink — idempotent; the record says who closed it. */
-export async function revokeShareLink({ viewer, store, shareLinkId }) {
+export async function revokeShareLink({ viewer, store, shareLinkId, idempotencyKey = null }) {
   const link = await requireOwnedLink({ viewer, store, shareLinkId });
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'revokeShareLink', body: { share_link_id: link.id } },
+    () => revoke({ viewer, store, link }),
+  );
+}
+
+async function revoke({ viewer, store, link }) {
   if (link.revoked_at) return { status: 200, body: shareLinkBody(link) };
   const actor = await requireActor(store, viewer);
   const revoked = await store.revokeShareLink({

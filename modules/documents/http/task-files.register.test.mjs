@@ -9,6 +9,7 @@ import { createRouter } from '../../../platform/router.mjs';
 import { createViewerContext } from '../../../platform/viewer-context.mjs';
 import { createInMemoryObjectStorage } from '../infra/storage.mjs';
 import { registerDocuments } from './register.mjs';
+import { createInMemoryIdempotency } from '../../../platform/idempotency.mjs';
 
 const OWNER_ORG = '01920000-0000-7000-8000-0000000000a1'; // reads the task
 const GC_ORG = '01920000-0000-7000-8000-0000000000a2'; // edits the task
@@ -29,6 +30,7 @@ function fakeStore() {
     title: 'A-301', share_with_ancestors: false, current_version: 1, preview_status: 'ready',
   };
   return {
+    idempotent: createInMemoryIdempotency(),
     links, created,
     async getPersonByClerkId(id) { return id === 'user_me' ? { id: ME } : null; },
     async resolveScope(type, id) {

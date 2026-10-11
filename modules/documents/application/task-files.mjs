@@ -75,8 +75,15 @@ export async function listTaskDocuments({ viewer, store, taskId }) {
 }
 
 /** operationId: linkTaskDocuments */
-export async function linkTaskDocuments({ viewer, store, planning = null, taskId, body }) {
+export async function linkTaskDocuments({ viewer, store, planning = null, taskId, body, idempotencyKey = null }) {
   const task = await requireTaskEditor({ viewer, store, taskId });
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'linkTaskDocuments', body: { task_id: taskId, ...body } },
+    () => linkToTask({ viewer, store, planning, task, taskId, body }),
+  );
+}
+
+async function linkToTask({ viewer, store, planning, task, taskId, body }) {
   const errors = {};
   const ids = Array.isArray(body?.document_ids) ? [...new Set(body.document_ids)] : null;
   if (!ids || ids.length < 1 || ids.length > MAX_LINKS || ids.some((id) => !UUID.test(id ?? ''))) {

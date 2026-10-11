@@ -46,8 +46,8 @@ export function registerDocuments(router, { store, storage, planning, questions,
   router.register('GET', '/tasks/{taskId}/documents', 'listTaskDocuments', ({ viewer, params }) =>
     listTaskDocuments({ viewer, store, taskId: params.taskId }));
 
-  router.register('POST', '/tasks/{taskId}/document-links', 'linkTaskDocuments', ({ viewer, params, body }) =>
-    linkTaskDocuments({ viewer, store, planning, taskId: params.taskId, body }));
+  router.register('POST', '/tasks/{taskId}/document-links', 'linkTaskDocuments', ({ viewer, params, body, headers }) =>
+    linkTaskDocuments({ viewer, store, planning, taskId: params.taskId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('DELETE', '/tasks/{taskId}/document-links/{documentId}', 'unlinkTaskDocument', ({ viewer, params }) =>
     unlinkTaskDocument({ viewer, store, taskId: params.taskId, documentId: params.documentId }));
@@ -59,17 +59,17 @@ export function registerDocuments(router, { store, storage, planning, questions,
   router.register('GET', '/documents/{documentId}/markups', 'listDocumentMarkups', ({ viewer, params, query }) =>
     listDocumentMarkups({ viewer, store, documentId: params.documentId, query }));
 
-  router.register('POST', '/documents/{documentId}/markups:save', 'saveDocumentMarkups', ({ viewer, params, body }) =>
-    saveDocumentMarkups({ viewer, store, documentId: params.documentId, body }));
+  router.register('POST', '/documents/{documentId}/markups:save', 'saveDocumentMarkups', ({ viewer, params, body, headers }) =>
+    saveDocumentMarkups({ viewer, store, documentId: params.documentId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
-  router.register('POST', '/markups/{markupId}:close', 'closeMarkup', ({ viewer, params }) =>
-    closeMarkup({ viewer, store, markupId: params.markupId }));
+  router.register('POST', '/markups/{markupId}:close', 'closeMarkup', ({ viewer, params, headers }) =>
+    closeMarkup({ viewer, store, markupId: params.markupId, idempotencyKey: headers['idempotency-key'] ?? null }));
 
-  router.register('POST', '/markups/{markupId}:reopen', 'reopenMarkup', ({ viewer, params }) =>
-    reopenMarkup({ viewer, store, markupId: params.markupId }));
+  router.register('POST', '/markups/{markupId}:reopen', 'reopenMarkup', ({ viewer, params, headers }) =>
+    reopenMarkup({ viewer, store, markupId: params.markupId, idempotencyKey: headers['idempotency-key'] ?? null }));
 
-  router.register('POST', '/markups/{markupId}:link', 'linkMarkup', ({ viewer, params, body }) =>
-    linkMarkup({ viewer, store, questions, nonconformities, markupId: params.markupId, body }));
+  router.register('POST', '/markups/{markupId}:link', 'linkMarkup', ({ viewer, params, body, headers }) =>
+    linkMarkup({ viewer, store, questions, nonconformities, markupId: params.markupId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   // ── PRD-06: viewing a version in the browser (PDF bytes, DWG/DXF preview) ─
   router.register('GET', '/document-versions/{versionId}:view-url', 'getDocumentViewUrl', ({ viewer, params }) =>
@@ -82,14 +82,14 @@ export function registerDocuments(router, { store, storage, planning, questions,
   router.register('GET', '/projects/{projectId}/model', 'getProjectModel', ({ viewer, params, query }) =>
     getProjectModel({ viewer, store, planning, projectId: params.projectId, query }));
 
-  router.register('POST', '/projects/{projectId}/model/versions', 'reserveProjectModelVersion', ({ viewer, params, body }) =>
-    reserveProjectModelVersion({ viewer, store, storage, projectId: params.projectId, body }));
+  router.register('POST', '/projects/{projectId}/model/versions', 'reserveProjectModelVersion', ({ viewer, params, body, headers }) =>
+    reserveProjectModelVersion({ viewer, store, storage, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
-  router.register('POST', '/projects/{projectId}/model:save', 'saveModelEdits', ({ viewer, params, body }) =>
-    saveModelEdits({ viewer, store, planning, projectId: params.projectId, body }));
+  router.register('POST', '/projects/{projectId}/model:save', 'saveModelEdits', ({ viewer, params, body, headers }) =>
+    saveModelEdits({ viewer, store, planning, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
-  router.register('POST', '/projects/{projectId}/model:restore', 'restoreProjectModel', ({ viewer, params, body }) =>
-    restoreProjectModel({ viewer, store, planning, projectId: params.projectId, body }));
+  router.register('POST', '/projects/{projectId}/model:restore', 'restoreProjectModel', ({ viewer, params, body, headers }) =>
+    restoreProjectModel({ viewer, store, planning, projectId: params.projectId, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('GET', '/projects/{projectId}/model/record-diff', 'compareModelRecord', ({ viewer, params, query }) =>
     compareModelRecord({ viewer, store, projectId: params.projectId, query }));

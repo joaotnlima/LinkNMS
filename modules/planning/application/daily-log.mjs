@@ -89,13 +89,20 @@ async function isBuildOrg({ store, projectId, snapshot, orgId }) {
 }
 
 /** operationId: addDailyLogEntries */
-export async function addDailyLogEntries({ viewer, store, documents, projectId, date, body }) {
+export async function addDailyLogEntries({ viewer, store, documents, projectId, date, body, idempotencyKey = null }) {
   if (!UUID.test(projectId ?? '')) throw new ProblemError('not_found');
   const { actor } = await requireParticipant({ viewer, store, projectId });
   if (!viewer.has('org:progress:report')) throw new ProblemError('forbidden', null, { reason: 'role' });
   requireDate(date);
   const { errors, entries } = validateEntries(body);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
+  return store.idempotent(
+    { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'addDailyLogEntries', body: { project_id: projectId, date, ...body } },
+    () => recordEntries({ viewer, store, documents, projectId, date, entries, actor }),
+  );
+}
+
+async function recordEntries({ viewer, store, documents, projectId, date, entries, actor }) {
 
   const snapshot = await store.loadPlan(projectId);
   const locations = await store.locationNames(projectId);
