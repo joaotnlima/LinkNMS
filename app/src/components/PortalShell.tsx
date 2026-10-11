@@ -36,7 +36,8 @@ export type BuildRef = { id: string; name: string; href?: string };
 
 // The build-scoped nav sections, in rail order. `section` selects which is
 // highlighted in BUILD mode; PORTFOLIO mode passes none.
-export type BuildSection = 'overview' | 'plan' | 'participants' | 'schedule' | 'money' | 'history' | 'documents' | 'model';
+export type BuildSection = 'overview' | 'plan' | 'participants' | 'schedule' | 'money' | 'history' | 'documents' | 'model'
+  | 'quality' | 'questions';
 
 // Section → the route it opens, relative to the build. `documents` has no
 // surface yet (kept dimmed, never a link — a tab that 404s is worse than one
@@ -64,6 +65,12 @@ function sectionHref(buildId: string, s: BuildSection): string | null {
     case 'model':
       // PRD-07 M-1: the build's shared IFC model.
       return `/projects/${buildId}/model`;
+    case 'quality':
+      // PRD-12 N-3, N-4: non-conformities, inspections, verifications.
+      return `/projects/${buildId}/quality`;
+    case 'questions':
+      // PRD-12 N-5, N-6: questions and meeting minutes.
+      return `/projects/${buildId}/questions`;
   }
 }
 
@@ -76,6 +83,8 @@ const SECTION_LABEL: Record<BuildSection, string> = {
   history: 'History',
   documents: 'Documents',
   model: 'Model',
+  quality: 'Quality',
+  questions: 'Questions',
 };
 
 export function PortalShell({
@@ -155,6 +164,11 @@ export function PortalShell({
           <Link className="psh-nav-item" href="/requests">
             <StoreIcon />
             Requests
+          </Link>
+          {/* PRD-12 N-7: questions addressed to my organisation, every build. */}
+          <Link className="psh-nav-item" href="/questions">
+            <ChatIcon />
+            Questions for me
           </Link>
 
           <span className="psh-nav-group">This build</span>
@@ -340,6 +354,8 @@ function BuildNav({ buildId, section }: { buildId: string; section?: BuildSectio
       {item('participants', <PeopleIcon />)}
       {item('documents', <FolderIcon />)}
       {item('model', <CubeIcon />)}
+      {item('quality', <ShieldIcon />)}
+      {item('questions', <ChatIcon />)}
     </>
   );
 }
@@ -356,6 +372,14 @@ function HouseMark() {
       <path d="M9 21v-6h6v6" />
     </svg>
   );
+}
+
+function ShieldIcon() {
+  return <svg viewBox="0 0 24 24" role="presentation"><path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z" /><path d="m8.5 12 2.5 2.5 4.5-5" /></svg>;
+}
+
+function ChatIcon() {
+  return <svg viewBox="0 0 24 24" role="presentation"><path d="M4 5h16v11H9l-5 4z" /><path d="M8 9h8M8 12h5" /></svg>;
 }
 
 function PeopleIcon() {

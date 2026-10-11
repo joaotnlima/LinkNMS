@@ -27,6 +27,8 @@ const isProtectedRoute = createRouteMatcher([
   '/invitations(.*)',
   // PRD-12: the notification centre and settings are members-only too.
   '/notifications(.*)',
+  // PRD-12 N-7: questions addressed to my organisation, across builds.
+  '/questions(.*)',
   '/settings(.*)',
 ]);
 
