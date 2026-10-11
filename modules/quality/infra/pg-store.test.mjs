@@ -320,8 +320,19 @@ describe('quality store over Postgres (v2 migrations)', { skip }, () => {
   });
 
   test('PRD-09 O-1: the facts port counts pending verifications and open NCs by kind', async () => {
-    const facts = await createQualityFactsPort(store).projectFacts(PROJECT);
-    assert.equal(typeof facts.pending_verifications, 'number');
+    // Planning's task port names the build's rows (quality never reads planning.*).
+    const planning = {
+      async taskIdsOf(projectId) {
+        const { rows } = await pool.query('SELECT id FROM planning.task WHERE project_id = $1 AND deleted_at IS NULL', [projectId]);
+        return rows.map((r) => r.id);
+      },
+    };
+    const facts = await createQualityFactsPort(store, planning).projectFacts(PROJECT);
+    const { rows: [{ pending }] } = await pool.query(
+      `SELECT count(*)::int AS pending FROM quality.verification_request vr JOIN planning.task t ON t.id = vr.task_id
+        WHERE t.project_id = $1 AND vr.status = 'pending'`, [PROJECT],
+    );
+    assert.equal(facts.pending_verifications, pending);
     assert.deepEqual(Object.keys(facts.open_nonconformities).sort(), ['quality', 'safety']);
     const { rows: [{ n }] } = await pool.query(
       `SELECT count(*)::int AS n FROM quality.nonconformity WHERE project_id = $1 AND status <> 'closed'`, [PROJECT],

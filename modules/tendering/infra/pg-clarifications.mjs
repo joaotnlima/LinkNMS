@@ -104,12 +104,6 @@ export function clarificationQueries(pool, tx) {
       return rows;
     },
 
-    /** The project's display name — the notice email says which job this is. */
-    async projectName(projectId) {
-      const { rows } = await pool.query('SELECT name FROM project.project WHERE id = $1', [projectId]);
-      return rows[0]?.name ?? null;
-    },
-
     /**
      * The tendering home (listProjectRfps, PRD-08 H-1) in ONE statement: every
      * RFP of the project the org issued (drafts too), plus every non-draft one
@@ -136,13 +130,12 @@ export function clarificationQueries(pool, tx) {
                 (SELECT count(*)::int FROM tendering.clarification c
                   WHERE c.rfp_id = r.id AND c.status = 'open') AS open_question_count,
                 ap.bidder_org_id AS awarded_org_id,
-                coalesce(o.legal_name, arec.email) AS awarded_name,
+                coalesce(arec.company_name, arec.email) AS awarded_recipient_name,
                 mine.id AS my_proposal_id,
                 mine.status AS my_proposal_status
            FROM tendering.rfp r
            LEFT JOIN tendering.proposal ap ON ap.id = r.awarded_proposal_id
            LEFT JOIN tendering.rfp_recipient arec ON arec.id = ap.recipient_id
-           LEFT JOIN identity.organization o ON o.id = ap.bidder_org_id
            LEFT JOIN LATERAL (SELECT p.id, p.status FROM tendering.proposal p
                                WHERE p.rfp_id = r.id AND p.bidder_org_id = $2
                                ORDER BY p.id LIMIT 1) mine ON true

@@ -10,7 +10,6 @@ function importN(r) {
     id: r.id,
     projectId: r.project_id,
     orgId: r.org_id,
-    orgName: r.org_name ?? null,
     personId: r.imported_by_person_id,
     filename: r.filename,
     fileBytes: r.file_bytes,
@@ -40,10 +39,7 @@ export function scheduleImportQueries(pool) {
 
     async getScheduleImport(id) {
       const { rows } = await pool.query(
-        `SELECT i.*, o.legal_name AS org_name
-           FROM planning.schedule_import i
-           LEFT JOIN identity.organization o ON o.id = i.org_id
-          WHERE i.id = $1`,
+        'SELECT i.* FROM planning.schedule_import i WHERE i.id = $1',
         [id],
       );
       return importN(rows[0]);

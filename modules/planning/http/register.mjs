@@ -37,7 +37,13 @@ import {
  *   `workbooks` — the .xlsx reader (infra/xlsx-reader.mjs) behind the Excel
  *   import (PRD-09); without it an upload answers 422 (unreadable).
  */
-export function registerPlanning(router, { store, documents, specialties, workbooks = NO_WORKBOOKS }) {
+// Published ports of other modules (doc 02 rules 2–3), injected at the
+// composition root: `builds` — project's build port (location names);
+// `contracts` — contracting's party port (the prime contractor); `orgs` —
+// identity's organisation port (names).
+export function registerPlanning(router, {
+  store, documents, specialties, workbooks = NO_WORKBOOKS, builds = null, contracts = null, orgs = null,
+}) {
   router.register('GET', '/projects/{projectId}/schedule', 'getSchedule', ({ viewer, params, query }) =>
     getSchedule({ viewer, store, projectId: params.projectId, query }));
 
@@ -53,7 +59,7 @@ export function registerPlanning(router, { store, documents, specialties, workbo
     getPlanningSettings({ viewer, store, projectId: params.projectId }));
 
   router.register('PUT', '/projects/{projectId}/planning-settings', 'putPlanningSettings', ({ viewer, params, body }) =>
-    putPlanningSettings({ viewer, store, projectId: params.projectId, body }));
+    putPlanningSettings({ viewer, store, contracts, projectId: params.projectId, body }));
 
   router.register('GET', '/projects/{projectId}/assignable-parties', 'listAssignableParties', ({ viewer, params }) =>
     listAssignableParties({ viewer, store, projectId: params.projectId }));
@@ -149,32 +155,32 @@ export function registerPlanning(router, { store, documents, specialties, workbo
     listBaselines({ viewer, store, projectId: params.projectId, query }));
 
   router.register('GET', '/projects/{projectId}/site-calendar', 'getSiteCalendar', ({ viewer, params, query }) =>
-    getSiteCalendar({ viewer, store, projectId: params.projectId, query }));
+    getSiteCalendar({ viewer, store, builds, projectId: params.projectId, query }));
 
   router.register('GET', '/projects/{projectId}/daily-logs', 'listDailyLogs', ({ viewer, params, query }) =>
     listDailyLogs({ viewer, store, projectId: params.projectId, query }));
 
   router.register('GET', '/projects/{projectId}/daily-logs/{date}', 'getDailyLog', ({ viewer, params }) =>
-    getDailyLog({ viewer, store, projectId: params.projectId, date: params.date }));
+    getDailyLog({ viewer, store, builds, projectId: params.projectId, date: params.date }));
 
   router.register('POST', '/projects/{projectId}/daily-logs/{date}/entries', 'addDailyLogEntries', ({ viewer, params, body, headers }) =>
-    addDailyLogEntries({ viewer, store, documents, projectId: params.projectId, date: params.date, body, idempotencyKey: headers['idempotency-key'] ?? null }));
+    addDailyLogEntries({ viewer, store, documents, builds, projectId: params.projectId, date: params.date, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
   router.register('GET', '/tasks/{taskId}/daily-log-entries', 'listTaskDailyLogEntries', ({ viewer, params }) =>
-    listTaskDailyLogEntries({ viewer, store, taskId: params.taskId }));
+    listTaskDailyLogEntries({ viewer, store, builds, taskId: params.taskId }));
 
   // ── PRD-09: the Excel plan import (O-6..O-12) ────────────────────────────
   router.register('POST', '/projects/{projectId}/schedule-imports', 'uploadScheduleImport', ({ viewer, params, body }) =>
-    uploadScheduleImport({ viewer, store, workbooks, projectId: params.projectId, body }));
+    uploadScheduleImport({ viewer, store, workbooks, orgs, projectId: params.projectId, body }));
 
   router.register('GET', '/schedule-imports/{importId}', 'getScheduleImport', ({ viewer, params }) =>
-    getScheduleImport({ viewer, store, specialties, importId: params.importId }));
+    getScheduleImport({ viewer, store, specialties, orgs, importId: params.importId }));
 
   router.register('POST', '/schedule-imports/{importId}:map', 'mapScheduleImport', ({ viewer, params, body }) =>
-    mapScheduleImport({ viewer, store, specialties, importId: params.importId, body }));
+    mapScheduleImport({ viewer, store, specialties, orgs, importId: params.importId, body }));
 
   router.register('POST', '/schedule-imports/{importId}:preview', 'previewScheduleImport', ({ viewer, params }) =>
-    previewScheduleImport({ viewer, store, specialties, importId: params.importId }));
+    previewScheduleImport({ viewer, store, specialties, orgs, importId: params.importId }));
 
   router.register('POST', '/schedule-imports/{importId}:confirm', 'confirmScheduleImport', ({ viewer, params, headers }) =>
     confirmScheduleImport({ viewer, store, specialties, importId: params.importId, idempotencyKey: headers['idempotency-key'] ?? null }));

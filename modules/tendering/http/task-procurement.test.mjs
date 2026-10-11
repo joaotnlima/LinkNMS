@@ -30,18 +30,18 @@ const ME = '01940000-0000-7000-8000-0000000000e9';
 const RFPS = [
   { id: RFP_OLD, project_id: PROJECT, issuer_org_id: OWNER_ORG, title: 'Canalização (1.ª)', status: 'cancelled',
     created_at: '2026-10-01T09:00:00Z', submission_deadline: '2026-10-20T17:00:00Z',
-    root_task_ids: [T_PLUMB], lane_counts: { invited: 2 }, awarded_org_id: null, awarded_name: null },
+    root_task_ids: [T_PLUMB], lane_counts: { invited: 2 }, awarded_org_id: null, awarded_recipient_name: null },
   { id: RFP_PLUMB, project_id: PROJECT, issuer_org_id: OWNER_ORG, title: 'Canalização + Eletricidade', status: 'published',
     created_at: '2026-11-01T09:00:00Z', submission_deadline: '2027-01-15T17:00:00Z',
     root_task_ids: [T_PLUMB, T_ELEC], lane_counts: { invited: 1, submitted: 1, shortlisted: 1, withdrawn: 1 },
-    awarded_org_id: null, awarded_name: null },
+    awarded_org_id: null, awarded_recipient_name: null },
   { id: RFP_ROOF, project_id: PROJECT, issuer_org_id: OWNER_ORG, title: 'Cobertura', status: 'awarded',
     created_at: '2026-09-01T09:00:00Z', submission_deadline: '2026-09-30T17:00:00Z',
     root_task_ids: [T_ROOF], lane_counts: { awarded: 1, declined: 2 },
-    awarded_org_id: BIDDER_ORG, awarded_name: 'Telhados do Norte' },
+    awarded_org_id: BIDDER_ORG, awarded_recipient_name: 'geral@telhados.pt' },
   { id: RFP_GC, project_id: PROJECT, issuer_org_id: GC_ORG, title: 'Sub — pladur', status: 'draft',
     created_at: '2026-11-05T09:00:00Z', submission_deadline: '2027-02-01T17:00:00Z',
-    root_task_ids: [T_ELEC], lane_counts: {}, awarded_org_id: null, awarded_name: null },
+    root_task_ids: [T_ELEC], lane_counts: {}, awarded_org_id: null, awarded_recipient_name: null },
 ];
 
 function fakeStore({ staffed = false } = {}) {
@@ -83,7 +83,9 @@ describe('GET /projects/{projectId}/task-procurement', () => {
   beforeEach(() => {
     router = createRouter();
     store = fakeStore();
-    registerTendering(router, { store });
+    // Identity's organisation port names the winner (tendering never reads identity.*).
+    const orgs = { async namesOf(ids) { return new Map(ids.map((id) => [id, id === BIDDER_ORG ? 'Telhados do Norte' : '?'])); } };
+    registerTendering(router, { store, orgs });
   });
 
   test('the issuer gets one item per tendered root task, in one store read', async () => {

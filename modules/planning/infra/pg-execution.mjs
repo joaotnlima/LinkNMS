@@ -71,14 +71,6 @@ export function executionQueries(pool, tx) {
       return { ...rows[0], rows: snap };
     },
 
-    // ── locations of the build (project.location, read port) ──────────────
-    async locationNames(projectId) {
-      const { rows } = await pool.query(
-        'SELECT id, name FROM project.location WHERE project_id = $1', [projectId],
-      );
-      return new Map(rows.map((r) => [r.id, r.name]));
-    },
-
     // ── daily log (E-7..E-9) ──────────────────────────────────────────────
     async getDailyLogEntries(ids) {
       if (!ids.length) return [];

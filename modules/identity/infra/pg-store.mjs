@@ -308,6 +308,28 @@ export function createIdentityStore(pool) {
       });
     },
 
+    // ── the organisation port's reads (application/org-port.mjs) ─────────
+    async organizationNames(orgIds) {
+      if (!orgIds.length) return [];
+      const { rows } = await pool.query(
+        'SELECT id, legal_name FROM identity.organization WHERE id = ANY($1::uuid[])', [orgIds],
+      );
+      return rows;
+    },
+
+    async staffedPeople(projectId, orgIds) {
+      if (!orgIds.length) return [];
+      const { rows } = await pool.query(
+        `SELECT s.org_id, p.id AS person_id, p.name
+           FROM identity.project_staffing s
+           JOIN identity.person p ON p.id = s.person_id
+          WHERE s.project_id = $1 AND s.org_id = ANY($2::uuid[])
+          ORDER BY p.name`,
+        [projectId, orgIds],
+      );
+      return rows;
+    },
+
     // ── idempotency (POST /organizations) ────────────────────────────────
     async idempotent(meta, fn) {
       if (!meta.key) return fn();

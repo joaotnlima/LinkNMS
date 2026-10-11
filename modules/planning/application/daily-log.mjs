@@ -33,10 +33,15 @@ function names(snapshot, locations) {
   };
 }
 
-async function readDay({ store, projectId, date, snapshot }) {
+/** Location names through the project's build port (planning never reads project.*). */
+function locationNamesOf(builds, projectId) {
+  return builds ? builds.locationNamesOf(projectId) : new Map();
+}
+
+async function readDay({ store, builds, projectId, date, snapshot }) {
   const [rows, locations] = await Promise.all([
     store.listDailyLogDay(projectId, date),
-    store.locationNames(projectId),
+    locationNamesOf(builds, projectId),
   ]);
   return dayBody({ projectId, date, rows, names: names(snapshot, locations) });
 }
@@ -57,16 +62,16 @@ export async function listDailyLogs({ viewer, store, projectId, query }) {
 }
 
 /** operationId: getDailyLog — a day with nothing yet is an empty day, not a 404. */
-export async function getDailyLog({ viewer, store, projectId, date }) {
+export async function getDailyLog({ viewer, store, builds = null, projectId, date }) {
   if (!UUID.test(projectId ?? '')) throw new ProblemError('not_found');
   await requireParticipant({ viewer, store, projectId });
   requireDate(date);
   const snapshot = await store.loadPlan(projectId);
-  return { status: 200, body: await readDay({ store, projectId, date, snapshot }) };
+  return { status: 200, body: await readDay({ store, builds, projectId, date, snapshot }) };
 }
 
 /** operationId: listTaskDailyLogEntries */
-export async function listTaskDailyLogEntries({ viewer, store, taskId }) {
+export async function listTaskDailyLogEntries({ viewer, store, builds = null, taskId }) {
   if (!UUID.test(taskId ?? '')) throw new ProblemError('not_found');
   const task = await store.getTask(taskId);
   if (!task || task.deletedAt) throw new ProblemError('not_found');
@@ -74,7 +79,7 @@ export async function listTaskDailyLogEntries({ viewer, store, taskId }) {
   const [rows, snapshot, locations] = await Promise.all([
     store.listTaskDailyLog(taskId),
     store.loadPlan(task.projectId),
-    store.locationNames(task.projectId),
+    locationNamesOf(builds, task.projectId),
   ]);
   const n = names(snapshot, locations);
   return { status: 200, body: { items: rows.map((r) => entryBody(r, n)), next_cursor: null } };
@@ -89,7 +94,7 @@ async function isBuildOrg({ store, projectId, snapshot, orgId }) {
 }
 
 /** operationId: addDailyLogEntries */
-export async function addDailyLogEntries({ viewer, store, documents, projectId, date, body, idempotencyKey = null }) {
+export async function addDailyLogEntries({ viewer, store, documents, builds = null, projectId, date, body, idempotencyKey = null }) {
   if (!UUID.test(projectId ?? '')) throw new ProblemError('not_found');
   const { actor } = await requireParticipant({ viewer, store, projectId });
   if (!viewer.has('org:progress:report')) throw new ProblemError('forbidden', null, { reason: 'role' });
@@ -98,14 +103,14 @@ export async function addDailyLogEntries({ viewer, store, documents, projectId, 
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
   return store.idempotent(
     { key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'addDailyLogEntries', body: { project_id: projectId, date, ...body } },
-    () => recordEntries({ viewer, store, documents, projectId, date, entries, actor }),
+    () => recordEntries({ viewer, store, documents, builds, projectId, date, entries, actor }),
   );
 }
 
-async function recordEntries({ viewer, store, documents, projectId, date, entries, actor }) {
+async function recordEntries({ viewer, store, documents, builds, projectId, date, entries, actor }) {
 
   const snapshot = await store.loadPlan(projectId);
-  const locations = await store.locationNames(projectId);
+  const locations = await locationNamesOf(builds, projectId);
   const world = { ownerOrgId: snapshot.ownerOrgId, contracts: snapshot.contracts };
   const refErrors = {};
   for (const [i, e] of entries.entries()) {
@@ -145,5 +150,5 @@ async function recordEntries({ viewer, store, documents, projectId, date, entrie
   if (fresh.length) {
     await store.insertDailyLogEntries({ projectId, date, entries: fresh, actor: actorOf(actor, viewer) });
   }
-  return { status: fresh.length ? 201 : 200, body: await readDay({ store, projectId, date, snapshot }) };
+  return { status: fresh.length ? 201 : 200, body: await readDay({ store, builds, projectId, date, snapshot }) };
 }

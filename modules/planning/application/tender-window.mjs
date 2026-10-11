@@ -70,12 +70,13 @@ export async function getPlanningSettings({ viewer, store, projectId }) {
 }
 
 /** operationId: putPlanningSettings */
-export async function putPlanningSettings({ viewer, store, projectId, body }) {
+export async function putPlanningSettings({ viewer, store, contracts = null, projectId, body }) {
   requireActiveOrg(viewer);
   if (!viewer.has('org:plan:edit')) throw new ProblemError('forbidden', null, { reason: 'role' });
   const { project, actor } = await requireParticipant({ viewer, store, projectId });
   const isOwner = project.owner_org_id === viewer.orgId;
-  if (!isOwner && !(await store.isPrimeSupplier(projectId, viewer.orgId))) {
+  // The prime contractor through contracting's party port (never contracting.*).
+  if (!isOwner && !(contracts && await contracts.isPrimeSupplier(projectId, viewer.orgId))) {
     throw new ProblemError('forbidden', 'only the owner or the prime contractor edits the planning settings', { reason: 'relationship' });
   }
   const lead = body?.mobilisation_lead_wd;

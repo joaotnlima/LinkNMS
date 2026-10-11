@@ -178,23 +178,6 @@ export function createProjectStore(pool) {
       return { items, nextCursor: rows.length > limit ? items[items.length - 1].org_id : null };
     },
 
-    /**
-     * PRD-09 O-3: the people each organisation staffed on the build (identity
-     * staffing — the same rule the project read uses), names only.
-     */
-    async listStaffedPeople(projectId, orgIds) {
-      if (!orgIds.length) return [];
-      const { rows } = await pool.query(
-        `SELECT s.org_id, p.id AS person_id, p.name
-           FROM identity.project_staffing s
-           JOIN identity.person p ON p.id = s.person_id
-          WHERE s.project_id = $1 AND s.org_id = ANY($2::uuid[])
-          ORDER BY p.name`,
-        [projectId, orgIds],
-      );
-      return rows;
-    },
-
     /** PRD-09 O-3: the invitations one organisation sent on a build, newest first. */
     async listInvitationsSentBy(projectId, orgId, { cursor, limit }) {
       const [cursorAt, cursorId] = cursor ? String(cursor).split('~') : [null, null];

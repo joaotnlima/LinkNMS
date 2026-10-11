@@ -119,6 +119,9 @@ export function viewerWho(viewer, snapshot) {
     viewerOrgId: viewer.orgId,
     ownerOrgId: snapshot.ownerOrgId,
     contracts: snapshot.contracts,
+    // Names of the build's parties (owner, contract parties, assignees) — who
+    // changed a row is always one of them (D-33 edit scope).
+    orgNames: snapshot.orgNames,
     mayAcknowledge: viewer.has?.('org:variations:acknowledge') ?? false,
   };
 }

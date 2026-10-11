@@ -81,6 +81,10 @@ describe('identity store over Postgres (v2 migrations)', { skip }, () => {
       "SELECT type FROM record.audit_event WHERE project_id = $1 AND category = 'identity' ORDER BY seq", [PROJECT]);
     assert.deepEqual(ledger.rows.map((r) => r.type), ['identity.staffing.added']);
 
+    // The organisation port's reads (PRD-09 O-3, audit S2): names and staffed people.
+    assert.deepEqual((await store.organizationNames([org.id])).map((r) => r.id), [org.id]);
+    assert.deepEqual((await store.staffedPeople(PROJECT, [org.id])).map((r) => [r.org_id, r.person_id]), [[org.id, person.id]]);
+
     assert.equal(await store.unstaff({ projectId: PROJECT, orgId: org.id, personId: person.id, actor }), true);
     assert.equal(await store.unstaff({ projectId: PROJECT, orgId: org.id, personId: person.id, actor }), false);
 

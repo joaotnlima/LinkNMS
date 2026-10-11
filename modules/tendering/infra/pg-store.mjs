@@ -565,12 +565,11 @@ export function createTenderingStore(pool) {
                 (SELECT count(*)::int FROM tendering.clarification c
                   WHERE c.rfp_id = r.id AND c.status = 'open') AS open_question_count,
                 ap.bidder_org_id AS awarded_org_id,
-                coalesce(o.legal_name, rec.email) AS awarded_name
+                coalesce(rec.company_name, rec.email) AS awarded_recipient_name
            FROM tendering.rfp r
            JOIN tendering.rfp_root rr ON rr.rfp_id = r.id
            LEFT JOIN tendering.proposal ap ON ap.id = r.awarded_proposal_id
            LEFT JOIN tendering.rfp_recipient rec ON rec.id = ap.recipient_id
-           LEFT JOIN identity.organization o ON o.id = ap.bidder_org_id
           WHERE r.project_id = $1 AND r.issuer_org_id = $2
           ORDER BY rr.task_id, r.id`,
         [projectId, issuerOrgId],

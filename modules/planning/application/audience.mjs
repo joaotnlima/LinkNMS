@@ -28,7 +28,13 @@ export function createPlanningAudience(store) {
     async variationAudience(variationId) {
       const row = await store.variationAudienceRow(variationId);
       if (!row) return null;
-      const orgIds = [...new Set([row.owner_org_id, row.client_org_id].filter(Boolean))];
+      // The owner and the CLIENT of the contract the row belongs to: the one the
+      // variation is scoped to (cost/material) or the row's branch (time/scope).
+      // The supplier is the one changing its own plan — not told about itself.
+      const plan = await store.loadPlan(row.project_id);
+      const contractId = row.scope_type === 'contract' ? row.scope_id : row.branch_contract_id;
+      const clientOrgId = contractId ? plan.contracts.get(contractId)?.clientOrgId ?? null : null;
+      const orgIds = [...new Set([plan.ownerOrgId, clientOrgId].filter(Boolean))];
       return {
         variation_id: row.id,
         project_id: row.project_id,

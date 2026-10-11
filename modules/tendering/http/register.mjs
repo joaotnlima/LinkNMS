@@ -39,7 +39,7 @@ import { listRequestsForMe, listOpenRequests, declineRfpInvitation } from '../ap
  *     municipality and point for the inbox and distances.
  */
 export function registerTendering(router, {
-  store, storage, documentsStore, contractingAward, mailSender, linkBaseUrl, directory, builds,
+  store, storage, documentsStore, contractingAward, mailSender, linkBaseUrl, directory, builds, orgs = null,
 } = {}) {
   // The link origin may be supplied as a thunk (env read deferred to request
   // time, as the project module's shareBaseUrl is); resolve it per call.
@@ -85,10 +85,10 @@ export function registerTendering(router, {
   // The tendering home (PRD-08 H-1): every RFP the viewer can see on the
   // project, with covered tasks, bids due, n/m in and open questions — one read.
   router.register('GET', '/projects/{projectId}/rfps', 'listProjectRfps', ({ viewer, params }) =>
-    listProjectRfps({ viewer, store, projectId: params.projectId }));
+    listProjectRfps({ viewer, store, orgs, projectId: params.projectId }));
 
   router.register('GET', '/projects/{projectId}/task-procurement', 'listTaskProcurement', ({ viewer, params }) =>
-    listTaskProcurement({ viewer, store, projectId: params.projectId }));
+    listTaskProcurement({ viewer, store, orgs, projectId: params.projectId }));
 
   router.register('GET', '/rfps/{rfpId}', 'getRfp', ({ viewer, params }) =>
     getRfp({ viewer, store, documentsStore, rfpId: params.rfpId }));
@@ -186,7 +186,7 @@ export function registerTendering(router, {
     askClarification({ viewer, store, rfpId: params.rfpId, body }));
 
   router.register('POST', '/clarifications/{clarificationId}:answer', 'answerClarification', ({ viewer, params, body }) =>
-    answerClarification({ viewer, store, mailSender, clarificationId: params.clarificationId, body }));
+    answerClarification({ viewer, store, builds, mailSender, clarificationId: params.clarificationId, body }));
 
   router.register('GET', '/tasks/{taskId}/proposal-lanes', 'listProposalLanes', ({ viewer, params, query }) =>
     listProposalLanes({ viewer, store, taskId: params.taskId, query }));

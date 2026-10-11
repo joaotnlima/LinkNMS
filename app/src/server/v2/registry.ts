@@ -18,6 +18,8 @@ import { createPlanningTaskPort } from '@modules/planning/application/task-port.
 import { createPlanningOverviewPort } from '@modules/planning/application/overview-port.mjs';
 import { xlsxWorkbooks } from '@modules/planning/infra/xlsx-reader.mjs';
 import { createCostPort } from '@modules/contracting/application/cost-port.mjs';
+import { createContractPartyPort } from '@modules/contracting/application/party-port.mjs';
+import { createOrgPort } from '@modules/identity/application/org-port.mjs';
 import { createQualityFactsPort } from '@modules/quality/application/project-facts-port.mjs';
 import { registerQuality } from '@modules/quality/http/register.mjs';
 import { createQualityStore } from '@modules/quality/infra/pg-store.mjs';
@@ -115,8 +117,12 @@ export function getRouter() {
   router = createRouter();
 
   // Phase 1 — Identity & Access (AGENT-INDEX §5).
+  const identityStore = createIdentityStore(getPool());
+  // Identity's organisation port: names and staffed people for Planning,
+  // Tendering and Project (none of them reads identity.*).
+  const orgs = createOrgPort(identityStore);
   registerIdentity(router, {
-    store: createIdentityStore(getPool()),
+    store: identityStore,
     clerk: clerkGateway,
     // Billing's published entitlements port: the `seats` check on inviteMember
     // (doc 16 conjunction, D-05).
@@ -139,14 +145,17 @@ export function getRouter() {
   // below reuse the same instances.
   const documentsStore = createDocumentsStore(getPool());
   const objectStorage = createR2ObjectStorage();
+  const contractingStore = createContractingStore(getPool());
   registerProject(router, {
     store: projectStore,
+    orgs,
     documents: createShareFilesPort(documentsStore, objectStorage),
     specialties: createSpecialtyPort(directoryStore),
     facts: {
       planning: createPlanningOverviewPort(planningStore),
-      contracting: createCostPort(createContractingStore(getPool())),
-      quality: createQualityFactsPort(createQualityStore(getPool())),
+      contracting: createCostPort(contractingStore),
+      // Pending verifications hang on the build's rows: planning's task port.
+      quality: createQualityFactsPort(createQualityStore(getPool()), createPlanningTaskPort(planningStore)),
       questions: createQuestionPort(createCollaborationStore(getPool())),
     },
     shareBaseUrl: () =>
@@ -157,7 +166,7 @@ export function getRouter() {
   // Phases 3 + 5 — Contracting: core (contract tree, signature, V2/V3
   // projection) plus the money flow (sponsor, reception, termination,
   // change orders, measurements, payments, cash-flow).
-  registerContracting(router, { store: createContractingStore(getPool()) });
+  registerContracting(router, { store: contractingStore });
 
   // Documents store (phase 7, created above): Planning reads it through
   // the documents query port (PRD-05 deliverables bind a proven version),
@@ -174,11 +183,16 @@ export function getRouter() {
   // taxonomy port (planning never reads directory.*).
   // PRD-09 O-6..O-11: the Excel import reads .xlsx through the exceljs reader
   // (planning infra) and maps the Trade column through the same taxonomy port.
+  // Location names come from the project's build port, the prime contractor
+  // from contracting's party port, organisation names from identity's port.
   registerPlanning(router, {
     store: planningStore,
     documents: createDocumentsPort(documentsStore),
     specialties: createSpecialtyPort(directoryStore),
     workbooks: xlsxWorkbooks,
+    builds: createBuildPort(projectStore),
+    contracts: createContractPartyPort(contractingStore),
+    orgs,
   });
 
   // Phase 5 — Quality (verification, non-conformities, inspections). PRD-12
@@ -218,6 +232,8 @@ export function getRouter() {
     // reads neither module's tables.
     directory: createCompanyPort(directoryStore),
     builds: createBuildPort(projectStore),
+    // Identity's organisation port names a winner on the tendering home.
+    orgs,
   });
 
   // Phase 7 — Documents (versioned files on R2 behind presigned tickets,

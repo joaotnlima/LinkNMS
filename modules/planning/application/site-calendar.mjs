@@ -18,13 +18,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const today = () => new Date().toISOString().slice(0, 10);
 
 /** operationId: getSiteCalendar */
-export async function getSiteCalendar({ viewer, store, projectId, query }) {
+export async function getSiteCalendar({ viewer, store, builds = null, projectId, query }) {
   if (!UUID.test(projectId ?? '')) throw new ProblemError('not_found');
   await requireParticipant({ viewer, store, projectId });
   const window = calendarWindow(query, today());
   if (window.errors) throw new ProblemError('validation_failed', null, { errors: window.errors });
   const snapshot = await store.loadPlan(projectId);
-  const locationNames = store.locationNames ? await store.locationNames(projectId) : new Map();
+  // Location names through the project's build port (never project.*).
+  const locationNames = builds ? await builds.locationNamesOf(projectId) : new Map();
   const result = siteCalendar({
     tasks: snapshot.tasks,
     counts: childCounts(snapshot.tasks),

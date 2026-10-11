@@ -11,7 +11,8 @@
 //
 // The trade's label comes from the directory's published specialty port
 // (`specialties`, injected at the composition root); project never reads
-// directory.*.
+// directory.*. The people each organisation staffed come from identity's
+// organisation port (`orgs.staffedPeople`); project never reads identity.*.
 import { randomUUID, randomBytes } from 'node:crypto';
 
 import { ProblemError } from '../../../platform/errors.mjs';
@@ -25,12 +26,12 @@ const SPECIALTY_CODE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const INVITE_DAYS = 14;
 
 /** operationId: listParticipants — organisations, capacity, trade, staffed people (O-3). */
-export async function listParticipants({ viewer, store, specialties, projectId, query }) {
+export async function listParticipants({ viewer, store, specialties, orgs = null, projectId, query }) {
   await requireParticipant({ viewer, store, projectId });
   const { items, nextCursor } = await store.listParticipants(projectId, {
     cursor: query?.cursor ?? null, limit: clampLimit(query?.limit),
   });
-  const people = await store.listStaffedPeople(projectId, [...new Set(items.map((r) => r.org_id))]);
+  const people = orgs ? await orgs.staffedPeople(projectId, items.map((r) => r.org_id)) : [];
   const labels = await labelsOf(specialties, items.map((r) => r.specialty_code));
   return {
     status: 200,

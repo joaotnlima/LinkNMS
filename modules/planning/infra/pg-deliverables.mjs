@@ -98,6 +98,14 @@ export function deliverableQueries(pool, tx) {
       return rows.map((r) => r.id);
     },
 
+    /** Every live row of a build (the task port's taskIdsOf). */
+    async liveTaskIds(projectId) {
+      const { rows } = await pool.query(
+        'SELECT id FROM planning.task WHERE project_id = $1 AND deleted_at IS NULL', [projectId],
+      );
+      return rows.map((r) => r.id);
+    },
+
     /** Live deliverables of one task or one project, with their submissions. */
     async listDeliverables({ taskId = null, projectId = null }) {
       const { rows } = await pool.query(

@@ -86,7 +86,7 @@ async function askByToken({ store, rec, body, now }) {
 }
 
 /** operationId: answerClarification — published to all bidders, asker anonymised. */
-export async function answerClarification({ viewer, store, mailSender, clarificationId, body }) {
+export async function answerClarification({ viewer, store, builds = null, mailSender, clarificationId, body }) {
   if (!viewer.orgId) throw new ProblemError('forbidden', 'pick an active organisation first', { reason: 'no_active_org' });
   if (!viewer.has('org:tendering:issue')) throw new ProblemError('forbidden', null, { reason: 'role' });
   const clarification = await store.getClarification(clarificationId);
@@ -112,7 +112,7 @@ export async function answerClarification({ viewer, store, mailSender, clarifica
     actor: actorOf(actor, viewer),
   });
   if (!updated) throw new ProblemError('invalid_transition', 'this question was already answered');
-  await notifyTokenOnlyBidders({ store, mailSender, rfp, clarification: updated });
+  await notifyTokenOnlyBidders({ store, builds, mailSender, rfp, clarification: updated });
   return { status: 200, body: clarificationBody(updated) };
 }
 
@@ -121,13 +121,14 @@ export async function answerClarification({ viewer, store, mailSender, clarifica
  * published answer. After commit and best-effort: a send failure is swallowed,
  * the answer stands, the bidder still sees it on their link.
  */
-async function notifyTokenOnlyBidders({ store, mailSender, rfp, clarification }) {
+async function notifyTokenOnlyBidders({ store, builds, mailSender, rfp, clarification }) {
   if (!mailSender || typeof store.tokenOnlyRecipients !== 'function') return;
   let recipients;
   let projectName = null;
   try {
     recipients = await store.tokenOnlyRecipients(rfp.id);
-    if (recipients.length && typeof store.projectName === 'function') projectName = await store.projectName(rfp.project_id);
+    // The build's name through the project's build port (tendering never reads project.*).
+    if (recipients.length && builds) projectName = (await builds.factsOf([rfp.project_id]))[0]?.name ?? null;
   } catch {
     return;
   }

@@ -12,10 +12,11 @@
 // is read or returned (D-06/D-07).
 import { requireParticipant } from './use-cases.mjs';
 import { taskProcurement } from '../domain/task-procurement.mjs';
+import { withAwardedNames } from './project-rfps.mjs';
 
 /** operationId: listTaskProcurement — issuer's tenders on the project, per root task. */
-export async function listTaskProcurement({ viewer, store, projectId }) {
+export async function listTaskProcurement({ viewer, store, orgs = null, projectId }) {
   await requireParticipant({ viewer, store, projectId });
-  const rows = await store.taskProcurementOfProject(projectId, viewer.orgId);
+  const rows = await withAwardedNames(orgs, await store.taskProcurementOfProject(projectId, viewer.orgId));
   return { status: 200, body: { items: taskProcurement(rows) } };
 }

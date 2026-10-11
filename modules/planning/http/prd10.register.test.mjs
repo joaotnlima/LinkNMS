@@ -43,7 +43,6 @@ function fakeStore() {
     async listBaselines() {
       return [{ id: BASELINE, contract_id: 'c', version: 1, reason: 'award', root_task_ids: [TASK], root_names: ['Walls'], row_count: 1, taken_at_iso: '2026-01-01T00:00:00Z' }];
     },
-    async locationNames() { return new Map(); },
     async listDailyLogWindow() { return []; },
     async listDailyLogDay() { return state.inserted; },
     async getDailyLogEntries() { return []; },

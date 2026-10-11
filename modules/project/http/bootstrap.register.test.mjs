@@ -37,9 +37,6 @@ function fakeStore() {
         nextCursor: null,
       };
     },
-    async listStaffedPeople(_p, orgIds) {
-      return orgIds.includes(GC_ORG) ? [{ org_id: GC_ORG, person_id: ME, name: 'Nuno Ferreira' }] : [];
-    },
     async listInvitationsSentBy(_p, orgId) {
       return { items: invitations.filter((i) => i.invited_by_org_id === orgId), nextCursor: null };
     },
@@ -82,7 +79,13 @@ describe('PRD-09 build home, participants, PartyInvite', () => {
   beforeEach(() => {
     router = createRouter();
     store = fakeStore();
-    registerProject(router, { store, shareBaseUrl: () => 'https://x', specialties, facts });
+    // Identity's organisation port answers who each org staffed on the build.
+    const orgs = {
+      async staffedPeople(_p, orgIds) {
+        return orgIds.includes(GC_ORG) ? [{ org_id: GC_ORG, person_id: ME, name: 'Nuno Ferreira' }] : [];
+      },
+    };
+    registerProject(router, { store, shareBaseUrl: () => 'https://x', specialties, facts, orgs });
   });
 
   test('O-1: the overview composes the ports; money is absent without org:money:view', async () => {

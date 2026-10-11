@@ -242,7 +242,7 @@ export function variationBody(v, { taskName, history = [], who = null } = {}) {
     cause_task_id: v.causeTaskId ?? undefined,
     reason: v.reason ?? undefined,
     last_changed_by: { org_id: v.lastChangedByOrgId },
-    changed_by_org_name: v.changedByOrgName ?? undefined,
+    changed_by_org_name: who?.orgNames?.get(v.lastChangedByOrgId) ?? undefined,
     ...variationViewerFields(v, who),
     first_changed_at: iso(v.firstChangedAt),
     last_changed_at: iso(v.lastChangedAt),

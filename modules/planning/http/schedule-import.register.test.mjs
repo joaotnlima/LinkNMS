@@ -31,7 +31,7 @@ function fakeStore() {
     async isStaffed() { return true; },
     async loadPlan() { return { tasks: new Map(), links: [], contracts: new Map(), ownerOrgId: OWNER_ORG, calendarRaw: {} }; },
     async insertScheduleImport(cmd) {
-      const imp = { ...cmd, status: 'uploaded', mapping: null, orgName: 'Família Almeida', confirmedAt: null };
+      const imp = { ...cmd, status: 'uploaded', mapping: null, confirmedAt: null };
       imports.set(cmd.id, imp);
       return imp;
     },
@@ -58,7 +58,9 @@ describe('PRD-09 schedule imports over the /api/v2 router', () => {
   beforeEach(() => {
     router = createRouter();
     store = fakeStore();
-    registerPlanning(router, { store, workbooks });
+    // Identity's organisation port names the importer (planning never reads identity.*).
+    const orgs = { async namesOf(ids) { return new Map(ids.map((id) => [id, id === OWNER_ORG ? 'Família Almeida' : 'Obra Nova'])); } };
+    registerPlanning(router, { store, workbooks, orgs });
   });
   const dispatch = (method, path, v, body = null) => router.dispatch({ method, path, viewer: v, body, query: {}, headers: {} });
   const file = (filename = 'plan.xlsx', bytes = Buffer.from('xlsx')) => ({ file: { filename, content_type: 'application/octet-stream', size: bytes.length, bytes } });
@@ -78,6 +80,7 @@ describe('PRD-09 schedule imports over the /api/v2 router', () => {
     assert.equal(ok.status, 201);
     assert.deepEqual(ok.body.missing_required, []);
     assert.deepEqual(ok.body.columns.map((c) => c.header), ['Action', 'Sub-action', 'Start', 'End']);
+    assert.deepEqual(ok.body.imported_by, { org_id: OWNER_ORG, org_name: 'Família Almeida' }); // via the org port
   });
 
   test('map: the importing org only; a column used twice is 422; a missing required mapping is reported, not refused', async () => {

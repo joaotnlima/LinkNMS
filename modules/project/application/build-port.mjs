@@ -21,6 +21,9 @@
 //   locationsOf — which of the given ids are locations of the build, for
 //                 Quality tagging a non-conformity or an inspection to a place
 //                 (PRD-12 N-3, N-4). No viewer, ids only.
+//   locationNamesOf — every location of the build, id → name, for Planning
+//                 naming the daily log and the site calendar (PRD-10). No
+//                 viewer: the caller has checked the viewer takes part.
 import { requireParticipant, requireOwner } from './use-cases.mjs';
 
 /** @param {object} store project pg-store */
@@ -56,6 +59,11 @@ export function createBuildPort(store) {
     async locationsOf(projectId, locationIds) {
       const ids = [...new Set((locationIds ?? []).filter(Boolean))];
       return ids.length ? store.knownLocationIds(projectId, ids) : new Set();
+    },
+
+    async locationNamesOf(projectId) {
+      if (!projectId) return new Map();
+      return new Map((await store.locationNames(projectId)).map((r) => [r.id, r.name]));
     },
 
     async ownedBuild({ viewer, projectId }) {

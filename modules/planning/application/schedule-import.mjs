@@ -30,7 +30,7 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const OUT_OF_SCOPE = 'Only the build’s owner brings a plan into an empty plan: a contractor’s part of the plan comes with its contract (D-33).';
 
 /** operationId: uploadScheduleImport — read the .xlsx into sheets + columns. */
-export async function uploadScheduleImport({ viewer, store, workbooks, projectId, body }) {
+export async function uploadScheduleImport({ viewer, store, workbooks, orgs = null, projectId, body }) {
   const { actor } = await requireImporter({ viewer, store, projectId });
   if (body?.parent_task_id) {
     throw new ProblemError('validation_failed', null, {
@@ -59,17 +59,17 @@ export async function uploadScheduleImport({ viewer, store, workbooks, projectId
     filename: String(file.filename).slice(0, 255), fileBytes: file.size ?? file.bytes.length,
     sheets, sheetName: first.name,
   });
-  return { status: 201, body: await view({ store, imp }) };
+  return { status: 201, body: await view({ store, orgs, imp }) };
 }
 
 /** operationId: getScheduleImport */
-export async function getScheduleImport({ viewer, store, specialties, importId }) {
+export async function getScheduleImport({ viewer, store, specialties, orgs = null, importId }) {
   const imp = await requireImport({ viewer, store, importId, edit: false });
-  return { status: 200, body: await view({ store, imp, specialties }) };
+  return { status: 200, body: await view({ store, orgs, imp, specialties }) };
 }
 
 /** operationId: mapScheduleImport — sheet + mapping → the live 10-row sample. */
-export async function mapScheduleImport({ viewer, store, specialties, importId, body }) {
+export async function mapScheduleImport({ viewer, store, specialties, orgs = null, importId, body }) {
   const imp = await requireImport({ viewer, store, importId });
   assertOpen(imp);
   const sheet = imp.sheets.find((s) => s.name === body?.sheet);
@@ -79,17 +79,17 @@ export async function mapScheduleImport({ viewer, store, specialties, importId, 
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
   const saved = await store.updateScheduleImport({ id: imp.id, sheetName: sheet.name, mapping, status: 'mapped' });
   if (!saved) throw new ProblemError('invalid_transition', 'this import was already confirmed');
-  return { status: 200, body: await view({ store, imp: saved, specialties }) };
+  return { status: 200, body: await view({ store, orgs, imp: saved, specialties }) };
 }
 
 /** operationId: previewScheduleImport — the WBS tree, counts and warnings. */
-export async function previewScheduleImport({ viewer, store, specialties, importId }) {
+export async function previewScheduleImport({ viewer, store, specialties, orgs = null, importId }) {
   const imp = await requireImport({ viewer, store, importId });
   assertOpen(imp);
   assertMapped(imp);
   const saved = await store.updateScheduleImport({ id: imp.id, sheetName: imp.sheetName, mapping: imp.mapping, status: 'previewed' });
   if (!saved) throw new ProblemError('invalid_transition', 'this import was already confirmed');
-  return { status: 200, body: await view({ store, imp: saved, specialties }) };
+  return { status: 200, body: await view({ store, orgs, imp: saved, specialties }) };
 }
 
 /** operationId: confirmScheduleImport — write into the EMPTY plan, stamp, notify. */
@@ -125,7 +125,8 @@ export async function confirmScheduleImport({ viewer, store, specialties, import
         if (!(await plan.write.confirmScheduleImport({ id: imp.id, result }))) {
           throw new ProblemError('invalid_transition', 'this import was already confirmed');
         }
-        const orgName = plan.orgNames?.get(viewer.orgId) ?? imp.orgName ?? null;
+        // The importer edits the whole plan (owner or prime) — a party the plan names.
+        const orgName = plan.orgNames?.get(viewer.orgId) ?? null;
         await commitPlanEvent(plan, {
           projectId: imp.projectId, actor: me, type: 'planning.plan.imported',
           objectType: 'schedule_import', objectId: imp.id,
@@ -192,7 +193,9 @@ async function parse({ store, imp, specialties }) {
 }
 
 /** The ScheduleImport body for the import's stage. */
-async function view({ store, imp, specialties }) {
+async function view({ store, orgs, imp, specialties }) {
+  // Named through identity's organisation port (planning never reads identity.*).
+  const orgName = orgs ? (await orgs.namesOf([imp.orgId])).get(imp.orgId) ?? null : null;
   const sheet = imp.sheets.find((s) => s.name === imp.sheetName) ?? imp.sheets[0] ?? { name: null, rows: [] };
   const columns = columnsOf(sheet.rows);
   const suggested = !imp.mapping;
@@ -208,7 +211,7 @@ async function view({ store, imp, specialties }) {
     mapping,
     mapping_suggested: suggested,
     missing_required: missingRequired(mapping),
-    imported_by: { org_id: imp.orgId, ...(imp.orgName ? { org_name: imp.orgName } : {}) },
+    imported_by: { org_id: imp.orgId, ...(orgName ? { org_name: orgName } : {}) },
     confirmed_at: imp.confirmedAt ?? null,
   };
   if (imp.status === 'uploaded') {

@@ -104,6 +104,12 @@ export function shareLinkQueries(pool, tx) {
     },
 
     /** Which of `locationIds` are locations of this build (build port, PRD-12 N-3/N-4). */
+    /** Every location of the build by id → name (the build port's locationNamesOf). */
+    async locationNames(projectId) {
+      const { rows } = await pool.query('SELECT id, name FROM project.location WHERE project_id = $1', [projectId]);
+      return rows;
+    },
+
     async knownLocationIds(projectId, locationIds) {
       if (!locationIds.length) return new Set();
       const { rows } = await pool.query(

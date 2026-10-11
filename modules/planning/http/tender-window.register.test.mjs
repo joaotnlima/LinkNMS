@@ -30,7 +30,10 @@ function task(id, over) {
   };
 }
 
-function fakeStore({ prime = false } = {}) {
+/** Contracting's party port (the prime contractor), as the composition root injects it. */
+const partyPort = ({ prime = false } = {}) => ({ async isPrimeSupplier(projectId, orgId) { return prime && orgId === GC_ORG; } });
+
+function fakeStore() {
   const state = { settings: null, ledger: [] };
   return {
     state,
@@ -38,7 +41,6 @@ function fakeStore({ prime = false } = {}) {
     async getProject(id) { return id === PROJECT ? { id, owner_org_id: OWNER_ORG, created_by_org_id: OWNER_ORG } : null; },
     async isParticipant(projectId, orgId) { return projectId === PROJECT && [OWNER_ORG, GC_ORG].includes(orgId); },
     async isStaffed() { return true; },
-    async isPrimeSupplier(projectId, orgId) { return prime && orgId === GC_ORG; },
     async loadPlan() {
       return {
         tasks: new Map([
@@ -74,8 +76,8 @@ describe('PRD-02 planning over the /api/v2 router', () => {
   let router, store;
   const wire = (opts) => {
     router = createRouter();
-    store = fakeStore(opts);
-    registerPlanning(router, { store });
+    store = fakeStore();
+    registerPlanning(router, { store, contracts: partyPort(opts) });
   };
   beforeEach(() => wire());
   const dispatch = (method, path, v, { body = null, query = {} } = {}) =>

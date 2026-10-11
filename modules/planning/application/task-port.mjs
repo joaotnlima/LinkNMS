@@ -4,6 +4,8 @@
 //
 //   descendantIds(taskId) → string[]   live rows below a task (documents:
 //                                      "also on sub-tasks", PRD-05 F-10)
+//   taskIdsOf(projectId) → string[]    every live row of a build (quality:
+//                                      the build home's pending verifications)
 //   modelScopes(projectId) → {          the shared project model (PRD-07):
 //     owner_org_id,                     the owner edits the whole model;
 //     tasks: [{ id, code, name, parent_id, status,
@@ -20,6 +22,10 @@ export function createPlanningTaskPort(store) {
   return {
     async descendantIds(taskId) {
       return store.descendantTaskIds(taskId);
+    },
+
+    async taskIdsOf(projectId) {
+      return projectId ? store.liveTaskIds(projectId) : [];
     },
 
     async modelScopes(projectId) {

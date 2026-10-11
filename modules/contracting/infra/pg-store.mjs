@@ -146,6 +146,18 @@ export function createContractingStore(pool) {
       return rows.length > 0;
     },
 
+    /** The live prime contractor of a build (application/party-port.mjs). */
+    async isLivePrimeSupplier(projectId, orgId) {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM contracting.contract
+          WHERE project_id = $1 AND supplier_org_id = $2 AND kind = 'prime'
+            AND status IN ('signed','active','provisionally_received')
+          LIMIT 1`,
+        [projectId, orgId],
+      );
+      return rows.length > 0;
+    },
+
     async getOrganization(orgId) {
       const { rows } = await pool.query('SELECT * FROM identity.organization WHERE id = $1', [orgId]);
       return rows[0] ?? null;

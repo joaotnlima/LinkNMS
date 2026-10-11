@@ -306,7 +306,7 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(row.title, 'Canalização — Casa Silva');
     assert.deepEqual(row.root_task_ids, [ROOT_TASK]);
     assert.deepEqual(row.lane_counts, { submitted: 1, invited: 1 });
-    assert.equal(row.awarded_name, null);
+    assert.equal(row.awarded_recipient_name, null);
     assert.ok(!Object.keys(row).some((k) => /cents|price|total/.test(k)), 'no money on the read model');
     // A bidder on the tender is not its issuer: nothing here for it (V8).
     assert.deepEqual(await store.taskProcurementOfProject(PROJECT, BIDDER_ORG), []);
@@ -370,7 +370,8 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(row.status, 'awarded');
     assert.deepEqual(row.lane_counts, { awarded: 1, declined: 1 });
     assert.equal(row.awarded_org_id, BIDDER_ORG);
-    assert.equal(row.awarded_name, 'Canalizações Norte');
+    // The org's name comes from identity's port in the use case; the row carries the invite's own.
+    assert.ok(row.awarded_recipient_name);
   });
 
   test('D-36: at SIGNATURE the winner’s plan is copied under the tendered row and baselined', async () => {

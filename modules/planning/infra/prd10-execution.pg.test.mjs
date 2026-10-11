@@ -60,7 +60,7 @@ const documents = {
 };
 
 describe('PRD-10 running the plan over Postgres', { skip }, () => {
-  let pg, admin, pool, store;
+  let pg, admin, pool, store, builds;
   const ids = {};
 
   before(async () => {
@@ -111,6 +111,13 @@ describe('PRD-10 running the plan over Postgres', { skip }, () => {
       [randomUUID(), PROJECT, STRUCT, ELECW, OWNER_ORG, PERSON],
     );
     store = createPlanningStore(pool);
+    // The project's build port as the composition root injects it (location names).
+    builds = {
+      async locationNamesOf(projectId) {
+        const { rows } = await pool.query('SELECT id, name FROM project.location WHERE project_id = $1', [projectId]);
+        return new Map(rows.map((r) => [r.id, r.name]));
+      },
+    };
   });
 
   after(async () => {
@@ -132,31 +139,31 @@ describe('PRD-10 running the plan over Postgres', { skip }, () => {
       fromVariationIds: [], actor: { personId: PERSON, orgId: ELEC_ORG },
     });
 
-    const list = (await listBaselines({ viewer: viewer(GC_ORG), store, projectId: PROJECT, query: {} })).body.items;
+    const list = (await listBaselines({ viewer: viewer(GC_ORG), store, builds, projectId: PROJECT, query: {} })).body.items;
     assert.deepEqual(list.map((b) => [b.version, b.reason, b.is_current, b.branch_name, b.row_count]), [
       [2, 'change_order', true, 'Roof electrics', 1],
       [1, 'award', false, 'Roof electrics', 1],
     ]);
     assert.deepEqual([list[1].taken_by.org_id, list[1].taken_by_org_name], [OWNER_ORG, 'Família Almeida']);
     [ids.v2, ids.v1] = list.map((b) => b.id);
-    const scoped = await listBaselines({ viewer: viewer(GC_ORG), store, projectId: PROJECT, query: { root: STRUCT } });
+    const scoped = await listBaselines({ viewer: viewer(GC_ORG), store, builds, projectId: PROJECT, query: { root: STRUCT } });
     assert.deepEqual(scoped.body.items, []);
 
-    const now = (await getSchedule({ viewer: viewer(OWNER_ORG), store, projectId: PROJECT, query: {} })).body;
+    const now = (await getSchedule({ viewer: viewer(OWNER_ORG), store, builds, projectId: PROJECT, query: {} })).body;
     assert.deepEqual(now.tasks.find((t) => t.id === ELECW).baseline.start, '2027-02-08');
     assert.equal(now.compared_to, undefined);
-    const v1 = (await getSchedule({ viewer: viewer(OWNER_ORG), store, projectId: PROJECT, query: { baseline: ids.v1 } })).body;
+    const v1 = (await getSchedule({ viewer: viewer(OWNER_ORG), store, builds, projectId: PROJECT, query: { baseline: ids.v1 } })).body;
     const row = v1.tasks.find((t) => t.id === ELECW);
     assert.deepEqual([row.baseline.start, row.baseline.version, row.baseline.reason], ['2027-02-03', 1, 'award']);
     assert.deepEqual([v1.compared_to.baseline_id, v1.compared_to.version], [ids.v1, 1]);
     await assert.rejects(
-      getSchedule({ viewer: viewer(OWNER_ORG), store, projectId: PROJECT, query: { baseline: randomUUID() } }),
+      getSchedule({ viewer: viewer(OWNER_ORG), store, builds, projectId: PROJECT, query: { baseline: randomUUID() } }),
       (err) => err.problem?.status === 404,
     );
   });
 
   test('E-10/E-11: on site by organisation and location; two trades on the Roof overlap', async () => {
-    const res = await getSiteCalendar({ viewer: viewer(ELEC_ORG), store, projectId: PROJECT, query: { from: '2027-02-01', to: '2027-02-28' } });
+    const res = await getSiteCalendar({ viewer: viewer(ELEC_ORG), store, builds, projectId: PROJECT, query: { from: '2027-02-01', to: '2027-02-28' } });
     assert.deepEqual(res.body.presence.map((p) => [p.task_id, p.org_name, p.location_name, p.days.length]), [
       [STRUCT, 'Obra Nova', 'Roof', 5],
       [ELECW, 'Eletro Mota', 'Roof', 5],
@@ -165,22 +172,22 @@ describe('PRD-10 running the plan over Postgres', { skip }, () => {
     assert.deepEqual([overlap.location_name, overlap.from, overlap.to, overlap.days], ['Roof', '2027-02-03', '2027-02-05', 3]);
     assert.deepEqual(overlap.tasks.map((t) => t.task_id).sort(), [STRUCT, ELECW].sort());
     await assert.rejects(
-      getSiteCalendar({ viewer: viewer(ELEC_ORG), store, projectId: PROJECT, query: { from: '2027-01-01', to: '2028-06-01' } }),
+      getSiteCalendar({ viewer: viewer(ELEC_ORG), store, builds, projectId: PROJECT, query: { from: '2027-01-01', to: '2028-06-01' } }),
       (err) => err.problem?.status === 422,
     );
   });
 
   test('E-5: a start ahead of the predecessor asks for a reason; with one it is recorded', async () => {
-    const panel = (await getTask({ viewer: viewer(ELEC_ORG), store, taskId: ELECW })).body;
+    const panel = (await getTask({ viewer: viewer(ELEC_ORG), store, builds, taskId: ELECW })).body;
     assert.deepEqual(panel.waiting_on.map((w) => [w.task_id, w.status, w.needs, w.met]), [[STRUCT, 'not_started', 'finished', false]]);
 
     await assert.rejects(
-      reportProgress({ viewer: viewer(ELEC_ORG), store, taskId: ELECW, body: { status: 'in_progress' } }),
+      reportProgress({ viewer: viewer(ELEC_ORG), store, builds, taskId: ELECW, body: { status: 'in_progress' } }),
       (err) => err.problem?.status === 409 && err.problem.reason === 'predecessors_open'
         && err.problem.waiting_on[0].task_id === STRUCT,
     );
     const res = await reportProgress({
-      viewer: viewer(ELEC_ORG), store, taskId: ELECW,
+      viewer: viewer(ELEC_ORG), store, builds, taskId: ELECW,
       body: { status: 'in_progress', override_reason: 'Conduits go in before the roof closes' },
     });
     assert.equal(res.status, 201);
@@ -197,21 +204,21 @@ describe('PRD-10 running the plan over Postgres', { skip }, () => {
     );
     assert.equal(evt.data.out_of_sequence.waiting_on[0].task_id, STRUCT);
     // Already started: the next report needs no reason.
-    const blocked = await reportProgress({ viewer: viewer(ELEC_ORG), store, taskId: ELECW, body: { status: 'blocked' } });
+    const blocked = await reportProgress({ viewer: viewer(ELEC_ORG), store, builds, taskId: ELECW, body: { status: 'blocked' } });
     assert.equal(blocked.body.out_of_sequence, undefined);
   });
 
   test('E-6: done records which acceptance criteria were met', async () => {
     await pool.query(`UPDATE planning.task SET acceptance_criteria = $2 WHERE id = $1`, [ELECW, '- Circuits tested\n- Labels fitted']);
-    const panel = (await getTask({ viewer: viewer(ELEC_ORG), store, taskId: ELECW })).body;
+    const panel = (await getTask({ viewer: viewer(ELEC_ORG), store, builds, taskId: ELECW })).body;
     assert.deepEqual(panel.acceptance_checklist, ['Circuits tested', 'Labels fitted']);
     await assert.rejects(
-      reportProgress({ viewer: viewer(ELEC_ORG), store, taskId: ELECW, body: { status: 'done', criteria_met: ['Painted'] } }),
+      reportProgress({ viewer: viewer(ELEC_ORG), store, builds, taskId: ELECW, body: { status: 'done', criteria_met: ['Painted'] } }),
       (err) => err.problem?.status === 422 && Boolean(err.problem.errors.criteria_met),
     );
-    const res = await reportProgress({ viewer: viewer(ELEC_ORG), store, taskId: ELECW, body: { status: 'done', criteria_met: ['Circuits tested'] } });
+    const res = await reportProgress({ viewer: viewer(ELEC_ORG), store, builds, taskId: ELECW, body: { status: 'done', criteria_met: ['Circuits tested'] } });
     assert.deepEqual(res.body.acceptance, [{ criterion: 'Circuits tested', met: true }, { criterion: 'Labels fitted', met: false }]);
-    const after = (await getTask({ viewer: viewer(OWNER_ORG), store, taskId: ELECW })).body;
+    const after = (await getTask({ viewer: viewer(OWNER_ORG), store, builds, taskId: ELECW })).body;
     assert.deepEqual(after.progress.at(-1).acceptance.map((a) => a.met), [true, false]);
   });
 
@@ -225,17 +232,17 @@ describe('PRD-10 running the plan over Postgres', { skip }, () => {
       e('issue', { note: 'Scaffold tie loose', location_id: ROOF }),
       e('photo', { document_id: PHOTO, task_id: ELECW, location_id: ROOF, note: 'Conduit run' }),
     ];
-    const res = await addDailyLogEntries({ viewer: viewer(GC_ORG), store, documents, projectId: PROJECT, date: TODAY, body: { entries: capture } });
+    const res = await addDailyLogEntries({ viewer: viewer(GC_ORG), store, builds, documents, projectId: PROJECT, date: TODAY, body: { entries: capture } });
     assert.equal(res.status, 201);
     assert.deepEqual([res.body.headcount_total, res.body.weather.weather, res.body.work.length, res.body.photos[0].version_no],
       [8, 'rain', 1, 2]);
     assert.equal(res.body.photos[0].task_name, 'Roof electrics');
     assert.equal(res.body.issues[0].location_name, 'Roof');
 
-    const replay = await addDailyLogEntries({ viewer: viewer(GC_ORG), store, documents, projectId: PROJECT, date: TODAY, body: { entries: capture.slice(0, 2) } });
+    const replay = await addDailyLogEntries({ viewer: viewer(GC_ORG), store, builds, documents, projectId: PROJECT, date: TODAY, body: { entries: capture.slice(0, 2) } });
     assert.equal(replay.status, 200);
     await assert.rejects(
-      addDailyLogEntries({ viewer: viewer(GC_ORG), store, documents, projectId: PROJECT, date: TODAY,
+      addDailyLogEntries({ viewer: viewer(GC_ORG), store, builds, documents, projectId: PROJECT, date: TODAY,
         body: { entries: [{ ...capture[0], headcount: 9 }] } }),
       (err) => err.problem?.code === 'idempotency_mismatch',
     );
@@ -247,29 +254,29 @@ describe('PRD-10 running the plan over Postgres', { skip }, () => {
 
     // The GC is not responsible for the direct contractor's row (D-33).
     await assert.rejects(
-      addDailyLogEntries({ viewer: viewer(GC_ORG), store, documents, projectId: PROJECT, date: TODAY,
+      addDailyLogEntries({ viewer: viewer(GC_ORG), store, builds, documents, projectId: PROJECT, date: TODAY,
         body: { entries: [e('work', { task_id: ELECW })] } }),
       (err) => err.problem?.code === 'out_of_scope',
     );
     await assert.rejects(
-      addDailyLogEntries({ viewer: viewer(GC_ORG), store, documents, projectId: PROJECT, date: TODAY,
+      addDailyLogEntries({ viewer: viewer(GC_ORG), store, builds, documents, projectId: PROJECT, date: TODAY,
         body: { entries: [e('photo', { document_id: DRAWING }), e('presence', { org_id: randomUUID(), headcount: 1 })] } }),
       (err) => err.problem?.status === 422 && Boolean(err.problem.errors['entries[0].document_id'] && err.problem.errors['entries[1].org_id']),
     );
     await assert.rejects(
-      addDailyLogEntries({ viewer: viewer(GC_ORG), store, documents, projectId: PROJECT, date: '2999-01-01', body: { entries: capture } }),
+      addDailyLogEntries({ viewer: viewer(GC_ORG), store, builds, documents, projectId: PROJECT, date: '2999-01-01', body: { entries: capture } }),
       (err) => err.problem?.status === 422 && Boolean(err.problem.errors.date),
     );
     // Append-only.
     await assert.rejects(pool.query('UPDATE planning.daily_log_entry SET headcount = 1'));
 
-    const day = await getDailyLog({ viewer: viewer(OWNER_ORG), store, projectId: PROJECT, date: TODAY });
+    const day = await getDailyLog({ viewer: viewer(OWNER_ORG), store, builds, projectId: PROJECT, date: TODAY });
     assert.equal(day.body.entries.length, 6);
-    const days = await listDailyLogs({ viewer: viewer(OWNER_ORG), store, projectId: PROJECT, query: {} });
+    const days = await listDailyLogs({ viewer: viewer(OWNER_ORG), store, builds, projectId: PROJECT, query: {} });
     assert.deepEqual(days.body.items.map((d) => [d.date, d.org_count, d.headcount_total, d.photo_count]), [[TODAY, 2, 8, 1]]);
-    const onTask = await listTaskDailyLogEntries({ viewer: viewer(OWNER_ORG), store, taskId: ELECW });
+    const onTask = await listTaskDailyLogEntries({ viewer: viewer(OWNER_ORG), store, builds, taskId: ELECW });
     assert.deepEqual(onTask.body.items.map((x) => [x.kind, x.document_id]), [['photo', PHOTO]]);
-    const empty = await getDailyLog({ viewer: viewer(OWNER_ORG), store, projectId: PROJECT, date: '2020-01-01' });
+    const empty = await getDailyLog({ viewer: viewer(OWNER_ORG), store, builds, projectId: PROJECT, date: '2020-01-01' });
     assert.deepEqual([empty.status, empty.body.entries.length], [200, 0]);
   });
 });

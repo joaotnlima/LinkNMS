@@ -82,7 +82,6 @@ function variationN(r) {
     status: r.status, changeOrderId: r.change_order_id,
     reason: r.reason ?? null,
     taskName: r.task_name ?? undefined,
-    changedByOrgName: r.changed_by_org_name ?? undefined,
   };
 }
 
@@ -123,7 +122,7 @@ export function createPlanningStore(pool) {
     ]);
     const project = projectRows[0] ?? {};
     const [{ rows: calRows }, { rows: holidayRows }, { rows: contractRows }, { rows: statusRows },
-      { rows: lineRows }, { rows: orgRows }, { rows: variationRows }, { rows: baselineRows },
+      { rows: lineRows }, { rows: variationRows }, { rows: baselineRows },
       { rows: baselineTextRows }] = await Promise.all([
       q.query('SELECT work_days, closures FROM project.calendar WHERE project_id = $1', [projectId]),
       q.query(
@@ -152,14 +151,6 @@ export function createPlanningStore(pool) {
         [projectId],
       ),
       q.query(
-        `SELECT o.id, o.legal_name FROM identity.organization o
-          WHERE o.id IN (SELECT assignee_org_id FROM planning.task WHERE project_id = $1)
-             OR o.id IN (SELECT client_org_id FROM contracting.contract WHERE project_id = $1)
-             OR o.id IN (SELECT supplier_org_id FROM contracting.contract WHERE project_id = $1)
-             OR o.id IN (SELECT owner_org_id FROM project.project WHERE id = $1)`,
-        [projectId],
-      ),
-      q.query(
         `SELECT * FROM planning.variation
           WHERE project_id = $1 AND status IN ('open', 'acknowledged')`,
         [projectId],
@@ -179,6 +170,16 @@ export function createPlanningStore(pool) {
         [projectId],
       ),
     ]);
+    // The build's parties — assignees, contract parties, the owner: ids from
+    // what this snapshot already loaded, their names in one read.
+    const partyIds = [...new Set([
+      ...taskRows.map((r) => r.assignee_org_id),
+      ...contractRows.flatMap((r) => [r.client_org_id, r.supplier_org_id]),
+      project.owner_org_id, project.created_by_org_id,
+    ].filter(Boolean))];
+    const { rows: orgRows } = await q.query(
+      'SELECT o.id, o.legal_name FROM identity.organization o WHERE o.id = ANY($1::uuid[])', [partyIds],
+    );
     const cal = calRows[0] ?? { work_days: [1, 2, 3, 4, 5], closures: [] };
     const boqLines = lineRows.map(costLineN);
     return {
@@ -362,18 +363,6 @@ export function createPlanningStore(pool) {
     async getProject(projectId) {
       const { rows } = await pool.query('SELECT * FROM project.project WHERE id = $1', [projectId]);
       return rows[0] ?? null;
-    },
-
-    /** The live prime contractor (putPlanningSettings' gate, as putCalendar's). */
-    async isPrimeSupplier(projectId, orgId) {
-      const { rows } = await pool.query(
-        `SELECT 1 FROM contracting.contract
-          WHERE project_id = $1 AND supplier_org_id = $2 AND kind = 'prime'
-            AND status IN ('signed','active','provisionally_received')
-          LIMIT 1`,
-        [projectId, orgId],
-      );
-      return rows.length > 0;
     },
 
     /** planning.project_setting (0014) — null when the project uses the defaults. */
@@ -565,9 +554,8 @@ export function createPlanningStore(pool) {
 
     async listVariations(projectId, { kind, status, since, taskId } = {}) {
       const { rows } = await pool.query(
-        `SELECT v.*, t.name AS task_name, o.legal_name AS changed_by_org_name
+        `SELECT v.*, t.name AS task_name
            FROM planning.variation v JOIN planning.task t ON t.id = v.task_id
-           LEFT JOIN identity.organization o ON o.id = v.last_changed_by_org_id
           WHERE v.project_id = $1
             AND ($2::text IS NULL OR v.kind = $2)
             AND ($3::text IS NULL OR v.status = $3)
@@ -581,10 +569,8 @@ export function createPlanningStore(pool) {
 
     async getVariation(variationId) {
       const { rows } = await pool.query(
-        `SELECT v.*, t.name AS task_name, t.project_id AS task_project_id,
-                o.legal_name AS changed_by_org_name
+        `SELECT v.*, t.name AS task_name, t.project_id AS task_project_id
            FROM planning.variation v JOIN planning.task t ON t.id = v.task_id
-           LEFT JOIN identity.organization o ON o.id = v.last_changed_by_org_id
           WHERE v.id = $1`,
         [variationId],
       );

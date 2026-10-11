@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 
 import { createProjectStore } from './pg-store.mjs';
+import { createBuildPort } from '../application/build-port.mjs';
 
 const url = process.env.DATABASE_URL;
 const skip = url ? false : 'set DATABASE_URL to run the project Postgres suite';
@@ -198,7 +199,6 @@ describe('project store over Postgres (v2 migrations)', { skip }, () => {
     });
     assert.deepEqual([participant.capacity, participant.invite_capacity, participant.specialty_code], ['consultant', 'contractor', 'electrical']);
     await pool.query(`INSERT INTO identity.project_staffing (project_id, org_id, person_id, staffed_by) VALUES ($1, $2, $3, $3)`, [id, GC_ORG, PERSON]);
-    assert.deepEqual(await store.listStaffedPeople(id, [GC_ORG]), [{ org_id: GC_ORG, person_id: PERSON, name: 'Ana' }]);
     const parts = await store.listParticipants(id, { cursor: null, limit: 10 });
     assert.equal(parts.items.find((r) => r.org_id === GC_ORG).specialty_code, 'electrical');
   });
@@ -291,5 +291,8 @@ describe('project store over Postgres (v2 migrations)', { skip }, () => {
     await store.createLocation({ id: loc, projectId, parentId: null, kind: 'zone', name: 'Cozinha', position: 'a0', actor: ACTOR });
     const known = await store.knownLocationIds(projectId, [loc, randomUUID()]);
     assert.deepEqual([...known], [loc]);
+    // PRD-10 (audit S2): planning names the daily log's places through the port.
+    const names = await createBuildPort(store).locationNamesOf(projectId);
+    assert.deepEqual([...names], [[loc, 'Cozinha']]);
   });
 });

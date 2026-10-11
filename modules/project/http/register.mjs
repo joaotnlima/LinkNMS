@@ -29,7 +29,8 @@ import {
  *   `documents` — the Documents share-files port: which files a share link may
  *   name and serve, and their signed downloads (PRD-12 N-12).
  */
-export function registerProject(router, { store, shareBaseUrl, specialties, facts = {}, documents }) {
+// `orgs` — identity's organisation port (staffed people), injected at the composition root.
+export function registerProject(router, { store, shareBaseUrl, specialties, facts = {}, documents, orgs = null }) {
   router.register('POST', '/projects', 'createProject', ({ viewer, body, headers }) =>
     createProject({ viewer, store, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
@@ -67,7 +68,7 @@ export function registerProject(router, { store, shareBaseUrl, specialties, fact
     deleteLocation({ viewer, store, locationId: params.locationId }));
 
   router.register('GET', '/projects/{projectId}/participants', 'listParticipants', ({ viewer, params, query }) =>
-    listParticipants({ viewer, store, specialties, projectId: params.projectId, query }));
+    listParticipants({ viewer, store, specialties, orgs, projectId: params.projectId, query }));
 
   router.register('GET', '/projects/{projectId}/invitations', 'listProjectInvitations', ({ viewer, params, query }) =>
     listProjectInvitations({ viewer, store, specialties, projectId: params.projectId, query }));
