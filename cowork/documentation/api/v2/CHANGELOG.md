@@ -29,6 +29,10 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
   the build's tasks for "Ask for a proposal" in one read, each with `specialty_match` (the company's specialty family),
   the governing RFP the viewer's org issued and the `target` (`draft` | `new` | `locked`). Replaces the app's join of
   `/schedule` with `/task-procurement` and its client-side ranking. New schema `AskCandidate`.
+- **`Task.is_critical` is filled** on every task read (`getSchedule`, `getTask`, delta answers): the server's one
+  critical-path rule (a leaf whose one-working-day slip moves the project finish, and the summaries containing one) —
+  the same rule behind `getTenderWindow.critical_task_ids`. The app's own CPM is gone; the plan's critical-path overlay
+  reads this field. `float_wd` is not added (not cheap with this rule).
 
 ## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
 

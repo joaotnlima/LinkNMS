@@ -200,9 +200,13 @@ export interface TaskDraft {
    * (LINA-259) reads it, defaulting to 'not_started' — no op here ever sets it.
    */
   status?: StageStatus;
+  /** On the critical path as the SERVER computed it for the saved plan (v2 `Task.is_critical`). */
+  isCritical?: boolean;
 }
 export interface PhaseDraft {
   key: string; name: string; tasks: TaskDraft[];
+  /** On the critical path as the server computed it (v2 `Task.is_critical`). */
+  isCritical?: boolean;
   /** Typed links to this phase's predecessors (LINA-233, typed by ADR-0020). */
   dependsOn: DepEdge[];
   /** A phase is a stage like any other — it may be owned and tagged too. */
@@ -1039,142 +1043,24 @@ export function planLinks(phases: PhaseDraft[]): PlanLink[] {
 
 // ── The CRITICAL PATH (LINA-404, founder's ask) ──────────────────────────────
 // "The filter which puts opacity in all tasks and highlights the ones in the
-// critical path of the project." The critical path is the chain of linked
-// stages whose timing SETS the project's finish — the stages with no slack to
-// slip without moving that finish. Classic CPM: zero total float.
-//
-// This reads only the draft's dates and typed links and returns a Set of local
-// keys; it is pure and presentational — the overlay toggle in PlanGrid dims
-// every bar and lights these. A stage's duration is derived from its
-// [start, end]; a parent/phase resolves to its children's envelope, the same
-// rule the bars (and enforceDependencies) use, so a task may key off a whole
-// phase. The three link types constrain the dependent exactly as
-// enforceDependencies moves it:
-//   starts_after — dependent starts the day AFTER the predecessor finishes
-//   starts_with  — dependent starts WITH the predecessor
-//   ends_with    — dependent finishes WITH the predecessor
-//
-// Returns an EMPTY set when the plan is undated or the graph is momentarily
-// cyclic — there is nothing honest to light, so every bar stays at full
-// strength rather than guessing a path.
-
-// The anchor each link type binds on: the predecessor edge that DRIVES the
-// dependent, and the dependent edge that is BOUND. Mirrors toLinkAnchors on the v2
-// wire (ADR-0020), kept local so this pure lib pulls in no v2 module.
-function linkAnchors(type: DepType): { from: 'start' | 'end'; to: 'start' | 'end' } {
-  switch (type) {
-    case 'starts_with': return { from: 'start', to: 'start' };
-    case 'ends_with': return { from: 'end', to: 'end' };
-    default: return { from: 'end', to: 'start' }; // starts_after (finish-to-start)
-  }
-}
-
-// The critical path, the founder's way (LINA-404, video 2026-10-03): "calculated
-// from the last task until the first in sequence" — the chain of linked stages that
-// SETS the project's finish — AND every summary/phase that CONTAINS a stage on it
-// lights too ("critical path is 1.1 (1.1.2 plus 1.1.1) and then 1.2 (1.2.1 plus
-// 1.2.2)" — the parents 1.1 / 1.2, not only their children).
-//
-// We walk LEAVES (a parent is an envelope, not a schedulable thing), stepping
-// backward from the latest-ending leaf through the predecessor that drives it, and
-// close the set upward over ancestors at the end. Crucially this reads the SEQUENCE,
-// not the gap between dates: a weekend or a lag between a driver and its dependent is
-// not slack. (The old pass computed float in CALENDAR days and subtracted a fixed
-// one-day gap for starts_after, so any working-day gap — e.g. a Sun→Wed hand-off —
-// read as 2+ days of float and the stage fell dark though it was dead on the path.)
-//
-// Returns an EMPTY set when the plan has no dated leaf — nothing honest to light.
-
+// critical path of the project." The SERVER decides it — planning's one rule
+// (domain/critical-path.mjs: a leaf whose one-working-day slip moves the
+// project finish, and every summary containing one), the same rule behind the
+// tender window's critical alert — and hands it over as `Task.is_critical`,
+// carried onto the draft by the read seam (planning-hydrate.ts). This only
+// collects the keys the server marked; it reflects the SAVED plan (a draft edit
+// lights its new path once the autosave lands and the plan is read again).
 export function criticalPathKeys(phases: PhaseDraft[]): Set<string> {
-  // A momentarily-cyclic draft has no honest "last task → first" to walk — light
-  // nothing rather than guess (the draft can't be saved in this state anyway).
-  if (detectCycle(phases)) return new Set();
-
-  const { phaseKeys, phaseChildren, taskChildren, dates } = dateMaps(phases);
-
-  // Parent → child wiring, every level: used to resolve a link drawn on a summary
-  // row down to the leaf that actually drives/binds it, and to light every ancestor
-  // of a critical leaf.
-  const parentOf = new Map<string, string>();
-  for (const [ph, tasks] of phaseChildren) for (const t of tasks) parentOf.set(t, ph);
-  for (const [t, subs] of taskChildren) for (const s of subs) parentOf.set(s, t);
-
-  const isLeaf = (key: string): boolean => !phaseKeys.has(key) && !taskChildren.has(key);
-  const descLeaves = (key: string): string[] => {
-    if (phaseKeys.has(key)) return (phaseChildren.get(key) ?? []).flatMap(descLeaves);
-    const subs = taskChildren.get(key);
-    return subs ? subs.flatMap(descLeaves) : [key];
+  const out = new Set<string>();
+  const walk = (t: TaskDraft): void => {
+    if (t.isCritical) out.add(t.key);
+    t.children.forEach(walk);
   };
-
-  // Dated leaves only — an undated leaf anchors no bar and schedules nothing.
-  const leafSpan = new Map<string, { s: number; e: number }>();
-  for (const [key, d] of dates) {
-    if (!isLeaf(key)) continue;
-    const s = parseDay(d.start);
-    const e = parseDay(d.end);
-    if (s !== null && e !== null) leafSpan.set(key, { s, e });
+  for (const ph of phases) {
+    if (ph.isCritical) out.add(ph.key);
+    ph.tasks.forEach(walk);
   }
-  if (leafSpan.size === 0) return new Set();
-
-  // The dated leaf a link drives FROM / binds TO — a link on a summary resolves to
-  // its extreme dated leaf (latest-ending for an `end` anchor, earliest-starting for
-  // a `start` anchor), the same edge the Gantt connector draws.
-  const extremeLeaf = (key: string, edge: 'start' | 'end'): string | null => {
-    let best: string | null = null;
-    let bestVal = edge === 'end' ? -Infinity : Infinity;
-    for (const leaf of descLeaves(key)) {
-      const sp = leafSpan.get(leaf);
-      if (!sp) continue;
-      const v = edge === 'end' ? sp.e : sp.s;
-      if (best === null || (edge === 'end' ? v > bestVal : v < bestVal)) { bestVal = v; best = leaf; }
-    }
-    return best;
-  };
-
-  // Each dated leaf's predecessors, tagged with the time the driver binds it; the
-  // backward walk steps to the driver(s) with the LATEST such time — the one that
-  // actually sets this leaf's position.
-  const preds = new Map<string, Array<{ from: string; driveAt: number }>>();
-  for (const l of planLinks(phases)) {
-    const a = linkAnchors(l.type);
-    const driver = extremeLeaf(l.to, a.from);   // l.to = predecessor
-    const bound = extremeLeaf(l.from, a.to);    // l.from = dependent
-    if (!driver || !bound || driver === bound) continue;
-    const dsp = leafSpan.get(driver)!;
-    const arr = preds.get(bound) ?? [];
-    arr.push({ from: driver, driveAt: a.from === 'end' ? dsp.e : dsp.s });
-    preds.set(bound, arr);
-  }
-
-  // Project finish = the latest-ending leaf(s).
-  let projectEnd = -Infinity;
-  for (const { e } of leafSpan.values()) if (e > projectEnd) projectEnd = e;
-
-  // Backward walk from each finisher through its BINDING predecessor(s) — those tied
-  // for the latest drive-time, so parallel driving chains both light. A `visited`
-  // guard keeps a momentarily-cyclic draft from looping.
-  const critical = new Set<string>();
-  const queue: string[] = [];
-  for (const [k, { e }] of leafSpan) if (e === projectEnd) { critical.add(k); queue.push(k); }
-  while (queue.length > 0) {
-    const k = queue.shift()!;
-    const ps = preds.get(k);
-    if (!ps || ps.length === 0) continue;
-    let latest = -Infinity;
-    for (const p of ps) if (p.driveAt > latest) latest = p.driveAt;
-    for (const p of ps) {
-      if (p.driveAt !== latest || critical.has(p.from)) continue;
-      critical.add(p.from);
-      queue.push(p.from);
-    }
-  }
-
-  // Light every ancestor (summary task + phase) of a critical leaf.
-  for (const leaf of [...critical]) {
-    let p = parentOf.get(leaf);
-    while (p !== undefined) { critical.add(p); p = parentOf.get(p); }
-  }
-  return critical;
+  return out;
 }
 
 // ── Dependency-date ENFORCEMENT (LINA-306) ───────────────────────────────────

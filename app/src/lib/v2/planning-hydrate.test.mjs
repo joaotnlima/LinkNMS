@@ -148,3 +148,12 @@ test('an unreported row stays status-less so the meter is all-grey by default (A
 test('an empty plan hydrates to an empty draft (the fail-closed / no-plan state)', () => {
   assert.deepEqual(planGridToDraft(view()), []);
 });
+
+test('the server critical path (is_critical → isCritical) rides onto phases and tasks; unmarked rows carry nothing', () => {
+  const [phase] = planGridToDraft(view({
+    rows: [row({ id: 'p1', isCritical: true, children: [row({ id: 't1', isCritical: true }), row({ id: 't2' })] })],
+  }));
+  assert.equal(phase.isCritical, true);
+  assert.equal(phase.tasks[0].isCritical, true);
+  assert.equal('isCritical' in phase.tasks[1], false);
+});

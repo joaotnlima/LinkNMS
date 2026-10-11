@@ -86,6 +86,8 @@ export interface V2Task {
   baseline: { start: string | null; finish: string | null; version?: number; reason?: string; taken_at?: string } | null;
   schedule_state?: 'planned' | 'on_baseline' | 'extended' | 'sequence_warning';
   status: V2TaskStatus;
+  /** On the critical path — the server's one rule (planning domain/critical-path.mjs). */
+  is_critical?: boolean;
   acceptance_criteria?: string;
   can_edit?: boolean;
   editor_is_assignee?: boolean;
@@ -223,6 +225,7 @@ export function toStageRows(tasks: V2Task[]): StageRow[] {
       end: t.finish,
       costCents: toCostCents(t.cost),
       status: toStageStatus(t.status),
+      ...(t.is_critical ? { isCritical: true } : {}),
       children: build(t.id),
     }));
   };

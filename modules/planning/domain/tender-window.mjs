@@ -10,21 +10,19 @@
 //   work window — the envelope of the covered leaves' effective dates: the
 //                 dates that lock while the tender is out.
 //   critical    — a covered leaf is critical when a ONE-working-day delay of
-//                 its finish moves the project finish. Links are rigid (D-22),
-//                 so the delay is pushed with the same engine as a real move
-//                 (domain/propagation), never written.
+//                 its finish moves the project finish (domain/critical-path.mjs,
+//                 the same rule the plan's critical-path overlay reads).
 //   award-by    — planned start − mobilisation lead, on the project calendar
 //                 (the latest award that still lets the winner start on time).
 import {
-  durationWd, spanFinish, shiftWorkingDays, workingDaysDelta,
+  durationWd, shiftWorkingDays, workingDaysDelta,
 } from './calendar.mjs';
-import { propagate, effectiveSpans } from './propagation.mjs';
+import { effectiveSpans } from './propagation.mjs';
+import { criticalTaskIds } from './critical-path.mjs';
 import { effectiveAssignee } from './scope.mjs';
 
 /** Default mobilisation lead (PRD-02 §5) — an assumption to validate. */
 export const DEFAULT_MOBILISATION_LEAD_WD = 5;
-/** Leaves probed for criticality, at most — a tender is a branch, not a plan. */
-export const MAX_CRITICAL_PROBES = 300;
 
 function childrenIndex(tasks) {
   const kids = new Map();
@@ -34,16 +32,6 @@ function childrenIndex(tasks) {
     kids.get(t.parentId).push(t.id);
   }
   return kids;
-}
-
-function ancestorsOf(tasks, id) {
-  const out = [];
-  let cur = tasks.get(id)?.parentId ?? null;
-  while (cur) {
-    out.push(cur);
-    cur = tasks.get(cur)?.parentId ?? null;
-  }
-  return out;
 }
 
 /**
@@ -96,30 +84,13 @@ function projectFinishOf(tasks, spans, kids) {
 
 /**
  * Leaves among `candidateIds` whose one-working-day slip moves the project
- * finish (D-22 rigid links carry the slip downstream; done rows never move).
+ * finish — the plan's ONE critical-path rule (domain/critical-path.mjs), asked
+ * about the tender's covered leaves.
  */
 export function criticalLeaves({ tasks, links, calendar, candidateIds }) {
+  const critical = criticalTaskIds({ tasks, links, calendar });
   const kids = childrenIndex(tasks);
-  const spans = effectiveSpans(tasks);
-  const finish = projectFinishOf(tasks, spans, kids);
-  if (!finish) return [];
-  const out = [];
-  let probes = 0;
-  for (const id of candidateIds) {
-    const t = tasks.get(id);
-    if (!t || (kids.get(id) ?? []).length || t.actualFinish) continue;
-    const span = spans.get(id);
-    if (!span?.start || !span?.finish) continue;
-    if (probes++ >= MAX_CRITICAL_PROBES) break;
-    const slipped = spanFinish(calendar, span.start, durationWd(calendar, span.start, span.finish) + 1);
-    const work = new Map(tasks);
-    work.set(id, { ...t, finish: slipped });
-    const { moves } = propagate({ tasks: work, links, calendar, seedIds: [id, ...ancestorsOf(tasks, id)] });
-    for (const m of moves) work.set(m.id, { ...work.get(m.id), start: m.start, finish: m.finish });
-    const after = projectFinishOf(work, effectiveSpans(work), kids);
-    if (after && after > finish) out.push(id);
-  }
-  return out;
+  return candidateIds.filter((id) => critical.has(id) && !(kids.get(id) ?? []).length);
 }
 
 /**

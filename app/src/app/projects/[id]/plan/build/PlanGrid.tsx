@@ -523,10 +523,10 @@ export function PlanGrid(props: PlanGridProps) {
   // ── Critical-path overlay (LINA-404) ────────────────────────────────────────
   // A view OVERLAY, not a row filter: it never hides a row (so the plan's shape
   // stays whole) — it dims every bar to a wash and lights the stages on the
-  // critical path, the chain whose dates set the project's finish. Pure CPM over
-  // the draft's dates + links (criticalPathKeys); recomputed only while the
-  // toggle is on. An undated or cyclic plan yields an empty set, so the toggle
-  // simply lights nothing rather than guessing.
+  // critical path, the chain whose dates set the project's finish. The SERVER
+  // decides it (Task.is_critical, planning's one rule, shared with the tender
+  // alert); criticalPathKeys only collects the marked keys. An undated plan has
+  // none, so the toggle simply lights nothing rather than guessing.
   const [criticalOnly, setCriticalOnly] = useState(false);
   const criticalKeys = useMemo(
     () => (criticalOnly ? criticalPathKeys(phases) : EMPTY_KEYS),

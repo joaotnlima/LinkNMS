@@ -13261,7 +13261,11 @@ components:
           - blocked
           - done
           - verified
-        is_critical: *id002
+        is_critical:
+          type: boolean
+          description: 'On the critical path: a one-working-day slip of this leaf''s finish moves the project
+            finish (rigid links, D-22; done rows never move), or — for a summary — it contains such a leaf. The
+            server''s one rule, shared with the tender window''s critical alert (PRD-01, PRD-02 T-5).'
         acceptance_criteria:
           type: string
           description: 'One criterion per line (PRD-10 E-6). Baselined and tracked as scope like the scope text

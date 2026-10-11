@@ -5,6 +5,7 @@
 import { makeCalendar, durationWd } from '../domain/calendar.mjs';
 import { inEditScope, effectiveAssignee } from '../domain/scope.mjs';
 import { effectiveSpans } from '../domain/propagation.mjs';
+import { criticalTaskIds } from '../domain/critical-path.mjs';
 import { variationVisibleTo } from '../domain/variations.mjs';
 import { lineAmountCents } from '../domain/cost-lines.mjs';
 import {
@@ -71,6 +72,8 @@ export function taskBody(task, ctx) {
     ...slipFields(task, span, hasKids, ctx),
     schedule_state: task.scheduleState,
     status: ctx.statuses?.get(task.id) ?? 'not_started',
+    // The server's critical-path rule (domain/critical-path.mjs) — the grid's overlay reads it.
+    is_critical: ctx.criticalIds ? ctx.criticalIds.has(task.id) : false,
     acceptance_criteria: task.acceptanceCriteria ?? undefined,
     can_edit: canEdit,
     editor_is_assignee: assignee ? assignee.orgId === ctx.viewerOrgId : undefined,
@@ -312,11 +315,17 @@ export function projectionCtx(snapshot, viewerOrgId, today) {
   }
   const counts = childCounts(snapshot.tasks);
   const calendar = makeCalendar(snapshot.calendarRaw ?? {});
+  let critical = null;
   return {
     tasks: snapshot.tasks,
     counts,
     spans: effectiveSpans(snapshot.tasks),
     calendar,
+    // The critical rows (domain/critical-path.mjs), computed on first read.
+    get criticalIds() {
+      if (!critical) critical = criticalTaskIds({ tasks: snapshot.tasks, links: snapshot.links ?? [], calendar });
+      return critical;
+    },
     overrun: overrunPicture({
       tasks: snapshot.tasks, links: snapshot.links ?? [], calendar,
       statuses: snapshot.statuses, counts, today,

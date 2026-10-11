@@ -1334,108 +1334,22 @@ test('enforceDependencies: pure — the input tree is never mutated', () => {
 });
 
 // ── Critical path overlay (LINA-404) ─────────────────────────────────────────
-// The toggle dims every bar and lights the chain whose dates set the project's
-// finish. The logic is `criticalPathKeys`: pure CPM (zero total float) over the
-// draft's dates + typed links.
+// The toggle dims every bar and lights the rows the SERVER marked critical
+// (`Task.is_critical`, planning domain/critical-path.mjs — its tests hold the
+// rule); `criticalPathKeys` only collects those keys from the hydrated draft.
 
-test('criticalPathKeys: lights the finish-driving chain, leaves slack stages dark', () => {
-  // A → B is the long chain that ends the project (Mar 20); C → D runs parallel
-  // and finishes early (Mar 9), so both carry slack and stay dark.
-  const phases = [{
-    key: 'p1', name: 'Phase', dependsOn: [], assigneePartyId: null, trade: null,
-    tasks: [
-      { key: 'a', name: 'A', start: '2026-03-01', end: '2026-03-10', dependsOn: [], children: [] },
-      { key: 'b', name: 'B', start: '2026-03-11', end: '2026-03-20',
-        dependsOn: [{ on: 'a', type: 'starts_after' }], children: [] },
-      { key: 'c', name: 'C', start: '2026-03-01', end: '2026-03-05', dependsOn: [], children: [] },
-      { key: 'd', name: 'D', start: '2026-03-06', end: '2026-03-09',
-        dependsOn: [{ on: 'c', type: 'starts_after' }], children: [] },
-    ],
-  }];
-  const crit = criticalPathKeys(phases);
-  assert.ok(crit.has('a'), 'A is on the critical path');
-  assert.ok(crit.has('b'), 'B is on the critical path');
-  assert.ok(!crit.has('c'), 'C has slack — not critical');
-  assert.ok(!crit.has('d'), 'D has slack — not critical');
-});
-
-test('criticalPathKeys: ends_with keeps the shorter leg critical to the shared finish', () => {
-  // B finishes WITH A (both end Mar 20). A is the long leg; because B is pinned
-  // to A's finish, both land on the path to the project end.
-  const phases = [{
-    key: 'p1', name: 'Phase', dependsOn: [], tasks: [
-      { key: 'a', name: 'A', start: '2026-03-01', end: '2026-03-20', dependsOn: [], children: [] },
-      { key: 'b', name: 'B', start: '2026-03-15', end: '2026-03-20',
-        dependsOn: [{ on: 'a', type: 'ends_with' }], children: [] },
-    ],
-  }];
-  const crit = criticalPathKeys(phases);
-  assert.ok(crit.has('a') && crit.has('b'), 'both ends_with legs reach the finish');
-});
-
-test('criticalPathKeys: an undated plan lights nothing', () => {
-  const phases = [{
-    key: 'p1', name: 'P', dependsOn: [], tasks: [
-      { key: 't1', name: 'T1', start: '', end: '', dependsOn: [], children: [] },
-    ],
-  }];
-  assert.equal(criticalPathKeys(phases).size, 0);
-});
-
-test('criticalPathKeys: a working-day gap (Sun finish → Wed start) is NOT slack', () => {
-  // The driver finishes Sun Nov 1; its dependent starts Wed Nov 4 (the next working
-  // day across the weekend). The chain is tight — a weekend is not float. The old
-  // calendar-day float read this 3-day gap as 2 days of slack and dropped the
-  // driver from the path (LINA-404 regression).
-  const phases = [{
-    key: 'p1', name: 'P', dependsOn: [], tasks: [
-      { key: 'a', name: 'A', start: '2026-10-25', end: '2026-11-01', dependsOn: [], children: [] },
-      { key: 'b', name: 'B', start: '2026-11-04', end: '2026-11-10',
-        dependsOn: [{ on: 'a', type: 'starts_after' }], children: [] },
-    ],
-  }];
-  const crit = criticalPathKeys(phases);
-  assert.ok(crit.has('a') && crit.has('b'), 'both legs of the working-day-gapped chain are critical');
-});
-
-test('criticalPathKeys: lights summary parents + the driving chain, dark the early sibling (founder)', () => {
-  // The founder's plan (video 2026-10-03): phase P1 with two summary tasks. The
-  // critical path is "1.1 (1.1.2 plus 1.1.1) and then 1.2 (1.2.1 plus 1.2.2)" — the
-  // summary bars 1.1 / 1.2 light because the work inside them drives the finish; the
-  // early-finishing sibling 1.1.3 and its parent-free self stay dark.
-  const phases = [{
-    key: 'p1', name: '1 · Pre-Construction', dependsOn: [], tasks: [
-      { key: 't11', name: '1.1 Planning', start: '2026-10-06', end: '2026-10-21', dependsOn: [], children: [
-        { key: 's112', name: 'test2', start: '2026-10-06', end: '2026-10-16', dependsOn: [], children: [] },
-        { key: 's111', name: 'test', start: '2026-10-17', end: '2026-10-21',
-          dependsOn: [{ on: 's112', type: 'starts_after' }], children: [] },
-        { key: 's113', name: 'test', start: '2026-10-06', end: '2026-10-16', dependsOn: [], children: [] },
-      ] },
-      { key: 't12', name: '1.2 Design', start: '2026-10-25', end: '2026-11-10',
-        dependsOn: [{ on: 't11', type: 'starts_after' }], children: [
-        { key: 's121', name: 'test', start: '2026-10-25', end: '2026-11-01', dependsOn: [], children: [] },
-        { key: 's122', name: 'test2', start: '2026-11-04', end: '2026-11-10',
-          dependsOn: [{ on: 's121', type: 'starts_after' }], children: [] },
-      ] },
-    ],
-  }];
-  const crit = criticalPathKeys(phases);
-  for (const k of ['s112', 's111', 's121', 's122', 't11', 't12', 'p1']) {
-    assert.ok(crit.has(k), `${k} is on the critical path`);
-  }
-  assert.ok(!crit.has('s113'), '1.1.3 finishes early and drives nothing — dark');
-});
-
-test('criticalPathKeys: a cyclic graph bails to an empty set rather than guess', () => {
-  const phases = [{
-    key: 'p1', name: 'P', dependsOn: [], tasks: [
-      { key: 't1', name: 'T1', start: '2026-03-01', end: '2026-03-05',
-        dependsOn: [{ on: 't2', type: 'starts_after' }], children: [] },
-      { key: 't2', name: 'T2', start: '2026-03-06', end: '2026-03-10',
-        dependsOn: [{ on: 't1', type: 'starts_after' }], children: [] },
-    ],
-  }];
-  assert.equal(criticalPathKeys(phases).size, 0);
+test('criticalPathKeys: the keys the server marked, phases and nested tasks alike; none marked → empty', () => {
+  const task = (key, isCritical, children = []) => ({
+    key, name: key, start: '', end: '', description: '', dependsOn: [], assigneePartyId: null, trade: '', children,
+    ...(isCritical ? { isCritical: true } : {}),
+  });
+  const phases = [
+    { key: 'p1', name: 'P1', dependsOn: [], assigneePartyId: null, trade: '', isCritical: true,
+      tasks: [task('a', true, [task('a1', true), task('a2', false)]), task('b', false)] },
+    { key: 'p2', name: 'P2', dependsOn: [], assigneePartyId: null, trade: '', tasks: [task('c', false)] },
+  ];
+  assert.deepEqual([...criticalPathKeys(phases)].sort(), ['a', 'a1', 'p1']);
+  assert.equal(criticalPathKeys([{ ...phases[1] }]).size, 0);
 });
 
 // ── Parent end-date roll-up (LINA-404, founder's ask) ─────────────────────────

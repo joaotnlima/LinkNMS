@@ -170,6 +170,8 @@ export interface StageRow {
   costCents: number | null;
   /** Current execution status (LINA-306), derived from progress history. */
   status: StageStatus;
+  /** On the critical path, as the server computed it (v2 `Task.is_critical`). */
+  isCritical?: boolean;
   children: StageRow[];
 }
 

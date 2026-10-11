@@ -229,6 +229,10 @@ describe('planning over the /api/v2 router', () => {
       assert.equal(byId[TASK_B].assignee.inherited, true);
       assert.equal(res.body.links.length, 1);
       assert.ok(res.body.health.undated_rows.some((r) => r.id === OWNER_ROW));
+      // The server's critical path (audit S4b): every row says, the undated row never is.
+      assert.ok(res.body.tasks.every((t) => typeof t.is_critical === 'boolean'));
+      assert.equal(byId[OWNER_ROW].is_critical, false);
+      assert.ok(res.body.tasks.some((t) => t.is_critical));
     });
 
     test('the owner edits everywhere', async () => {

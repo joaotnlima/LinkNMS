@@ -148,6 +148,7 @@ function toTaskDraft(
     // exactly as before (ADR-0019) — `nodeStatus` reports a missing status as
     // not_started regardless, so nothing is lost by omitting it.
     ...(row.status && row.status !== 'not_started' ? { status: row.status } : {}),
+    ...(row.isCritical ? { isCritical: true } : {}),
     // Level HYDRATE_MAX_DEPTH is the cap — anything below it is dropped (the
     // editor has no row for it, and a save would be `too_deep`).
     children: level < HYDRATE_MAX_DEPTH
@@ -174,6 +175,7 @@ export function planGridToDraft(view: PlanGridView): PhaseDraft[] {
     assigneePartyId: phase.assigneePartyId,
     trade: phase.trade ?? '',
     ...(phase.tradeCode ? { tradeCode: phase.tradeCode } : {}),
+    ...(phase.isCritical ? { isCritical: true } : {}),
     tasks: phase.children.map((t) => toTaskDraft(t, 2, view.dependenciesBySuccessor, rendered)),
   }));
 }
