@@ -1,5 +1,5 @@
 // The plan surface — cut onto `/api/v2` (LINA-320, S3 of the UI cutover, doc 22
-// §3). This is THE build landing screen: `/projects/:id` redirects here, and the
+// §3). (Since PRD-09 O-1 the build landing is `/projects/:id`, the build home.) The
 // v2 portfolio (LINA-311, S1) lists only v2 builds, so every build that reaches
 // this page is a v2 build. Reading it through the v1 plan API is what produced
 // the "could not be loaded" crash (the QA blocker handed here from LINA-365);
@@ -56,8 +56,10 @@ import { countPlanTasks, isPlanLocked } from '@/lib/phase-signoff';
 import { PlanBuildEditor } from './build/PlanBuildEditor';
 import { V2PlanGridReadOnly } from './V2PlanGridReadOnly';
 import { SignOffPanel } from '@/components/SignOffPanel';
+import { getPlanImport } from '@/lib/v2/plan-import';
 import '@/components/plan-import.css';
 import '@/components/sign-off.css';
+import '../build-home.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,10 +75,12 @@ export default async function PlanPage({
   // the same affordance the standalone `/plan/tasks/:key` permalink gives.
   // `&tab=` names the panel tab to open on (PRD-12 N-1: a "bid arrived"
   // notification lands on the task's Tender tab). Only the tabs the panel has.
-  searchParams: Promise<{ task?: string; tab?: string }>;
+  // `?imported=<importId>` (PRD-09 O-12, flow 01 screen 11): the record's stamp
+  // of the import just confirmed, read back from the planning module.
+  searchParams: Promise<{ task?: string; tab?: string; imported?: string }>;
 }) {
   const { id } = await params;
-  const { task, tab } = await searchParams;
+  const { task, tab, imported } = await searchParams;
   const openTab = tab === 'tender' || tab === 'conversation' || tab === 'files' ? tab : null;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan`);
 
@@ -106,6 +110,7 @@ export default async function PlanPage({
   // can be raised on any task at any depth (LINA-420), so the list is not just the
   // top-level phases.
   const tenderInitialRfps = myRfps.filter((r) => r.project_id === id);
+  const importStamp = imported && /^[0-9a-f-]{36}$/i.test(imported) ? await getPlanImport(imported) : null;
   const tenderTasks = collectRowOptions(grid.rows);
   const name = record?.name ?? 'This build';
   const shell = await buildShellContextV2(id, name);
@@ -177,6 +182,23 @@ export default async function PlanPage({
       section="plan"
     >
       {signOff}
+      {importStamp?.status === 'confirmed' && importStamp.project_id === id && (
+        <p className="imp-ok" role="status" style={{ margin: '12px 16px 0' }}>
+          Plan imported{importStamp.imported_by?.org_name ? ` by ${importStamp.imported_by.org_name}` : ''} ·{' '}
+          {importStamp.counts?.actions ?? 0} actions · {importStamp.counts?.sub_actions ?? 0} sub-actions
+          {importStamp.confirmed_at ? ` · ${new Date(importStamp.confirmed_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}.
+          {' '}The owner is notified; the import is on the record.
+          {importStamp.counts?.warnings ? ` ${importStamp.counts.warnings} row(s) to check.` : ''}
+        </p>
+      )}
+      {!hasPlan && authoring && (
+        <p className="bh-note" style={{ margin: '12px 16px 0' }}>
+          Already have the plan in Excel?{' '}
+          <Link href={`/projects/${id}/plan/import`}>Upload plan (Excel)</Link>
+          {' · '}
+          <a href="/plan-template.xlsx" download>Download the LinkNMS plan template (.xlsx)</a>
+        </p>
+      )}
       {authoring ? (
         <PlanBuildEditor
           projectId={id}
