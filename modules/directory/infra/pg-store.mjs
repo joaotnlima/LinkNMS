@@ -153,6 +153,33 @@ export function createDirectoryStore(pool) {
       return rows;
     },
 
+    /**
+     * The editor's list (listMyPortfolio): every entry, newest end first;
+     * keyset on (end_date or -infinity, created_at, id), all descending.
+     */
+    async listPortfolioPage(orgId, { cursor = null, limit = 50 } = {}) {
+      const { rows } = await pool.query(
+        `SELECT id, org_id, source, contract_id, title, municipality_code, typology, specialties,
+                to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(end_date, 'YYYY-MM-DD') AS end_date,
+                variance_wd, photo_document_ids, owner_consent,
+                coalesce(to_char(end_date, 'YYYY-MM-DD'), '-infinity') AS end_key,
+                to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_key
+           FROM directory.portfolio_entry
+          WHERE org_id = $1
+            AND ($2::text IS NULL
+              OR (coalesce(end_date, '-infinity'::date), created_at, id) < ($2::date, $3::timestamptz, $4::uuid))
+          ORDER BY coalesce(end_date, '-infinity'::date) DESC, created_at DESC, id DESC
+          LIMIT $5`,
+        [orgId, cursor?.e ?? null, cursor?.c ?? null, cursor?.id ?? null, limit + 1],
+      );
+      const page = rows.slice(0, limit);
+      const last = page[page.length - 1];
+      return {
+        items: page.map(({ end_key: _e, created_key: _c, ...r }) => r),
+        nextCursor: rows.length > limit ? { e: last.end_key, c: last.created_key, id: last.id } : null,
+      };
+    },
+
     async countPortfolio(orgId) {
       const { rows } = await pool.query(
         `SELECT count(*)::int AS n FROM directory.portfolio_entry

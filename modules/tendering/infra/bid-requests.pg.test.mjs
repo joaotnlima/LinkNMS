@@ -171,7 +171,15 @@ describe('PRD-04 tendering store over Postgres', { skip }, () => {
     const declined = await store.declineBidRequest({ requestId: request.id, projectId: PROJECT, actor: ACTOR });
     assert.equal(declined.status, 'declined');
     assert.equal(declined.decided_by_person_id, PERSON);
-    assert.equal((await store.listBidRequests(r.id))[0].status, 'declined');
+    assert.equal((await store.listBidRequests(r.id)).items[0].status, 'declined');
+    // Pending first, then the decided ones — one a page, nothing twice (audit S6).
+    const other = randomUUID();
+    await pool.query(`INSERT INTO identity.organization (id, clerk_org_id, kind, legal_name) VALUES ($1, $2, 'contractor', 'Outra')`, [other, `org_${other}`]);
+    await store.createBidRequest({ id: randomUUID(), rfpId: r.id, projectId: PROJECT, orgId: other, actor: ROOFER_ACTOR });
+    const first = await store.listBidRequests(r.id, { limit: 1 });
+    assert.deepEqual([first.items[0].status, Boolean(first.nextCursor)], ['pending', true]);
+    const second = await store.listBidRequests(r.id, { limit: 1, cursor: first.nextCursor });
+    assert.deepEqual([second.items[0].status, second.nextCursor], ['declined', null]);
     const { rows } = await pool.query('SELECT 1 FROM tendering.rfp_recipient WHERE rfp_id = $1', [r.id]);
     assert.equal(rows.length, 0);
   });

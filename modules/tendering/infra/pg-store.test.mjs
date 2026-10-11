@@ -295,7 +295,7 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
   });
 
   test('taskProcurementOfProject: one query, issuer-only, lane histogram, no prices (PRD-01 G-2)', async () => {
-    const rows = await store.taskProcurementOfProject(PROJECT, OWNER_ORG);
+    const { items: rows } = await store.taskProcurementOfProject(PROJECT, OWNER_ORG);
     // Two tenders root on this row (the plumbing RFP + the design RFP above):
     // one (task, RFP) pair each — the domain picks the governing one.
     assert.equal(rows.length, 2);
@@ -309,7 +309,7 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(row.awarded_recipient_name, null);
     assert.ok(!Object.keys(row).some((k) => /cents|price|total/.test(k)), 'no money on the read model');
     // A bidder on the tender is not its issuer: nothing here for it (V8).
-    assert.deepEqual(await store.taskProcurementOfProject(PROJECT, BIDDER_ORG), []);
+    assert.deepEqual(await store.taskProcurementOfProject(PROJECT, BIDDER_ORG), { items: [], nextTaskId: null });
   });
 
   test('§6.4 hard case: a failing award transaction leaves NOTHING behind', async () => {
@@ -366,7 +366,7 @@ describe('tendering store over Postgres (v2 migrations)', { skip }, () => {
   });
 
   test('taskProcurementOfProject after award: the winner is named, declined lane still counted', async () => {
-    const row = (await store.taskProcurementOfProject(PROJECT, OWNER_ORG)).find((r) => r.id === RFP);
+    const row = (await store.taskProcurementOfProject(PROJECT, OWNER_ORG)).items.find((r) => r.id === RFP);
     assert.equal(row.status, 'awarded');
     assert.deepEqual(row.lane_counts, { awarded: 1, declined: 1 });
     assert.equal(row.awarded_org_id, BIDDER_ORG);

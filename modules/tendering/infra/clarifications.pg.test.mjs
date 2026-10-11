@@ -114,9 +114,9 @@ describe('PRD-08 clarifications + tendering home over Postgres', { skip }, () =>
       `INSERT INTO tendering.clarification (id, rfp_id, question) VALUES ($1, $2, 'x')`, [randomUUID(), rfp.id],
     ), /clarification_has_asker/);
 
-    const home = (await store.projectRfps(PROJECT, OWNER_ORG)).find((r) => r.id === rfp.id);
+    const home = (await store.projectRfps(PROJECT, OWNER_ORG)).items.find((r) => r.id === rfp.id);
     assert.equal(home.open_question_count, 1);
-    const proc = (await store.taskProcurementOfProject(PROJECT, OWNER_ORG)).find((r) => r.id === rfp.id);
+    const proc = (await store.taskProcurementOfProject(PROJECT, OWNER_ORG)).items.find((r) => r.id === rfp.id);
     assert.equal(proc.open_question_count, 1);
 
     const answered = await store.answerClarification({
@@ -153,7 +153,7 @@ describe('PRD-08 clarifications + tendering home over Postgres', { skip }, () =>
       rfpId: draft.id, projectId: PROJECT, actor: ACTOR, recipients: [{ orgId: BIDDER_ORG, email: 'norte@telhados.pt' }],
     });
 
-    const issuer = await store.projectRfps(PROJECT, OWNER_ORG);
+    const { items: issuer } = await store.projectRfps(PROJECT, OWNER_ORG);
     const ids = issuer.map((r) => r.id);
     assert.ok(ids.includes(draft.id) && ids.includes(rfp.id));
     const pub = issuer.find((r) => r.id === rfp.id);
@@ -161,11 +161,23 @@ describe('PRD-08 clarifications + tendering home over Postgres', { skip }, () =>
     assert.equal(pub.covered_task_count, 2);
     assert.equal(pub.lane_counts.invited, 2);
 
-    const bidder = await store.projectRfps(PROJECT, BIDDER_ORG);
+    const { items: bidder } = await store.projectRfps(PROJECT, BIDDER_ORG);
     assert.ok(!bidder.some((r) => r.id === draft.id), 'a draft is private to its issuer');
     const mine = bidder.find((r) => r.id === rfp.id);
     assert.ok(mine.my_proposal_id, "the bidder's own lane comes back");
-    assert.deepEqual(await store.projectRfps(PROJECT, randomUUID()), []);
+    assert.deepEqual(await store.projectRfps(PROJECT, randomUUID()), { items: [], nextCursor: null });
+
+    // Keyset pages (audit S6): one row a page walks the same set, newest first, once each.
+    const walked = [];
+    let cursor = null;
+    do {
+      const page = await store.projectRfps(PROJECT, OWNER_ORG, { cursor, limit: 1 });
+      walked.push(...page.items.map((r) => r.id));
+      cursor = page.nextCursor;
+    } while (cursor);
+    assert.deepEqual(walked, ids);
+    const proc = await store.taskProcurementOfProject(PROJECT, OWNER_ORG, { limit: 1 });
+    assert.equal(new Set(proc.items.map((r) => r.task_id)).size, 1, 'a page carries every tender of its task');
   });
 
   test('PRD-12 N-1: the audience port names issuer, package roots and bidder ORGS only', async () => {

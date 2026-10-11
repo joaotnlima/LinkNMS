@@ -73,7 +73,7 @@ function fakeStore() {
       const rfp = rfps.get(r.rfp_id);
       return { ...r, project_id: rfp.project_id, issuer_org_id: rfp.issuer_org_id, rfp_status: rfp.status };
     },
-    async listBidRequests(rfpId) { return [...requests.values()].filter((r) => r.rfp_id === rfpId); },
+    async listBidRequests(rfpId) { return { items: [...requests.values()].filter((r) => r.rfp_id === rfpId), nextCursor: null }; },
     async approveBidRequest({ requestId, rfpId, orgId, email }) {
       const r = requests.get(requestId);
       if (r.status !== 'pending') return null;

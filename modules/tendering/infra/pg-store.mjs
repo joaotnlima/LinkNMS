@@ -552,7 +552,12 @@ export function createTenderingStore(pool) {
      * domain/task-procurement.mjs picks the governing RFP per task and folds
      * the counts. One query, whatever the number of tendered rows.
      */
-    async taskProcurementOfProject(projectId, issuerOrgId) {
+    /**
+     * Every (root task, RFP) pair of the issuer's tenders, for one page of
+     * tendered root tasks (keyset on task id): all of a task's tenders land on
+     * the same page, so the domain can pick the governing one.
+     */
+    async taskProcurementOfProject(projectId, issuerOrgId, { afterTaskId = null, limit = 200 } = {}) {
       const { rows } = await pool.query(
         `SELECT rr.task_id, r.id, r.title, r.status, r.created_at, r.submission_deadline,
                 r.excluded_task_ids, r.published_at, r.closed_at, r.awarded_at, r.cancelled_at,
@@ -571,10 +576,20 @@ export function createTenderingStore(pool) {
            LEFT JOIN tendering.proposal ap ON ap.id = r.awarded_proposal_id
            LEFT JOIN tendering.rfp_recipient rec ON rec.id = ap.recipient_id
           WHERE r.project_id = $1 AND r.issuer_org_id = $2
+            AND rr.task_id IN (SELECT DISTINCT xr.task_id FROM tendering.rfp_root xr
+                                 JOIN tendering.rfp x ON x.id = xr.rfp_id
+                                WHERE x.project_id = $1 AND x.issuer_org_id = $2
+                                  AND ($3::uuid IS NULL OR xr.task_id > $3::uuid)
+                                ORDER BY xr.task_id LIMIT $4)
           ORDER BY rr.task_id, r.id`,
-        [projectId, issuerOrgId],
+        [projectId, issuerOrgId, afterTaskId, limit + 1],
       );
-      return rows;
+      const taskIds = [...new Set(rows.map((r) => r.task_id))];
+      const pageIds = new Set(taskIds.slice(0, limit));
+      return {
+        items: rows.filter((r) => pageIds.has(r.task_id)),
+        nextTaskId: taskIds.length > limit ? taskIds[limit - 1] : null,
+      };
     },
 
     /** Every lane of an RFP — issuer-side internals (award, comparison). */

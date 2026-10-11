@@ -13,10 +13,19 @@
 import { requireParticipant } from './use-cases.mjs';
 import { taskProcurement } from '../domain/task-procurement.mjs';
 import { withAwardedNames } from './project-rfps.mjs';
+import { clampLimit, decodeKey, encodeKey, UUID } from './paging.mjs';
 
 /** operationId: listTaskProcurement — issuer's tenders on the project, per root task. */
-export async function listTaskProcurement({ viewer, store, orgs = null, projectId }) {
+export async function listTaskProcurement({ viewer, store, orgs = null, projectId, query = {} }) {
   await requireParticipant({ viewer, store, projectId });
-  const rows = await withAwardedNames(orgs, await store.taskProcurementOfProject(projectId, viewer.orgId));
-  return { status: 200, body: { items: taskProcurement(rows) } };
+  // Keyset on the root task id: a page carries every tender of its tasks.
+  const after = decodeKey(query?.cursor, (k) => UUID.test(k.task_id ?? ''));
+  const { items, nextTaskId } = await store.taskProcurementOfProject(projectId, viewer.orgId, {
+    afterTaskId: after?.task_id ?? null, limit: clampLimit(query?.limit, { fallback: 200 }),
+  });
+  const rows = await withAwardedNames(orgs, items);
+  return {
+    status: 200,
+    body: { items: taskProcurement(rows), next_cursor: encodeKey(nextTaskId ? { task_id: nextTaskId } : null) },
+  };
 }

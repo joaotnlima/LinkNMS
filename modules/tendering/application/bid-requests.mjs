@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { ProblemError } from '../../../platform/errors.mjs';
 import { askable, bidRequestBody, decidable } from '../domain/bid-requests.mjs';
 import { requireIssuer, requireActor, actorOf, dispatchInvite } from './use-cases.mjs';
+import { clampLimit, decodeKey, encodeKey, isTime } from './paging.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -54,13 +55,17 @@ async function askToBid({ viewer, store, rfpId, now }) {
 }
 
 /** operationId: listBidRequests — the issuer's "Asking to bid", with proof lines. */
-export async function listBidRequests({ viewer, store, directory, builds, rfpId }) {
+export async function listBidRequests({ viewer, store, directory, builds, rfpId, query = {} }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId });
-  const rows = await store.listBidRequests(rfpId);
+  const cursor = decodeKey(query?.cursor, (k) => [0, 1].includes(k.p) && isTime(k.at) && UUID.test(k.id ?? ''));
+  const { items: rows, nextCursor } = await store.listBidRequests(rfpId, { cursor, limit: clampLimit(query?.limit) });
   const proofs = await proofsFor({ directory, builds, rfp, orgIds: rows.map((r) => r.org_id) });
   return {
     status: 200,
-    body: { items: rows.map((r) => bidRequestBody(r, { issuer: true, company: proofs.get(r.org_id) ?? null })) },
+    body: {
+      items: rows.map((r) => bidRequestBody(r, { issuer: true, company: proofs.get(r.org_id) ?? null })),
+      next_cursor: encodeKey(nextCursor),
+    },
   };
 }
 

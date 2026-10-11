@@ -238,6 +238,24 @@ describe('directory store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(Number(stats.profile_views), 1);
   });
 
+  test('listMyPortfolio pages (audit S6): newest end first, undated last, keyset walks every entry once', async () => {
+    const orgId = randomUUID();
+    const add = (title, endDate) => store.insertPortfolioEntry({
+      id: randomUUID(), orgId, title, municipalityCode: null, typology: null, specialties: [], startDate: null, endDate,
+    });
+    await add('Undated', null);
+    await add('Old', '2024-05-01');
+    await add('New', '2026-02-01');
+    const titles = [];
+    let cursor = null;
+    do {
+      const page = await store.listPortfolioPage(orgId, { cursor, limit: 1 });
+      titles.push(...page.items.map((e) => e.title));
+      cursor = page.nextCursor;
+    } while (cursor);
+    assert.deepEqual(titles, ['New', 'Old', 'Undated']);
+  });
+
   test('PRD-04: the claim publishes directory.profile.claimed with the address; a claimed address is never re-seeded', async () => {
     const { rows } = await pool.query(`SELECT data, scope FROM platform.outbox WHERE type = 'directory.profile.claimed'`);
     assert.equal(rows.length, 1);

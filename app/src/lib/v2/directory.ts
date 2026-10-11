@@ -7,6 +7,7 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 
+import { allPages } from './pages';
 import { v2, V2Error } from './client';
 import type {
   SearchParams, V2Completeness, V2DirectoryProfile, V2DirectorySearch, V2ListingStats,
@@ -66,8 +67,8 @@ export function getListingStats(orgId: string): Promise<V2ListingStats | null> {
 }
 
 export async function listMyPortfolio(orgId: string): Promise<V2PortfolioEntry[]> {
-  const page = await orNull(v2<{ items: V2PortfolioEntry[] }>({ method: 'GET', path: `/organizations/${encodeURIComponent(orgId)}/portfolio` }));
-  return page?.items ?? [];
+  const items = await orNull(allPages<V2PortfolioEntry>({ path: `/organizations/${encodeURIComponent(orgId)}/portfolio` }));
+  return items ?? [];
 }
 
 export function addPortfolioEntry(orgId: string, body: Omit<V2PortfolioEntry, 'id' | 'source'>): Promise<V2PortfolioEntry> {

@@ -19,6 +19,12 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
 - **`RfpModel` speaks snake_case** (`document_id`, `file_name`, `size_bytes`, `current_version`). The camelCase fields
   (`documentId`, `fileName`, `sizeBytes`, `currentVersion`) are **deprecated**, still returned with the same values; the
   first-party app reads the snake_case ones.
+- **Cursor pagination** (`cursor`, `limit`, `next_cursor`, `422` on a foreign cursor) on `listMyPortfolio` (newest end
+  date first, undated last), `listProjectRfps` (newest first), `listTaskProcurement` (a page is a set of root tasks, each
+  with every tender on it; default 200) and `listBidRequests` (pending first, then newest). Additive: without `cursor`
+  the first page is answered.
+- **`listSpecialtyLabels`** answers the list envelope `items` (+ `next_cursor: null`); `specialties` is **deprecated**,
+  same content. New schema `SpecialtyLabel`.
 
 ## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
 

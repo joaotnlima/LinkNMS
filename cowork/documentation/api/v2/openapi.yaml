@@ -667,24 +667,30 @@ paths:
       x-clerk-permission: org:profile:manage
       parameters:
       - $ref: '#/components/parameters/orgId'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
                     items:
-                      $ref: '#/components/schemas/PortfolioEntry'
-                required:
-                - items
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/PortfolioEntry'
+                  required:
+                  - items
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
     post:
       tags:
       - Directory
@@ -1139,15 +1145,24 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  specialties:
-                    type: array
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
                     items:
-                      type: object
-                      properties:
-                        label:
-                          type: string
+                      type: array
+                      description: The labels, alphabetical. One page — the set is the built-in labels plus the
+                        organisation's own (`next_cursor` is always null).
+                      items:
+                        $ref: '#/components/schemas/SpecialtyLabel'
+                    specialties:
+                      type: array
+                      deprecated: true
+                      description: 'Deprecated: the same list as `items`.'
+                      items:
+                        $ref: '#/components/schemas/SpecialtyLabel'
+                  required:
+                  - items
         '401':
           $ref: '#/components/responses/Unauthenticated'
     post:
@@ -5017,26 +5032,32 @@ paths:
       x-relationship: 'project.participant | rfp recipient; items: issuer | recipient | bidder'
       parameters:
       - $ref: '#/components/parameters/projectId'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
                     items:
-                      $ref: '#/components/schemas/ProjectRfp'
-                required:
-                - items
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ProjectRfp'
+                  required:
+                  - items
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/task-procurement:
     parameters:
     - name: projectId
@@ -5067,26 +5088,32 @@ paths:
       x-relationship: 'project.participant; items: issuer'
       parameters:
       - $ref: '#/components/parameters/projectId'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
                     items:
-                      $ref: '#/components/schemas/TaskProcurement'
-                required:
-                - items
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/TaskProcurement'
+                  required:
+                  - items
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /rfp-links/{token}:
     parameters:
     - name: token
@@ -6342,26 +6369,32 @@ paths:
       x-relationship: issuer
       parameters:
       - $ref: '#/components/parameters/rfpId'
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
                     items:
-                      $ref: '#/components/schemas/BidRequest'
-                required:
-                - items
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/BidRequest'
+                  required:
+                  - items
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /bid-requests/{bidRequestId}:approve:
     parameters:
     - name: bidRequestId
@@ -11801,6 +11834,13 @@ components:
         reason:
           type: string
       description: Present when fields were withheld from this viewer. Withheld fields are ABSENT, never null.
+    SpecialtyLabel:
+      type: object
+      properties:
+        label:
+          type: string
+      required:
+      - label
     Page:
       type: object
       properties:

@@ -61,9 +61,10 @@ function fakeStore({ staffed = false } = {}) {
     // (root task, RFP) pair of the RFPs this org issued on the project.
     async taskProcurementOfProject(projectId, issuerOrgId) {
       calls.push([projectId, issuerOrgId]);
-      return RFPS
+      const items = RFPS
         .filter((r) => r.project_id === projectId && r.issuer_org_id === issuerOrgId)
         .flatMap((r) => r.root_task_ids.map((taskId) => ({ ...r, task_id: taskId })));
+      return { items, nextTaskId: null };
     },
   };
 }

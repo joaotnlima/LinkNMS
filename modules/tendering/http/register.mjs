@@ -84,11 +84,11 @@ export function registerTendering(router, {
   // the Tender column + Gantt band, issuer-scoped, no money.
   // The tendering home (PRD-08 H-1): every RFP the viewer can see on the
   // project, with covered tasks, bids due, n/m in and open questions — one read.
-  router.register('GET', '/projects/{projectId}/rfps', 'listProjectRfps', ({ viewer, params }) =>
-    listProjectRfps({ viewer, store, orgs, projectId: params.projectId }));
+  router.register('GET', '/projects/{projectId}/rfps', 'listProjectRfps', ({ viewer, params, query }) =>
+    listProjectRfps({ viewer, store, orgs, projectId: params.projectId, query }));
 
-  router.register('GET', '/projects/{projectId}/task-procurement', 'listTaskProcurement', ({ viewer, params }) =>
-    listTaskProcurement({ viewer, store, orgs, projectId: params.projectId }));
+  router.register('GET', '/projects/{projectId}/task-procurement', 'listTaskProcurement', ({ viewer, params, query }) =>
+    listTaskProcurement({ viewer, store, orgs, projectId: params.projectId, query }));
 
   router.register('GET', '/rfps/{rfpId}', 'getRfp', ({ viewer, params }) =>
     getRfp({ viewer, store, documentsStore, rfpId: params.rfpId }));
@@ -156,8 +156,8 @@ export function registerTendering(router, {
   router.register('POST', '/rfps/{rfpId}:apply', 'applyToOpenRfp', ({ viewer, params, headers }) =>
     applyToOpenRfp({ viewer, store, rfpId: params.rfpId, idempotencyKey: headers['idempotency-key'] ?? null }));
 
-  router.register('GET', '/rfps/{rfpId}/bid-requests', 'listBidRequests', ({ viewer, params }) =>
-    listBidRequests({ viewer, store, directory, builds, rfpId: params.rfpId }));
+  router.register('GET', '/rfps/{rfpId}/bid-requests', 'listBidRequests', ({ viewer, params, query }) =>
+    listBidRequests({ viewer, store, directory, builds, rfpId: params.rfpId, query }));
 
   router.register('POST', '/bid-requests/{bidRequestId}:approve', 'approveBidRequest', ({ viewer, params, headers }) =>
     approveBidRequest({

@@ -86,11 +86,11 @@ function fakeStore() {
     },
     async markRecipientOpened() {},
     async projectRfps(projectId, orgId) {
-      if (projectId !== PROJECT) return [];
+      if (projectId !== PROJECT) return { items: [], nextCursor: null };
       const row = { ...rfp, covers: [{ task_id: 't', name: 'Cobertura' }], covered_task_count: 3,
         lane_counts: { invited: 2, submitted: 1 }, open_question_count: 1,
         my_proposal_id: orgId === BIDDER_A ? 'p-a' : null, my_proposal_status: 'invited' };
-      return orgId === OWNER || orgId === BIDDER_A ? [row] : [];
+      return { items: orgId === OWNER || orgId === BIDDER_A ? [row] : [], nextCursor: null };
     },
   };
 }

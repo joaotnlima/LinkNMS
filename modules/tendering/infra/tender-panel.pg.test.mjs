@@ -161,7 +161,7 @@ describe('PRD-02 tendering store over Postgres', { skip }, () => {
     assert.ok(cancelled.cancelled_at);
     assert.equal(cancelled.cancel_reason, 'Owner changed the roof design');
 
-    const rows = await store.taskProcurementOfProject(PROJECT, OWNER_ORG);
+    const { items: rows } = await store.taskProcurementOfProject(PROJECT, OWNER_ORG);
     const mine = rows.find((r) => r.id === rfp.id);
     assert.equal(mine.cancel_reason, 'Owner changed the roof design');
     assert.ok(mine.cancelled_at && mine.closed_at && mine.published_at);

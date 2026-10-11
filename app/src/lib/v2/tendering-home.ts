@@ -8,6 +8,7 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 
+import { allPages } from './pages';
 import { v2, V2Error } from './client';
 import type { V2Clarification } from './tendering-view';
 import type { V2ProjectRfp } from './tendering-home-view';
@@ -18,11 +19,7 @@ import type { V2ProjectRfp } from './tendering-home-view';
  */
 export async function listProjectRfps(projectId: string): Promise<V2ProjectRfp[] | null> {
   try {
-    const body = await v2<{ items: V2ProjectRfp[] }>({
-      method: 'GET',
-      path: `/projects/${encodeURIComponent(projectId)}/rfps`,
-    });
-    return body.items ?? [];
+    return await allPages<V2ProjectRfp>({ path: `/projects/${encodeURIComponent(projectId)}/rfps` });
   } catch (err) {
     if (err instanceof V2Error) return null;
     throw err;

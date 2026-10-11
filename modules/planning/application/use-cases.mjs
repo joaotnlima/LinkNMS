@@ -2096,7 +2096,9 @@ export async function listSpecialtyLabels({ viewer, store }) {
   ].sort((a, b) => a.localeCompare(b));
   // { status, body } like every handler — the bare object answered a null body
   // through the router, so the plan picker never learned the labels.
-  return { status: 200, body: { specialties: merged.map((label) => ({ label })) } };
+  const items = merged.map((label) => ({ label }));
+  // `items` is the list envelope (doc 11); `specialties` is its deprecated twin.
+  return { status: 200, body: { items, next_cursor: null, specialties: items } };
 }
 
 export async function createSpecialtyLabel({ viewer, store, body, idempotencyKey = null }) {

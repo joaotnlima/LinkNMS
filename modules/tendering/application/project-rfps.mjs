@@ -15,10 +15,12 @@
 import { ProblemError } from '../../../platform/errors.mjs';
 import { projectRfps } from '../domain/project-rfps.mjs';
 import { requireParticipant } from './use-cases.mjs';
+import { clampLimit, decodeKey, encodeKey, isTime, UUID } from './paging.mjs';
 
 /** operationId: listProjectRfps — GET /projects/{projectId}/rfps. */
-export async function listProjectRfps({ viewer, store, orgs = null, projectId, now = new Date() }) {
+export async function listProjectRfps({ viewer, store, orgs = null, projectId, query = {}, now = new Date() }) {
   if (!viewer.orgId) throw new ProblemError('forbidden', 'pick an active organisation first', { reason: 'no_active_org' });
+  const cursor = decodeKey(query?.cursor, (k) => isTime(k.at) && UUID.test(k.id ?? ''));
   let participant = true;
   try {
     await requireParticipant({ viewer, store, projectId });
@@ -28,9 +30,13 @@ export async function listProjectRfps({ viewer, store, orgs = null, projectId, n
     if (!(err instanceof ProblemError) || err.problem.code !== 'not_found') throw err;
     participant = false;
   }
-  const rows = await withAwardedNames(orgs, await store.projectRfps(projectId, viewer.orgId));
-  if (!participant && rows.length === 0) throw new ProblemError('not_found');
-  return { status: 200, body: { items: projectRfps(rows, { viewerOrgId: viewer.orgId, now }) } };
+  const { items, nextCursor } = await store.projectRfps(projectId, viewer.orgId, { cursor, limit: clampLimit(query?.limit) });
+  if (!participant && !cursor && items.length === 0) throw new ProblemError('not_found');
+  const rows = await withAwardedNames(orgs, items);
+  return {
+    status: 200,
+    body: { items: projectRfps(rows, { viewerOrgId: viewer.orgId, now }), next_cursor: encodeKey(nextCursor) },
+  };
 }
 
 /**

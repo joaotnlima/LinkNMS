@@ -54,6 +54,7 @@ function memoryStore() {
     async buildsOnRecord() { return []; },
     async listPortfolio(orgId) { return [...portfolio.values()].filter((e) => e.org_id === orgId); },
     async countPortfolio(orgId) { return (await this.listPortfolio(orgId)).length; },
+    async listPortfolioPage(orgId) { return { items: await this.listPortfolio(orgId), nextCursor: null }; },
     async getPortfolioEntry(id) { return portfolio.get(id) ?? null; },
     async insertPortfolioEntry({ id, orgId, title, specialties }) {
       const e = { id, org_id: orgId, source: 'declared', title, specialties };

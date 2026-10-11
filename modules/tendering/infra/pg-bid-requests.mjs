@@ -51,13 +51,27 @@ export function bidRequestQueries(pool, tx) {
       return rows[0] ?? null;
     },
 
-    async listBidRequests(rfpId) {
+    /** Pending first, newest first; keyset on (pending, requested_at, id). */
+    async listBidRequests(rfpId, { cursor = null, limit = 50 } = {}) {
       const { rows } = await pool.query(
-        `SELECT * FROM tendering.bid_request WHERE rfp_id = $1
-          ORDER BY (status = 'pending') DESC, requested_at DESC, id`,
-        [rfpId],
+        `SELECT *, (status = 'pending')::int AS pending_rank,
+                to_char(requested_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS requested_key
+           FROM tendering.bid_request
+          WHERE rfp_id = $1
+            AND ($2::int IS NULL
+              OR (status = 'pending')::int < $2::int
+              OR ((status = 'pending')::int = $2::int
+                  AND (requested_at < $3::timestamptz OR (requested_at = $3::timestamptz AND id > $4::uuid))))
+          ORDER BY (status = 'pending') DESC, requested_at DESC, id
+          LIMIT $5`,
+        [rfpId, cursor?.p ?? null, cursor?.at ?? null, cursor?.id ?? null, limit + 1],
       );
-      return rows;
+      const page = rows.slice(0, limit);
+      const last = page[page.length - 1];
+      return {
+        items: page,
+        nextCursor: rows.length > limit ? { p: last.pending_rank, at: last.requested_key, id: last.id } : null,
+      };
     },
 
     /** The org's requests on the given RFPs (the open-requests read). */
@@ -209,6 +223,7 @@ export function bidRequestQueries(pool, tx) {
                                WHERE rec.rfp_id = r.id AND rec.org_id = $1)
          ), matched AS (
            SELECT s.id, s.title, s.level, s.project_id, s.specialty_codes, s.submission_deadline, s.task_count,
+                  to_char(s.submission_deadline AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS deadline_key,
                   round(s.dist::numeric, 1) AS distance_km,
                   coalesce(round(s.dist::numeric, 1), 1e9) AS sort_km
              FROM scored s
@@ -228,7 +243,7 @@ export function bidRequestQueries(pool, tx) {
       return {
         items: page,
         nextCursor: rows.length > limit
-          ? { k: String(last.sort_km), d: last.submission_deadline.toISOString(), id: last.id } : null,
+          ? { k: String(last.sort_km), d: last.deadline_key, id: last.id } : null,
       };
     },
 

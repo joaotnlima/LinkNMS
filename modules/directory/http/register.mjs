@@ -45,8 +45,8 @@ export function registerDirectory(router, { store, builds, mail }) {
   router.register('GET', '/organizations/{orgId}/listing-stats', 'getListingStats', ({ viewer, params }) =>
     getListingStats({ viewer, store, orgId: params.orgId }));
 
-  router.register('GET', '/organizations/{orgId}/portfolio', 'listMyPortfolio', ({ viewer, params }) =>
-    listMyPortfolio({ viewer, store, orgId: params.orgId }));
+  router.register('GET', '/organizations/{orgId}/portfolio', 'listMyPortfolio', ({ viewer, params, query }) =>
+    listMyPortfolio({ viewer, store, orgId: params.orgId, query }));
 
   router.register('POST', '/organizations/{orgId}/portfolio', 'addPortfolioEntry', ({ viewer, params, body, headers }) =>
     addPortfolioEntry({ viewer, store, orgId: params.orgId, body, idempotencyKey: headers['idempotency-key'] }));

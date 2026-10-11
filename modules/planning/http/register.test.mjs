@@ -739,8 +739,9 @@ describe('specialty_code — the directory taxonomy on a row (PRD-03 R-2)', () =
     store.listSpecialties = async () => ['Telhados de xisto'];
     const res = await dispatch('GET', '/specialty-labels', viewer(GC_ORG));
     assert.equal(res.status, 200);
-    assert.ok(res.body.specialties.some((s) => s.label === 'Roofing'));
-    assert.ok(res.body.specialties.some((s) => s.label === 'Telhados de xisto'));
+    assert.ok(res.body.items.some((s) => s.label === 'Roofing'));
+    assert.ok(res.body.items.some((s) => s.label === 'Telhados de xisto'));
+    assert.deepEqual(res.body.specialties, res.body.items); // deprecated twin (audit S6)
     assert.equal(router.match('GET', '/specialties'), null);
   });
 });

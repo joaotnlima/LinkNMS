@@ -9,6 +9,7 @@
 // the server's reason.
 import 'server-only';
 
+import { allPages } from './pages';
 import { v2, V2Error } from './client';
 import { searchCompanies } from './directory';
 import type { V2DirectoryCard } from './directory-view';
@@ -50,11 +51,7 @@ export async function addCompanies(rfpId: string, companyIds: string[]): Promise
 
 /** GET /rfps/{id}/bid-requests — the issuer's "Asking to bid" (X-5). */
 export async function listBidRequests(rfpId: string): Promise<V2BidRequest[]> {
-  const res = await orEmpty(
-    v2<{ items: V2BidRequest[] }>({ method: 'GET', path: `/rfps/${encodeURIComponent(rfpId)}/bid-requests` }),
-    { items: [] },
-  );
-  return res.items ?? [];
+  return orEmpty(allPages<V2BidRequest>({ path: `/rfps/${encodeURIComponent(rfpId)}/bid-requests` }), []);
 }
 
 export function approveBidRequest(id: string): Promise<V2BidRequest> {

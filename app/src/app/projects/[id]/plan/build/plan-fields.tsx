@@ -24,6 +24,8 @@ import { createPortal } from 'react-dom';
 import { PartyAvatar, UnassignedAvatar } from '@/components/PartyAvatar';
 import { partyOf, roleWord, type PartyRef } from '@/lib/party-display';
 import type { StageStatus } from '@/lib/plan-authoring';
+import { loadSpecialtyCatalogAction, rememberSpecialtyLabelAction } from '@/lib/v2/specialty-labels-actions';
+import type { TaxonomyOption } from '@/lib/v2/specialty-labels';
 
 /** The member index the grid/editor already build with `partyIndex`. */
 type PartyIndex = Map<string, PartyRef>;
@@ -369,7 +371,7 @@ export function OwnerField({
 // a failure never loses the typed label (the stage already holds it); the picker
 // just does not learn it.
 /** A directory taxonomy entry as the picker shows it (PRD-03 R-2). */
-export type TaxonomyOption = { code: string; label: string };
+export type { TaxonomyOption };
 
 export function useSpecialtyCatalog(): {
   specialties: string[]; taxonomy: TaxonomyOption[]; remember: (label: string) => void;
@@ -378,25 +380,16 @@ export function useSpecialtyCatalog(): {
   const [taxonomy, setTaxonomy] = useState<TaxonomyOption[]>([]);
   useEffect(() => {
     let live = true;
-    fetch('/api/v2/specialty-labels', { headers: { accept: 'application/json' } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { specialties?: Array<{ label: string }> } | null) => {
-        if (live && d?.specialties) setSpecialties(d.specialties.map((s) => s.label));
+    // The labels (built-in ∪ the org's own) and the PRD-03 R-2 taxonomy, through
+    // the lib/v2 clients. Picking a taxonomy entry sets the row's specialty_code
+    // as well as its label; free text stays possible.
+    loadSpecialtyCatalogAction()
+      .then((d) => {
+        if (!live) return;
+        setSpecialties(d.specialties);
+        setTaxonomy(d.taxonomy);
       })
       .catch(() => { /* picker is enhancement-only; the free-form input stands */ });
-    // PRD-03 R-2: the directory taxonomy (public, two levels). Picking one sets
-    // the row's specialty_code as well as its label; free text stays possible.
-    fetch('/api/v2/specialties?limit=200', { headers: { accept: 'application/json' } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { items?: Array<{ code: string; name_en: string; parent_code: string | null }> } | null) => {
-        if (!live || !d?.items) return;
-        const names = new Map(d.items.map((s) => [s.code, s.name_en]));
-        setTaxonomy(d.items.map((s) => ({
-          code: s.code,
-          label: s.parent_code ? `${names.get(s.parent_code) ?? s.parent_code} › ${s.name_en}` : s.name_en,
-        })));
-      })
-      .catch(() => { /* enhancement-only */ });
     return () => { live = false; };
   }, []);
 
@@ -407,11 +400,7 @@ export function useSpecialtyCatalog(): {
       if (prev.some((s) => s.toLowerCase() === label.toLowerCase())) return prev;
       return [...prev, label].sort((a, b) => a.localeCompare(b));
     });
-    fetch('/api/v2/specialty-labels', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ label }),
-    }).catch(() => { /* enhancement-only */ });
+    rememberSpecialtyLabelAction(label).catch(() => { /* enhancement-only */ });
   }, []);
 
   return { specialties, taxonomy, remember };

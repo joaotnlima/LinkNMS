@@ -75,10 +75,30 @@ export async function getListingStats({ viewer, store, orgId }) {
 }
 
 /** operationId: listMyPortfolio — every entry, listed or not (the editor's view). */
-export async function listMyPortfolio({ viewer, store, orgId }) {
+export async function listMyPortfolio({ viewer, store, orgId, query = {} }) {
   requireOwnProfileOrg(viewer, orgId);
-  const items = await store.listPortfolio(orgId, { all: true });
-  return { status: 200, body: { items: items.map(portfolioBody) } };
+  const cursor = decodePortfolioCursor(query?.cursor);
+  const n = Number(query?.limit ?? 50);
+  const limit = Number.isInteger(n) && n >= 1 ? Math.min(n, 200) : 50;
+  const { items, nextCursor } = await store.listPortfolioPage(orgId, { cursor, limit });
+  return {
+    status: 200,
+    body: {
+      items: items.map(portfolioBody),
+      next_cursor: nextCursor ? Buffer.from(JSON.stringify(nextCursor)).toString('base64url') : null,
+    },
+  };
+}
+
+function decodePortfolioCursor(raw) {
+  if (!raw) return null;
+  let c = null;
+  try { c = JSON.parse(Buffer.from(String(raw), 'base64url').toString()); } catch { c = null; }
+  const okEnd = c && (c.e === '-infinity' || /^\d{4}-\d{2}-\d{2}$/.test(c.e ?? ''));
+  if (!okEnd || Number.isNaN(Date.parse(c.c ?? '')) || !UUID.test(c.id ?? '')) {
+    throw new ProblemError('validation_failed', null, { errors: { cursor: 'not a cursor from this list' } });
+  }
+  return { e: c.e, c: c.c, id: c.id };
 }
 
 /** operationId: addPortfolioEntry — a stated (`declared`) entry; no photos yet. */

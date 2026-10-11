@@ -112,9 +112,9 @@ export function clarificationQueries(pool, tx) {
      * questions, the winner, and the org's own lane. The domain decides which
      * of these a bidder may read (V8); the SQL only decides which RFPs.
      */
-    async projectRfps(projectId, orgId) {
+    async projectRfps(projectId, orgId, { cursor = null, limit = 50 } = {}) {
       const { rows } = await pool.query(
-        `SELECT r.*,
+        `SELECT r.*, to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_key,
                 coalesce((SELECT array_agg(x.task_id ORDER BY x.task_id) FROM tendering.rfp_root x
                            WHERE x.rfp_id = r.id), '{}') AS root_task_ids,
                 coalesce((SELECT jsonb_agg(jsonb_build_object('task_id', pr.task_id, 'name', pr.name)
@@ -145,10 +145,14 @@ export function clarificationQueries(pool, tx) {
                   AND (EXISTS (SELECT 1 FROM tendering.rfp_recipient rec
                                 WHERE rec.rfp_id = r.id AND rec.org_id = $2)
                     OR mine.id IS NOT NULL)))
-          ORDER BY r.created_at DESC, r.id DESC`,
-        [projectId, orgId],
+            AND ($3::timestamptz IS NULL OR (r.created_at, r.id) < ($3::timestamptz, $4::uuid))
+          ORDER BY r.created_at DESC, r.id DESC
+          LIMIT $5`,
+        [projectId, orgId, cursor?.at ?? null, cursor?.id ?? null, limit + 1],
       );
-      return rows;
+      const page = rows.slice(0, limit);
+      const last = page[page.length - 1];
+      return { items: page, nextCursor: rows.length > limit ? { at: last.created_key, id: last.id } : null };
     },
   };
 }

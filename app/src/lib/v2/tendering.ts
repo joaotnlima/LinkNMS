@@ -26,6 +26,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 
 import type { ProcurementRfp } from '../plan-gantt';
+import { allPages } from './pages';
 import { v2, V2Error } from './client';
 import type { V2Me } from './profile-view';
 import type {
@@ -248,10 +249,8 @@ export async function getProcurementWindows(
 ): Promise<Record<string, ProcurementRfp>> {
   // No active org is the server's 403 (no issuer to scope to) → {} below.
   try {
-    const res = await v2<{ items?: V2TaskProcurement[] }>({
-      method: 'GET', path: `/projects/${encodeURIComponent(projectId)}/task-procurement`,
-    });
-    return toProcurementWindows(res.items ?? []);
+    const items = await allPages<V2TaskProcurement>({ path: `/projects/${encodeURIComponent(projectId)}/task-procurement` });
+    return toProcurementWindows(items);
   } catch (err) {
     if (err instanceof V2Error) return {};
     throw err;
