@@ -88,6 +88,9 @@ before any contract — edit scope still comes only from a contract (D-33).
 **project_calendar** — `PK(project_id)`: `work_days smallint[]` (ISO weekday), `closures daterange[]`;
 holidays are resolved from a shared `platform.holiday(date, scope: national|municipality_code)` table.
 
+**share_link** — `project_id, created_by_person_id, audience, document_ids uuid[], task_ids uuid[], token_hash (sha256, UNIQUE; the token is never stored), expires_at, revoked_at?, created_at (0029), revoked_by_person_id? (0029, CHECK ⇒ revoked_at)`. The scope is frozen at creation: a trigger refuses any UPDATE but the one revocation, and every DELETE (0029, gap S1).
+**share_link_access** (0029, PRD-12 N-12) — `id, share_link_id (FK), project_id, at, action (view/download), document_id? (CHECK ⇔ download), ip?, user_agent?` — append-only (`record.forbid_mutation`); every access the public surface served. Address and user agent stay here (owner-only read), never in the ledger.
+
 ### `tendering`
 
 **rfp**
@@ -317,8 +320,8 @@ A deliverable's state is its latest submission's (`not_yet` when none).
 
 ### `quality`
 **verification_request**: `task_id, requested_by_org_id, criteria_snapshot, status (pending/accepted/rejected), decided_by_org_id (CHECK ≠ requested_by_org_id), decided_by_person_id, reason, decided_at`.
-**nonconformity**: `project_id, task_id?, contract_id?, raised_by_org_id, assigned_to_org_id, severity (minor/major/critical), description, status (open/assigned/fixed/closed/rejected_fix)`.
-**inspection**: `project_id, inspector_org_id, date, checklist jsonb, findings text, task_ids uuid[]`.
+**nonconformity**: `project_id, task_id?, contract_id?, raised_by_org_id, assigned_to_org_id, severity (minor/major/critical), description, status (open/assigned/fixed/closed/rejected_fix)`; 0027 (PRD-12 N-3): `location_id?` (bare ref to project.location), `raised_at`, `status_changed_at?`, `last_note?` (the latest transition's note; the ledger keeps every one).
+**inspection**: `project_id, inspector_org_id, date, checklist jsonb, findings text, task_ids uuid[]`; 0027 (N-4): `location_ids uuid[]`, `recorded_at`.
 
 ### `documents`
 **document**: `scope_type, scope_id, kind (drawing/bim/photo/spec/contract_doc/invoice/other), title, share_with_ancestors bool, current_version int`.
@@ -333,7 +336,7 @@ A deliverable's state is its latest submission's (`not_yet` when none).
 
 ### `collaboration`
 **thread** — `UNIQUE(object_type, object_id)`: `project_id?`.
-**comment**: `thread_id, author_person_id, author_org_id, kind (note/question/answer), body, mentions uuid[], attachment_document_ids uuid[] (0005), addressee_org_id (questions), question_status (open/answered/resolved), answers_comment_id, edited_until, deleted_at`.
+**comment**: `thread_id, author_person_id, author_org_id, kind (note/question/answer), body, mentions uuid[], attachment_document_ids uuid[] (0005), addressee_org_id (questions), question_status (open/answered/resolved), answers_comment_id, edited_until, deleted_at`; 0028 (PRD-12 N-5): `topic (clarification/design_change/scope_gap; CHECK set ⇔ question)`, `decision? (approved/rejected; CHECK only on an answered design_change)`.
 **meeting_minute**: `project_id, date, attendees uuid[] (orgs), status (draft/circulated/acknowledged), created_by_org_id?, created_by_person_id? (0005 — circulate is author-only)`; **minute_item**: `minute_id, text, owner_org_id, due_date, object_type?, object_id?`; **minute_ack**: `minute_id, org_id, person_id, at`.
 **notification**: `person_id, event_id, category, title, object_ref, read_at` — `UNIQUE(person_id, event_id) WHERE event_id IS NOT NULL` (0005: at-least-once outbox dedupe; digest rows aggregate a window under the first event's id). **notification_preference**: `person_id, category, channel, enabled`.
 
