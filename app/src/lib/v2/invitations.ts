@@ -14,6 +14,7 @@
 import 'server-only';
 
 import { v2 } from './client';
+import { inviteRoleLabel } from './participants-view';
 
 /**
  * The v2 participation capacity an invitation carries (project.project_invitation
@@ -22,7 +23,7 @@ import { v2 } from './client';
  * `counterparty`, a concept the v2 model expresses through contracts, not
  * invitations.
  */
-export type InviteCapacity = 'design' | 'inspection' | 'safety' | 'other';
+export type InviteCapacity = 'contractor' | 'design' | 'inspection' | 'safety' | 'other';
 
 /**
  * The unauthenticated preview behind the Band B accept deep link (M6/D6). Served
@@ -33,6 +34,12 @@ export interface InvitationPreview {
   projectName: string | null;
   invitedByName: string | null;
   capacity: InviteCapacity;
+  /** PRD-09 O-5: the trade the invitation names (its taxonomy label), if any. */
+  specialtyName: string | null;
+  inviteeName: string | null;
+  scopeNote: string | null;
+  /** The role as the invitee reads it — "Electrical contractor", "General contractor", "Inspector". */
+  roleLabel: string;
 }
 
 // The wire shape the backend returns (snake_case, platform convention).
@@ -40,6 +47,10 @@ interface InvitationPreviewBody {
   project_name: string | null;
   invited_by_name: string | null;
   capacity: InviteCapacity;
+  specialty_code?: string;
+  specialty_name?: string;
+  invitee_name?: string;
+  scope_note?: string;
 }
 
 const enc = (token: string) => encodeURIComponent(token);
@@ -60,6 +71,10 @@ export async function getInvitationPreview(token: string): Promise<InvitationPre
     projectName: body.project_name,
     invitedByName: body.invited_by_name,
     capacity: body.capacity,
+    specialtyName: body.specialty_name ?? null,
+    inviteeName: body.invitee_name ?? null,
+    scopeNote: body.scope_note ?? null,
+    roleLabel: inviteRoleLabel(body.capacity, body.specialty_name ?? null),
   };
 }
 
@@ -76,12 +91,7 @@ export async function acceptInvitation(token: string): Promise<{ projectId: stri
   return { projectId: body.project_id };
 }
 
-/** Human label for an invitation capacity — the accept landing's "Your role" row. */
+/** Human label for an invitation capacity alone (no trade known). */
 export function capacityLabel(capacity: InviteCapacity): string {
-  switch (capacity) {
-    case 'design': return 'Design consultant';
-    case 'inspection': return 'Inspector';
-    case 'safety': return 'Health & safety';
-    default: return 'Consultant';
-  }
+  return inviteRoleLabel(capacity, null);
 }

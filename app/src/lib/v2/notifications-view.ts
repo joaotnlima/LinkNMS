@@ -5,7 +5,7 @@
 // link is `object_ref.url`); this only arranges what came back for the screen.
 
 export type NotificationCategory =
-  | 'bids' | 'tendering' | 'variations' | 'invitations' | 'questions' | 'quality' | 'files';
+  | 'bids' | 'tendering' | 'variations' | 'invitations' | 'questions' | 'quality' | 'files' | 'plan';
 
 export interface V2Notification {
   id: string;
@@ -37,6 +37,7 @@ export const CATEGORY_LABEL: Record<NotificationCategory, { label: string; hint:
   questions: { label: 'Questions', hint: 'Questions addressed to you and their answers' },
   quality: { label: 'Quality', hint: 'Non-conformities assigned to your company' },
   files: { label: 'Files & deliverables', hint: 'Deliverables to review or reviewed, new versions of files on your tasks' },
+  plan: { label: 'Plan imported', hint: 'Your contractor brought the plan into your build' },
 };
 
 export function categoryLabel(category: string): string {

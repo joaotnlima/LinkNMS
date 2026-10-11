@@ -7,14 +7,15 @@
 // THE ROLE IS THE INVITATION'S, NOT A GUESS (PRD-01 bug batch). This page used to
 // promise "you will join as the general contractor" to everyone. When the code
 // arrives in the link (?token=), the same unauthenticated preview the deep-link
-// landing uses names the capacity the invitation actually carries; with no code
-// yet (typed by hand) the copy stays role-neutral rather than inventing one.
+// landing uses names the role the invitation actually carries — its trade when
+// it names one ("join as Electrical contractor", PRD-09 O-5); with no code yet
+// (typed by hand) the copy stays role-neutral rather than inventing one.
 import { redirect } from 'next/navigation';
 import { TopBar } from '@/components/chrome';
 import { ActionForm } from '@/components/ActionForm';
 import { acceptInviteAction } from '@/app/actions';
 import { isSignedIn } from '@/server/session';
-import { getInvitationPreview, capacityLabel } from '@/lib/v2/invitations';
+import { getInvitationPreview } from '@/lib/v2/invitations';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +37,7 @@ export default async function AcceptInvitationPage({
   // POST re-verifies the token regardless (invitations.ts).
   const preview = token ? await getInvitationPreview(token).catch(() => null) : null;
   const joinAs = preview
-    ? `You will join${preview.projectName ? ` ${preview.projectName}` : ' the build'} — your role: ${capacityLabel(preview.capacity)}.`
+    ? `You will join${preview.projectName ? ` ${preview.projectName}` : ' the build'} as ${preview.roleLabel}.`
     : 'You will join in the role your invitation names.';
 
   return (

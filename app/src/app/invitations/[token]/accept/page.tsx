@@ -29,7 +29,7 @@ import Link from 'next/link';
 import { ActionForm } from '@/components/ActionForm';
 import { acceptInviteAction } from '@/app/actions';
 import { isSignedIn } from '@/server/session';
-import { getInvitationPreview, capacityLabel } from '@/lib/v2/invitations';
+import { getInvitationPreview } from '@/lib/v2/invitations';
 import { AcceptInviteAuth } from './AcceptInviteAuth';
 import '../../../build-wizard.css';
 
@@ -91,10 +91,16 @@ export default async function AcceptDeepLinkPage({ params }: { params: Promise<{
               <dd>
                 <span className={`tag ${preview.capacity}`}>
                   <span className="pd" />
-                  {capacityLabel(preview.capacity)}
+                  {preview.roleLabel}
                 </span>
               </dd>
             </div>
+            {preview.scopeNote && (
+              <div className="bw-invite-row">
+                <dt>Scope</dt>
+                <dd>{preview.scopeNote}</dd>
+              </div>
+            )}
           </dl>
         )}
 

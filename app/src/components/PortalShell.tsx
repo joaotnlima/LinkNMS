@@ -36,7 +36,7 @@ export type BuildRef = { id: string; name: string; href?: string };
 
 // The build-scoped nav sections, in rail order. `section` selects which is
 // highlighted in BUILD mode; PORTFOLIO mode passes none.
-export type BuildSection = 'overview' | 'plan' | 'schedule' | 'money' | 'history' | 'documents' | 'model';
+export type BuildSection = 'overview' | 'plan' | 'participants' | 'schedule' | 'money' | 'history' | 'documents' | 'model';
 
 // Section → the route it opens, relative to the build. `documents` has no
 // surface yet (kept dimmed, never a link — a tab that 404s is worse than one
@@ -49,6 +49,9 @@ function sectionHref(buildId: string, s: BuildSection): string | null {
       return `/projects/${buildId}`;
     case 'plan':
       return `/projects/${buildId}/plan`;
+    case 'participants':
+      // PRD-09 O-3: parties, roles, invitations (absorbs v1 /invite).
+      return `/projects/${buildId}/participants`;
     case 'schedule':
       return `/projects/${buildId}/record`;
     case 'money':
@@ -67,6 +70,7 @@ function sectionHref(buildId: string, s: BuildSection): string | null {
 const SECTION_LABEL: Record<BuildSection, string> = {
   overview: 'Overview',
   plan: 'Plan',
+  participants: 'Participants',
   schedule: 'Schedule',
   money: 'Money',
   history: 'History',
@@ -333,6 +337,7 @@ function BuildNav({ buildId, section }: { buildId: string; section?: BuildSectio
     <>
       {item('overview', <HouseIcon />)}
       {item('plan', <CalendarIcon />)}
+      {item('participants', <PeopleIcon />)}
       {item('documents', <FolderIcon />)}
       {item('model', <CubeIcon />)}
     </>
@@ -349,6 +354,16 @@ function HouseMark() {
     <svg viewBox="0 0 24 24" role="presentation">
       <path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
       <path d="M9 21v-6h6v6" />
+    </svg>
+  );
+}
+
+function PeopleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" role="presentation">
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5" />
+      <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.9.7 3.2 2.4 3.5 5.2" />
     </svg>
   );
 }
