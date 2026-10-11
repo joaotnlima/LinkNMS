@@ -85,6 +85,7 @@ import type { PlanSlipView } from '@/lib/v2/slip-view';
 import { SlipHeader } from '@/components/SlipHeader';
 import { ChangesPanel } from '@/components/ChangesPanel';
 import { TaskSlipSection, type PendingMove } from '@/components/TaskSlipSection';
+import { TaskRunSection } from '@/components/TaskRunSection';
 import '@/components/plan-build.css';
 
 // ── "Scheduling links" (LINA-233; typed by ADR-0020 / LINA-253) ─────────────
@@ -1559,6 +1560,12 @@ export function PlanBuildEditor({
                 onCommitted={reloadAfterServerWrite}
                 onChanged={refreshSlip}
               />
+            ) : null}
+
+            {/* PRD-10 E-5/E-6/E-9: what the task waits on (start with a reason when
+                it jumps the queue), its acceptance checklist, its daily-log entries. */}
+            {isTaskRow && active && workspaceTaskId && (active.children ?? []).length === 0 ? (
+              <TaskRunSection key={workspaceTaskId} taskId={workspaceTaskId} onChanged={reloadAfterServerWrite} />
             ) : null}
 
             {isTaskRow && active ? (

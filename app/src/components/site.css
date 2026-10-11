@@ -1,0 +1,52 @@
+/* PRD-10 — running the plan: baseline selector, the task panel's Run block,
+   the daily log (phone-first) and the site calendar. Theme tokens only. */
+.ste-planbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin: 12px 16px 0; }
+.ste-baseline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+.ste-baseline select { max-width: 100%; min-height: 32px; border: 1px solid var(--outline); border-radius: 6px; background: var(--raised); color: inherit; padding: 4px 8px; }
+.ste-links { display: flex; gap: 12px; font-size: 13px; }
+.ste-quiet { color: var(--muted); font-size: 12px; }
+.ste-error { color: var(--bad-fg); font-size: 12px; font-weight: 600; margin: 4px 0; }
+.ste-run { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.ste-wait, .ste-check, .ste-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.ste-wait .is-open { color: var(--warn-fg); }
+.ste-wait .is-met { color: var(--muted); }
+.ste-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.ste-log time { color: var(--muted); }
+
+/* the site pages */
+.ste-page { max-width: 760px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.ste-page h1 { font-size: 20px; margin: 0; }
+.ste-page h2 { font-size: 15px; margin: 0 0 6px; }
+.ste-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.ste-card { border: 1px solid var(--outline); border-radius: 8px; background: var(--raised); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.ste-days { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ste-days a { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; padding: 10px 12px; border: 1px solid var(--outline); border-radius: 8px; color: inherit; text-decoration: none; }
+.ste-days a.is-on { border-color: var(--owner-fg); background: var(--owner-muted); }
+.ste-offline { border-radius: 8px; padding: 10px 12px; background: var(--warn-bg); color: var(--warn-fg); font-size: 13px; font-weight: 600; }
+.ste-ok { border-radius: 8px; padding: 10px 12px; background: var(--ok-bg); color: var(--ok-fg); font-size: 13px; }
+
+/* capture: big targets for a thumb on site */
+.ste-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ste-row > label { flex: 1 1 140px; font-size: 14px; }
+.ste-num { width: 88px; min-height: 44px; font-size: 16px; border: 1px solid var(--outline); border-radius: 8px; padding: 6px 10px; background: var(--raised); color: inherit; }
+.ste-field { width: 100%; min-height: 44px; font-size: 16px; border: 1px solid var(--outline); border-radius: 8px; padding: 8px 10px; background: var(--raised); color: inherit; box-sizing: border-box; }
+.ste-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ste-chip { min-height: 40px; padding: 6px 12px; border-radius: 20px; border: 1px solid var(--outline); background: var(--raised); color: inherit; font-size: 14px; }
+.ste-chip.is-on { border-color: var(--owner-fg); background: var(--owner-muted); color: var(--owner-fg); font-weight: 600; }
+.ste-camera { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 8px 16px; border: 1px dashed var(--outline); border-radius: 8px; cursor: pointer; font-size: 15px; }
+.ste-camera input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.ste-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.ste-photo { border: 1px solid var(--outline); border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.ste-photo img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; background: var(--sunken); }
+.ste-send { position: sticky; bottom: 0; padding: 12px 0; background: var(--bg, var(--raised)); }
+.ste-send .btn { width: 100%; min-height: 48px; font-size: 16px; }
+
+/* site calendar */
+.ste-cal { overflow-x: auto; border: 1px solid var(--outline); border-radius: 8px; }
+.ste-cal table { border-collapse: collapse; font-size: 12px; min-width: 100%; }
+.ste-cal th, .ste-cal td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; white-space: nowrap; }
+.ste-cal td.is-on { background: var(--owner-muted); }
+.ste-cal td.is-clash { background: var(--warn-bg); color: var(--warn-fg); font-weight: 700; }
+.ste-cal th.ste-place { background: var(--sunken); }
+.ste-overlaps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.ste-overlaps li { border-left: 3px solid var(--warn-fg); padding: 4px 8px; background: var(--warn-bg); border-radius: 4px; }

@@ -52,6 +52,8 @@ export interface V2ScheduleSlipWire {
   tasks?: V2TaskSlipWire[];
   handover?: V2Handover;
   changes?: { total: number; unseen: number };
+  /** PRD-10 E-1: the baseline chosen with ?baseline= (absent otherwise). */
+  compared_to?: { baseline_id: string; version: number };
 }
 
 export interface V2Variation {
@@ -115,6 +117,8 @@ export interface PlanSlipView {
   changes: { total: number; unseen: number };
   /** Organisation names the read carries (row owners), for "moved by TN". */
   orgNames: Record<string, string>;
+  /** PRD-10 E-1: the baseline the plan is drawn against, when one was chosen. */
+  comparedTo?: string | null;
 }
 
 export const EMPTY_SLIP: PlanSlipView = {
@@ -185,6 +189,7 @@ export function toPlanSlipView(view: V2ScheduleSlipWire): PlanSlipView {
       : null,
     changes: { total: view.changes?.total ?? 0, unseen: view.changes?.unseen ?? 0 },
     orgNames,
+    comparedTo: view.compared_to?.baseline_id ?? null,
   };
 }
 

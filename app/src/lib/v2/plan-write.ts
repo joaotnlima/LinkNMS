@@ -76,6 +76,10 @@ export async function reportProgressV2(
     return { ok: true };
   } catch (err) {
     if (err instanceof V2Error) {
+      // PRD-10 E-5: the picker cannot carry a reason — the task panel's Run block can.
+      if (err.problem?.reason === 'predecessors_open') {
+        return { ok: false, code: err.code, message: 'This task waits on tasks that are not finished yet. Open the task and use “Start anyway” with a reason.' };
+      }
       return { ok: false, code: err.code, message: err.message };
     }
     throw err;

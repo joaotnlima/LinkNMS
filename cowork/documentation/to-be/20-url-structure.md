@@ -114,7 +114,7 @@ accept screen; the verb segment adds nothing (accepting stays a POST).
 | `/projects/{id}` | project overview / brief (no longer a redirect) |
 | `/projects/{id}/locations` | locations (Project) |
 | `/projects/{id}/participants` | participants + invite (Project/IAM) — absorbs `/invite` |
-| `/projects/{id}/plan` | the Gantt (Planning & Execution); `?compose=`, `?task=` open panels |
+| `/projects/{id}/plan` | the Gantt (Planning & Execution); `?compose=`, `?task=` open panels; `?baseline=` draws a chosen baseline (PRD-10 E-1) |
 | `/projects/{id}/plan/tasks/{taskId}` | task workspace (comments, attachments, progress) |
 | `/projects/{id}/plan/baselines` | baselines & variations |
 | `/projects/{id}/tendering` | tendering home: RFPs the viewer can see |
@@ -130,6 +130,7 @@ accept screen; the verb segment adds nothing (accepting stays a POST).
 | `/projects/{id}/quality` | verifications, non-conformities, inspections (Quality) |
 | `/projects/{id}/documents` | files, versions, photos (Documents); `?folder=`/`?type=` filter |
 | `/projects/{id}/model` | the build's shared IFC model (Documents, PRD-07): `?task=` isolates a task's elements, `?version=` opens a version, `?tab=versions` the history; record-side edits only (D-45) |
+| `/projects/{id}/site` | the daily log by day (Planning, PRD-10 E-9): `?date=` opens a day; `/site/log` the phone-first capture (E-7, E-8; no offline, D-14); `/site/calendar` who is on site when, with overlaps (E-10, E-11), `?from=&to=` |
 | `/projects/{id}/questions` | threads / Q&A / meeting minutes (Collaboration) |
 | `/projects/{id}/history` | the scoped ledger view (Record) — absorbs `/record` + `/audit` + `/decisions` |
 

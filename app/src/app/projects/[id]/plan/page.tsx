@@ -57,6 +57,9 @@ import { PlanBuildEditor } from './build/PlanBuildEditor';
 import { V2PlanGridReadOnly } from './V2PlanGridReadOnly';
 import { SignOffPanel } from '@/components/SignOffPanel';
 import { getPlanImport } from '@/lib/v2/plan-import';
+import { listBaselinesV2 } from '@/lib/v2/execution';
+import { toBaselineOptions } from '@/lib/v2/execution-view';
+import { BaselineSelector } from '@/components/BaselineSelector';
 import '@/components/plan-import.css';
 import '@/components/sign-off.css';
 import '../build-home.css';
@@ -77,10 +80,12 @@ export default async function PlanPage({
   // notification lands on the task's Tender tab). Only the tabs the panel has.
   // `?imported=<importId>` (PRD-09 O-12, flow 01 screen 11): the record's stamp
   // of the import just confirmed, read back from the planning module.
-  searchParams: Promise<{ task?: string; tab?: string; imported?: string }>;
+  // `?baseline=<id>` (PRD-10 E-1): draw that baseline's branch against it.
+  searchParams: Promise<{ task?: string; tab?: string; imported?: string; baseline?: string }>;
 }) {
   const { id } = await params;
-  const { task, tab, imported } = await searchParams;
+  const { task, tab, imported, baseline } = await searchParams;
+  const baselineId = baseline && /^[0-9a-f-]{36}$/i.test(baseline) ? baseline : null;
   const openTab = tab === 'tender' || tab === 'conversation' || tab === 'files' ? tab : null;
   if (!(await isSignedIn())) redirect(`/sign-in?next=/projects/${id}/plan`);
 
@@ -88,8 +93,8 @@ export default async function PlanPage({
   // reads. `getRecordV2` gives the shell name (fails closed to null); `getPlanGrid`
   // gives the WBS; `getPhasesV2` gives the sign-off state (fails closed to []); and
   // `getViewerPersonId` is the id the sign-off requests are keyed on.
-  const [grid, record, phaseList, myPersonId, parties, canStartTender, procurement, myRfps, tenderHasActiveOrg] = await Promise.all([
-    getPlanGrid(id),
+  const [grid, record, phaseList, myPersonId, parties, canStartTender, procurement, myRfps, tenderHasActiveOrg, baselines] = await Promise.all([
+    getPlanGrid(id, baselineId),
     getRecordV2(id),
     getPhasesV2(id),
     getViewerPersonId(),
@@ -104,6 +109,7 @@ export default async function PlanPage({
     // in the overlay. Both fail closed (empty list / false).
     getMyRfps(),
     viewerHasActiveOrg(),
+    listBaselinesV2(id),
   ]);
   // Narrow the org's RFPs to this build (getMyRfps is org-scoped across projects)
   // and flatten the WHOLE WBS into the composer's candidate-task list — a tender
@@ -147,15 +153,10 @@ export default async function PlanPage({
 
   // Show the sign-off panel only when sign-off is actually part of this build's
   // story: the execution phase is live (active / signed_off / archived) OR it
-  // already carries a request. A fresh build seeds execution as `pending`
-  // (ensurePhases, hasSignedContractor:false) and there is NO v2 path yet that
-  // flips it to `active` — the procurement→execution activation (contractor
-  // signed) is not wired on v2 (only `signed_off` is written today). So on every
-  // current build the phase is pending-with-no-history and the panel stays hidden,
-  // keeping the S3 fresh-build editor clean rather than showing a permanently
-  // disabled "execution phase not active yet" banner. The panel — and the whole
-  // request/approve/reject flow — lights up automatically the moment an activation
-  // flow lands or a request exists. (Tracked as the S6 dormancy note; ADR-0024.)
+  // already carries a request. A fresh build seeds execution as `pending`; the
+  // build's FIRST baseline (D-43: at award) activates it (PRD-10 E-13, doc 09
+  // §Project phase — the project module consumes planning.baseline.taken), so
+  // the panel appears once a branch is controlled and never before.
   const showSignOff = execution != null
     && (execution.status !== 'pending' || execution.signOffRequests.length > 0);
 
@@ -182,6 +183,14 @@ export default async function PlanPage({
       section="plan"
     >
       {signOff}
+      <div className="ste-planbar">
+        <BaselineSelector projectId={id} options={toBaselineOptions(baselines)} selected={grid.slip?.comparedTo ?? null} />
+        <nav className="ste-links" aria-label="The site">
+          <Link href={`/projects/${id}/site`}>Daily log</Link>
+          <Link href={`/projects/${id}/site/log`}>Log today</Link>
+          <Link href={`/projects/${id}/site/calendar`}>Site calendar</Link>
+        </nav>
+      </div>
       {importStamp?.status === 'confirmed' && importStamp.project_id === id && (
         <p className="imp-ok" role="status" style={{ margin: '12px 16px 0' }}>
           Plan imported{importStamp.imported_by?.org_name ? ` by ${importStamp.imported_by.org_name}` : ''} ·{' '}

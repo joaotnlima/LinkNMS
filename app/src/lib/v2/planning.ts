@@ -78,14 +78,19 @@ export async function getAssignableParties(projectId: string): Promise<Assignabl
  * viewer who cannot read the schedule sees "no plan", never a crash and never
  * another org's rows.
  */
-export async function getPlanGrid(projectId: string): Promise<PlanGridView> {
+export async function getPlanGrid(projectId: string, baselineId?: string | null): Promise<PlanGridView> {
   try {
     const body = await v2<V2ScheduleView>({
       method: 'GET',
       path: `/projects/${projectId}/schedule`,
+      // PRD-10 E-1: draw the chosen baseline's branch against it (server-side).
+      query: baselineId ? { baseline: baselineId } : undefined,
     });
     return toPlanGridView(body);
   } catch (err) {
+    // A stale or foreign ?baseline= is not the viewer's whole plan going away:
+    // draw it against its own baselines instead.
+    if (err instanceof V2Error && baselineId) return getPlanGrid(projectId, null);
     if (err instanceof V2Error) return emptyPlan(projectId); // no access / no plan — not a crash
     throw err;
   }
