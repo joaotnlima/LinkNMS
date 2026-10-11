@@ -16,6 +16,11 @@ import {
   listTaskDeliverables, listProjectDeliverables, createDeliverable, updateDeliverable, deleteDeliverable,
   submitDeliverable, approveDeliverable, requestDeliverableChanges,
 } from '../application/deliverables.mjs';
+import { listBaselines } from '../application/baselines.mjs';
+import { getSiteCalendar } from '../application/site-calendar.mjs';
+import {
+  listDailyLogs, getDailyLog, addDailyLogEntries, listTaskDailyLogEntries,
+} from '../application/daily-log.mjs';
 import {
   uploadScheduleImport, getScheduleImport, mapScheduleImport, previewScheduleImport, confirmScheduleImport,
 } from '../application/schedule-import.mjs';
@@ -25,7 +30,8 @@ import {
  *           specialties?: { exists: Function, list?: Function },
  *           workbooks?: { read: Function } }} deps
  *   `documents` — the documents query port: a deliverable submission binds a
- *   proven document version without planning reading documents.* (PRD-05).
+ *   proven document version without planning reading documents.* (PRD-05);
+ *   a daily-log photo binds a completed `kind = photo` version (PRD-10 E-8).
  *   `specialties` — the directory's taxonomy port: a row's `specialty_code` is
  *   checked through it (PRD-03 R-2); without it a code is refused (422).
  *   `workbooks` — the .xlsx reader (infra/xlsx-reader.mjs) behind the Excel
@@ -140,6 +146,25 @@ export function registerPlanning(router, { store, documents, specialties, workbo
 
   router.register('POST', '/deliverables/{deliverableId}:request-changes', 'requestDeliverableChanges', ({ viewer, params, body }) =>
     requestDeliverableChanges({ viewer, store, deliverableId: params.deliverableId, body }));
+
+  // ── PRD-10: running the plan — baselines, site calendar, daily log ───────
+  router.register('GET', '/projects/{projectId}/baselines', 'listBaselines', ({ viewer, params, query }) =>
+    listBaselines({ viewer, store, projectId: params.projectId, query }));
+
+  router.register('GET', '/projects/{projectId}/site-calendar', 'getSiteCalendar', ({ viewer, params, query }) =>
+    getSiteCalendar({ viewer, store, projectId: params.projectId, query }));
+
+  router.register('GET', '/projects/{projectId}/daily-logs', 'listDailyLogs', ({ viewer, params, query }) =>
+    listDailyLogs({ viewer, store, projectId: params.projectId, query }));
+
+  router.register('GET', '/projects/{projectId}/daily-logs/{date}', 'getDailyLog', ({ viewer, params }) =>
+    getDailyLog({ viewer, store, projectId: params.projectId, date: params.date }));
+
+  router.register('POST', '/projects/{projectId}/daily-logs/{date}/entries', 'addDailyLogEntries', ({ viewer, params, body }) =>
+    addDailyLogEntries({ viewer, store, documents, projectId: params.projectId, date: params.date, body }));
+
+  router.register('GET', '/tasks/{taskId}/daily-log-entries', 'listTaskDailyLogEntries', ({ viewer, params }) =>
+    listTaskDailyLogEntries({ viewer, store, taskId: params.taskId }));
 
   // ── PRD-09: the Excel plan import (O-6..O-12) ────────────────────────────
   router.register('POST', '/projects/{projectId}/schedule-imports', 'uploadScheduleImport', ({ viewer, params, body }) =>

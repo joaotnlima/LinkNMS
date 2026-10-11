@@ -4144,6 +4144,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DailyLog'
+        '200':
+          description: Idempotent replay — every entry id was already recorded with the same content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyLog'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':

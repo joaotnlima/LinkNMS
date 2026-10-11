@@ -15,6 +15,7 @@ import { withIdempotency } from '../../../platform/idempotency.mjs';
 import { audienceQueries } from './pg-audience.mjs';
 import { deliverableQueries } from './pg-deliverables.mjs';
 import { scheduleImportQueries, importWriters } from './pg-schedule-imports.mjs';
+import { executionQueries } from './pg-execution.mjs';
 
 const D = (col) => `to_char(${col}, 'YYYY-MM-DD')`;
 const TASK_SELECT = `
@@ -349,6 +350,8 @@ export function createPlanningStore(pool) {
     ...deliverableQueries(pool, tx),
     // The Excel import (PRD-09) — infra/pg-schedule-imports.mjs.
     ...scheduleImportQueries(pool),
+    // Baselines listed, the daily log, location names (PRD-10) — infra/pg-execution.mjs.
+    ...executionQueries(pool, tx),
 
     // ── plain reads ────────────────────────────────────────────────────────
     async getPersonByClerkId(clerkUserId) {
@@ -736,9 +739,10 @@ export function createPlanningStore(pool) {
         const version = versions[0].next;
         const baselineId = randomUUID();
         await client.query(
-          `INSERT INTO planning.baseline (id, project_id, contract_id, version, reason, change_order_id)
-           VALUES ($1, $2, $3, $4, 'change_order', $5)`,
-          [baselineId, projectId, contractId, version, changeOrderId],
+          `INSERT INTO planning.baseline
+             (id, project_id, contract_id, version, reason, change_order_id, taken_by_person_id, taken_by_org_id)
+           VALUES ($1, $2, $3, $4, 'change_order', $5, $6, $7)`,
+          [baselineId, projectId, contractId, version, changeOrderId, actor?.personId ?? null, actor?.orgId ?? null],
         );
         for (const t of time) {
           const { rows: tasks } = await client.query(
@@ -1029,9 +1033,9 @@ async function takeBaselineOn(client, { contractId, projectId, roots, reason, ac
 
   const baselineId = randomUUID();
   await client.query(
-    `INSERT INTO planning.baseline (id, project_id, contract_id, version, reason)
-     VALUES ($1, $2, $3, 1, $4)`,
-    [baselineId, projectId, contractId, reason],
+    `INSERT INTO planning.baseline (id, project_id, contract_id, version, reason, taken_by_person_id, taken_by_org_id)
+     VALUES ($1, $2, $3, 1, $4, $5, $6)`,
+    [baselineId, projectId, contractId, reason, actor?.personId ?? null, actor?.orgId ?? null],
   );
   await client.query(
     'INSERT INTO planning.baseline_root (baseline_id, task_id) SELECT $1, unnest($2::uuid[])',
@@ -1123,16 +1127,29 @@ async function acknowledgeOn(client, variationIds, actor) {
 }
 
 /** Append-only progress + planning.progress.reported, on the caller's client. */
-async function insertProgressOn(client, { taskId, projectId, status, percent, note, photoDocumentIds, taskName, criteria, onRecord, actor }) {
+async function insertProgressOn(client, {
+  taskId, projectId, status, percent, note, photoDocumentIds, taskName, criteria, onRecord, actor,
+  outOfSequence = null, acceptance = null,
+}) {
   const { rows } = await client.query(
     `INSERT INTO planning.progress_report
-       (task_id, seq, status, percent, note, photo_document_ids, reported_by_org_id, reported_by_person_id)
-     SELECT $1, coalesce(max(seq), 0) + 1, $2, $3, $4, $5, $6, $7
+       (task_id, seq, status, percent, note, photo_document_ids, reported_by_org_id, reported_by_person_id,
+        override_reason, waiting_on, acceptance)
+     SELECT $1, coalesce(max(seq), 0) + 1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb
        FROM planning.progress_report WHERE task_id = $1
      RETURNING *`,
-    [taskId, status, percent, note, photoDocumentIds ?? [], actor.orgId, actor.personId],
+    [taskId, status, percent, note, photoDocumentIds ?? [], actor.orgId, actor.personId,
+      outOfSequence?.reason ?? null,
+      outOfSequence ? JSON.stringify(outOfSequence.waiting_on) : null,
+      acceptance ? JSON.stringify(acceptance) : null],
   );
   const report = rows[0];
+  // PRD-10 E-5 / E-6: the D-48 override and the acceptance record travel on the
+  // ledger entry and the event (doc 10).
+  const recorded = {
+    ...(outOfSequence ? { out_of_sequence: outOfSequence } : {}),
+    ...(acceptance ? { acceptance } : {}),
+  };
   await appendAuditEvent(client, {
     projectId,
     actor,
@@ -1140,7 +1157,7 @@ async function insertProgressOn(client, { taskId, projectId, status, percent, no
     type: 'planning.progress.reported',
     scope: { type: 'project', id: projectId },
     object: { type: 'task', id: taskId },
-    payload: { seq: report.seq, status, ...(percent != null ? { percent } : {}), ...(note ? { note } : {}) },
+    payload: { seq: report.seq, status, ...(percent != null ? { percent } : {}), ...(note ? { note } : {}), ...recorded },
     channel: actor.channel ?? 'ui',
   });
   // Quality consumes this to open a verification request on `done`
@@ -1160,6 +1177,7 @@ async function insertProgressOn(client, { taskId, projectId, status, percent, no
       ...(note ? { note } : {}),
       reported_by_org_id: actor.orgId,
       ...(criteria ? { criteria } : {}),
+      ...recorded,
       // PRD-03: done carries assignee_org_id, contract_id, baseline_finish,
       // actual_finish for the directory's "On the record" read model.
       ...(status === 'done' && onRecord ? onRecord : {}),
@@ -1310,6 +1328,9 @@ function progressN(r) {
     reportedByOrgId: r.reported_by_org_id, reportedByPersonId: r.reported_by_person_id,
     onBehalfOfOrgId: r.on_behalf_of_org_id ?? null,
     reportedAt: r.reported_at?.toISOString?.() ?? r.reported_at,
+    overrideReason: r.override_reason ?? null,
+    waitingOn: r.waiting_on ?? null,
+    acceptance: r.acceptance ?? null,
   };
 }
 

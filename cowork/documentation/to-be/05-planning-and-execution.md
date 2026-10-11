@@ -132,6 +132,11 @@ and municipal holidays, project closures. Non-working days are shaded on the can
 
 - Rows **added** after the baseline inside a controlled branch carry `added_after_baseline`. Rows
   **removed** stay visible to the owner as removed (soft delete) in the change view.
+- **Choosing the baseline to compare against (PRD-10 E-1).** Baselines are labels on branches (D-24), so the plan
+  header lists every version of every branch (`listBaselines`: version, why — award / signature / change order — when
+  and who). By default each branch is drawn against its latest version; `getSchedule?baseline={id}` draws the rows of
+  that baseline's snapshot against it instead (segments, deltas and the row's `baseline` label), leaving every other
+  branch on its own. Read-only: choosing never re-baselines anything. There is no baselines page.
 
 ## 6. Changes after baseline: show the change, do not gate it (D-23)
 
@@ -305,3 +310,36 @@ Owner — whole plan (licensing, coordination rows, every branch)
 Progress reports are append-only (`not_started`, `in_progress`, `blocked`, `done`, `verified`); see
 [08](./08-supporting-domains.md). Status is derived from the latest report, never stored as an
 editable column.
+
+**Starting before what a task waits on (PRD-10 E-5, D-48 — warn and record).** A task waits on the predecessors of the
+links into its **start** anchor: from the predecessor's end (`Starts when it ends`) the predecessor must be closed (done,
+verified or an actual finish); from its start (`Starts with`) it must have started. Links into the successor's end never
+gate a start. The task panel shows each predecessor with its state (`Task.waiting_on`). The first report that moves a task
+past `not_started` while one of them is not there yet is refused (`409 invalid_transition`, `reason: predecessors_open`,
+with the list) **until it carries a reason**; with one it goes through, and the progress report records the override —
+the reason and the predecessors as they stood — in its ledger entry and on `planning.progress.reported`. It is not a
+variation: nothing moved against the baseline; the sequence was jumped, and the start's own record says so (D-23: shown,
+not gated). Links stay rigid for dates (§4) — this is about work, not dates.
+
+**Acceptance criteria (PRD-10 E-6).** `acceptance_criteria` is baselined text (§5) read as a checklist, one criterion per
+line. Closing a task (`done`) may name the criteria that were met (`criteria_met`); the report records the whole checklist
+with `met` per criterion, and the event carries it to Quality's verification. Unmet criteria do not block `done` (the
+verifier decides, doc 08); design tasks are gated by their deliverables instead (PRD-05, D-48).
+
+## 14. The site: calendar and daily log (PRD-10 E-7..E-12)
+
+**Site calendar** (`getSiteCalendar`) — derived on read, never stored. Every dated leaf task puts its effective assignee
+organisation (D-33 inheritance) on site on each working day of its span, at its location (own, else the nearest
+ancestor's; `project.location`). An **overlap** is two rows of different organisations at the same location on the same
+working day; consecutive days of a pair are one overlap, naming both rows. Rows without a location never overlap; rows
+without an assignee are counted. Planning owns it because every input (dates, assignees, locations of rows, calendar) is
+the plan. The disruptive-work notice of flow E23 (E-12) is not emitted from this read — it belongs to the neighbour log.
+
+**Daily log** — one per build per day, the append-only list of what was recorded for it: organisations on site with
+headcount, weather, work done against tasks (edit scope ∋ the task, like a progress report), issues, and photos tagged to a
+task and/or a location. Photos are Documents of kind `photo`, uploaded through the ordinary documents flow and bound by
+version through the documents query port. Owned by Planning & Execution: it is the execution record of the day against the
+plan's rows (Collaboration keeps conversations, Documents keeps bytes). Each capture is one transaction with one ledger
+entry and one `planning.daily_log.recorded` event; entries are idempotent by their client id. Presence and weather read as
+"latest wins"; a correction is a newer entry and the earlier one stays visible. No offline capture (D-14): the phone page
+says so when the connection drops.

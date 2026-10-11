@@ -155,7 +155,8 @@ function costField(taskId, ctx) {
 }
 
 function baselineField(task, ctx) {
-  const meta = ctx.baselineMeta?.get(task.branchContractId ?? task.contractId);
+  // PRD-10 E-1: a row drawn against a chosen baseline is labelled by it.
+  const meta = task.comparedMeta ?? ctx.baselineMeta?.get(task.branchContractId ?? task.contractId);
   return {
     start: task.baselineStart,
     finish: task.baselineFinish,

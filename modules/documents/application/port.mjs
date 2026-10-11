@@ -4,7 +4,7 @@
 //
 //   versionFacts({ documentId, versionNo?, orgId }) → null | {
 //     document_id, project_id, version_no, sha256, title, mime, file_type,
-//     current_version
+//     current_version, kind
 //   }
 //
 // Null unless the version is PROVEN (≤ current_version), the document is live,
@@ -36,6 +36,8 @@ export function createDocumentsPort(store) {
         mime: version.mime,
         file_type: fileTypeOf(fileNameOf(version.storage_key), version.mime),
         current_version: doc.current_version,
+        // PRD-10 E-8: the daily log binds only photos (kind = photo).
+        kind: doc.kind,
       };
     },
   };

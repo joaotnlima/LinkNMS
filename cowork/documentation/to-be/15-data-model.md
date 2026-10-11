@@ -226,7 +226,7 @@ Partial unique index: one `prime` per project where `status NOT IN ('draft','can
 | actual_start, actual_finish | date | **derived** from progress; `external` rows record `actual_finish` explicitly |
 | baseline_start, baseline_finish | date | **derived** from the latest `baseline_task` (materialised) |
 | schedule_state | text | **derived**: `planned` · `on_baseline` · `extended` · `sequence_warning` |
-| acceptance_criteria | text | quality |
+| acceptance_criteria | text | quality — one criterion per line, read as the task's checklist (PRD-10 E-6) |
 | last_changed_by_person_id, last_changed_at, last_change_cause | | cause: `direct` · `propagated:<task_id>` · `template` · `import` |
 | deleted_at | timestamptz | soft delete — removed rows stay visible in the change view |
 
@@ -254,7 +254,7 @@ previewed · confirmed · failed), result jsonb (counts), confirmed_at (set ⇔ 
 | lag_wd | int | default 0, may be negative |
 | created_by_org_id, created_by_person_id | uuid | must have the successor in edit scope (D-33) |
 
-**baseline** — `UNIQUE(root_task_id, version)`: `project_id, root_task_id (the baselined branch), contract_id, version, reason (award/contract_signed/change_order — `award` since D-43, migration 0012), change_order_id?, taken_at`.
+**baseline** — `UNIQUE(root_task_id, version)`: `project_id, root_task_id (the baselined branch), contract_id, version, reason (award/contract_signed/change_order — `award` since D-43, migration 0012), change_order_id?, taken_by_person_id?, taken_by_org_id? (0026, PRD-10 E-1 — who took it; back-filled from the ledger), taken_at`.
 **baseline_task** — `PK(baseline_id, task_id)`: `start, finish, duration_wd, name, scope_text, acceptance_criteria` (immutable snapshot: time, scope, quality).
 **baseline_cost_line** — `PK(baseline_id, boq_item_id)`: `quantity, unit_price_cents, material_spec` (cost snapshot; commercial visibility applies).
 
@@ -286,8 +286,18 @@ previewed · confirmed · failed), result jsonb (counts), confirmed_at (set ⇔ 
 | photo_document_ids | uuid[] | |
 | reported_by_org_id, reported_by_person_id | uuid | `verified` rows are written on behalf of the verifier |
 | reported_at | timestamptz | |
+| override_reason, waiting_on | text, jsonb | 0026, PRD-10 E-5 (D-48): a start ahead of the task's predecessors — the reason (1–500) and the predecessors as they stood (`[{task_id, name, status, needs}]`); both or neither |
+| acceptance | jsonb | 0026, PRD-10 E-6: on `done` only — the task's checklist with `met` per criterion (`[{criterion, met}]`) |
 
 `task.status` = status of the latest row (derived, never a column).
+
+**daily_log_entry** (0026, PRD-10 E-7..E-9) — the site diary; append-only (trigger). One row per thing recorded for a site day:
+`id (client UUID, idempotent), project_id, log_date (≤ today), kind (presence · weather · work · issue · photo), org_id + headcount
+(presence, 0–999), weather (sunny/cloudy/rain/heavy_rain/wind/frost/snow/heat) + temperature_c (weather), task_id → task (work —
+edit scope ∋ task; optional tag on issue/photo), location_id (bare ref to project.location; tag on issue/photo), document_id +
+version_no (photo — a completed `documents.document` of kind `photo`, by id, no FK), percent (work), note (≤ 2000; required on an
+issue), recorded_by_person_id, recorded_by_org_id, recorded_at`. CHECKs bind each kind to its fields. A day reads the latest
+presence per organisation (0 = not on site) and the latest weather; corrections are newer rows.
 
 **deliverable** (0017, PRD-05, D-48) — what a task must hand over. Owned by Planning because it is the task's acceptance
 artefact and the `done` gate is a planning invariant; the file itself stays a `documents.document` (referenced by id, no FK).

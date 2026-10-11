@@ -208,6 +208,7 @@ describe('task files over Postgres (PRD-05)', { skip }, () => {
     assert.equal(facts.version_no, 1);
     assert.equal(facts.sha256, 'c'.repeat(64));
     assert.equal(facts.file_type, 'pdf');
+    assert.equal(facts.kind, body.kind); // PRD-10 E-8: the daily log binds kind = photo only
     assert.equal(await port.versionFacts({ documentId: body.id, versionNo: 2, orgId: OWNER_ORG }), null);
     assert.equal(await port.versionFacts({ documentId: body.id, orgId: STRANGER_ORG }), null);
   });

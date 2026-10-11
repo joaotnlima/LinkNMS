@@ -39,6 +39,10 @@ import {
 } from './projection.mjs';
 import { assertDeliverablesApproved } from './deliverables.mjs';
 import { assertSpecialtyCodes, onRecordFacts } from './specialty-code.mjs';
+import {
+  startOverride, acceptanceOnDone, validateRunFields, runFields, runRecordFields,
+} from './start-gate.mjs';
+import { comparedSnapshot } from './baselines.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -55,7 +59,10 @@ const DELTA_FIELDS = new Set([
 /** operationId: getSchedule */
 export async function getSchedule({ viewer, store, projectId, query }) {
   await requireParticipant({ viewer, store, projectId });
-  const snapshot = await store.loadPlan(projectId);
+  // PRD-10 E-1: ?baseline= draws that baseline's branch against it.
+  const { snapshot, comparedTo } = await comparedSnapshot({
+    store, projectId, snapshot: await store.loadPlan(projectId), baselineId: query?.baseline ?? null,
+  });
   const ctx = projectionCtx(snapshot, viewer.orgId, today());
   let tasks = [...snapshot.tasks.values()];
   if (query?.root) {
@@ -84,6 +91,7 @@ export async function getSchedule({ viewer, store, projectId, query }) {
       health: planHealth(snapshot),
       handover: handoverBody(ctx),
       changes: await changesSummary({ viewer, store, projectId, snapshot }),
+      ...(comparedTo ? { compared_to: comparedTo } : {}),
     },
   };
 }
@@ -129,6 +137,8 @@ export async function getTask({ viewer, store, taskId }) {
     status: 200,
     body: {
       ...taskBody(snapshot.tasks.get(taskId), ctx),
+      // PRD-10 E-5 / E-6: what it waits on to start, its acceptance checklist.
+      ...runFields(snapshot, snapshot.tasks.get(taskId)),
       history: history.map((h) => ({
         field: h.field,
         old_value: h.oldValue,
@@ -143,6 +153,7 @@ export async function getTask({ viewer, store, taskId }) {
         status: p.status,
         percent: p.percent ?? undefined,
         note: p.note ?? undefined,
+        ...runRecordFields(p),
         by: { person_id: p.reportedByPersonId, org_id: p.reportedByOrgId },
         at: p.reportedAt,
       })),
@@ -985,9 +996,15 @@ export async function reportProgress({ viewer, store, taskId, body }) {
     else if (body.status !== 'done') errors.actual_finish = 'actual_finish goes with done only';
     else if (body.actual_finish > today()) errors.actual_finish = 'not in the future';
   }
+  validateRunFields(body, errors);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
   // D-48: a task with required deliverables is done only once all are approved.
   if (body.status === 'done') await assertDeliverablesApproved(store, taskId);
+  const current = snapshot.tasks.get(taskId) ?? task;
+  // D-48 / PRD-10 E-5: a start ahead of its predecessors needs a reason, recorded.
+  const outOfSequence = startOverride({ snapshot, task: current, nextStatus: body.status, overrideReason: body.override_reason });
+  // PRD-10 E-6: a close records which acceptance criteria were met.
+  const acceptance = acceptanceOnDone({ task: current, nextStatus: body.status, criteriaMet: body.criteria_met });
 
   const progress = {
     taskId,
@@ -999,12 +1016,13 @@ export async function reportProgress({ viewer, store, taskId, body }) {
     taskName: task.name,
     // quality opens the verification request from this snapshot on `done`
     criteria: body.status === 'done' ? (task.acceptanceCriteria ?? task.description ?? null) : null,
+    outOfSequence,
+    acceptance,
     actor: actorOf(actor, viewer),
   };
   // PRD-13 S-3 / S-12: `done` on a LEAF with no actual finish closes it in the
   // same commit — actual finish (today unless given), propagation, the time
   // variation (closed_late past the baseline) — so a late close stays drawn.
-  const current = snapshot.tasks.get(taskId) ?? task;
   const isLeaf = descendantIds(snapshot.tasks, taskId).length === 0;
   if (body.status === 'done' && isLeaf && !current.actualFinish) {
     return closeWithProgress({
@@ -1324,6 +1342,7 @@ function progressBody(p) {
     percent: p.percent ?? undefined,
     note: p.note ?? undefined,
     photo_document_ids: p.photoDocumentIds ?? [],
+    ...runRecordFields(p),
     reported_by: { person_id: p.reportedByPersonId, org_id: p.reportedByOrgId },
     on_behalf_of_org_id: p.onBehalfOfOrgId ?? undefined,
     reported_at: p.reportedAt,
