@@ -15876,6 +15876,18 @@ components:
         last_note:
           type: string
           description: The note of the latest transition (why the fix was rejected, what was done). Read-only.
+        actions:
+          description: 'Read-only, viewer-projected: the transitions the viewer''s organisation may take now
+            (`assign` raiser | client chain; `fix` assignee; `close`, `reject_fix` the raising organisation). The
+            server re-checks every one.'
+          type: array
+          items:
+            type: string
+            enum:
+            - assign
+            - fix
+            - close
+            - reject_fix
       description: 'Only the raising organisation can close it, or reject the fix back to the assignee
         (`rejected_fix`, who fixes again or is reassigned). `photo_document_ids` are the build''s documents (the
         photos uploaded through the documents flow).'
@@ -16621,6 +16633,15 @@ components:
         attachment_ids:
           type: array
           items: *id001
+        actions:
+          description: 'Read-only, on questions: what the viewer''s organisation may do now (`answer` the
+            addressee of an open question, `resolve` the asker of an answered one).'
+          type: array
+          items:
+            type: string
+            enum:
+            - answer
+            - resolve
     MeetingMinute:
       type: object
       properties:
@@ -16657,6 +16678,15 @@ components:
               org_id: *id001
               person_id: *id001
               at: *id004
+        actions:
+          description: 'Read-only, viewer-projected: `circulate` (the writing organisation, on a draft),
+            `acknowledge` (an attending organisation that has not yet, on a circulated minute).'
+          type: array
+          items:
+            type: string
+            enum:
+            - circulate
+            - acknowledge
     ActivityItem:
       type: object
       properties:
