@@ -17,6 +17,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
+import { createQualityFactsPort } from '../application/project-facts-port.mjs';
 import { createQualityStore } from './pg-store.mjs';
 import { qualityConsumers } from '../application/consumers.mjs';
 import { dispatchPending, publishEvent } from '../../../platform/outbox.mjs';
@@ -316,5 +317,15 @@ describe('quality store over Postgres (v2 migrations)', { skip }, () => {
     assert.equal(ledger[0].type, 'quality.inspection.recorded');
     const { rows: [{ n: eventsAfter }] } = await pool.query('SELECT count(*) AS n FROM platform.outbox');
     assert.equal(eventsBefore, eventsAfter);
+  });
+
+  test('PRD-09 O-1: the facts port counts pending verifications and open NCs by kind', async () => {
+    const facts = await createQualityFactsPort(store).projectFacts(PROJECT);
+    assert.equal(typeof facts.pending_verifications, 'number');
+    assert.deepEqual(Object.keys(facts.open_nonconformities).sort(), ['quality', 'safety']);
+    const { rows: [{ n }] } = await pool.query(
+      `SELECT count(*)::int AS n FROM quality.nonconformity WHERE project_id = $1 AND status <> 'closed'`, [PROJECT],
+    );
+    assert.equal(facts.open_nonconformities.quality + facts.open_nonconformities.safety, n);
   });
 });

@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
 import { createCollaborationStore } from './pg-store.mjs';
+import { createQuestionPort } from '../application/question-port.mjs';
 import { collaborationConsumers } from '../application/consumers.mjs';
 // The owning modules' published audience ports (PRD-12 N-1), wired exactly as
 // the composition root wires them — this suite proves the end-to-end path.
@@ -564,6 +565,11 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
       assert.deepEqual([elsewhere.body.total_unread, elsewhere.body.categories], [0, []]);
       await assert.rejects(getNotificationSummary({ viewer: owner(), store, query: { project_id: 'x' } }),
         (e) => e.problem?.code === 'validation_failed');
+      // O-1: the build home's open-question count through the question port.
+      const { rows: [{ n }] } = await pool.query(
+        `SELECT count(*)::int AS n FROM collaboration.comment c JOIN collaboration.thread t ON t.id = c.thread_id
+          WHERE t.project_id = $1 AND c.kind = 'question' AND c.question_status = 'open' AND c.deleted_at IS NULL`, [PROJECT]);
+      assert.equal(await createQuestionPort(store).openQuestionCount(PROJECT), n);
     });
   });
 });

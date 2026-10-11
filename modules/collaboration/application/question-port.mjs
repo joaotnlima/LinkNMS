@@ -9,9 +9,14 @@
 // Null for anything that is not a live question (a note, an answer, a
 // tombstone, an unknown id). The caller decides its own rule on the facts.
 
-/** @param {{ getComment: (id: string) => Promise<object|null> }} store collaboration pg-store */
+/** @param {{ getComment: (id: string) => Promise<object|null>, countOpenQuestions?: Function }} store collaboration pg-store */
 export function createQuestionPort(store) {
   return {
+    /** Open questions on a build — the build home's scope pillar (PRD-09 O-1). */
+    async openQuestionCount(projectId) {
+      return store.countOpenQuestions ? Number(await store.countOpenQuestions(projectId)) : 0;
+    },
+
     async questionFacts(questionId) {
       const c = await store.getComment(questionId);
       if (!c || c.kind !== 'question' || c.deleted_at) return null;

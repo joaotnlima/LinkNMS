@@ -171,6 +171,17 @@ export function createCollaborationStore(pool) {
     },
 
     // ── comments & questions ───────────────────────────────────────────────
+    /** Open questions on a build (PRD-09 O-1) — application/question-port.mjs. */
+    async countOpenQuestions(projectId) {
+      const { rows } = await pool.query(
+        `SELECT count(*)::int AS n
+           FROM collaboration.comment c JOIN collaboration.thread t ON t.id = c.thread_id
+          WHERE t.project_id = $1 AND c.kind = 'question' AND c.question_status = 'open' AND c.deleted_at IS NULL`,
+        [projectId],
+      );
+      return rows[0].n;
+    },
+
     async getComment(commentId) {
       const { rows } = await pool.query(
         `SELECT c.*, t.object_type, t.object_id, t.project_id

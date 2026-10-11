@@ -189,6 +189,22 @@ export function createQualityStore(pool) {
       };
     },
 
+    /** The build home's quality facts (PRD-09 O-1) — application/project-facts-port.mjs. */
+    async projectQualityFacts(projectId) {
+      const { rows } = await pool.query(
+        `SELECT
+           (SELECT count(*)::int FROM quality.verification_request vr
+              JOIN planning.task t ON t.id = vr.task_id
+             WHERE t.project_id = $1 AND vr.status = 'pending') AS pending_verifications,
+           (SELECT count(*)::int FROM quality.nonconformity
+             WHERE project_id = $1 AND kind = 'quality' AND status <> 'closed') AS open_quality,
+           (SELECT count(*)::int FROM quality.nonconformity
+             WHERE project_id = $1 AND kind = 'safety' AND status <> 'closed') AS open_safety`,
+        [projectId],
+      );
+      return rows[0];
+    },
+
     async getNonConformity(nonconformityId) {
       const { rows } = await pool.query('SELECT * FROM quality.nonconformity WHERE id = $1', [nonconformityId]);
       return rows[0] ?? null;
