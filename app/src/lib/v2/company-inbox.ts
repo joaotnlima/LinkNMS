@@ -36,13 +36,17 @@ export async function listRequestsForMe(): Promise<V2CompanyRequest[]> {
   }
 }
 
-/** GET /me/open-requests — "Open requests near you" (X-10). */
-export async function listOpenRequests(): Promise<{ items: V2OpenRequest[]; profileMissing: boolean }> {
+/** GET /me/open-requests — "Open requests near you" (X-10), one cursor page (nearest first). */
+export async function listOpenRequests(cursor?: string | null): Promise<{
+  items: V2OpenRequest[]; profileMissing: boolean; nextCursor: string | null;
+}> {
   try {
-    const res = await v2<{ items: V2OpenRequest[]; profile_missing: boolean }>({ method: 'GET', path: '/me/open-requests' });
-    return { items: res.items ?? [], profileMissing: Boolean(res.profile_missing) };
+    const res = await v2<{ items: V2OpenRequest[]; profile_missing: boolean; next_cursor?: string | null }>({
+      method: 'GET', path: '/me/open-requests', query: { limit: 50, cursor: cursor || undefined },
+    });
+    return { items: res.items ?? [], profileMissing: Boolean(res.profile_missing), nextCursor: res.next_cursor ?? null };
   } catch (err) {
-    if (err instanceof V2Error) return { items: [], profileMissing: false };
+    if (err instanceof V2Error) return { items: [], profileMissing: false, nextCursor: null };
     throw err;
   }
 }

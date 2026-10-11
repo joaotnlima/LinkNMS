@@ -867,7 +867,7 @@ export async function reissueRecipientLink({ viewer, store, mailSender, linkBase
  * for every recipient still queued from the draft; each is then emailed. A mail
  * failure leaves that recipient queued for a re-issue — never fails the publish.
  */
-export async function publishRfp({ viewer, store, mailSender, linkBaseUrl, rfpId }) {
+export async function publishRfp({ viewer, store, builds = null, mailSender, linkBaseUrl, rfpId }) {
   const { rfp } = await requireIssuer({ viewer, store, rfpId, humanOnly: 'publishing an RFP' });
   const outcome = rfpTransition(rfp.status, 'publish');
   if (!outcome.ok) throw new ProblemError('invalid_transition', outcome.reason);
@@ -876,7 +876,11 @@ export async function publishRfp({ viewer, store, mailSender, linkBaseUrl, rfpId
     throw new ProblemError('validation_failed', null, { errors: { recipients: 'invite at least one recipient before publishing' } });
   }
   const actor = await requireActor(store, viewer);
+  // The build's point and municipality, recorded on the RFP as it is listed:
+  // "open requests near you" matches on them in SQL (0030, PRD-04 X-10).
+  const [build] = builds ? await builds.factsOf([rfp.project_id]) : [];
   const published = await store.publishRfp({
+    listingPoint: build ? { lat: build.lat, lng: build.lng, municipality_code: build.municipality_code } : null,
     rfpId, from: rfp.status, to: outcome.to,
     eventType: 'tendering.rfp.published',
     projectId: rfp.project_id,

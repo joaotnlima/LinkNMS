@@ -6670,7 +6670,9 @@ paths:
         — tendering reads neither table. Only the distance is returned, never the build''s point.
         RFPs my organisation issued or is already invited to are left out. Each item carries my bid
         request, if I asked. Without a listed directory profile the list is empty with
-        `profile_missing: true`. Nearest first, at most 100.
+        `profile_missing: true`. Nearest first (no known distance last), then the bid deadline;
+        cursor-paginated — the match and the order run on the server over the whole set, so no
+        matching RFP is dropped (the build''s point is the one recorded when the RFP was published).
 
 
         **Clerk permission:** `org:tendering:bid`
@@ -6679,27 +6681,34 @@ paths:
         **Relationship (LinkNMS):** none (matching profile, D-47)'
       x-clerk-permission: org:tendering:bid
       x-relationship: none
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
                     items:
-                      $ref: '#/components/schemas/OpenRequest'
-                  profile_missing:
-                    type: boolean
-                required:
-                - items
-                - profile_missing
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/OpenRequest'
+                    profile_missing:
+                      type: boolean
+                  required:
+                  - items
+                  - profile_missing
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /rfps/{rfpId}/clarifications:
     parameters:
     - name: rfpId

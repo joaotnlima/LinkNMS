@@ -9,6 +9,7 @@ import { createRouter } from '../../../platform/router.mjs';
 import { createViewerContext } from '../../../platform/viewer-context.mjs';
 import { registerTendering } from './register.mjs';
 import { createInMemoryIdempotency } from '../../../platform/idempotency.mjs';
+import { matchOpenRequest } from '../domain/bid-requests.mjs';
 
 const OWNER = '01920000-0000-7000-8000-0000000000a1';
 const ROOFER = '01920000-0000-7000-8000-0000000000a2';
@@ -20,6 +21,11 @@ const RFP = '01920000-0000-7000-8000-0000000000e1';
 const FAR_RFP = '01920000-0000-7000-8000-0000000000e2';
 const ME = '01920000-0000-7000-8000-0000000000e9';
 const FUTURE = '2099-01-15T17:00:00Z';
+// The build's point recorded on each RFP when it was published (0030).
+const LISTING = {
+  [RFP]: { municipality_code: '1111', lat: 38.8029, lng: -9.3817 },
+  [FAR_RFP]: { municipality_code: '1312', lat: 41.1579, lng: -8.6291 },
+};
 
 function viewer(orgId, { perms = ['org:tendering:issue', 'org:tendering:bid'] } = {}) {
   return createViewerContext({
@@ -89,9 +95,19 @@ function fakeStore() {
       rec.status = 'sent';
       return rec;
     },
-    async listedOpenRfps({ orgId }) {
-      return [...rfps.values()].filter((r) => r.listed && r.issuer_org_id !== orgId
-        && !recipients.some((x) => x.rfp_id === r.id && x.org_id === orgId));
+    // What pg-bid-requests.mjs openRequestsFor answers, emulated with the
+    // domain's rule over the point recorded on the RFP at publication (0030).
+    async openRequestsFor({ orgId, family, base, radiusKm, areas, cursor, limit }) {
+      const profile = { specialty_family: family, base, radius_km: radiusKm, service_areas: areas };
+      const all = [...rfps.values()]
+        .filter((r) => r.listed && r.issuer_org_id !== orgId && !recipients.some((x) => x.rfp_id === r.id && x.org_id === orgId))
+        .map((r) => ({ r, m: matchOpenRequest({ specialtyCodes: r.specialty_codes }, LISTING[r.id], profile) }))
+        .filter(({ m }) => m.match)
+        .map(({ r, m }) => ({ ...r, distance_km: m.distance_km }))
+        .sort((a, b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9) || a.id.localeCompare(b.id));
+      const from = cursor ? all.findIndex((r) => r.id === cursor.id) + 1 : 0;
+      const items = all.slice(from, from + limit);
+      return { items, nextCursor: all.length > from + limit ? { k: '0', d: FUTURE, id: items.at(-1).id } : null };
     },
     async bidRequestsOfOrg(orgId, ids) { return [...requests.values()].filter((r) => r.org_id === orgId && ids.includes(r.rfp_id)); },
     async requestsForOrg(orgId) {
@@ -229,7 +245,9 @@ describe('PRD-04 over the /api/v2 router', () => {
     assert.equal(res.body.items[0].my_request.status, 'pending');
     assert.equal(res.body.items[0].build.lat, undefined);
     const none = await call('GET', '/me/open-requests', viewer(OTHER));
-    assert.deepEqual(none.body, { items: [], profile_missing: true });
+    assert.deepEqual(none.body, { items: [], next_cursor: null, profile_missing: true });
+    assert.equal(res.body.next_cursor, null);
+    assert.equal((await call('GET', '/me/open-requests', viewer(ROOFER), null, { cursor: 'nope' })).status, 422);
   });
 
   test('requests for you: origin and counts; decline the invitation', async () => {

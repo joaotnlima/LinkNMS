@@ -912,10 +912,18 @@ export function createTenderingStore(pool) {
      * [{recipient, token}]} — the raw tokens exist only in this return value,
      * for the caller to email — or null when `from` raced away.
      */
-    async publishRfp({ rfpId, from, to, eventType, projectId, data, actor }) {
+    async publishRfp({ rfpId, from, to, eventType, projectId, data, actor, listingPoint = null }) {
       return tx(async (client) => {
         const moved = await moveRfp(client, { rfpId, from, to, reason: null });
         if (!moved) return null;
+        // The build's point as the build port answered it at publication — what
+        // "open requests near you" matches on (0030; never project.* at read time).
+        await client.query(
+          `UPDATE tendering.rfp SET listing_lat = $2, listing_lng = $3, listing_municipality_code = $4
+            WHERE id = $1`,
+          [rfpId, listingPoint?.lat ?? null, listingPoint?.lat == null ? null : listingPoint.lng,
+            listingPoint?.municipality_code ?? null],
+        );
         const { rows: queued } = await client.query(
           `SELECT id FROM tendering.rfp_recipient
             WHERE rfp_id = $1 AND status = 'queued' AND sent_at IS NULL ORDER BY id`,

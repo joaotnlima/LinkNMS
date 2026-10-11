@@ -39,7 +39,7 @@ import { listRequestsForMe, listOpenRequests, declineRfpInvitation } from '../ap
  *     municipality and point for the inbox and distances.
  */
 export function registerTendering(router, {
-  store, storage, documentsStore, contractingAward, mailSender, linkBaseUrl, directory, builds, orgs = null,
+  store, storage, documentsStore, contractingAward, mailSender, linkBaseUrl, directory, builds, orgs,
 } = {}) {
   // The link origin may be supplied as a thunk (env read deferred to request
   // time, as the project module's shareBaseUrl is); resolve it per call.
@@ -137,7 +137,7 @@ export function registerTendering(router, {
       reissueRecipientLink({ viewer, store, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId, recipientId: params.recipientId }));
 
   router.register('POST', '/rfps/{rfpId}:publish', 'publishRfp', ({ viewer, params }) =>
-    publishRfp({ viewer, store, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId }));
+    publishRfp({ viewer, store, builds, mailSender, linkBaseUrl: baseUrl(), rfpId: params.rfpId }));
 
   router.register('POST', '/rfps/{rfpId}/addenda', 'addAddendum', ({ viewer, params, body }) =>
     addAddendum({ viewer, store, rfpId: params.rfpId, body }));
@@ -176,8 +176,8 @@ export function registerTendering(router, {
   router.register('GET', '/me/rfp-requests', 'listRequestsForMe', ({ viewer, query }) =>
     listRequestsForMe({ viewer, store, builds, query }));
 
-  router.register('GET', '/me/open-requests', 'listOpenRequests', ({ viewer }) =>
-    listOpenRequests({ viewer, store, directory, builds }));
+  router.register('GET', '/me/open-requests', 'listOpenRequests', ({ viewer, query }) =>
+    listOpenRequests({ viewer, store, directory, builds, query }));
 
   router.register('POST', '/rfps/{rfpId}/invitation:decline', 'declineRfpInvitation', ({ viewer, params, headers }) =>
     declineRfpInvitation({ viewer, store, builds, rfpId: params.rfpId, idempotencyKey: headers['idempotency-key'] ?? null }));

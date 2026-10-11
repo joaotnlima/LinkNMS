@@ -10,11 +10,10 @@
 //     (the project module), used to name the build and to measure distance.
 // Only the distance leaves the server, never the build's point.
 import { ProblemError } from '../../../platform/errors.mjs';
-import { companyRequestBody, matchOpenRequest, openRequestBody } from '../domain/bid-requests.mjs';
+import { companyRequestBody, openRequestBody } from '../domain/bid-requests.mjs';
 import { requireActor, actorOf } from './use-cases.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const OPEN_REQUESTS_MAX = 100;
 
 function requireBidder(viewer) {
   if (!viewer.orgId) throw new ProblemError('forbidden', 'pick an active organisation first', { reason: 'no_active_org' });
@@ -36,31 +35,53 @@ export async function listRequestsForMe({ viewer, store, builds, query }) {
   };
 }
 
-/** operationId: listOpenRequests — listed RFPs matching my directory profile, nearest first. */
-export async function listOpenRequests({ viewer, store, directory, builds }) {
+/**
+ * operationId: listOpenRequests — listed RFPs matching my directory profile,
+ * nearest first, a cursor page at a time. The match (specialty family, radius
+ * or service area) and the order run in SQL over what tendering owns (0030:
+ * the build's point recorded on the RFP when it was published); the build's
+ * name for the page comes from the build port.
+ */
+export async function listOpenRequests({ viewer, store, directory, builds, query }) {
   requireBidder(viewer);
+  const cursor = decodeOpenCursor(query?.cursor);
+  const limit = clampLimit(query?.limit);
   const profile = directory ? await directory.biddingProfileOf(viewer.orgId) : null;
-  if (!profile?.listed) return { status: 200, body: { items: [], profile_missing: true } };
+  if (!profile?.listed) return { status: 200, body: { items: [], next_cursor: null, profile_missing: true } };
 
-  const candidates = await store.listedOpenRfps({ orgId: viewer.orgId });
-  const named = await buildsById(builds, candidates.map((r) => r.project_id));
-  const matched = [];
-  for (const rfp of candidates) {
-    const build = named.get(rfp.project_id) ?? null;
-    const { match, distance_km: distanceKm } = matchOpenRequest({ specialtyCodes: rfp.specialty_codes }, build, profile);
-    if (match) matched.push({ rfp, build, distanceKm });
-  }
-  matched.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity)
-    || String(a.rfp.submission_deadline).localeCompare(String(b.rfp.submission_deadline)));
-  const page = matched.slice(0, OPEN_REQUESTS_MAX);
-  const mine = new Map((await store.bidRequestsOfOrg(viewer.orgId, page.map((m) => m.rfp.id))).map((r) => [r.rfp_id, r]));
+  const { items, nextCursor } = await store.openRequestsFor({
+    orgId: viewer.orgId,
+    family: profile.specialty_family ?? [],
+    base: profile.base?.lat != null ? profile.base : null,
+    radiusKm: profile.radius_km ?? null,
+    areas: profile.service_areas ?? [],
+    cursor,
+    limit,
+  });
+  const named = await buildsById(builds, items.map((r) => r.project_id));
+  const mine = new Map((await store.bidRequestsOfOrg(viewer.orgId, items.map((r) => r.id))).map((r) => [r.rfp_id, r]));
   return {
     status: 200,
     body: {
-      items: page.map(({ rfp, build, distanceKm }) => openRequestBody(rfp, { build, distanceKm, myRequest: mine.get(rfp.id) ?? null })),
+      items: items.map((rfp) => openRequestBody(rfp, {
+        build: named.get(rfp.project_id) ?? null,
+        distanceKm: rfp.distance_km == null ? null : Number(rfp.distance_km),
+        myRequest: mine.get(rfp.id) ?? null,
+      })),
+      next_cursor: nextCursor ? Buffer.from(JSON.stringify(nextCursor)).toString('base64url') : null,
       profile_missing: false,
     },
   };
+}
+
+function decodeOpenCursor(raw) {
+  if (!raw) return null;
+  let c;
+  try { c = JSON.parse(Buffer.from(String(raw), 'base64url').toString()); } catch { c = null; }
+  if (!c || !UUID.test(c.id ?? '') || Number.isNaN(Number(c.k)) || Number.isNaN(Date.parse(c.d ?? ''))) {
+    throw new ProblemError('validation_failed', null, { errors: { cursor: 'not a cursor from this list' } });
+  }
+  return { k: String(c.k), d: c.d, id: c.id };
 }
 
 /** operationId: declineRfpInvitation — the company will not bid. */

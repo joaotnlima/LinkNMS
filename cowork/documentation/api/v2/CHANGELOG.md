@@ -12,6 +12,10 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
   `submitDeliverable`, `approveDeliverable`, `requestDeliverableChanges`, `addDailyLogEntries`,
   `askClarificationByToken` (the link's recipient is the caller), `declineBidRequest`, `declineRfpInvitation`,
   `linkTaskDocuments`. Additive: omitting the header behaves as before.
+- **`listOpenRequests` is cursor-paginated** (`cursor`, `limit`, `next_cursor`; `422` on a foreign cursor). The match
+  (specialty family, radius or service area) and the order (nearest first, then deadline) run on the server over the
+  whole set — the previous first-500-then-filter cut, which could drop matches, is gone. `distance_km` is measured from
+  the build's point recorded on the RFP at publication. Migration `db/v2/0030_tendering_rfp_listing_point.sql`.
 
 ## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
 

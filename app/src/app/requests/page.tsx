@@ -29,7 +29,7 @@ export const metadata: Metadata = { title: 'Requests · LinkNMS' };
 export default async function RequestsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; done?: string; error?: string }>;
+  searchParams: Promise<{ tab?: string; done?: string; error?: string; cursor?: string }>;
 }) {
   const state = await sessionState();
   if (state.kind === 'anonymous') redirect('/sign-in?next=/requests');
@@ -38,7 +38,7 @@ export default async function RequestsPage({
 
   const sp = await searchParams;
   const tab = inboxTab(sp.tab);
-  const [profile, forYou, near] = await Promise.all([getViewerProfile(), listRequestsForMe(), listOpenRequests()]);
+  const [profile, forYou, near] = await Promise.all([getViewerProfile(), listRequestsForMe(), listOpenRequests(tab === 'near' ? sp.cursor : null)]);
   const user: PortalUser = profile ?? { displayName: 'Your account', roleLabel: '' };
   const fresh = forYou.filter((r) => requestState(r).label === 'New').length;
 
@@ -54,7 +54,7 @@ export default async function RequestsPage({
             Requests for you{fresh ? <span className="badge count">{fresh} new</span> : null}
           </Link>
           <Link href="/requests?tab=near" aria-current={tab === 'near' ? 'page' : undefined}>
-            Open requests near you{near.items.length ? <span className="count">{near.items.length}</span> : null}
+            Open requests near you{near.items.length ? <span className="count">{near.items.length}{near.nextCursor ? '+' : ''}</span> : null}
           </Link>
           <Link href="/settings/organization/profile">Profile</Link>
         </nav>
@@ -127,6 +127,11 @@ export default async function RequestsPage({
                 </li>
               );
             })}
+            {near.nextCursor ? (
+              <li className="mkt-card">
+                <Link className="btn sm" href={`/requests?tab=near&cursor=${encodeURIComponent(near.nextCursor)}`}>More open requests</Link>
+              </li>
+            ) : null}
           </ul>
         )}
       </div>

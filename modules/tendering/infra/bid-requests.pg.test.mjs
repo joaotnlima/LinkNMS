@@ -75,7 +75,7 @@ describe('PRD-04 tendering store over Postgres', { skip }, () => {
     await admin?.end();
   });
 
-  async function rfp({ listed = false, publish = true } = {}) {
+  async function rfp({ listed = false, publish = true, listingPoint = null } = {}) {
     const snapshot = await store.snapshotPackage(PROJECT, [ROOT_TASK]);
     const created = await store.createRfp({
       id: randomUUID(), projectId: PROJECT, issuerOrgId: OWNER_ORG, level: 'owner', parentContractId: null,
@@ -85,7 +85,7 @@ describe('PRD-04 tendering store over Postgres', { skip }, () => {
     if (!publish) return created;
     const out = await store.publishRfp({
       rfpId: created.id, from: 'draft', to: 'published', eventType: 'tendering.rfp.published',
-      projectId: PROJECT, data: {}, actor: ACTOR,
+      projectId: PROJECT, data: {}, actor: ACTOR, listingPoint,
     });
     return out.rfp;
   }
@@ -199,11 +199,34 @@ describe('PRD-04 tendering store over Postgres', { skip }, () => {
       rfpId: invited.id, projectId: PROJECT, actor: ACTOR, published: true,
       recipients: [{ orgId: ROOFER_ORG, email: 'roofer@telhados.pt', source: 'directory', companyName: 'Telhados do Norte' }],
     });
-    const open = await store.listedOpenRfps({ orgId: ROOFER_ORG });
+    // X-10 in SQL (0030, audit S1): the build's point recorded at publication.
+    await pool.query(
+      `UPDATE tendering.rfp SET listing_lat = 38.8029, listing_lng = -9.3817, listing_municipality_code = '1111'
+        WHERE id = ANY($1::uuid[])`, [[listed.id, invited.id]],
+    );
+    const ask = (orgId, over = {}) => store.openRequestsFor({
+      orgId, family: ['roofing', 'roofing-tiled'], base: { lat: 38.7569, lng: -9.2745 }, radiusKm: 40, areas: [], limit: 50, ...over,
+    });
+    const { items: open } = await ask(ROOFER_ORG);
     assert.ok(open.some((o) => o.id === listed.id));
     assert.ok(!open.some((o) => o.id === invited.id), 'an RFP the org is invited to is not an open request for it');
     assert.equal(Number(open.find((o) => o.id === listed.id).task_count), 2);
-    assert.ok(!(await store.listedOpenRfps({ orgId: OWNER_ORG })).some((o) => o.id === listed.id), 'never the issuer’s own');
+    assert.equal(Number(open.find((o) => o.id === listed.id).distance_km), 10.6); // = domain haversineKm, rounded
+    assert.ok(!(await ask(OWNER_ORG)).items.some((o) => o.id === listed.id), 'never the issuer’s own');
+    assert.equal((await ask(ROOFER_ORG, { family: ['plumbing'] })).items.length, 0, 'specialty in SQL');
+    assert.equal((await ask(ROOFER_ORG, { radiusKm: 5 })).items.length, 0, 'beyond the radius');
+    assert.ok((await ask(ROOFER_ORG, { radiusKm: 5, areas: ['11'] })).items.some((o) => o.id === listed.id), 'in a service district');
+    // Keyset: page 1 of 1 row, then the rest — nothing dropped, nothing twice.
+    // Publication records the build port's point on the RFP (0030).
+    const more = await rfp({ listed: true, listingPoint: { lat: 38.75, lng: -9.27, municipality_code: '1111' } });
+    const { rows: [pt] } = await pool.query('SELECT listing_lat, listing_municipality_code FROM tendering.rfp WHERE id = $1', [more.id]);
+    assert.deepEqual([Number(pt.listing_lat), pt.listing_municipality_code], [38.75, '1111']);
+    const first = await ask(ROOFER_ORG, { limit: 1 });
+    assert.equal(first.items[0].id, more.id, 'nearest first');
+    assert.ok(first.nextCursor);
+    const rest = await ask(ROOFER_ORG, { limit: 50, cursor: first.nextCursor });
+    assert.ok(rest.items.some((o) => o.id === listed.id));
+    assert.ok(!rest.items.some((o) => o.id === more.id));
 
     const page = await store.requestsForOrg(ROOFER_ORG, { cursor: null, limit: 50 });
     const mine = page.items.find((i) => i.rfp_id === invited.id);

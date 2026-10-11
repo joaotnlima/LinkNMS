@@ -183,24 +183,53 @@ export function bidRequestQueries(pool, tx) {
     },
 
     /**
-     * Listed, published RFPs still taking bids, minus the org's own and those
-     * it is already invited to — the candidates the application matches
-     * against the org's directory profile. Bounded.
+     * "Open requests near you" in ONE statement (PRD-04 X-10, 0030): listed,
+     * published RFPs still taking bids, minus the org's own and those it is
+     * already invited to, that share a specialty with the company's family AND
+     * whose build is within its radius of its base point, or in one of its
+     * service areas (municipality, or district = its first two digits).
+     * Nearest first (no distance last), then deadline, then id; keyset on that
+     * order. `distance_km` is rounded to 0.1 km — what the wire shows.
      */
-    async listedOpenRfps({ orgId, limit = 500 }) {
+    async openRequestsFor({ orgId, family, base, radiusKm, areas, cursor = null, limit = 50 }) {
       const { rows } = await pool.query(
-        `SELECT r.id, r.title, r.level, r.project_id, r.specialty_codes, r.submission_deadline,
-                (SELECT count(*) FROM tendering.rfp_package_row pr
-                  WHERE pr.rfp_id = r.id AND pr.package_version = r.package_version) AS task_count
-           FROM tendering.rfp r
-          WHERE r.listed AND r.status = 'published' AND r.submission_deadline > now()
-            AND r.issuer_org_id <> $1
-            AND NOT EXISTS (SELECT 1 FROM tendering.rfp_recipient rec
-                             WHERE rec.rfp_id = r.id AND rec.org_id = $1)
-          ORDER BY r.submission_deadline, r.id LIMIT $2`,
-        [orgId, limit],
+        `WITH scored AS (
+           SELECT r.id, r.title, r.level, r.project_id, r.specialty_codes, r.submission_deadline,
+                  (SELECT count(*) FROM tendering.rfp_package_row pr
+                    WHERE pr.rfp_id = r.id AND pr.package_version = r.package_version) AS task_count,
+                  CASE WHEN r.listing_lat IS NOT NULL AND $3::numeric IS NOT NULL
+                       THEN tendering.distance_km(r.listing_lat, r.listing_lng, $3::numeric, $4::numeric)
+                  END AS dist,
+                  r.listing_municipality_code AS muni
+             FROM tendering.rfp r
+            WHERE r.listed AND r.status = 'published' AND r.submission_deadline > now()
+              AND r.issuer_org_id <> $1
+              AND r.specialty_codes && $2::text[]
+              AND NOT EXISTS (SELECT 1 FROM tendering.rfp_recipient rec
+                               WHERE rec.rfp_id = r.id AND rec.org_id = $1)
+         ), matched AS (
+           SELECT s.id, s.title, s.level, s.project_id, s.specialty_codes, s.submission_deadline, s.task_count,
+                  round(s.dist::numeric, 1) AS distance_km,
+                  coalesce(round(s.dist::numeric, 1), 1e9) AS sort_km
+             FROM scored s
+            WHERE (s.dist IS NOT NULL AND $5::numeric IS NOT NULL AND s.dist <= $5::numeric)
+               OR (s.muni IS NOT NULL AND (s.muni = ANY($6::text[]) OR left(s.muni, 2) = ANY($6::text[])))
+         )
+         SELECT * FROM matched
+          WHERE $7::numeric IS NULL
+             OR (sort_km, submission_deadline, id) > ($7::numeric, $8::timestamptz, $9::uuid)
+          ORDER BY sort_km, submission_deadline, id
+          LIMIT $10`,
+        [orgId, family, base?.lat ?? null, base?.lng ?? null, radiusKm ?? null, areas ?? [],
+          cursor?.k ?? null, cursor?.d ?? null, cursor?.id ?? null, limit + 1],
       );
-      return rows;
+      const page = rows.slice(0, limit);
+      const last = page[page.length - 1];
+      return {
+        items: page,
+        nextCursor: rows.length > limit
+          ? { k: String(last.sort_km), d: last.submission_deadline.toISOString(), id: last.id } : null,
+      };
     },
 
     /** The org's live invite on an RFP (decline guard), with its lane state. */

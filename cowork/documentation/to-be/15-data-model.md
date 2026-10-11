@@ -114,6 +114,7 @@ holidays are resolved from a shared `platform.holiday(date, scope: national|muni
 | created_at, published_at, closed_at, awarded_at, cancelled_at | timestamptz | lifecycle stamps, set by the transition that enters each state (PRD-02 T-10; 0013) |
 | cancel_reason | text | optional one-line reason, ≤ 500 (PRD-02 T-19; 0013) |
 | model_document_id, model_version_no | uuid, int | the build's model this RFP shows (PRD-07 §5; 0018_tendering_rfp_model): a `documents.document` id (no FK) and a pinned version, or NULL = follows the current version |
+| listing_lat, listing_lng, listing_municipality_code | numeric(8,5), numeric(8,5), text | the build's point and municipality as the project build port answered them at publication — what "open requests near you" matches on in SQL with `tendering.distance_km()` (PRD-04 X-10; 0030) |
 
 **rfp_root** — `PK(rfp_id, task_id)`: the plan rows being tendered; the package is their subtrees.
 **rfp_package_row**: snapshot of each packaged row at publish/addendum — `rfp_id, package_version, task_id, parent_task_id, name, scope_text, duration_wd?, position`.
