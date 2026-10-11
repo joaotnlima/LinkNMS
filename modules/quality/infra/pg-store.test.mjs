@@ -328,4 +328,50 @@ describe('quality store over Postgres (v2 migrations)', { skip }, () => {
     );
     assert.equal(facts.open_nonconformities.quality + facts.open_nonconformities.safety, n);
   });
+
+  test('PRD-12 N-3/N-4: location, step note, event data naming the NC and the raiser; the lists', async () => {
+    const id = randomUUID();
+    const loc = randomUUID();
+    await store.createNonConformity({
+      id, projectId: PROJECT, taskId: null, contractId: null, locationId: loc,
+      kind: 'safety', severity: 'critical', description: 'Guarda-corpo em falta',
+      photoDocumentIds: [], assignedToOrgId: SUB_ORG,
+      raisedByOrgId: GC_ORG, raisedByPersonId: PERSON, actor: ACTOR,
+    });
+    const { rows: [evt] } = await pool.query(
+      `SELECT data FROM platform.outbox WHERE type = 'quality.nonconformity.raised' AND data->>'nonconformity_id' = $1`, [id],
+    );
+    assert.equal(evt.data.raised_by_org_id, GC_ORG);
+    assert.equal(evt.data.location_id, loc);
+
+    const assigned = await store.transitionNonConformity({
+      nonconformityId: id, from: 'open', to: 'assigned', set: {},
+      eventType: 'quality.nonconformity.assigned', note: 'até sexta', projectId: PROJECT, actor: ACTOR,
+    });
+    assert.equal(assigned.last_note, 'até sexta');
+    assert.ok(assigned.status_changed_at);
+    const { rows: [tEvt] } = await pool.query(
+      `SELECT data FROM platform.outbox WHERE type = 'quality.nonconformity.assigned' AND data->>'nonconformity_id' = $1`, [id],
+    );
+    assert.equal(tEvt.data.raised_by_org_id, GC_ORG);
+
+    const active = await store.listNonConformities({ projectId: PROJECT, status: 'active', kind: 'safety', taskId: null, cursor: null, limit: 50 });
+    assert.ok(active.items.some((n) => n.id === id && n.location_id === loc));
+    assert.ok(active.items.every((n) => n.status !== 'closed' && n.kind === 'safety'));
+    const all = await store.listNonConformities({ projectId: PROJECT, status: 'all', kind: null, taskId: null, cursor: null, limit: 1 });
+    assert.equal(all.items.length, 1);
+    assert.ok(all.nextCursor);
+    const [key, last] = all.nextCursor.split('~');
+    const next = await store.listNonConformities({ projectId: PROJECT, status: 'all', kind: null, taskId: null, cursor: { key, id: last }, limit: 50 });
+    assert.ok(!next.items.some((n) => n.id === all.items[0].id));
+
+    const insp = randomUUID();
+    await store.createInspection({
+      id: insp, projectId: PROJECT, inspectorOrgId: INSPECTOR_ORG, kind: 'quality', date: '2026-10-10',
+      checklist: [], findings: 'ok', taskIds: [], locationIds: [loc], actor: { ...ACTOR, orgId: INSPECTOR_ORG },
+    });
+    const byLoc = await store.listInspections({ projectId: PROJECT, taskId: null, locationId: loc, cursor: null, limit: 50 });
+    assert.deepEqual(byLoc.items.map((i) => i.id), [insp]);
+    assert.deepEqual(byLoc.items[0].location_ids, [loc]);
+  });
 });

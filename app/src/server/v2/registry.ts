@@ -181,8 +181,15 @@ export function getRouter() {
     workbooks: xlsxWorkbooks,
   });
 
-  // Phase 5 — Quality (verification, non-conformities, inspections).
-  registerQuality(router, { store: createQualityStore(getPool()) });
+  // Phase 5 — Quality (verification, non-conformities, inspections). PRD-12
+  // N-3/N-4: a non-conformity's or an inspection's locations are checked
+  // through the project's build port, its photos through the documents query
+  // port — quality reads neither module's tables.
+  registerQuality(router, {
+    store: createQualityStore(getPool()),
+    builds: createBuildPort(projectStore),
+    documents: createDocumentsPort(documentsStore),
+  });
 
   // The R2 object store (created above) is shared by Documents, the share
   // links and the token-scoped proposal attachments Tendering exposes
