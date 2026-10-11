@@ -42,7 +42,7 @@ import {
 // `contracts` — contracting's party port (the prime contractor); `orgs` —
 // identity's organisation port (names).
 export function registerPlanning(router, {
-  store, documents, specialties, workbooks = NO_WORKBOOKS, builds = null, contracts = null, orgs = null,
+  store, documents, specialties, workbooks = NO_WORKBOOKS, builds, contracts, orgs,
 }) {
   router.register('GET', '/projects/{projectId}/schedule', 'getSchedule', ({ viewer, params, query }) =>
     getSchedule({ viewer, store, projectId: params.projectId, query }));

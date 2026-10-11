@@ -30,7 +30,7 @@ import {
  *   name and serve, and their signed downloads (PRD-12 N-12).
  */
 // `orgs` — identity's organisation port (staffed people), injected at the composition root.
-export function registerProject(router, { store, shareBaseUrl, specialties, facts = {}, documents, orgs = null }) {
+export function registerProject(router, { store, shareBaseUrl, specialties, facts = {}, documents, orgs }) {
   router.register('POST', '/projects', 'createProject', ({ viewer, body, headers }) =>
     createProject({ viewer, store, body, idempotencyKey: headers['idempotency-key'] ?? null }));
 
