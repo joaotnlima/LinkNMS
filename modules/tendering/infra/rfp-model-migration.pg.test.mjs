@@ -1,6 +1,7 @@
-// Migration 0019 over real data (PRD-07 §5: "Migrate existing RFP models").
-// Applies every migration up to 0018, writes two LINA-409 RFP models on one
-// build (and a soft-deleted one elsewhere), then applies 0019 and proves: each
+// Migrations 0018_tendering_rfp_model + 0019_documents_project_model over real
+// data (PRD-07 §5: "Migrate existing RFP models"; split per module, audit S3).
+// Applies every migration before them, writes two LINA-409 RFP models on one
+// build (and a soft-deleted one elsewhere), then applies the pair and proves: each
 // RFP references its own model document; the models are now the BUILD's
 // (project scope); exactly one per build is THE project model (the oldest
 // referenced one); the byte ledger (document_version) is untouched.
@@ -27,7 +28,7 @@ const DOC_A = randomUUID();
 const DOC_B = randomUUID();
 const DOC_GONE = randomUUID();
 
-describe('0019 moves RFP models to the build (PRD-07)', { skip }, () => {
+describe('0018/0019 move RFP models to the build (PRD-07)', { skip }, () => {
   let admin, pool;
 
   before(async () => {
@@ -38,7 +39,8 @@ describe('0019 moves RFP models to the build (PRD-07)', { skip }, () => {
     await admin.query(`CREATE DATABASE ${DB}`);
     pool = new pg.Pool({ connectionString: url.replace(/\/[^/]*$/, `/${DB}`), max: 2 });
     const files = readdirSync(join(ROOT, 'db', 'v2')).filter((n) => /^\d{4}_.*\.sql$/.test(n)).sort();
-    for (const f of files.filter((n) => n < '0019')) await pool.query(readFileSync(join(ROOT, 'db', 'v2', f), 'utf8'));
+    const pair = ['0018_tendering_rfp_model.sql', '0019_documents_project_model.sql'];
+    for (const f of files.filter((n) => n < pair[0])) await pool.query(readFileSync(join(ROOT, 'db', 'v2', f), 'utf8'));
 
     await pool.query(`INSERT INTO identity.organization (id, clerk_org_id, kind, legal_name) VALUES ($1, 'org_o', 'household', 'Silva')`, [ORG]);
     await pool.query(`INSERT INTO identity.person (id, clerk_user_id, email, name) VALUES ($1, 'u', 'a@x.pt', 'Ana')`, [PERSON]);
@@ -64,7 +66,9 @@ describe('0019 moves RFP models to the build (PRD-07)', { skip }, () => {
     await model(DOC_B, RFP_B, '2026-10-02T00:00:00Z');
     await model(DOC_A, RFP_A, '2026-10-01T00:00:00Z');
     await model(DOC_GONE, RFP_C, '2026-09-01T00:00:00Z', true);
-    await pool.query(readFileSync(join(ROOT, 'db', 'v2', files.find((n) => n.startsWith('0019'))), 'utf8'));
+    // Each writes only its own schema; the tendering one must run first.
+    assert.deepEqual(files.slice(files.indexOf(pair[0]), files.indexOf(pair[0]) + 2), pair, 'the pair sorts adjacent, tendering first');
+    for (const f of pair) await pool.query(readFileSync(join(ROOT, 'db', 'v2', f), 'utf8'));
   });
 
   after(async () => {

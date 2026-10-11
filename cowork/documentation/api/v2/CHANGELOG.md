@@ -142,7 +142,8 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
   `ElementPin`, `ModelTask`, `ModelEditChange`, `ModelEditSave`, `ModelEditResult`, `ModelRecordDiff`, `TaskModel`.
 - Events: `documents.model.edited` (ledgered + outbox) → Notifications (`files`): the model's author when someone
   else saved, and the owners of the tasks whose elements changed.
-- Migration `db/v2/0019_documents_project_model.sql` (moves the LINA-409 RFP models to their builds).
+- Migrations `db/v2/0018_tendering_rfp_model.sql` (RFP → model reference, backfilled) and
+  `0019_documents_project_model.sql` (moves the LINA-409 RFP models to their builds).
 
 ## 2026-10-10 — 2D drawings: PDF / DWG viewer, markup layer and DWG preview (PRD-06 V-1..V-17; additive)
 

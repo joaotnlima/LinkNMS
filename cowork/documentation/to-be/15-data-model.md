@@ -113,7 +113,7 @@ holidays are resolved from a shared `platform.holiday(date, scope: national|muni
 | excluded_task_ids | uuid[] | descendants of the roots left out of the package with their sub-trees (PRD-02 T-3; 0013) |
 | created_at, published_at, closed_at, awarded_at, cancelled_at | timestamptz | lifecycle stamps, set by the transition that enters each state (PRD-02 T-10; 0013) |
 | cancel_reason | text | optional one-line reason, ≤ 500 (PRD-02 T-19; 0013) |
-| model_document_id, model_version_no | uuid, int | the build's model this RFP shows (PRD-07 §5; 0019): a `documents.document` id (no FK) and a pinned version, or NULL = follows the current version |
+| model_document_id, model_version_no | uuid, int | the build's model this RFP shows (PRD-07 §5; 0018_tendering_rfp_model): a `documents.document` id (no FK) and a pinned version, or NULL = follows the current version |
 
 **rfp_root** — `PK(rfp_id, task_id)`: the plan rows being tendered; the package is their subtrees.
 **rfp_package_row**: snapshot of each packaged row at publish/addendum — `rfp_id, package_version, task_id, parent_task_id, name, scope_text, duration_wd?, position`.

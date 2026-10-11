@@ -5,17 +5,18 @@
 --      scoped `bim` document, at most one live per project (partial unique
 --      index). Other .ifc project files stay ordinary files.
 --
---   2. RFPs reference the project model instead of owning one (PRD-07 §5):
---      tendering.rfp.model_document_id + model_version_no (NULL = follows the
---      current version; a number = a pinned version). Ids only, no cross-schema
---      FK (doc 02).
+--   2. (RFPs reference the project model: tendering.rfp.model_document_id +
+--      model_version_no — moved to 0018_tendering_rfp_model.sql, which runs
+--      first and records each RFP's model before step 3 re-scopes it.)
 --
---   3. Data migration of the LINA-409 RFP models (forward-only): each RFP points
---      at its own model document; every `rfp`-scoped `bim` document moves to its
---      project's scope (readers widen from the RFP's audience to every
---      participant — M-7); per project the model referenced by an RFP (else the
---      oldest live `bim` file) becomes THE project model. Ledger entries already
---      written keep their original scope (the record is never rewritten).
+--   3. Data migration of the LINA-409 RFP models (forward-only): every
+--      `rfp`-scoped `bim` document moves to its project's scope (readers widen
+--      from the RFP's audience to every participant — M-7); per project the
+--      model an RFP referenced (the first live `bim` of an RFP — the same rule
+--      0018_tendering_rfp_model.sql applied), else the oldest live `bim` file,
+--      becomes THE project model. Computed from documents.* alone (no read of
+--      tendering.*). Ledger entries already written keep their original scope
+--      (the record is never rewritten).
 --
 --   4. document_version.change_kind gains `restore` (M-17: Restore vN appends
 --      v(n+1) re-pointing vN's bytes; base_version_no names vN). An `edit`
@@ -36,35 +37,26 @@
 ALTER TABLE documents.document
   ADD COLUMN is_project_model boolean NOT NULL DEFAULT false;
 
-ALTER TABLE tendering.rfp
-  ADD COLUMN model_document_id uuid,
-  ADD COLUMN model_version_no int CHECK (model_version_no IS NULL OR model_version_no >= 1),
-  ADD CONSTRAINT rfp_model_pin_needs_model CHECK (model_version_no IS NULL OR model_document_id IS NOT NULL);
-
--- 3. Data: RFP models → the project's model.
-UPDATE tendering.rfp r
-   SET model_document_id = d.id
-  FROM (SELECT DISTINCT ON (scope_id) id, scope_id
-          FROM documents.document
-         WHERE scope_type = 'rfp' AND kind = 'bim' AND deleted_at IS NULL AND current_version > 0
-         ORDER BY scope_id, id) d
- WHERE d.scope_id = r.id;
-
-UPDATE documents.document
-   SET scope_type = 'project', scope_id = project_id
- WHERE scope_type = 'rfp' AND kind = 'bim' AND project_id IS NOT NULL;
-
+-- 3. Data: THE project model first (while the RFP scope still tells which
+--    file an RFP referenced), then the RFP models move to the build.
 UPDATE documents.document d
    SET is_project_model = true
   FROM (SELECT DISTINCT ON (doc.project_id) doc.id
           FROM documents.document doc
           JOIN documents.document_version v1 ON v1.document_id = doc.id AND v1.version_no = 1
-         WHERE doc.scope_type = 'project' AND doc.kind = 'bim'
+         WHERE doc.scope_type IN ('project', 'rfp') AND doc.kind = 'bim' AND doc.project_id IS NOT NULL
            AND doc.deleted_at IS NULL AND doc.current_version > 0
          ORDER BY doc.project_id,
-                  (EXISTS (SELECT 1 FROM tendering.rfp r WHERE r.model_document_id = doc.id)) DESC,
+                  (doc.scope_type = 'rfp' AND NOT EXISTS (
+                     SELECT 1 FROM documents.document o
+                      WHERE o.scope_type = 'rfp' AND o.scope_id = doc.scope_id AND o.kind = 'bim'
+                        AND o.deleted_at IS NULL AND o.current_version > 0 AND o.id < doc.id)) DESC,
                   v1.uploaded_at, doc.id) m
  WHERE d.id = m.id;
+
+UPDATE documents.document
+   SET scope_type = 'project', scope_id = project_id
+ WHERE scope_type = 'rfp' AND kind = 'bim' AND project_id IS NOT NULL;
 
 ALTER TABLE documents.document
   ADD CONSTRAINT document_project_model_shape
