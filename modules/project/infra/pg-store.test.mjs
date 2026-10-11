@@ -30,7 +30,7 @@ describe('project store over Postgres (v2 migrations)', { skip }, () => {
     await admin.query(`DROP DATABASE IF EXISTS ${DB}`);
     await admin.query(`CREATE DATABASE ${DB}`);
     pool = new pg.Pool({ connectionString: url.replace(/\/[^/]*$/, `/${DB}`), max: 2 });
-    for (const f of ['0001_schema.sql', '0002_platform_idempotency.sql', '0003_project_claim.sql', '0020_project_build_location.sql', '0025_project_party_invite.sql']) {
+    for (const f of ['0001_schema.sql', '0002_platform_idempotency.sql', '0003_project_claim.sql', '0020_project_build_location.sql', '0025_project_party_invite.sql', '0029_project_share_link_access.sql']) {
       await pool.query(readFileSync(join(ROOT, 'db', 'v2', f), 'utf8'));
     }
     await pool.query(
@@ -234,5 +234,62 @@ describe('project store over Postgres (v2 migrations)', { skip }, () => {
       `SELECT type FROM record.audit_event WHERE project_id = $1 ORDER BY seq`, [id],
     );
     assert.deepEqual(rows.map((r) => r.type), ['project.created', 'project.cancel']);
+  });
+
+  test('share links (PRD-12 N-12): access log + ledger in one txn, frozen scope, revoke once', async () => {
+    const projectId = randomUUID();
+    await store.createProject({
+      id: projectId, name: 'Partilha', address: null, municipalityCode: '1306', typology: null, grossAreaM2: null,
+      indicativeBudgetCents: null, ownerOrgId: OWNER_ORG, pendingOwnerEmail: null, createdByOrgId: OWNER_ORG, actor: ACTOR,
+    });
+    const linkId = randomUUID();
+    const tokenHash = createHash('sha256').update('t'.repeat(48)).digest('hex');
+    const doc = randomUUID();
+    await store.createShareLink({
+      id: linkId, projectId, createdByPersonId: PERSON, audience: 'CM Maia', documentIds: [doc], taskIds: [],
+      tokenHash, expiresAt: new Date(Date.now() + 86400000).toISOString(), actor: ACTOR,
+    });
+    const link = await store.getShareLinkByTokenHash(tokenHash);
+    assert.equal(link.id, linkId);
+
+    await store.recordShareLinkAccess({ id: randomUUID(), link, action: 'view', documentId: null, ip: '203.0.113.9', userAgent: 'UA' });
+    await store.recordShareLinkAccess({ id: randomUUID(), link, action: 'download', documentId: doc, ip: null, userAgent: null });
+    const withUse = await store.getShareLink(linkId);
+    assert.equal(withUse.access_count, 2);
+    const { items } = await store.listShareLinkAccesses({ shareLinkId: linkId, cursor: null, limit: 1 });
+    assert.equal(items.length, 1);
+    assert.equal(items[0].action, 'download');
+    const { rows: ledger } = await pool.query(
+      `SELECT type, payload, actor_person_id FROM record.audit_event WHERE project_id = $1 AND type = 'project.share_link.accessed' ORDER BY seq`,
+      [projectId],
+    );
+    assert.equal(ledger.length, 2);
+    assert.equal(ledger[0].actor_person_id, null);
+    assert.equal(JSON.stringify(ledger[0].payload).includes('203.0.113.9'), false); // the address stays out of the chain
+
+    // The access log is append-only; the scope is frozen; a link is never deleted.
+    await assert.rejects(() => pool.query('UPDATE project.share_link_access SET ip = NULL'));
+    await assert.rejects(() => pool.query('UPDATE project.share_link SET document_ids = $2 WHERE id = $1', [linkId, [doc, randomUUID()]]));
+    await assert.rejects(() => pool.query('DELETE FROM project.share_link WHERE id = $1', [linkId]));
+
+    const revoked = await store.revokeShareLink({ shareLinkId: linkId, projectId, actor: { ...ACTOR, personId: PERSON } });
+    assert.ok(revoked.revoked_at);
+    assert.equal(revoked.revoked_by_person_id, PERSON);
+    assert.equal(await store.revokeShareLink({ shareLinkId: linkId, projectId, actor: ACTOR }), null);
+    await assert.rejects(() => pool.query('UPDATE project.share_link SET revoked_at = now() WHERE id = $1', [linkId]));
+    const list = await store.listShareLinks({ projectId, cursor: null, limit: 10 });
+    assert.equal(list.items.length, 1);
+  });
+
+  test('build port facts (PRD-12 N-3/N-4): known locations of the build only', async () => {
+    const projectId = randomUUID();
+    await store.createProject({
+      id: projectId, name: 'Locais', address: null, municipalityCode: '1306', typology: null, grossAreaM2: null,
+      indicativeBudgetCents: null, ownerOrgId: OWNER_ORG, pendingOwnerEmail: null, createdByOrgId: OWNER_ORG, actor: ACTOR,
+    });
+    const loc = randomUUID();
+    await store.createLocation({ id: loc, projectId, parentId: null, kind: 'zone', name: 'Cozinha', position: 'a0', actor: ACTOR });
+    const known = await store.knownLocationIds(projectId, [loc, randomUUID()]);
+    assert.deepEqual([...known], [loc]);
   });
 });

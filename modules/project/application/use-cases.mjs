@@ -16,7 +16,7 @@
 //
 // The store owns transactions AND writes the ledger entry inside them
 // (invariant §6.4); a use case never half-commits.
-import { randomUUID, randomBytes, createHash } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import { ProblemError } from '../../../platform/errors.mjs';
 import { transition, briefComplete, operatingModel } from '../domain/lifecycle.mjs';
@@ -232,7 +232,7 @@ export async function deleteLocation({ viewer, store, locationId }) {
 // ── Participants & invitations ───────────────────────────────────────────
 // Moved to ./participants.mjs (PRD-09 O-3..O-5).
 
-// ── Calendar & share links ───────────────────────────────────────────────
+// ── Calendar ───────────────────────────────────────────────
 
 /** operationId: getCalendar */
 export async function getCalendar({ viewer, store, projectId }) {
@@ -290,44 +290,8 @@ export async function putCalendar({ viewer, store, projectId, body }) {
   };
 }
 
-/** operationId: createShareLink — scoped, expiring, for a licensing authority. */
-export async function createShareLink({ viewer, store, projectId, body, shareBaseUrl }) {
-  const { project } = await requireOwner({ viewer, store, projectId, permission: 'org:plan:edit' });
-  const errors = {};
-  if (!body?.audience?.trim()) errors.audience = 'required — who this link is for';
-  const expiresAt = body?.expires_at ? new Date(body.expires_at) : null;
-  if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
-    errors.expires_at = 'a future date-time';
-  } else if (expiresAt.getTime() > Date.now() + 90 * 24 * 3600 * 1000) {
-    errors.expires_at = 'at most 90 days out';
-  }
-  if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
-
-  const actor = await requireActor(store, viewer);
-  const token = randomBytes(24).toString('hex');
-  const link = await store.createShareLink({
-    id: randomUUID(),
-    projectId: project.id,
-    createdByPersonId: actor.id,
-    audience: body.audience.trim(),
-    documentIds: body.document_ids ?? [],
-    taskIds: body.task_ids ?? [],
-    tokenHash: sha256(token),
-    expiresAt: expiresAt.toISOString(),
-    actor: actorOf(actor, viewer),
-  });
-  return {
-    status: 201,
-    body: {
-      id: link.id,
-      audience: link.audience,
-      document_ids: link.document_ids,
-      task_ids: link.task_ids,
-      url: `${shareBaseUrl}/share/${token}`,
-      expires_at: link.expires_at,
-    },
-  };
-}
+// createShareLink moved to ./share-links.mjs with the rest of the share-link
+// surface (PRD-12 N-12).
 
 // ── shared authorization helpers ─────────────────────────────────────────
 

@@ -15,6 +15,12 @@
 //                 server-side; tendering never returns it.
 // Both reuse the use-case guards, so the answers can never be wider than
 // what the viewer could read through /projects/{id}.
+//   ownerOf     — the build's owner organisation, for Collaboration routing a
+//                 scope-gap question to the owner (PRD-12 N-5). No viewer: the
+//                 caller has already checked the viewer reads the object.
+//   locationsOf — which of the given ids are locations of the build, for
+//                 Quality tagging a non-conformity or an inspection to a place
+//                 (PRD-12 N-3, N-4). No viewer, ids only.
 import { requireParticipant, requireOwner } from './use-cases.mjs';
 
 /** @param {object} store project pg-store */
@@ -40,6 +46,16 @@ export function createBuildPort(store) {
         lat: p.location_lat == null ? null : Number(p.location_lat),
         lng: p.location_lng == null ? null : Number(p.location_lng),
       }));
+    },
+
+    async ownerOf(projectId) {
+      const project = await store.getProject(projectId);
+      return project ? { owner_org_id: project.owner_org_id ?? null } : null;
+    },
+
+    async locationsOf(projectId, locationIds) {
+      const ids = [...new Set((locationIds ?? []).filter(Boolean))];
+      return ids.length ? store.knownLocationIds(projectId, ids) : new Set();
     },
 
     async ownedBuild({ viewer, projectId }) {

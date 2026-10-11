@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { appendAuditEvent } from '../../../platform/ledger.mjs';
 import { withIdempotency } from '../../../platform/idempotency.mjs';
 import { publishEvent } from '../../../platform/outbox.mjs';
+import { shareLinkQueries } from './pg-share-links.mjs';
 
 export function createProjectStore(pool) {
   async function tx(fn) {
@@ -735,6 +736,9 @@ export function createProjectStore(pool) {
       if (!meta.key) return fn();
       return tx((client) => withIdempotency(client, meta, fn));
     },
+
+    // Share links (PRD-12 N-12) and the build port's location facts.
+    ...shareLinkQueries(pool, tx),
   };
 }
 

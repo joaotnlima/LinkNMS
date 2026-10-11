@@ -29,6 +29,7 @@ import { createContractFromAward } from '@modules/contracting/application/award.
 import { registerDocuments } from '@modules/documents/http/register.mjs';
 import { createDocumentsStore } from '@modules/documents/infra/pg-store.mjs';
 import { createDocumentsPort } from '@modules/documents/application/port.mjs';
+import { createShareFilesPort } from '@modules/documents/application/share-port.mjs';
 import { createR2ObjectStorage } from '@modules/documents/infra/storage.mjs';
 import { registerCollaboration } from '@modules/collaboration/http/register.mjs';
 import { createCollaborationStore } from '@modules/collaboration/infra/pg-store.mjs';
@@ -132,8 +133,15 @@ export function getRouter() {
   // through the directory's taxonomy port.
   const directoryStore = createDirectoryStore(getPool());
   const planningStore = createPlanningStore(getPool());
+  // Documents store and the shared R2 bucket are built up-front: Project's
+  // share links (PRD-12 N-12) name and serve the build's files through the
+  // documents share-files port; Planning, Tendering, Documents and Record
+  // below reuse the same instances.
+  const documentsStore = createDocumentsStore(getPool());
+  const objectStorage = createR2ObjectStorage();
   registerProject(router, {
     store: projectStore,
+    documents: createShareFilesPort(documentsStore, objectStorage),
     specialties: createSpecialtyPort(directoryStore),
     facts: {
       planning: createPlanningOverviewPort(planningStore),
@@ -151,12 +159,11 @@ export function getRouter() {
   // change orders, measurements, payments, cash-flow).
   registerContracting(router, { store: createContractingStore(getPool()) });
 
-  // Documents store (phase 7) is built up-front: Planning reads it through
+  // Documents store (phase 7, created above): Planning reads it through
   // the documents query port (PRD-05 deliverables bind a proven version),
   // Tendering injects it for the RFP BIM model (LINA-409 / doc 24 — the model
   // is a documents.document; tendering owns the RFP authorization, documents
   // owns persistence), and Record reuses the same instance for its export.
-  const documentsStore = createDocumentsStore(getPool());
 
   // Phases 4 + 5 — Planning: the WBS plan (rows, links, working-day
   // propagation, D-26 deltas, D-33 edit scope, baseline binding on
@@ -177,10 +184,9 @@ export function getRouter() {
   // Phase 5 — Quality (verification, non-conformities, inspections).
   registerQuality(router, { store: createQualityStore(getPool()) });
 
-  // The R2 object store is shared by Documents and by the token-scoped
-  // proposal attachments Tendering exposes (LINA-370) — one private bucket,
-  // presigned both ways.
-  const objectStorage = createR2ObjectStorage();
+  // The R2 object store (created above) is shared by Documents, the share
+  // links and the token-scoped proposal attachments Tendering exposes
+  // (LINA-370) — one private bucket, presigned both ways.
 
   // Phase 6 — Tendering (RFPs, lanes, comparison, award). The award
   // transaction runs contracting's award port on the same client so the

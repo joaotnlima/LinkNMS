@@ -408,25 +408,7 @@ describe('project over the v2 router', () => {
     });
   });
 
-  describe('share links', () => {
-    test('201: url carries the token once, the store only its hash; owner-only', async () => {
-      const expires = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
-      const res = await call('POST', `/projects/${PROJECT}/share-links`, {
-        body: { audience: 'Câmara Municipal da Maia', expires_at: expires },
-      });
-      assert.equal(res.status, 201);
-      const token = res.body.url.split('/share/')[1];
-      assert.match(token, /^[0-9a-f]{48}$/);
-      assert.notEqual(store.state.shareLinks[0].tokenHash, token);
-      assert.equal((await call('POST', `/projects/${PROJECT}/share-links`, { viewer: gc(), body: { audience: 'CM', expires_at: expires } })).status, 403);
-    });
-
-    test('past or >90d expiry refused', async () => {
-      assert.equal((await call('POST', `/projects/${PROJECT}/share-links`, { body: { audience: 'CM', expires_at: '2020-01-01T00:00:00Z' } })).status, 422);
-      const far = new Date(Date.now() + 120 * 24 * 3600 * 1000).toISOString();
-      assert.equal((await call('POST', `/projects/${PROJECT}/share-links`, { body: { audience: 'CM', expires_at: far } })).status, 422);
-    });
-  });
+  // Share links: http/share-links.register.test.mjs (PRD-12 N-12).
 
   describe('build location (PRD-03 R-3) and the build port', () => {
     test('a point set at creation, changed and cleared through updateProject', async () => {

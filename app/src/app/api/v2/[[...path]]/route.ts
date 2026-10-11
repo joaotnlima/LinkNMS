@@ -24,7 +24,9 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path?: s
   // (svix signature over the raw body); the RFP personal link, whose token in
   // the path IS the credential (gap S1); and the invitation-accept deep-link
   // PREVIEW (LINA-398) — a GET on `/project-invitations/{token}`, whose token is
-  // likewise the credential and whose handler is anti-oracle. The invitation
+  // likewise the credential and whose handler is anti-oracle; and the share
+  // link holder's GETs on `/shared/{token}` (PRD-12 N-12, no account — the
+  // token is the credential, refused tokens answer 404/410). The invitation
   // :accept POST is deliberately NOT anonymous: it still needs a verified
   // session (ADR-0004), so it falls through to viewer resolution and a clean 401.
   // Each handler hashes the token, checks expiry/revocation, and never leaks
@@ -32,7 +34,8 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path?: s
   const machineCaller =
     path[0] === 'webhooks'
     || path[0] === 'rfp-links'
-    || (req.method === 'GET' && path[0] === 'project-invitations');
+    || (req.method === 'GET' && path[0] === 'project-invitations')
+    || (req.method === 'GET' && path[0] === 'shared');
 
   // Public directory reads (PRD-03 R-9, `security: []`): the taxonomy, company
   // search and profiles answer anonymous visitors. A signed-in caller is still
