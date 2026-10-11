@@ -17,7 +17,7 @@ import {
   addCompanies, approveBidRequest, declineBidRequest, listBidRequests, suggestCompanies, tasksForAsk,
 } from '@/lib/v2/rfp-directory';
 import {
-  askTarget, defaultBidsDue, safeReturnTo, tenderPanelHref, type AskTask, type V2BidRequest,
+  defaultBidsDue, safeReturnTo, tenderPanelHref, type AskTask, type V2BidRequest,
 } from '@/lib/v2/rfp-directory-view';
 import { createRfp, getRfp, updateRfp } from '@/lib/v2/tendering';
 import type { V2Recipient, V2Rfp } from '@/lib/v2/tendering-view';
@@ -86,8 +86,8 @@ export async function loadAskBuildsAction(): Promise<{ id: string; name: string 
   return (await listPortfolio()).map((p) => ({ id: p.id, name: p.name }));
 }
 
-export async function loadAskTasksAction(projectId: string): Promise<AskTask[]> {
-  return tasksForAsk(projectId);
+export async function loadAskTasksAction(projectId: string, companyId: string): Promise<AskTask[]> {
+  return tasksForAsk(projectId, companyId);
 }
 
 /**
@@ -98,13 +98,14 @@ export async function loadAskTasksAction(projectId: string): Promise<AskTask[]> 
 export async function askForProposalAction(input: {
   projectId: string; task: AskTask; companyId: string;
 }): Promise<Result<{ rfpId: string; href: string; created: boolean }>> {
-  const target = askTarget(input.task);
+  // The server's answer for this task (listAskCandidates); the draft is re-read below.
+  const target = input.task.target;
   if (target.kind === 'locked') return { ok: false, code: 'invalid_transition', message: target.reason };
   return guard('The company could not be added to a draft. Try again.', async () => {
     let rfpId: string;
     let created = false;
     if (target.kind === 'draft') {
-      const rfp = await getRfp(target.rfpId);
+      const rfp = await getRfp(target.rfp_id);
       if (!rfp || rfp.status !== 'draft') {
         const why = 'That tender is no longer a draft — add bidders from the task panel.';
         throw new V2Error(409, 'invalid_transition', why, why);
@@ -112,7 +113,7 @@ export async function askForProposalAction(input: {
       rfpId = rfp.id;
     } else {
       const rfp = await createRfp(input.projectId, {
-        title: input.task.name, scopeText: '', rootTaskIds: [input.task.id],
+        title: input.task.name, scopeText: '', rootTaskIds: [input.task.task_id],
         submissionDeadline: defaultBidsDue(), listed: false,
       });
       rfpId = rfp.id;
@@ -120,6 +121,6 @@ export async function askForProposalAction(input: {
     }
     await addCompanies(rfpId, [input.companyId]);
     revalidatePath(`/projects/${input.projectId}/plan`);
-    return { rfpId, href: tenderPanelHref(input.projectId, input.task.id), created };
+    return { rfpId, href: tenderPanelHref(input.projectId, input.task.task_id), created };
   });
 }

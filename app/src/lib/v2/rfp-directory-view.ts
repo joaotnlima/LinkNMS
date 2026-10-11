@@ -5,7 +5,7 @@
 // only words and orders what it answered. I/O lives in `./rfp-directory.ts`
 // (issuer side) and `./company-inbox.ts` (company side).
 
-import type { V2DirectoryCard, V2Specialty } from './directory-view.ts';
+import type { V2DirectoryCard } from './directory-view.ts';
 import type { RecipientSource, RfpStatus, V2Recipient } from './tendering-view.ts';
 
 // ── wire (api/v2 components/schemas) ─────────────────────────────────────────
@@ -187,47 +187,21 @@ export function pendingFirst(items: readonly V2BidRequest[]): V2BidRequest[] {
 
 // ── Ask for a proposal, from a profile (X-6, X-7) ────────────────────────────
 
+/**
+ * #/components/schemas/AskCandidate — one task of a build as "Ask for a
+ * proposal" offers it to a company (X-6, X-7). The ranking, the specialty
+ * match and the target are the server's (listAskCandidates).
+ */
 export interface AskTask {
-  id: string;
+  task_id: string;
+  code?: string;
   name: string;
   specialty_code?: string | null;
+  specialty_match: boolean;
   /** The RFP that governs the task now, if any. */
   rfp?: { id: string; title: string; status: RfpStatus; invited_count?: number } | null;
-}
-
-/** The codes one company specialty matches: itself, its parent and its children. */
-function familyOf(codes: readonly string[], taxonomy: readonly Pick<V2Specialty, 'code' | 'parent_code'>[]): Set<string> {
-  const out = new Set<string>();
-  for (const code of codes) {
-    const node = taxonomy.find((s) => s.code === code);
-    if (!node) continue;
-    out.add(code);
-    if (node.parent_code) out.add(node.parent_code);
-    for (const s of taxonomy) if (s.parent_code === code) out.add(s.code);
-  }
-  return out;
-}
-
-/** Tasks matching the company's specialties first (X-6), each flagged; the plan's order otherwise. */
-export function rankTasksForCompany<T extends AskTask>(tasks: readonly T[], companySpecialties: readonly string[],
-  taxonomy: readonly Pick<V2Specialty, 'code' | 'parent_code'>[]): (T & { match: boolean })[] {
-  const family = familyOf(companySpecialties, taxonomy);
-  const flagged = tasks.map((t, i) => ({ ...t, match: Boolean(t.specialty_code && family.has(t.specialty_code)), i }));
-  flagged.sort((a, b) => Number(b.match) - Number(a.match) || a.i - b.i);
-  return flagged.map(({ i: _i, ...t }) => t as T & { match: boolean });
-}
-
-/**
- * Where the company goes for a task (X-6/X-7): its existing DRAFT, or a new
- * draft prefilled from the task. A tender already out for bids is not
- * offered — adding a bidder there sends a link at once, and nothing is sent
- * from this dialog.
- */
-export function askTarget(task: AskTask): { kind: 'draft'; rfpId: string } | { kind: 'new' } | { kind: 'locked'; reason: string } {
-  const rfp = task.rfp;
-  if (!rfp || rfp.status === 'cancelled') return { kind: 'new' };
-  if (rfp.status === 'draft') return { kind: 'draft', rfpId: rfp.id };
-  return { kind: 'locked', reason: 'Out for bids already — add bidders from the task panel.' };
+  /** Where the company lands: the draft, a new draft, or nothing (out for bids). */
+  target: { kind: 'draft'; rfp_id: string } | { kind: 'new' } | { kind: 'locked'; reason: string };
 }
 
 /** The new draft's bids-due: two weeks out, 18:00 local. */

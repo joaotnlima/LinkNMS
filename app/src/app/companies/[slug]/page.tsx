@@ -55,7 +55,6 @@ export default async function CompanyProfilePage({ params }: { params: Promise<{
               {state.kind === 'party' ? (
                 <AskForProposal
                   companyId={profile.org_id} companyName={profile.display_name}
-                  companySpecialties={profile.specialties} taxonomy={taxonomy}
                   where={profile.specialties.slice(0, 3).map((c) => specialtyLabel(c, taxonomy)).join(' · ')}
                 />
               ) : state.kind === 'anonymous' ? (

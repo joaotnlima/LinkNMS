@@ -8,20 +8,17 @@
 // out for bids is not offered (adding there would send a link at once).
 // Shortlists (X-8, Could) are not built.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import {
   askForProposalAction, loadAskBuildsAction, loadAskTasksAction,
 } from '@/components/rfp-directory-actions';
-import type { V2Specialty } from '@/lib/v2/directory-view';
-import { askTarget, rankTasksForCompany, type AskTask } from '@/lib/v2/rfp-directory-view';
+import type { AskTask } from '@/lib/v2/rfp-directory-view';
 
-export function AskForProposal({ companyId, companyName, companySpecialties, taxonomy, where }: {
+export function AskForProposal({ companyId, companyName, where }: {
   companyId: string;
   companyName: string;
-  companySpecialties: string[];
-  taxonomy: V2Specialty[];
   /** "Roofing · Tiled roofs" — the header's second line. */
   where: string;
 }) {
@@ -43,12 +40,13 @@ export function AskForProposal({ companyId, companyName, companySpecialties, tax
   useEffect(() => {
     if (!buildId) { setTasks(null); return; }
     setTasks(null); setTaskId('');
-    void loadAskTasksAction(buildId).then(setTasks);
-  }, [buildId]);
+    void loadAskTasksAction(buildId, companyId).then(setTasks);
+  }, [buildId, companyId]);
 
-  const ranked = useMemo(() => rankTasksForCompany(tasks ?? [], companySpecialties, taxonomy), [tasks, companySpecialties, taxonomy]);
-  const task = ranked.find((t) => t.id === taskId) ?? null;
-  const target = task ? askTarget(task) : null;
+  // Ranked, matched and targeted by the server (listAskCandidates, X-6).
+  const ranked = tasks ?? [];
+  const task = ranked.find((t) => t.task_id === taskId) ?? null;
+  const target = task ? task.target : null;
 
   const submit = async (openTask: boolean) => {
     if (!task || !buildId) return;
@@ -59,7 +57,7 @@ export function AskForProposal({ companyId, companyName, companySpecialties, tax
     if (openTask) { router.push(res.data.href); return; }
     setDone(`${companyName} is on the ${res.data.created ? 'new ' : ''}draft for ${task.name}. Send it from the task panel.`);
     setTaskId('');
-    setTasks(await loadAskTasksAction(buildId));
+    setTasks(await loadAskTasksAction(buildId, companyId));
   };
 
   if (!open) {
@@ -93,13 +91,12 @@ export function AskForProposal({ companyId, companyName, companySpecialties, tax
           {tasks === null ? <span className="cap">Reading the plan…</span> : ranked.length === 0 ? (
             <span className="cap">This build has no tasks yet.</span>
           ) : ranked.map((t) => {
-            const where = askTarget(t);
             return (
-              <label key={t.id} className="lrow" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input type="radio" name="ask-task" value={t.id} checked={taskId === t.id} disabled={where.kind === 'locked'}
-                  onChange={() => setTaskId(t.id)} />
+              <label key={t.task_id} className="lrow" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="radio" name="ask-task" value={t.task_id} checked={taskId === t.task_id} disabled={t.target.kind === 'locked'}
+                  onChange={() => setTaskId(t.task_id)} />
                 <span style={{ flex: 1 }}>{t.name}</span>
-                {t.match ? <span className="badge ok">Specialty match</span> : <span className="badge neutral">No specialty match</span>}
+                {t.specialty_match ? <span className="badge ok">Specialty match</span> : <span className="badge neutral">No specialty match</span>}
                 {t.rfp && t.rfp.status !== 'cancelled'
                   ? <span className="badge neutral">{t.rfp.status === 'draft' ? 'Draft — not sent' : 'Out for bids'}</span> : null}
               </label>

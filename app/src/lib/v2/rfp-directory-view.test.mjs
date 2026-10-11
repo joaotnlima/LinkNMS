@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 import {
   sourceTag, recipientName, recipientNote, biddersSummary, emailInviteeCount, isSuggestionAdded, suggestionLine,
-  proofLine, safeReturnTo, directoryHref, pendingFirst, rankTasksForCompany, askTarget, defaultBidsDue,
+  proofLine, safeReturnTo, directoryHref, pendingFirst, defaultBidsDue,
   originLine, requestState, openRequestLine, openRequestAction, inboxTab,
 } from './rfp-directory-view.ts';
 
@@ -90,28 +90,6 @@ describe('asking to bid (X-5)', () => {
 });
 
 describe('Ask for a proposal (X-6, X-7)', () => {
-  const taxonomy = [
-    { code: 'roofing', parent_code: null }, { code: 'roofing-tiled', parent_code: 'roofing' },
-    { code: 'plumbing', parent_code: null },
-  ];
-  test('tasks matching the company’s specialties first, plan order otherwise', () => {
-    const tasks = [
-      { id: 'p', name: 'Plumbing', specialty_code: 'plumbing' },
-      { id: 'r', name: 'Roofing', specialty_code: 'roofing' },
-      { id: 'x', name: 'Other' },
-      { id: 'g', name: 'Gutters', specialty_code: 'roofing-tiled' },
-    ];
-    const ranked = rankTasksForCompany(tasks, ['roofing-tiled'], taxonomy);
-    assert.deepEqual(ranked.map((t) => [t.id, t.match]), [['r', true], ['g', true], ['p', false], ['x', false]]);
-  });
-
-  test('add to the draft, or a new one; never to a tender out for bids (nothing is sent from here)', () => {
-    assert.deepEqual(askTarget({ id: 't', name: 'x', rfp: { id: 'r', title: 'R', status: 'draft' } }), { kind: 'draft', rfpId: 'r' });
-    assert.deepEqual(askTarget({ id: 't', name: 'x', rfp: null }), { kind: 'new' });
-    assert.deepEqual(askTarget({ id: 't', name: 'x', rfp: { id: 'r', title: 'R', status: 'cancelled' } }), { kind: 'new' });
-    assert.equal(askTarget({ id: 't', name: 'x', rfp: { id: 'r', title: 'R', status: 'published' } }).kind, 'locked');
-  });
-
   test('the new draft’s bids are due in two weeks', () => {
     const due = new Date(defaultBidsDue(new Date('2026-12-01T09:00:00')));
     assert.equal(Math.round((due.getTime() - new Date('2026-12-01T09:00:00').getTime()) / 86400000), 14);

@@ -15,6 +15,7 @@ import {
 } from '../application/use-cases.mjs';
 import { listTaskProcurement } from '../application/task-procurement.mjs';
 import { listProjectRfps } from '../application/project-rfps.mjs';
+import { listAskCandidates } from '../application/ask-candidates.mjs';
 import { removeRecipient } from '../application/recipients.mjs';
 import { listBidRequests, approveBidRequest, declineBidRequest } from '../application/bid-requests.mjs';
 import { listRequestsForMe, listOpenRequests, declineRfpInvitation } from '../application/company-inbox.mjs';
@@ -37,9 +38,12 @@ import { listRequestsForMe, listOpenRequests, declineRfpInvitation } from '../ap
  *     contact for an invite, proof lines, a company's bidding profile.
  *   builds — the project module's build port (`factsOf`): build name,
  *     municipality and point for the inbox and distances.
+ *   orgs — identity's organisation port (`namesOf`): a winner's name.
+ *   planning — planning's task port (`tasksOf`): the rows "Ask for a
+ *     proposal" offers (PRD-04 X-6).
  */
 export function registerTendering(router, {
-  store, storage, documentsStore, contractingAward, mailSender, linkBaseUrl, directory, builds, orgs,
+  store, storage, documentsStore, contractingAward, mailSender, linkBaseUrl, directory, builds, orgs, planning,
 } = {}) {
   // The link origin may be supplied as a thunk (env read deferred to request
   // time, as the project module's shareBaseUrl is); resolve it per call.
@@ -86,6 +90,12 @@ export function registerTendering(router, {
   // project, with covered tasks, bids due, n/m in and open questions — one read.
   router.register('GET', '/projects/{projectId}/rfps', 'listProjectRfps', ({ viewer, params, query }) =>
     listProjectRfps({ viewer, store, orgs, projectId: params.projectId, query }));
+
+  // PRD-04 X-6: "Ask for a proposal" — the build's rows for one company, ranked
+  // on its specialties, each with where the company would land (planning's
+  // task port + the directory's company port + tendering's own tenders).
+  router.register('GET', '/projects/{projectId}/ask-candidates', 'listAskCandidates', ({ viewer, params, query }) =>
+    listAskCandidates({ viewer, store, planning, directory, projectId: params.projectId, query }));
 
   router.register('GET', '/projects/{projectId}/task-procurement', 'listTaskProcurement', ({ viewer, params, query }) =>
     listTaskProcurement({ viewer, store, orgs, projectId: params.projectId, query }));

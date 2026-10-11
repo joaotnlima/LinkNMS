@@ -234,6 +234,8 @@ export function getRouter() {
     builds: createBuildPort(projectStore),
     // Identity's organisation port names a winner on the tendering home.
     orgs,
+    // Planning's task port: the rows "Ask for a proposal" offers (PRD-04 X-6).
+    planning: createPlanningTaskPort(planningStore),
   });
 
   // Phase 7 — Documents (versioned files on R2 behind presigned tickets,

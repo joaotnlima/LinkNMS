@@ -25,6 +25,10 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
   the first page is answered.
 - **`listSpecialtyLabels`** answers the list envelope `items` (+ `next_cursor: null`); `specialties` is **deprecated**,
   same content. New schema `SpecialtyLabel`.
+- **New (Tendering): `listAskCandidates`** — `GET /projects/{projectId}/ask-candidates?company_id=` (PRD-04 X-6, X-7):
+  the build's tasks for "Ask for a proposal" in one read, each with `specialty_match` (the company's specialty family),
+  the governing RFP the viewer's org issued and the `target` (`draft` | `new` | `locked`). Replaces the app's join of
+  `/schedule` with `/task-procurement` and its client-side ranking. New schema `AskCandidate`.
 
 ## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
 

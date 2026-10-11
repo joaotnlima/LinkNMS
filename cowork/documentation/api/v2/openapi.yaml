@@ -5021,7 +5021,7 @@ paths:
         root tasks (named from the package snapshot), the package row count, and — for the issuer
         only — `invited_count`, `submitted_count`, `open_question_count` and `awarded_to`; a bidder
         gets its own lane (`my_proposal`) instead and never another bidder''s count (V8). No money.
-        Bounded by the project''s tenders, so not paginated; newest first.
+        Cursor-paginated, newest first.
 
 
         **Clerk permission:** none beyond an authenticated session
@@ -5058,6 +5058,69 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /projects/{projectId}/ask-candidates:
+    parameters:
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Tendering
+      operationId: listAskCandidates
+      summary: '"Ask for a proposal" — a build''s tasks for one company, its specialty matches first (PRD-04 X-6, X-7)'
+      description: 'The rows of the build''s plan (milestones left out) a company can be asked to price, in
+        ONE read: each with its `specialty_code`, whether it is in the company''s specialty family
+        (`specialty_match`: the code, its parent or a child — PRD-03 R-1), the governing RFP the
+        viewer''s organisation issued for it, and where the company would land (`target`): the RFP
+        `draft`, a `new` draft prefilled from the task, or `locked` when the tender is already out for
+        bids (nothing is sent from this dialog). Matching rows first, then the plan''s outline order.
+        The plan comes from Planning''s task port, the company''s specialties from the directory''s
+        company port — tendering reads neither table. One page: `next_cursor` is always null.
+
+
+        **Clerk permission:** `org:tendering:issue`
+
+
+        **Relationship (LinkNMS):** project.participant (∧ staffing)'
+      x-clerk-permission: org:tendering:issue
+      x-relationship: project.participant
+      x-mcp-tool: list_ask_candidates
+      x-mcp-mode: read
+      parameters:
+      - name: company_id
+        in: query
+        required: true
+        description: The company (its organisation id, as the directory keys profiles).
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AskCandidate'
+                  required:
+                  - items
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /projects/{projectId}/task-procurement:
     parameters:
     - name: projectId
@@ -5078,7 +5141,8 @@ paths:
         bids have landed (submitted, shortlisted or awarded) and who won. Only RFPs the viewer''s
         active organisation ISSUED are included — a participant that issued nothing gets an empty
         list, a bidder never sees another org''s tender here (V8). Never carries prices (D-06/D-07):
-        counts and the winner''s name only. Bounded by the project''s tenders, so not paginated.
+        counts and the winner''s name only. Cursor-paginated by root task (a page carries every tender
+        of its tasks).
 
 
         **Clerk permission:** none beyond an authenticated session
@@ -6358,7 +6422,7 @@ paths:
       description: 'Every request companies made to bid on this RFP (pending first, then decided,
         newest first), each with the company as the directory shows it — name, profile slug, claim
         state and its "on the record" counts (D-46), read through the directory''s published port.
-        Bounded by the RFP, so not paginated.
+        Cursor-paginated, pending first, then newest.
 
 
         **Clerk permission:** `org:tendering:issue`
@@ -11834,6 +11898,62 @@ components:
         reason:
           type: string
       description: Present when fields were withheld from this viewer. Withheld fields are ABSENT, never null.
+    AskCandidate:
+      type: object
+      description: One task of a build as "Ask for a proposal" offers it to a company (PRD-04 X-6, X-7).
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          description: The row's outline code ("2.5").
+        name:
+          type: string
+        specialty_code:
+          oneOf:
+          - type: string
+          - type: 'null'
+        specialty_match:
+          type: boolean
+        rfp:
+          description: The governing RFP the viewer's organisation issued for the row, if any.
+          oneOf:
+          - type: 'null'
+          - type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              title:
+                type: string
+              status:
+                type: string
+              invited_count:
+                type: integer
+        target:
+          type: object
+          properties:
+            kind:
+              type: string
+              enum:
+              - draft
+              - new
+              - locked
+            rfp_id:
+              type: string
+              format: uuid
+              description: With `draft`.
+            reason:
+              type: string
+              description: With `locked`.
+          required:
+          - kind
+      required:
+      - task_id
+      - name
+      - specialty_match
+      - target
     SpecialtyLabel:
       type: object
       properties:

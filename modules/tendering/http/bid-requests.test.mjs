@@ -281,3 +281,34 @@ describe('PRD-04 over the /api/v2 router', () => {
     assert.equal(mixed.status, 422);
   });
 });
+
+describe('PRD-04 X-6: ask candidates over the /api/v2 router (audit S4a)', () => {
+  test('one read: the build rows ranked on the company family, each with its target; 422 without a company', async () => {
+    const router = createRouter();
+    const store = {
+      async getPersonByClerkId() { return { id: ME }; },
+      async getProject(id) { return id === PROJECT ? { id, owner_org_id: OWNER } : null; },
+      async isParticipant() { return false; },
+      async isStaffed() { return true; },
+      async taskProcurementOfProject() {
+        return { items: [{ task_id: 'roof', id: RFP, title: 'Roof', status: 'draft', created_at: '2026-10-01T00:00:00Z', root_task_ids: ['roof'], lane_counts: { invited: 2 } }], nextTaskId: null };
+      },
+    };
+    const planning = {
+      async tasksOf() {
+        return [
+          { id: 'found', code: '1', name: 'Foundations', kind: 'task', specialty_code: 'structure' },
+          { id: 'roof', code: '2', name: 'Roof', kind: 'task', specialty_code: 'roofing-tiled' },
+        ];
+      },
+    };
+    registerTendering(router, { store, directory, planning });
+    const call = (query) => router.dispatch({ method: 'GET', path: `/projects/${PROJECT}/ask-candidates`, viewer: viewer(OWNER), body: null, query, headers: {} });
+    const res = await call({ company_id: ROOFER });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.items.map((t) => [t.task_id, t.specialty_match, t.target.kind]), [['roof', true, 'draft'], ['found', false, 'new']]);
+    assert.deepEqual(res.body.items[0].rfp, { id: RFP, title: 'Roof', status: 'draft', invited_count: 2 });
+    assert.equal((await call({})).status, 422);
+    assert.equal((await router.dispatch({ method: 'GET', path: `/projects/${FAR_PROJECT}/ask-candidates`, viewer: viewer(OWNER), body: null, query: { company_id: ROOFER }, headers: {} })).status, 404);
+  });
+});

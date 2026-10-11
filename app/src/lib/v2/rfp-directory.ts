@@ -15,8 +15,6 @@ import { searchCompanies } from './directory';
 import type { V2DirectoryCard } from './directory-view';
 import type { AskTask, V2BidRequest } from './rfp-directory-view';
 import type { V2Recipient } from './tendering-view';
-import type { V2Task } from './planning-view';
-import type { V2TaskProcurement } from './task-procurement-view';
 
 async function orEmpty<T>(p: Promise<T>, empty: T): Promise<T> {
   try {
@@ -63,27 +61,16 @@ export function declineBidRequest(id: string): Promise<V2BidRequest> {
 }
 
 /**
- * X-6: a build's tasks as "Ask for a proposal" lists them — each with its
- * specialty code and the RFP that governs it now. Two reads of the build
- * (its schedule and its per-task procurement projection), joined by task id;
- * no per-task call.
+ * X-6: a build's tasks as "Ask for a proposal" offers them to one company —
+ * ONE server read (listAskCandidates): ranked on the company's specialties,
+ * each with the RFP that governs it and where the company would land.
  */
-export async function tasksForAsk(projectId: string): Promise<AskTask[]> {
-  const id = encodeURIComponent(projectId);
-  const [schedule, procurement] = await Promise.all([
-    orEmpty(v2<{ tasks?: V2Task[] }>({ method: 'GET', path: `/projects/${id}/schedule` }), { tasks: [] }),
-    orEmpty(v2<{ items?: V2TaskProcurement[] }>({ method: 'GET', path: `/projects/${id}/task-procurement` }), { items: [] }),
-  ]);
-  const byTask = new Map((procurement.items ?? []).map((p) => [p.task_id, p]));
-  return (schedule.tasks ?? [])
-    .filter((t) => t.kind !== 'milestone')
-    .map((t) => {
-      const p = byTask.get(t.id);
-      return {
-        id: t.id,
-        name: t.name,
-        specialty_code: t.specialty_code ?? null,
-        rfp: p ? { id: p.rfp_id, title: p.title, status: p.status, invited_count: p.invited_count } : null,
-      };
-    });
+export async function tasksForAsk(projectId: string, companyId: string): Promise<AskTask[]> {
+  const res = await orEmpty(
+    v2<{ items?: AskTask[] }>({
+      method: 'GET', path: `/projects/${encodeURIComponent(projectId)}/ask-candidates`, query: { company_id: companyId },
+    }),
+    { items: [] },
+  );
+  return res.items ?? [];
 }
