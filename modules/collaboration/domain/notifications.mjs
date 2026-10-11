@@ -5,7 +5,7 @@
 
 /** Catalogue order = settings order (contract schema NotificationCategory). */
 export const NOTIFICATION_CATEGORIES = Object.freeze([
-  'bids', 'tendering', 'variations', 'invitations', 'questions', 'quality', 'files',
+  'bids', 'tendering', 'variations', 'invitations', 'questions', 'quality', 'files', 'plan',
 ]);
 export const NOTIFICATION_CHANNELS = Object.freeze(['in_app', 'email']);
 
@@ -193,6 +193,26 @@ export function invitationAcceptedTargets(evt) {
     category: 'invitations',
     title: 'Your invitation to this build was accepted',
     objectRef: { type: 'project', id: evt.project_id, project_id: evt.project_id, url: projectUrl(evt.project_id) },
+  }];
+}
+
+/**
+ * planning.plan.imported → the project owner ("your plan is in", PRD-09 O-12),
+ * never the importing org. A build still unclaimed (no owner yet) tells no one.
+ */
+export function planImportedTargets(evt) {
+  const owner = evt.data?.owner_org_id ?? null;
+  const importer = evt.data?.imported_by_org_id ?? evt.actor?.org_id ?? null;
+  if (!owner || owner === importer || !evt.project_id) return [];
+  const who = evt.data?.imported_by_org_name ? ` by ${evt.data.imported_by_org_name}` : '';
+  const n = Number(evt.data?.actions ?? 0);
+  const m = Number(evt.data?.sub_actions ?? 0);
+  return [{
+    orgId: owner,
+    audience: 'project',
+    category: 'plan',
+    title: `Plan imported${who}: ${n} action${n === 1 ? '' : 's'}, ${m} sub-action${m === 1 ? '' : 's'}`,
+    objectRef: { type: 'project', id: evt.project_id, project_id: evt.project_id, url: `${projectUrl(evt.project_id)}/plan` },
   }];
 }
 

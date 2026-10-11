@@ -15,6 +15,7 @@
 //     → 15-MINUTE DIGEST to owner + client of the row (planning port),
 //       narrowed/extended by collaboration.variation_subscription
 //   project.invitation.accepted      → the inviter org
+//   planning.plan.imported           → the project owner (PRD-09 O-12)
 //   collaboration.question.*         → addressee / asker org
 //   quality.nonconformity.raised     → the assigned org
 //   planning.deliverable.submitted   → client side of the task (planning port)
@@ -35,7 +36,7 @@ import {
   bidSubmittedTargets, clarificationAnsweredTargets, awardedTargets, cancelledTargets,
   invitationAcceptedTargets, variationDigestOrgs, variationDigestRef, projectUrl, notificationEmail,
   deliverableSubmittedTargets, deliverableDecidedTargets, newVersionTargets, modelEditedTargets,
-  bidRequestedTargets, bidRequestDecidedTargets,
+  bidRequestedTargets, bidRequestDecidedTargets, planImportedTargets,
 } from '../domain/notifications.mjs';
 
 const NO_PEOPLE = Object.freeze({ projectAudience: async () => [], orgAudience: async () => [] });
@@ -161,6 +162,7 @@ export function collaborationConsumers(store, ports = {}) {
     'tendering.bid_request.declined': rfpEvent(bidRequestDecidedTargets),
 
     'project.invitation.accepted': (evt) => deliver(evt, invitationAcceptedTargets(evt)),
+    'planning.plan.imported': (evt) => deliver(evt, planImportedTargets(evt)),
 
     'collaboration.question.opened': onProject(
       'questions', 'A question was addressed to your organisation',

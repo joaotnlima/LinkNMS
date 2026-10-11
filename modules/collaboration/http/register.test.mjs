@@ -137,6 +137,12 @@ function fakeStore() {
       };
     },
     async countUnread() { return 3; },
+    async notificationSummary({ projectId }) {
+      return [
+        { id: NOTIF, category: 'questions', title: 'Your question was answered', object_ref: { type: 'comment', id: QUESTION, project_id: projectId }, created_at: new Date('2026-09-26T09:30:00Z'), read_at: null, unread_count: 2 },
+        { id: NOTIF, category: 'plan', title: 'Plan imported', object_ref: { type: 'project', id: projectId, project_id: projectId, url: '/p' }, created_at: new Date('2026-09-27T09:30:00Z'), read_at: null, unread_count: 1 },
+      ];
+    },
     async markNotificationsRead(cmd) { marked.push(cmd); },
     async listPreferences() { return [...prefs]; },
     async putPreferences({ items }) { prefs.push(...items); return [...prefs]; },
@@ -293,6 +299,15 @@ describe('collaboration over the /api/v2 router', () => {
       assert.equal(res.body.unread_count, 3);
     });
 
+    test('getNotificationSummary: unread by category, newest first; a bad project id → 422', async () => {
+      const res = await dispatch('GET', '/me/notification-summary', viewer(GC_ORG), undefined, { project_id: PROJECT });
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.body.categories.map((c) => [c.category, c.unread_count]), [['plan', 1], ['questions', 2]]);
+      assert.equal(res.body.total_unread, 3);
+      const bad = await dispatch('GET', '/me/notification-summary', viewer(GC_ORG), undefined, { project_id: 'nope' });
+      assert.equal(bad.status, 422);
+    });
+
     test('listNotifications: an unknown category → 422', async () => {
       const res = await dispatch('GET', '/me/notifications', viewer(GC_ORG), undefined, { category: 'gossip' });
       assert.equal(res.status, 422);
@@ -301,7 +316,7 @@ describe('collaboration over the /api/v2 router', () => {
     test('getNotificationPreferences answers every category × channel, defaults on', async () => {
       const res = await dispatch('GET', '/me/notification-preferences', viewer(GC_ORG));
       assert.equal(res.status, 200);
-      assert.equal(res.body.items.length, 14);
+      assert.equal(res.body.items.length, 16);
       assert.ok(res.body.items.every((p) => typeof p.enabled === 'boolean'));
     });
 

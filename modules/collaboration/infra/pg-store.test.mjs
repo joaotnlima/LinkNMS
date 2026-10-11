@@ -33,6 +33,7 @@ import {
   createComment, answerQuestion, resolveQuestion, listMyQuestions,
   createMinute, circulateMinute, acknowledgeMinute, listActivity,
   listNotifications, markNotificationsRead, putNotificationPreferences, getNotificationPreferences,
+  getNotificationSummary,
 } from '../application/use-cases.mjs';
 import { dispatchPending, publishEvent } from '../../../platform/outbox.mjs';
 
@@ -266,7 +267,7 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
       body: { items: [{ category: 'variations', channel: 'in_app', enabled: false }] },
     });
     assert.equal(saved.status, 200);
-    assert.equal(saved.body.items.length, 14, 'the full effective set answers');
+    assert.equal(saved.body.items.length, 16, 'the full effective set answers');
     assert.equal(saved.body.items.find((p) => p.category === 'variations' && p.channel === 'in_app').enabled, false);
     await assert.rejects(putNotificationPreferences({
       viewer: gc(), store, body: { items: [{ category: 'gossip', channel: 'email', enabled: true }] },
@@ -463,7 +464,7 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
       assert.ok(gcInbox.body.items.some((n) => /cancelled/.test(n.title)));
       assert.equal(mail.sent.length, before, 'no mail after opting out');
       const prefs = await getNotificationPreferences({ viewer: gc(), store });
-      assert.equal(prefs.body.items.length, 14);
+      assert.equal(prefs.body.items.length, 16);
       assert.equal(prefs.body.items.find((p) => p.category === 'tendering' && p.channel === 'email').enabled, false);
       assert.equal(prefs.body.items.find((p) => p.category === 'bids' && p.channel === 'email').enabled, true);
     });
@@ -535,6 +536,34 @@ describe('collaboration store over Postgres (v2 migrations)', { skip }, () => {
       assert.match(versions[0].title, /\(v2\)/);
       const gcInbox = await listNotifications({ viewer: gc(), store, query: { category: 'files' } });
       assert.equal(gcInbox.body.items.some((n) => /new version/.test(n.title)), false);
+    });
+  });
+
+  describe('the plan is in, and what is waiting (PRD-09 O-2, O-12)', () => {
+    test('plan imported → the owner, never the importer; the summary counts unread by category on the build', async () => {
+      await pool.query(`UPDATE platform.outbox SET dispatched_at = now() WHERE dispatched_at IS NULL`);
+      await publishEvent(pool, {
+        event_id: randomUUID(), type: 'planning.plan.imported', project_id: PROJECT,
+        actor: { person_id: null, org_id: GC_ORG }, scope: { type: 'project', id: PROJECT },
+        data: { import_id: randomUUID(), actions: 6, sub_actions: 14, links: 5, warnings: 2,
+          imported_by_org_id: GC_ORG, imported_by_org_name: 'Ferreira Construção', owner_org_id: OWNER_ORG },
+      });
+      await dispatchPending(pool, consumers);
+      const ownerInbox = await listNotifications({ viewer: owner(), store, query: { category: 'plan' } });
+      assert.deepEqual(ownerInbox.body.items.map((n) => n.title), ['Plan imported by Ferreira Construção: 6 actions, 14 sub-actions']);
+      assert.equal(ownerInbox.body.items[0].object_ref.url, `/projects/${PROJECT}/plan`);
+      const gcInbox = await listNotifications({ viewer: gc(), store, query: { category: 'plan' } });
+      assert.equal(gcInbox.body.items.length, 0);
+
+      const summary = await getNotificationSummary({ viewer: owner(), store, query: { project_id: PROJECT } });
+      const plan = summary.body.categories.find((c) => c.category === 'plan');
+      assert.equal(plan.unread_count, 1);
+      assert.match(plan.latest.title, /Plan imported/);
+      assert.equal(summary.body.total_unread, summary.body.categories.reduce((n, c) => n + c.unread_count, 0));
+      const elsewhere = await getNotificationSummary({ viewer: owner(), store, query: { project_id: randomUUID() } });
+      assert.deepEqual([elsewhere.body.total_unread, elsewhere.body.categories], [0, []]);
+      await assert.rejects(getNotificationSummary({ viewer: owner(), store, query: { project_id: 'x' } }),
+        (e) => e.problem?.code === 'validation_failed');
     });
   });
 });

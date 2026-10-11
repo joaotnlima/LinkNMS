@@ -282,6 +282,27 @@ export async function listNotifications({ viewer, store, query }) {
   };
 }
 
+/**
+ * operationId: getNotificationSummary — "what's waiting for you" (PRD-09 O-2):
+ * my unread notifications by category, newest category first, optionally about
+ * one build. Only the caller's own rows; nothing composed from other modules.
+ */
+export async function getNotificationSummary({ viewer, store, query }) {
+  const projectId = query?.project_id ?? null;
+  if (projectId !== null && !UUID.test(projectId)) {
+    throw new ProblemError('validation_failed', null, { errors: { project_id: 'a project id' } });
+  }
+  const actor = await requireActor(store, viewer);
+  const rows = await store.notificationSummary({ personId: actor.id, projectId });
+  const categories = rows
+    .map((r) => ({ category: r.category, unread_count: Number(r.unread_count), latest: notificationBody(r) }))
+    .sort((a, b) => String(b.latest.created_at).localeCompare(String(a.latest.created_at)));
+  return {
+    status: 200,
+    body: { project_id: projectId, total_unread: categories.reduce((n, c) => n + c.unread_count, 0), categories },
+  };
+}
+
 /** operationId: markNotificationsRead — {ids} or {all:true}; 204. */
 export async function markNotificationsRead({ viewer, store, body }) {
   const ids = body?.ids ?? [];

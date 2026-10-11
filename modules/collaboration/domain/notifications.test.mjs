@@ -6,7 +6,7 @@ import {
   deliverableSubmittedTargets, deliverableDecidedTargets, newVersionTargets, modelEditedTargets, modelUrl,
   bidSubmittedTargets, clarificationAnsweredTargets, awardedTargets, cancelledTargets,
   invitationAcceptedTargets, variationDigestOrgs, notificationEmail,
-  bidRequestedTargets, bidRequestDecidedTargets, companyRequestUrl,
+  bidRequestedTargets, bidRequestDecidedTargets, companyRequestUrl, planImportedTargets,
 } from './notifications.mjs';
 
 const RFP = {
@@ -161,5 +161,15 @@ describe('requests to bid (PRD-04 X-5, X-13; D-47)', () => {
     assert.equal(t.objectRef.url, companyRequestUrl());
     assert.deepEqual(bidRequestDecidedTargets({ ...evt({ org_id: 'issuer' }), type: 'tendering.bid_request.declined' }, RFP), []);
     assert.deepEqual(bidRequestDecidedTargets({ ...evt({}), type: 'tendering.bid_request.declined' }, RFP), []);
+  });
+});
+
+describe('plan imported (PRD-09 O-12)', () => {
+  test('the owner hears it; the importing org and an ownerless build do not', () => {
+    const e = { event_id: 'e', project_id: 'p1', data: { owner_org_id: 'own', imported_by_org_id: 'gc', imported_by_org_name: 'Ferreira', actions: 1, sub_actions: 3 } };
+    assert.deepEqual(planImportedTargets(e).map((t) => [t.orgId, t.category, t.title, t.objectRef.url]),
+      [['own', 'plan', 'Plan imported by Ferreira: 1 action, 3 sub-actions', '/projects/p1/plan']]);
+    assert.deepEqual(planImportedTargets({ ...e, data: { ...e.data, imported_by_org_id: 'own' } }), []);
+    assert.deepEqual(planImportedTargets({ ...e, data: { ...e.data, owner_org_id: null } }), []);
   });
 });

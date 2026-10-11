@@ -34,6 +34,26 @@ export function notificationQueries(pool, tx) {
       };
     },
 
+    /**
+     * "What's waiting for you" (PRD-09 O-2): per category, the unread count and
+     * the newest unread row — one statement, optionally about one build.
+     */
+    async notificationSummary({ personId, projectId = null }) {
+      const { rows } = await pool.query(
+        `WITH unread AS (
+           SELECT * FROM collaboration.notification
+            WHERE person_id = $1 AND read_at IS NULL
+              AND ($2::text IS NULL OR object_ref->>'project_id' = $2)
+         )
+         SELECT DISTINCT ON (u.category) u.*, c.n AS unread_count
+           FROM unread u
+           JOIN (SELECT category, count(*)::int AS n FROM unread GROUP BY category) c USING (category)
+          ORDER BY u.category, u.created_at DESC, u.id DESC`,
+        [personId, projectId],
+      );
+      return rows;
+    },
+
     /** The bell: every unread row of the person, whatever the page/filter. */
     async countUnread(personId) {
       const { rows } = await pool.query(
