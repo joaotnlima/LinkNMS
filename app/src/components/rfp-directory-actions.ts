@@ -17,7 +17,7 @@ import {
   addCompanies, approveBidRequest, declineBidRequest, listBidRequests, suggestCompanies, tasksForAsk,
 } from '@/lib/v2/rfp-directory';
 import {
-  defaultBidsDue, safeReturnTo, tenderPanelHref, type AskTask, type V2BidRequest,
+  safeReturnTo, tenderPanelHref, type AskTask, type V2BidRequest,
 } from '@/lib/v2/rfp-directory-view';
 import { createRfp, getRfp, updateRfp } from '@/lib/v2/tendering';
 import type { V2Recipient, V2Rfp } from '@/lib/v2/tendering-view';
@@ -113,8 +113,8 @@ export async function askForProposalAction(input: {
       rfpId = rfp.id;
     } else {
       const rfp = await createRfp(input.projectId, {
-        title: input.task.name, scopeText: '', rootTaskIds: [input.task.task_id],
-        submissionDeadline: defaultBidsDue(), listed: false,
+        // No bids-due here: the server sets its default (tendering domain/deadlines.mjs).
+        title: input.task.name, scopeText: '', rootTaskIds: [input.task.task_id], listed: false,
       });
       rfpId = rfp.id;
       created = true;

@@ -19,7 +19,8 @@ test('create: audience, documents and an expiry within 90 days', () => {
   assert.equal(shareBody({ audience: '', expiresOn: '2026-10-20', documentIds: ['d'] }, '2026-10-11').ok, false);
   assert.equal(shareBody({ audience: 'CM Maia', expiresOn: '2026-10-20', documentIds: [] }, '2026-10-11').ok, false);
   assert.equal(shareBody({ audience: 'CM Maia', expiresOn: '2026-10-10', documentIds: ['d'] }, '2026-10-11').ok, false);
-  assert.equal(shareBody({ audience: 'CM Maia', expiresOn: '2027-01-30', documentIds: ['d'] }, '2026-10-11').ok, false);
+  // No client copy of the 90-day limit: a far date is the server's to refuse (422).
+  assert.equal(shareBody({ audience: 'CM Maia', expiresOn: '2027-01-30', documentIds: ['d'] }, '2026-10-11').ok, true);
   assert.deepEqual(shareBody({ audience: ' CM Maia ', expiresOn: '2026-10-20', documentIds: ['d'] }, '2026-10-11'),
     { ok: true, body: { audience: 'CM Maia', document_ids: ['d'], expires_at: '2026-10-20T23:59:59Z' } });
 });

@@ -17,6 +17,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { ProblemError } from '../../../platform/errors.mjs';
 import {
   parseShareLinkCreate, shareLinkStatus, shareLinkBody, shareLinkAccessBody,
+  maxExpiresAt,
 } from '../domain/share-link.mjs';
 import { requireOwner, requireActor, actorOf, clampLimit, sha256 } from './use-cases.mjs';
 
@@ -65,7 +66,15 @@ export async function listShareLinks({ viewer, store, projectId, query }) {
     projectId, cursor: cursorOf(query?.cursor), limit: clampLimit(query?.limit),
   });
   const now = new Date();
-  return { status: 200, body: { items: items.map((l) => shareLinkBody(l, now)), next_cursor: nextCursor } };
+  return {
+    status: 200,
+    body: {
+      items: items.map((l) => shareLinkBody(l, now)),
+      next_cursor: nextCursor,
+      // The latest expiry createShareLink accepts right now (MAX_SHARE_DAYS) — the UI reads it, never its own copy.
+      max_expires_at: maxExpiresAt(now),
+    },
+  };
 }
 
 /** operationId: revokeShareLink — idempotent; the record says who closed it. */

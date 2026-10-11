@@ -409,6 +409,14 @@ describe('tendering over the /api/v2 router', () => {
       assert.ok(store.ledger.includes('tendering.rfp.created'));
     });
 
+    test('without a bids-due date the server sets its default (14 days out, 18:00 Lisbon)', async () => {
+      const { submission_deadline: _omit, ...bare } = create;
+      const res = await dispatch('POST', `/projects/${PROJECT}/rfps`, viewer(OWNER_ORG), bare);
+      assert.equal(res.status, 201);
+      const days = (Date.parse(res.body.submission_deadline) - Date.now()) / 86400000;
+      assert.ok(days > 13 && days < 15.5, `${res.body.submission_deadline}`);
+    });
+
     test('without org:tendering:issue → 403', async () => {
       const res = await dispatch('POST', `/projects/${PROJECT}/rfps`, viewer(OWNER_ORG, { perms: [] }), create);
       assert.equal(res.status, 403);

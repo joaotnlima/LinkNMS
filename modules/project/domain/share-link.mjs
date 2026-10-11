@@ -9,6 +9,11 @@
 export const MAX_SHARE_DAYS = 90;
 export const MAX_SHARED_DOCUMENTS = 50;
 
+/** The latest expiry a link created at `now` may have (ISO). */
+export function maxExpiresAt(now = new Date()) {
+  return new Date(now.getTime() + MAX_SHARE_DAYS * 24 * 3600 * 1000).toISOString();
+}
+
 /** active | expired | revoked at `now`. */
 export function shareLinkStatus(link, now = new Date()) {
   if (link.revoked_at) return 'revoked';
@@ -29,7 +34,7 @@ export function parseShareLinkCreate(body, now = new Date()) {
   const expiresAt = body?.expires_at ? new Date(body.expires_at) : null;
   if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= now.getTime()) {
     errors.expires_at = 'a future date-time';
-  } else if (expiresAt.getTime() > now.getTime() + MAX_SHARE_DAYS * 24 * 3600 * 1000) {
+  } else if (expiresAt.toISOString() > maxExpiresAt(now)) {
     errors.expires_at = `at most ${MAX_SHARE_DAYS} days out`;
   }
 

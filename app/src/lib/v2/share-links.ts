@@ -14,9 +14,12 @@ import type { SharedLoad, V2ShareLink, V2ShareLinkAccess, V2SharedView } from '.
 
 const enc = encodeURIComponent;
 
-export async function listShareLinksV2(projectId: string): Promise<V2ShareLink[]> {
-  const res = await v2<{ items: V2ShareLink[] }>({ method: 'GET', path: `/projects/${enc(projectId)}/share-links`, query: { limit: 100 } });
-  return res.items ?? [];
+/** The build's links and the latest expiry the server accepts now (its 90-day limit, never a client copy). */
+export async function listShareLinksV2(projectId: string): Promise<{ items: V2ShareLink[]; maxExpiresAt: string | null }> {
+  const res = await v2<{ items: V2ShareLink[]; max_expires_at?: string }>({
+    method: 'GET', path: `/projects/${enc(projectId)}/share-links`, query: { limit: 100 },
+  });
+  return { items: res.items ?? [], maxExpiresAt: res.max_expires_at ?? null };
 }
 
 export async function listShareLinkAccessesV2(linkId: string): Promise<V2ShareLinkAccess[]> {

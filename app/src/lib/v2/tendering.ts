@@ -288,7 +288,7 @@ export async function createRfp(projectId: string, draft: RfpDraftInput): Promis
       ...(draft.mode ? { mode: draft.mode } : {}),
       ...(draft.questionsDeadline ? { questions_deadline: draft.questionsDeadline } : {}),
       ...(draft.excludedTaskIds?.length ? { excluded_task_ids: draft.excludedTaskIds } : {}),
-      submission_deadline: draft.submissionDeadline,
+      ...(draft.submissionDeadline ? { submission_deadline: draft.submissionDeadline } : {}),
     },
   });
 }

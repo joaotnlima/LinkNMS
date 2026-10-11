@@ -43,6 +43,7 @@ import {
   MAX_ATTACHMENTS_PER_PROPOSAL,
 } from '../domain/attachment.mjs';
 import { validateModelFile, modelBody, MODEL_MIME } from '../domain/rfp-model.mjs';
+import { defaultSubmissionDeadline } from '../domain/deadlines.mjs';
 // Pure key-shape helper owned by the Documents domain — the BIM model is a
 // Documents-module document (doc 24 decision 2); tendering owns its auth and
 // delegates persistence to the injected documents store, so it builds the same
@@ -62,7 +63,7 @@ const ROW_KINDS = new Set(['task', 'summary', 'milestone']);
 // ── RFP lifecycle (issuer side) ─────────────────────────────────────────────
 
 /** operationId: createRfp — package = subtrees + docs + quantities, no prices. */
-export async function createRfp({ viewer, store, projectId, body, idempotencyKey }) {
+export async function createRfp({ viewer, store, projectId, body, idempotencyKey, now = new Date() }) {
   requireActiveOrg(viewer);
   if (!viewer.has('org:tendering:issue')) throw new ProblemError('forbidden', null, { reason: 'role' });
   const { project } = await requireParticipant({ viewer, store, projectId });
@@ -86,7 +87,9 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
   const mode = body?.mode ?? (purpose === 'design' ? 'light' : 'detailed');
   if (!MODES.has(mode)) errors.mode = 'light or detailed';
   else if (purpose === 'design' && mode !== 'light') errors.mode = 'a design RFP is always light';
-  validateDeadlines(body, errors, { submissionRequired: true });
+  // Omitted bids-due → the server's default (domain/deadlines.mjs), never the client's.
+  const submissionDeadline = body?.submission_deadline ?? defaultSubmissionDeadline(now);
+  validateDeadlines({ ...body, submission_deadline: submissionDeadline }, errors, { submissionRequired: true });
   validateExclusions(body, errors);
   if (Object.keys(errors).length) throw new ProblemError('validation_failed', null, { errors });
 
@@ -135,7 +138,7 @@ export async function createRfp({ viewer, store, projectId, body, idempotencyKey
       scopeText: body.scope_text ?? null,
       listed: listedOf(body) ?? false,
       questionsDeadline: body.questions_deadline ?? null,
-      submissionDeadline: body.submission_deadline,
+      submissionDeadline,
       rootTaskIds: uniqueRoots,
       excludedTaskIds: excluded,
       packageRows: snapshot.rows,

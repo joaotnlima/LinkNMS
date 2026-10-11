@@ -128,6 +128,11 @@ describe('share links over the v2 router (PRD-12 N-12)', () => {
     assert.equal((await create({ expires_at: '2020-01-01T00:00:00Z' })).res.status, 422);
     const far = new Date(Date.now() + 120 * 24 * 3600 * 1000).toISOString();
     assert.equal((await create({ expires_at: far })).res.status, 422);
+    // The limit is the server's, and the list says it (the UI reads max_expires_at).
+    const list = await call('GET', `/projects/${PROJECT}/share-links`, {});
+    const days = (Date.parse(list.body.max_expires_at) - Date.now()) / 86400000;
+    assert.ok(days > 89.9 && days <= 90, list.body.max_expires_at);
+    assert.equal((await create({ expires_at: list.body.max_expires_at })).res.status, 201);
   });
 
   test('the holder sees only the shared files; every view and download is logged', async () => {

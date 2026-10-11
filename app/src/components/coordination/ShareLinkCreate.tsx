@@ -10,8 +10,9 @@ import { shareBody, type ShareForm } from '@/lib/v2/share-links-view';
 
 type Option = { id: string; name: string };
 
-export function ShareLinkCreate({ projectId, today, defaultExpiry, files }: {
-  projectId: string; today: string; defaultExpiry: string; files: Option[];
+export function ShareLinkCreate({ projectId, today, defaultExpiry, maxExpiry, files }: {
+  /** The latest day the server accepts (listShareLinks max_expires_at) — its limit, not ours. */
+  projectId: string; today: string; defaultExpiry: string; maxExpiry: string | null; files: Option[];
 }) {
   const [form, setForm] = useState<ShareForm>({ audience: '', expiresOn: defaultExpiry, documentIds: [] });
   const [busy, setBusy] = useState(false);
@@ -42,7 +43,7 @@ export function ShareLinkCreate({ projectId, today, defaultExpiry, files }: {
       <input className="ste-field" maxLength={200} placeholder="Who it is for — e.g. Câmara Municipal da Maia" value={form.audience}
         onChange={(e) => setForm((f) => ({ ...f, audience: e.target.value }))} />
       <label className="ste-row"><span>Open until</span>
-        <input className="ste-field" type="date" min={today} value={form.expiresOn} style={{ maxWidth: 200 }}
+        <input className="ste-field" type="date" min={today} max={maxExpiry ?? undefined} value={form.expiresOn} style={{ maxWidth: 200 }}
           onChange={(e) => setForm((f) => ({ ...f, expiresOn: e.target.value }))} />
       </label>
       {files.length === 0 ? <p className="ste-quiet">No files on this build yet.</p> : (

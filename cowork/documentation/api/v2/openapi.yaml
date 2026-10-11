@@ -2018,6 +2018,11 @@ paths:
                       type: array
                       items:
                         $ref: '#/components/schemas/ShareLink'
+                    max_expires_at:
+                      type: string
+                      format: date-time
+                      description: The latest `expires_at` createShareLink accepts now (90 days out) — the limit is the
+                        server's; a client offers dates up to this and never keeps its own copy.
                   required:
                   - items
         '401':
@@ -15024,12 +15029,15 @@ components:
             own sub-tree). Must lie inside a root's sub-tree. Draft-only on update.
           items: *id001
         questions_deadline: *id004
-        submission_deadline: *id004
+        submission_deadline:
+          type: string
+          format: date-time
+          description: 'Bids due. Omitted → the server''s default: 14 calendar days out, 18:00 Lisbon time (the
+            issuer changes it before publishing).'
       required:
       - id
       - root_task_ids
       - title
-      - submission_deadline
     RecipientAdd:
       type: object
       properties:

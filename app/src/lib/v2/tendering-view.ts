@@ -341,7 +341,8 @@ export interface RfpDraftInput {
   title: string;
   scopeText: string;
   rootTaskIds: string[];
-  submissionDeadline: string; // ISO date-time
+  /** ISO date-time; omitted → the server's default (14 days out, 18:00 Lisbon). */
+  submissionDeadline?: string;
   questionsDeadline?: string;
   /** PRD-04 X-3: also list it as an open request (replaces visibility = open). */
   listed: boolean;

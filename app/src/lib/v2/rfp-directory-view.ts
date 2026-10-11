@@ -204,13 +204,6 @@ export interface AskTask {
   target: { kind: 'draft'; rfp_id: string } | { kind: 'new' } | { kind: 'locked'; reason: string };
 }
 
-/** The new draft's bids-due: two weeks out, 18:00 local. */
-export function defaultBidsDue(now: Date = new Date()): string {
-  const d = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
-  d.setHours(18, 0, 0, 0);
-  return d.toISOString();
-}
-
 // ── the company inbox (X-9, X-10) ────────────────────────────────────────────
 
 const ORIGIN: Record<RecipientSource, string> = {

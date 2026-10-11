@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 import {
   sourceTag, recipientName, recipientNote, biddersSummary, emailInviteeCount, isSuggestionAdded, suggestionLine,
-  proofLine, safeReturnTo, directoryHref, pendingFirst, defaultBidsDue,
+  proofLine, safeReturnTo, directoryHref, pendingFirst,
   originLine, requestState, openRequestLine, openRequestAction, inboxTab,
 } from './rfp-directory-view.ts';
 
@@ -89,13 +89,6 @@ describe('asking to bid (X-5)', () => {
   });
 });
 
-describe('Ask for a proposal (X-6, X-7)', () => {
-  test('the new draft’s bids are due in two weeks', () => {
-    const due = new Date(defaultBidsDue(new Date('2026-12-01T09:00:00')));
-    assert.equal(Math.round((due.getTime() - new Date('2026-12-01T09:00:00').getTime()) / 86400000), 14);
-    assert.equal(due.getHours(), 18);
-  });
-});
 
 describe('the company inbox (X-9, X-10)', () => {
   const req = (over = {}) => ({

@@ -46,6 +46,9 @@ One dated entry per API change, newest first. Policy: [versioning-and-deprecatio
   `approve_bid_request`, `decline_bid_request`, `decline_rfp_invitation` (write-confirm). Human-only and link-token
   operations stay without one.
 - Editorial: the DWG layer's `on` property is quoted (`'on'`) so YAML 1.1 readers do not turn it into `true`.
+- **Defaults and limits live on the server.** `RfpCreate.submission_deadline` is optional: omitted, the server sets 14
+  calendar days out at 18:00 Lisbon time (the app no longer computes it). `listShareLinks` answers `max_expires_at`, the
+  latest expiry `createShareLink` accepts now (its 90-day limit); the app offers dates up to it and keeps no copy.
 
 ## 2026-10-11 — Coordination: quality, questions and minutes, share links (PRD-12 N-3..N-7, N-12)
 

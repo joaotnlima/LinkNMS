@@ -53,8 +53,6 @@ export type SharedLoad =
   | { state: 'dead' }
   | { state: 'error' };
 
-export const MAX_SHARE_DAYS = 90;
-
 export function statusWords(link: Pick<V2ShareLink, 'status' | 'expires_at' | 'revoked_at'>): string {
   if (link.status === 'revoked') return `Revoked${link.revoked_at ? ` on ${link.revoked_at.slice(0, 10)}` : ''}`;
   if (link.status === 'expired') return `Expired on ${link.expires_at.slice(0, 10)}`;
@@ -80,9 +78,7 @@ export function shareBody(form: ShareForm, today: string): { ok: true; body: Rec
   if (!audience) return { ok: false, message: 'Say who the link is for (e.g. the municipality).' };
   if (!form.documentIds.length) return { ok: false, message: 'Pick the documents to share.' };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(form.expiresOn) || form.expiresOn < today) return { ok: false, message: 'Pick an expiry date from today on.' };
-  const last = new Date(`${today}T00:00:00Z`);
-  last.setUTCDate(last.getUTCDate() + MAX_SHARE_DAYS - 1);
-  if (form.expiresOn > last.toISOString().slice(0, 10)) return { ok: false, message: `A link lasts at most ${MAX_SHARE_DAYS} days.` };
+  // The 90-day limit is the server's (createShareLink answers 422; the date input's max reads max_expires_at).
   return { ok: true, body: { audience, document_ids: form.documentIds, expires_at: `${form.expiresOn}T23:59:59Z` } };
 }
 

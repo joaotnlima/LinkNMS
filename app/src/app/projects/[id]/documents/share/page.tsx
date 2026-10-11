@@ -36,9 +36,10 @@ export default async function ShareLinksPage({
   const shell = await buildShellContextV2(id, name);
 
   let links: V2ShareLink[] = [];
+  let maxExpiresAt: string | null = null;
   let refused: string | null = null;
   try {
-    links = await listShareLinksV2(id);
+    ({ items: links, maxExpiresAt } = await listShareLinksV2(id));
   } catch (err) {
     if (!(err instanceof V2Error)) throw err;
     refused = err.status === 403 ? 'Only the owner of this build shares its documents.' : (err.detail ?? 'Share links could not be loaded.');
@@ -59,7 +60,7 @@ export default async function ShareLinksPage({
         </header>
         {refused ? <p role="alert" className="ste-error">{refused}</p> : (
           <>
-            <ShareLinkCreate projectId={id} today={today} defaultExpiry={inTwoWeeks}
+            <ShareLinkCreate projectId={id} today={today} defaultExpiry={inTwoWeeks} maxExpiry={maxExpiresAt?.slice(0, 10) ?? null}
               files={files.map((f) => ({ id: f.id, name: `${f.title} · ${f.versionLabel}` }))} />
             <section aria-label="Links">
               <h2>Links</h2>
