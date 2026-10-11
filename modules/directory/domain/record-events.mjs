@@ -39,10 +39,12 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 /**
  * @param {{ type: string, occurred_at?: string|Date, project_id?: string,
  *           scope?: {type: string, id: string}, data?: object }} evt
+ * @param {Date} now the clock — the moment an envelope without `occurred_at`
+ *   is recorded at (the consumer passes its own; the domain reads no clock)
  * @returns {object[]} read-model operations (empty: nothing to record)
  */
-export function recordOps(evt) {
-  const at = evt.occurred_at ? new Date(evt.occurred_at).toISOString() : new Date().toISOString();
+export function recordOps(evt, now) {
+  const at = evt.occurred_at ? new Date(evt.occurred_at).toISOString() : now.toISOString();
   const d = evt.data ?? {};
 
   if (evt.type === 'contracting.contract.signed') {

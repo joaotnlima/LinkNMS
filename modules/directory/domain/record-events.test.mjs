@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { recordOps } from './record-events.mjs';
+import { recordOps as ops } from './record-events.mjs';
 import { buildState, publicProfileBody } from './public-profile.mjs';
+
+const NOW = new Date('2026-10-11T12:00:00Z');
+const recordOps = (evt) => ops(evt, NOW);
 
 const AT = '2026-10-01T10:00:00.000Z';
 
@@ -72,4 +75,9 @@ test('build state and the public profile: names only with consent, stated only w
   assert.equal(body.builds[0].name, 'Moradia, Colares');
   assert.equal(body.builds[1].name, undefined);
   assert.equal(body.on_linknms_since, '2026-03-01');
+});
+
+test('an envelope without occurred_at is recorded at the clock it is given (no clock read in the domain)', () => {
+  const [op] = ops({ type: 'contracting.contract.closed', scope: { type: 'contract', id: 'c1' } }, NOW);
+  assert.equal(op.at, NOW.toISOString());
 });

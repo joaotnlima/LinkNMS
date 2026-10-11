@@ -19,11 +19,13 @@ import { createUnclaimedProfileSeeder } from './claims.mjs';
 
 /**
  * @param {{ applyRecordEvent: Function }} store directory store
- * @param {{ invitees?: { emailInviteesOf: Function }, logger?: { error: Function } }} [ports]
+ * @param {{ invitees?: { emailInviteesOf: Function }, logger?: { error: Function }, clock?: () => Date }} [ports]
+ *   `clock` — the application's clock (an envelope without occurred_at is recorded now)
  */
 export function directoryConsumers(store, ports = {}) {
+  const clock = ports.clock ?? (() => new Date());
   const handle = async (evt) => {
-    const ops = recordOps(evt);
+    const ops = recordOps(evt, clock());
     if (!ops.length) return;
     await store.applyRecordEvent({ eventId: evt.event_id, type: evt.type, ops });
   };
