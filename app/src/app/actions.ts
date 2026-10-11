@@ -95,18 +95,25 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
   const point = parseBuildPoint(String(form.get('locationLat') ?? ''), String(form.get('locationLng') ?? ''));
   if (point.error) return { error: point.error };
 
-  // NOTE (LINA-365 / LINA-367 Option A): creation now writes to /api/v2, whose
-  // ProjectCreate carries only the brief. The v1 wizard's operating-model fields —
-  // creatorRole (ADR-0016), expectedStart (GAP-2, no v2 brief field), and
-  // hasSignedContractor (phase seeding, ADR-0023 §3) — are NOT part of the v2
-  // create; they belong to the participation/phase slices that follow, so they
-  // are deliberately not read here. The seam maps the rest (build-create.ts).
+  // PRD-09 O-13: the creator role is persisted the one way the v2 model has —
+  // a GC creating for an owner sends the owner's email (on_behalf_of_owner_email,
+  // doc 14 Q4) and the owner claims the build. Expected start and "signed
+  // contractor?" are no longer asked: the plan's dates and the awarded tenders
+  // carry them (D-24, D-35, D-43). The seam maps the rest (build-create.ts).
+  const creatorRole = String(form.get('creatorRole') ?? 'owner');
+  let onBehalfOfOwnerEmail: string | undefined;
+  if (creatorRole === 'counterparty') {
+    onBehalfOfOwnerEmail = String(form.get('ownerEmail') ?? '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(onBehalfOfOwnerEmail)) {
+      return { error: 'Enter the owner\u2019s email — they claim the build by signing in with it.' };
+    }
+  }
 
   let id: string;
   try {
     // Draft baseline is 0; the accepted plan establishes the authoritative figure
     // (LINA-219). The v2 draft carries no budget at all.
-    ({ id } = await createBuildDraftV2({ name, municipalityCode, siteAddress, buildType, location: point.location }));
+    ({ id } = await createBuildDraftV2({ name, municipalityCode, siteAddress, buildType, location: point.location, onBehalfOfOwnerEmail }));
   } catch (err) {
     // A viewer with no active v2 org / lacking org:projects:create gets a V2Error
     // here (the onboarding org-provisioning increment makes a fresh signup have
@@ -114,8 +121,8 @@ export async function createBuildAction(_prev: FormState, form: FormData): Promi
     // it verbatim, so no v2-specific branch is needed.
     return refusal(err, 'Could not create the build.');
   }
-  // Straight to the v2 record (S2, /projects/{id}). Operating-model is a v1 wizard
-  // concept dropped on v2; invite is its own participation slice (LINA-367/386).
+  // Straight to the build home (PRD-09 O-1): the plan import and the
+  // participants page start there.
   redirect(`/projects/${id}`);
 }
 

@@ -23,19 +23,18 @@
 //   • baseline / indicative_budget — the plan is the baseline's single source
 //     (LINA-219); a v2 draft carries no budget and the accepted plan sets the
 //     real figure. Sending a 0 here would be a second, competing source.
-//   • creatorRole, hasSignedContractor, expectedStart — these shaped v1's
-//     seed-time OPERATING MODEL and PHASE state, which v2 models through separate
-//     endpoints (participants, planning phases), NOT the project brief. They are
-//     carried by the participation / phase-seed increments, not the create call.
-//     `expectedStart` has no v2 brief field at all today (GAP-2).
+//   • creatorRole — persisted as `on_behalf_of_owner_email` when a GC creates for
+//     an owner (PRD-09 O-13); the owner path sends nothing extra.
+//   • hasSignedContractor, expectedStart — no longer asked (PRD-09 O-13): the
+//     contract shape is derived (D-35), the baseline is taken at award (D-43) and
+//     the start is the plan's first date (D-24).
 //
 // ── GAPS raised to the wiring increment (do not paper over here) ──────────────
 //   GAP-1  v2 requires `municipality_code`; the pen Basics screen does not
 //          collect it. The wiring increment MUST add the field to Basics — this
 //          seam refuses a blank rather than send a placeholder that would pollute
 //          a real record (the product's whole promise is truthful data).
-//   GAP-2  `expectedStart` is dropped. If the product wants it on v2, the brief
-//          schema needs a field (an openapi + module change), not a client hack.
+//   GAP-2  CLOSED by PRD-09 O-13: `expectedStart` is no longer asked.
 
 /** The wizard's inputs to a fresh build, pre-translation. Blank optionals are
  *  omitted from the wire body, never sent as empty strings. */

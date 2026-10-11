@@ -19,14 +19,7 @@ import { ActionForm } from '@/components/ActionForm';
 import { createBuildAction } from '@/app/actions';
 import { BUILD_TYPES, BASICS_LEDE, type CreatorRole } from '@/lib/build-creation';
 
-export function BasicsForm({
-  creatorRole,
-  months,
-}: {
-  creatorRole: CreatorRole;
-  /** "YYYY-MM" value + "March 2026" label, computed on the server at request time. */
-  months: readonly { value: string; label: string }[];
-}) {
+export function BasicsForm({ creatorRole }: { creatorRole: CreatorRole }) {
   return (
     <ActionForm
       action={createBuildAction}
@@ -103,50 +96,27 @@ export function BasicsForm({
           </label>
         </div>
 
-        <div className="bwx-row2">
-          <label className="field">
-            <span className="metric-lbl">Build type</span>
-            <select name="buildType" defaultValue="">
-              <option value="">Choose a type…</option>
-              {BUILD_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
+        <label className="field">
+          <span className="metric-lbl">Build type</span>
+          <select name="buildType" defaultValue="">
+            <option value="">Choose a type…</option>
+            {BUILD_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
+        {/* PRD-09 O-13: a GC creates the build FOR its owner — the owner's email
+            is persisted (on_behalf_of_owner_email, doc 14 Q4) and they claim
+            the build by signing in with it. The owner path asks nothing more. */}
+        {creatorRole === 'counterparty' && (
           <label className="field">
-            <span className="metric-lbl">Expected start</span>
-            <select name="expectedStart" defaultValue="">
-              <option value="">Choose a month…</option>
-              {months.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
+            <span className="metric-lbl">Owner&rsquo;s email</span>
+            <input name="ownerEmail" type="email" required maxLength={254} autoComplete="off" placeholder="owner@example.com" />
           </label>
-        </div>
-
-        {/* "Do you already have a signed contractor?" (LINA-281, ADR-0023 §3).
-            The answer is seed-time only: it decides which phase the build opens
-            in — "No" runs an RFP first (procurement active); "Yes" skips the
-            tender and starts the Execution plan. Two native radios so selection
-            reads by the mark and the focus ring, never colour alone; "No" is
-            pre-checked because it is the common case and the seeder's own safe
-            default, and an unchecked radiogroup is a keyboard trap. */}
-        <fieldset className="field bwx-yesno">
-          <legend className="metric-lbl">Do you already have a signed contractor?</legend>
-          <label className="bwx-radio">
-            <input type="radio" name="hasSignedContractor" value="no" defaultChecked />
-            <span>No — I&rsquo;ll run a tender first</span>
-          </label>
-          <label className="bwx-radio">
-            <input type="radio" name="hasSignedContractor" value="yes" />
-            <span>Yes — skip straight to the build plan</span>
-          </label>
-        </fieldset>
+        )}
       </section>
     </ActionForm>
   );

@@ -13,7 +13,8 @@
 // nav rail ("the rail belongs with the first non-empty portfolio screen") and
 // added a three-step "Getting started" list the pen never drew. The founder's
 // side-by-side (this ticket) asked for the pen as drawn, so both departures are
-// now reverted: the body renders inside <PortalShell/> (rail + top bar on
+// now reverted. PRD-09 O-14: the lede promises only the steps that exist (no
+// "choose how it is contracted" step — D-35 derives it): the body renders inside <PortalShell/> (rail + top bar on
 // desktop, app bar + tab bar on mobile) and the empty state is just the icon,
 // heading, lede and the two CTAs — no steps list, no footnote.
 import Link from 'next/link';
@@ -35,8 +36,8 @@ export function EmptyPortal({ user }: { user: PortalUser }) {
         <h1 className="onb-title">No builds yet</h1>
 
         <p className="onb-lede">
-          Create the build, choose how it is contracted, and invite your contractor. From that point
-          every date, every euro and every change lives in one record both of you can read.
+          Create the build, bring in its plan from Excel and invite the people who work on it. From
+          then on every date, every euro and every change lives in one record all of you can read.
         </p>
 
         <div className="onb-cta">
