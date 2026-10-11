@@ -424,8 +424,15 @@ function notifiedBy(snapshot, task) {
 
 // ── structural batch ───────────────────────────────────────────────────────
 
-/** operationId: applySchedule */
-export async function applySchedule({ viewer, store, specialties, projectId, body, idempotencyKey }) {
+/**
+ * operationId: applySchedule
+ *
+ * `hooks` lets another planning use case run INSIDE the same plan transaction
+ * (the Excel import's confirm, PRD-09 O-9/O-12): `before(plan)` may refuse
+ * before anything is written; `after(plan, out, actor)` adds its own writes
+ * (ledger, outbox, its row) before commit.
+ */
+export async function applySchedule({ viewer, store, specialties, projectId, body, idempotencyKey, hooks = {}, operationId = 'applySchedule' }) {
   const { actor } = await requireEditor({ viewer, store, projectId });
   await assertPlanEditable(store, projectId);
   const ops = body?.operations;
@@ -444,6 +451,7 @@ export async function applySchedule({ viewer, store, specialties, projectId, bod
         body: { applied: true, dry_run: false, created: [], changed: [], deleted: [], links_created: [], health: planHealth(plan) },
       };
     }
+    if (hooks.before) await hooks.before(plan);
     const cal = makeCalendar(plan.calendarRaw);
     const out = { created: [], changed: [], deleted: [], links_created: [] };
     const removedRows = [];
@@ -546,6 +554,8 @@ export async function applySchedule({ viewer, store, specialties, projectId, bod
       },
     });
 
+    if (hooks.after) await hooks.after(plan, out, me);
+
     const ctx = projectionCtx(plan, viewer.orgId, today());
     return {
       status: 200,
@@ -565,7 +575,9 @@ export async function applySchedule({ viewer, store, specialties, projectId, bod
   }, { dryRun });
 
   if (dryRun || !idempotencyKey) return run();
-  return store.idempotent({ key: idempotencyKey, caller: viewer.clerkUserId, operationId: 'applySchedule', body }, run);
+  // A hooked caller may name its own replay identity (the import confirm's
+  // rows carry freshly minted ids, so its body is the import id).
+  return store.idempotent({ key: idempotencyKey, caller: viewer.clerkUserId, operationId, body: hooks.idempotencyBody ?? body }, run);
 }
 
 // ── links ──────────────────────────────────────────────────────────────────
@@ -1984,7 +1996,7 @@ export function fieldChangeOf({ taskId, field, oldValue, newValue, actor, viewer
   };
 }
 
-async function commitPlanEvent(plan, { projectId, actor, type, objectId, objectType = 'task', payload, data }) {
+export async function commitPlanEvent(plan, { projectId, actor, type, objectId, objectType = 'task', payload, data }) {
   await plan.write.ledger({
     projectId,
     actor: { personId: actor.personId, orgId: actor.orgId, orgRole: actor.orgRole },

@@ -14,6 +14,7 @@ import { publishEvent } from '../../../platform/outbox.mjs';
 import { withIdempotency } from '../../../platform/idempotency.mjs';
 import { audienceQueries } from './pg-audience.mjs';
 import { deliverableQueries } from './pg-deliverables.mjs';
+import { scheduleImportQueries, importWriters } from './pg-schedule-imports.mjs';
 
 const D = (col) => `to_char(${col}, 'YYYY-MM-DD')`;
 const TASK_SELECT = `
@@ -336,6 +337,8 @@ export function createPlanningStore(pool) {
       takeBaseline: (args) => takeBaselineOn(client, args),
       ledger: (entry) => appendAuditEvent(client, entry),
       publish: (evt) => publishEvent(client, evt),
+      // PRD-09 O-9/O-12: the Excel import's confirm marks its row in the plan tx.
+      ...importWriters(client),
     };
   }
 
@@ -344,6 +347,8 @@ export function createPlanningStore(pool) {
     ...audienceQueries(pool),
     // Deliverables and their review (PRD-05, D-48) — infra/pg-deliverables.mjs.
     ...deliverableQueries(pool, tx),
+    // The Excel import (PRD-09) — infra/pg-schedule-imports.mjs.
+    ...scheduleImportQueries(pool),
 
     // ── plain reads ────────────────────────────────────────────────────────
     async getPersonByClerkId(clerkUserId) {

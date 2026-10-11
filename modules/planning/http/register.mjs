@@ -16,15 +16,22 @@ import {
   listTaskDeliverables, listProjectDeliverables, createDeliverable, updateDeliverable, deleteDeliverable,
   submitDeliverable, approveDeliverable, requestDeliverableChanges,
 } from '../application/deliverables.mjs';
+import {
+  uploadScheduleImport, getScheduleImport, mapScheduleImport, previewScheduleImport, confirmScheduleImport,
+} from '../application/schedule-import.mjs';
 
 /**
- * @param {{ store: object, documents?: { versionFacts: Function }, specialties?: { exists: Function } }} deps
+ * @param {{ store: object, documents?: { versionFacts: Function },
+ *           specialties?: { exists: Function, list?: Function },
+ *           workbooks?: { read: Function } }} deps
  *   `documents` — the documents query port: a deliverable submission binds a
  *   proven document version without planning reading documents.* (PRD-05).
  *   `specialties` — the directory's taxonomy port: a row's `specialty_code` is
  *   checked through it (PRD-03 R-2); without it a code is refused (422).
+ *   `workbooks` — the .xlsx reader (infra/xlsx-reader.mjs) behind the Excel
+ *   import (PRD-09); without it an upload answers 422 (unreadable).
  */
-export function registerPlanning(router, { store, documents, specialties }) {
+export function registerPlanning(router, { store, documents, specialties, workbooks = NO_WORKBOOKS }) {
   router.register('GET', '/projects/{projectId}/schedule', 'getSchedule', ({ viewer, params, query }) =>
     getSchedule({ viewer, store, projectId: params.projectId, query }));
 
@@ -134,6 +141,22 @@ export function registerPlanning(router, { store, documents, specialties }) {
   router.register('POST', '/deliverables/{deliverableId}:request-changes', 'requestDeliverableChanges', ({ viewer, params, body }) =>
     requestDeliverableChanges({ viewer, store, deliverableId: params.deliverableId, body }));
 
+  // ── PRD-09: the Excel plan import (O-6..O-12) ────────────────────────────
+  router.register('POST', '/projects/{projectId}/schedule-imports', 'uploadScheduleImport', ({ viewer, params, body }) =>
+    uploadScheduleImport({ viewer, store, workbooks, projectId: params.projectId, body }));
+
+  router.register('GET', '/schedule-imports/{importId}', 'getScheduleImport', ({ viewer, params }) =>
+    getScheduleImport({ viewer, store, specialties, importId: params.importId }));
+
+  router.register('POST', '/schedule-imports/{importId}:map', 'mapScheduleImport', ({ viewer, params, body }) =>
+    mapScheduleImport({ viewer, store, specialties, importId: params.importId, body }));
+
+  router.register('POST', '/schedule-imports/{importId}:preview', 'previewScheduleImport', ({ viewer, params }) =>
+    previewScheduleImport({ viewer, store, specialties, importId: params.importId }));
+
+  router.register('POST', '/schedule-imports/{importId}:confirm', 'confirmScheduleImport', ({ viewer, params, headers }) =>
+    confirmScheduleImport({ viewer, store, specialties, importId: params.importId, idempotencyKey: headers['idempotency-key'] ?? null }));
+
   // ── Specialty labels (LINA-380) — the plan's free-text picker. /specialties
   // is the directory taxonomy (PRD-03); the labels moved here.
   router.register('GET', '/specialty-labels', 'listSpecialtyLabels', ({ viewer }) =>
@@ -151,3 +174,7 @@ export function registerPlanning(router, { store, documents, specialties }) {
   router.register('PUT', '/me/plan-template', 'savePlanTemplate', ({ viewer, body }) =>
     savePlanTemplate({ viewer, store, body }));
 }
+
+const NO_WORKBOOKS = Object.freeze({
+  async read() { throw new Error('no workbook reader wired'); },
+});

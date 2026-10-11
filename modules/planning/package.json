@@ -9,5 +9,8 @@
   },
   "devDependencies": {
     "pg": "^8.13.1"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0"
   }
 }
