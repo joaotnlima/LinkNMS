@@ -50,3 +50,30 @@ export function operatingModel({ prime, direct }) {
   if (direct > 0) return 'direct';
   return 'undetermined';
 }
+
+// ── Project phases (doc 09 §Project phase; ADR-0024, PRD-10 E-13) ──────────
+// The phase that carries the plan's execution sign-off. `start_execution` is
+// the v2 activation: the build's FIRST baseline (D-43: taken at award, or at
+// signature where no award took one) means a branch is now controlled — there
+// is a committed plan to execute and, later, to sign off. Procurement is NOT
+// closed by it: specialty-by-specialty tendering goes on (D-43).
+export const PHASE_STATUSES = Object.freeze(['pending', 'active', 'signed_off', 'archived']);
+
+export const PHASE_TRANSITIONS = Object.freeze({
+  start_execution: { kind: 'execution', from: ['pending'], to: 'active', guard: 'baselineTaken' },
+  sign_off: { kind: 'execution', from: ['active'], to: 'signed_off', guard: 'signOffApproved' },
+});
+
+/**
+ * @param {{kind: string, status: string}} phase
+ * @param {string} action a PHASE_TRANSITIONS key
+ * @param {Record<string, boolean>} guards
+ */
+export function phaseTransition(phase, action, guards = {}) {
+  const rule = PHASE_TRANSITIONS[action];
+  if (!rule) return { ok: false, reason: `unknown action ${action}` };
+  if (phase?.kind !== rule.kind) return { ok: false, reason: `${action} applies to the ${rule.kind} phase` };
+  if (!rule.from.includes(phase.status)) return { ok: false, reason: `cannot ${action} a ${phase.status} phase` };
+  if (!guards[rule.guard]) return { ok: false, reason: `guard failed: ${rule.guard}` };
+  return { ok: true, to: rule.to };
+}

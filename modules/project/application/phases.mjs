@@ -26,6 +26,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { ProblemError } from '../../../platform/errors.mjs';
+import { phaseTransition } from '../domain/lifecycle.mjs';
 import { requireParticipant, requireActor } from './use-cases.mjs';
 
 // The two phases every build gets. `procurement` runs the RFP loop; `execution`
@@ -188,4 +189,23 @@ export async function rejectSignOff({ viewer, store, projectId, phaseId, request
   const comment = typeof body?.comment === 'string' ? (body.comment.trim() || null) : null;
   const resolved = await store.rejectSignOff({ requestId, comment });
   return { status: 200, body: { sign_off_request: signOffBody(resolved) } };
+}
+
+/**
+ * Consumer of planning.baseline.taken (PRD-10 E-13, doc 09 §Project phase):
+ * the build's first baseline moves the execution phase pending → active, so
+ * the plan's sign-off becomes possible. Seeds the default phases first on an
+ * unseeded build. A projection of the ledgered baseline — not ledgered here.
+ * Idempotent: only a `pending` execution phase moves; replays and later
+ * baselines (v2, other branches) change nothing.
+ */
+export async function activateExecutionOnBaseline({ store, evt }) {
+  const projectId = evt?.project_id;
+  if (!projectId || evt.type !== 'planning.baseline.taken') return { activated: false };
+  await store.ensurePhases(projectId, PHASE_DEFAULTS, { hasSignedContractor: false });
+  const execution = (await store.listPhasesByProject(projectId)).find((p) => p.kind === 'execution');
+  const step = phaseTransition(execution, 'start_execution', { baselineTaken: true });
+  if (!step.ok) return { activated: false, reason: step.reason };
+  const moved = await store.setPhaseStatus({ phaseId: execution.id, from: 'pending', to: step.to });
+  return { activated: Boolean(moved) };
 }

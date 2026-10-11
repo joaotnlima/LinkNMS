@@ -2,8 +2,12 @@
 // project.participation, so when contracting announces a signature it is
 // this module that materialises the supplier's seat at the table:
 //   contracting.contract.signed → participation (capacity from the kind).
+//   planning.baseline.taken     → the first baseline activates the execution
+//                                 phase (PRD-10 E-13, application/phases.mjs).
 // Idempotent by construction: the participation PK (project_id, org_id,
 // capacity) + ON CONFLICT re-activation absorb at-least-once delivery.
+
+import { activateExecutionOnBaseline } from './phases.mjs';
 
 const CAPACITY_BY_KIND = Object.freeze({
   prime: 'prime_contractor',
@@ -21,6 +25,11 @@ export function projectConsumers(store) {
     // Doc 09 §Project: publishing the FIRST RFP moves draft → tendering.
     'tendering.rfp.published': async (evt) => {
       await store.markTendering({ projectId: evt.project_id });
+    },
+
+    // PRD-10 E-13: a controlled branch exists → execution is live, sign-off possible.
+    'planning.baseline.taken': async (evt) => {
+      await activateExecutionOnBaseline({ store, evt });
     },
 
     'contracting.contract.signed': async (evt) => {

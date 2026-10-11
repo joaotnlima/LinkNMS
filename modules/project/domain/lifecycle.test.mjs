@@ -73,3 +73,16 @@ describe('operating model (D-35, derived)', () => {
     assert.equal(operatingModel({ prime: 1, direct: 1 }), 'hybrid');
   });
 });
+
+describe('project phases (doc 09 §Project phase, PRD-10 E-13)', () => {
+  test('the first baseline activates a pending execution phase — and only that', async () => {
+    const { phaseTransition, PHASE_TRANSITIONS } = await import('./lifecycle.mjs');
+    assert.deepEqual(PHASE_TRANSITIONS.start_execution, { kind: 'execution', from: ['pending'], to: 'active', guard: 'baselineTaken' });
+    assert.deepEqual(phaseTransition({ kind: 'execution', status: 'pending' }, 'start_execution', { baselineTaken: true }), { ok: true, to: 'active' });
+    assert.equal(phaseTransition({ kind: 'execution', status: 'active' }, 'start_execution', { baselineTaken: true }).ok, false);
+    assert.equal(phaseTransition({ kind: 'execution', status: 'signed_off' }, 'start_execution', { baselineTaken: true }).ok, false);
+    assert.equal(phaseTransition({ kind: 'procurement', status: 'pending' }, 'start_execution', { baselineTaken: true }).ok, false);
+    assert.equal(phaseTransition({ kind: 'execution', status: 'pending' }, 'start_execution', {}).ok, false);
+    assert.equal(phaseTransition(undefined, 'start_execution', { baselineTaken: true }).ok, false);
+  });
+});

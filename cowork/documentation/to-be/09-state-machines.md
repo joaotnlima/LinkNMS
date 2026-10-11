@@ -14,6 +14,22 @@ marked ● — a ledger entry. This closes the as-is gap of scattered `if (statu
 | in_execution | close | closed | all owner-level contracts closed or terminated |
 | draft / tendering | cancel | cancelled | no signed contract |
 
+## Project phase (ADR-0024; PRD-10 E-13)
+Two phases per build, seeded `procurement: active`, `execution: pending`. Not ledgered (projections of ledgered facts),
+except the sign-off decision, which is one-way in the DB.
+| Phase | From | Action | To | Guard |
+|---|---|---|---|---|
+| execution | pending | start_execution | active | the build's **first baseline** was taken (`planning.baseline.taken`) |
+| execution | active | sign_off | signed_off | a sign-off request approved by someone other than its requester (one-way) |
+
+**Why the first baseline (E-13).** D-43 takes a branch's baseline at award (or at signature where no award took one), and
+from that moment the branch is *controlled* (doc 05 §5): there is a committed plan to execute, to measure changes against
+and, eventually, to sign off. It is the earliest fact that is true of every build that executes, whatever its shape
+(turnkey: one award; specialty by specialty: the first one), and it already travels on the outbox. Not the first task in
+progress (that is the *project* `start` above — later, and a build can be run against its plan before anyone reports
+progress), not the first signature (contracts are parked, D-50). Procurement is **not** closed by it: tendering goes on
+specialty by specialty. Later baselines (v2, other branches) change nothing; a signed-off phase is never re-opened.
+
 ## RFP ●
 draft → published (`publish`) → closed (`deadline` / `close_early`) → awarded (`award`); draft/published/closed → cancelled.
 Guard on award: proposal `submitted`/`shortlisted`, status `closed` (or all invitees responded).

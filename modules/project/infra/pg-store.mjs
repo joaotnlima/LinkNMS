@@ -669,6 +669,19 @@ export function createProjectStore(pool) {
       });
     },
 
+    /**
+     * Compare-and-set a phase's status (PRD-10 E-13 activation). Answers the
+     * row when it moved, null when it was no longer `from` (a replay).
+     */
+    async setPhaseStatus({ phaseId, from, to }) {
+      const { rows } = await pool.query(
+        `UPDATE project.project_phase SET status = $3, updated_at = now()
+          WHERE id = $1 AND status = $2 RETURNING *`,
+        [phaseId, from, to],
+      );
+      return rows[0] ?? null;
+    },
+
     async insertSignOffRequest({ id, phaseId, requestedBy }) {
       const { rows } = await pool.query(
         `INSERT INTO project.phase_sign_off_request (id, phase_id, requested_by, status)
